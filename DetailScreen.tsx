@@ -730,6 +730,11 @@ export default function DetailScreen() {
         kind: entry.kind,
         value: entry.value.trim(),
       }));
+    const previousEpisode = editingEpisodeId
+      ? friend.episodes.find((item) => item.id === editingEpisodeId)
+      : null;
+    const visibilityMode =
+      visibilityEntries.length > 0 ? 'limited' : (previousEpisode?.visibilityMode ?? 'private');
     const mainParticipants = isOwnerMainRole ? [friend.id] : [];
     const subParticipants = isOwnerMainRole ? [] : [friend.id];
     if (editingEpisodeId) {
@@ -737,6 +742,7 @@ export default function DetailScreen() {
         title,
         date,
         description,
+        visibilityMode,
         mainParticipants,
         subParticipants,
         participantEntries,
@@ -751,6 +757,7 @@ export default function DetailScreen() {
         title,
         date,
         description,
+        visibilityMode,
         mainParticipants,
         subParticipants,
         participantEntries,

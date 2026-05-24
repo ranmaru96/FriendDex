@@ -22,7 +22,12 @@ import {
   initializeDatabase,
 } from '../db';
 import { Episode, EpisodePhoto } from '../types';
-import { buildParticipantChips, visibilityDisplayLabels } from '../utils/episodeHelpers';
+import {
+  buildParticipantChips,
+  getVisibilityModeLabel,
+  visibilityDisplayLabels,
+  visibilityModeTagStyles,
+} from '../utils/episodeHelpers';
 
 const LIST_HORIZONTAL_INSET = 12;
 
@@ -85,7 +90,10 @@ export default function EpisodeDetailScreen() {
     () => (episode ? visibilityDisplayLabels(episode, friendNameById) : []),
     [episode, friendNameById]
   );
-  const showRow2 = chips.length > 0 || visibility.length > 0;
+  const modeStyles = episode ? visibilityModeTagStyles(episode.visibilityMode) : null;
+  const showParticipantRow = chips.length > 0;
+  const showVisibilityTargets =
+    episode?.visibilityMode === 'limited' && visibility.length > 0;
   const isOwner = myselfId !== null && episode?.authorFriendId === myselfId;
 
   const handleEdit = () => {
@@ -145,43 +153,44 @@ export default function EpisodeDetailScreen() {
               </Text>
             </View>
             <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(episode.date)}</Text>
-            {isOwner ? (
-              <View style={styles.episodeCardActions}>
-                <Pressable style={styles.episodeCardEditButton} onPress={handleEdit}>
-                  <Text style={styles.episodeCardEditButtonText}>編集</Text>
-                </Pressable>
-                <Pressable style={styles.episodeCardDeleteButton} onPress={handleDelete}>
-                  <Text style={styles.episodeCardDeleteButtonText}>削除</Text>
-                </Pressable>
-              </View>
-            ) : null}
+            <View style={styles.headerRightCol}>
+              {modeStyles ? (
+                <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
+                  <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
+                    {getVisibilityModeLabel(episode.visibilityMode)}
+                  </Text>
+                </View>
+              ) : null}
+              {isOwner ? (
+                <View style={styles.episodeCardActions}>
+                  <Pressable style={styles.episodeCardEditButton} onPress={handleEdit}>
+                    <Text style={styles.episodeCardEditButtonText}>編集</Text>
+                  </Pressable>
+                  <Pressable style={styles.episodeCardDeleteButton} onPress={handleDelete}>
+                    <Text style={styles.episodeCardDeleteButtonText}>削除</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
           </View>
-          {showRow2 ? (
+          {showParticipantRow ? (
             <View style={styles.episodeCardRow2}>
-              {chips.length > 0 ? (
-                <View style={styles.episodeParticipantTagWrap}>
-                  {chips.map((p) => (
-                    <View
-                      key={p.id}
-                      style={[styles.episodeParticipantTag, p.isMain && styles.episodeParticipantTagMain]}
-                    >
-                      <Text style={styles.episodeParticipantTagName}>{p.label}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-              {visibility.length > 0 ? (
-                <View style={styles.visibilityCol}>
-                  <Text style={styles.visibilityLabelFixed}>公開先：</Text>
-                  <View style={styles.visibilityPills}>
-                    {visibility.map((label, vi) => (
-                      <View key={`vis-${vi}-${label}`} style={styles.episodeParticipantTag}>
-                        <Text style={styles.episodeParticipantTagName}>{label}</Text>
-                      </View>
-                    ))}
+              <View style={styles.episodeParticipantTagWrap}>
+                {chips.map((p) => (
+                  <View
+                    key={p.id}
+                    style={[styles.episodeParticipantTag, p.isMain && styles.episodeParticipantTagMain]}
+                  >
+                    <Text style={styles.episodeParticipantTagName}>{p.label}</Text>
                   </View>
-                </View>
-              ) : null}
+                ))}
+              </View>
+            </View>
+          ) : null}
+          {showVisibilityTargets ? (
+            <View style={styles.visibilityTargetsRow}>
+              <Text style={styles.visibilityLabelFixed}>公開先：</Text>
+              <Text style={styles.visibilityTargetsText}>{visibility.join('、')}</Text>
             </View>
           ) : null}
         </View>
@@ -314,10 +323,19 @@ const styles = StyleSheet.create({
     color: '#64748b',
     flexShrink: 0,
   },
+  headerRightCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 0,
+  },
   episodeCardActions: {
     flexDirection: 'row',
     gap: 8,
     flexShrink: 0,
+  },
+  visibilityModeTag: {
+    borderWidth: 1,
   },
   episodeCardEditButton: {
     backgroundColor: '#e2e8f0',
@@ -370,25 +388,23 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0f172a',
   },
-  visibilityCol: {
+  visibilityTargetsRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     flexWrap: 'wrap',
-    gap: 6,
-    justifyContent: 'flex-end',
-    maxWidth: '48%',
-    flexShrink: 0,
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 8,
   },
   visibilityLabelFixed: {
     fontSize: 12,
     color: '#64748b',
     fontWeight: '600',
   },
-  visibilityPills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    justifyContent: 'flex-end',
+  visibilityTargetsText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a',
   },
   descriptionSection: {
     backgroundColor: '#ffffff',

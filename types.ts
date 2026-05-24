@@ -48,12 +48,15 @@ export type EpisodeVisibilityEntry = {
   value: string;
 };
 
+export type EpisodeVisibilityMode = 'public' | 'limited' | 'private';
+
 export type Episode = {
   id: string;
   title: string;
   date: string;
   description: string;
   authorFriendId: string;
+  visibilityMode: EpisodeVisibilityMode;
   mainParticipants: string[];
   subParticipants: string[];
   participantEntries: EpisodeParticipant[];

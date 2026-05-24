@@ -8,6 +8,7 @@ import {
   EpisodeParticipant,
   EpisodePhoto,
   EpisodeVisibilityEntry,
+  EpisodeVisibilityMode,
   FRIENDDEX_BACKUP_TABLE_NAMES,
   Friend,
   FriendDexBackup,
@@ -178,12 +179,16 @@ const uniqueVisibilityEntries = (entries: EpisodeVisibilityEntry[]): EpisodeVisi
   return normalized;
 };
 
+const sanitizeVisibilityMode = (value: unknown): EpisodeVisibilityMode =>
+  ['public', 'limited', 'private'].includes(value as string) ? (value as EpisodeVisibilityMode) : 'private';
+
 const sanitizeEpisode = (value: unknown): Episode | null => {
   if (!value || typeof value !== 'object') {
     return null;
   }
 
-  const candidate = value as Partial<Episode>;
+  const raw = value as Partial<Episode>;
+  const candidate = raw;
   const participantEntries = Array.isArray(candidate.participantEntries)
     ? candidate.participantEntries.filter(isEpisodeParticipant)
     : [];
@@ -214,6 +219,7 @@ const sanitizeEpisode = (value: unknown): Episode | null => {
     date: candidate.date,
     description: candidate.description,
     authorFriendId: typeof candidate.authorFriendId === 'string' ? candidate.authorFriendId : '',
+    visibilityMode: sanitizeVisibilityMode(raw.visibilityMode),
     mainParticipants: normalizedMain,
     subParticipants: normalizedSub,
     participantEntries: participantEntries.length > 0 ? participantEntries : fallbackEntries,
@@ -997,11 +1003,14 @@ export const createEpisode = (ownerFriendId: string, input: EpisodeInput): Episo
   }
 
   const resolved = ensureRequiredIndividualParticipants(resolveParticipantsFromEntries(input), ownerFriendId, getMyself());
-  const visibilityEntries = uniqueVisibilityEntries(input.visibilityEntries ?? []);
+  const visibilityMode = sanitizeVisibilityMode(input.visibilityMode);
+  const visibilityEntries =
+    visibilityMode === 'limited' ? uniqueVisibilityEntries(input.visibilityEntries ?? []) : [];
   const episode: Episode = {
     ...input,
     id: uuidv4(),
     authorFriendId: ownerFriendId,
+    visibilityMode,
     mainParticipants: resolved.mainParticipants,
     subParticipants: resolved.subParticipants,
     participantEntries: resolved.participantEntries,
@@ -1047,13 +1056,16 @@ export const updateEpisode = (ownerFriendId: string, episodeId: string, input: E
   }
 
   const resolved = ensureRequiredIndividualParticipants(resolveParticipantsFromEntries(input), ownerFriendId, getMyself());
-  const visibilityEntries = uniqueVisibilityEntries(input.visibilityEntries ?? []);
+  const visibilityMode = sanitizeVisibilityMode(input.visibilityMode);
+  const visibilityEntries =
+    visibilityMode === 'limited' ? uniqueVisibilityEntries(input.visibilityEntries ?? []) : [];
   const updatedEpisode: Episode = {
     id: episodeId,
     title: input.title,
     date: input.date,
     description: input.description,
     authorFriendId: previousEpisode.authorFriendId,
+    visibilityMode,
     mainParticipants: resolved.mainParticipants,
     subParticipants: resolved.subParticipants,
     participantEntries: resolved.participantEntries,

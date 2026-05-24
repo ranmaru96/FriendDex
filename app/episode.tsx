@@ -30,8 +30,20 @@ import {
   insertEpisodePhoto,
   updateEpisode,
 } from '../db';
-import { Episode, EpisodeParticipant, EpisodePhoto, EpisodeVisibilityEntry, Friend } from '../types';
-import { buildParticipantChips, visibilityDisplayLabels } from '../utils/episodeHelpers';
+import {
+  Episode,
+  EpisodeParticipant,
+  EpisodePhoto,
+  EpisodeVisibilityEntry,
+  EpisodeVisibilityMode,
+  Friend,
+} from '../types';
+import {
+  buildParticipantChips,
+  getVisibilityModeLabel,
+  visibilityDisplayLabels,
+  visibilityModeTagStyles,
+} from '../utils/episodeHelpers';
 
 const LIST_HORIZONTAL_INSET = 12;
 
@@ -78,12 +90,14 @@ function SelectInput({
   options,
   onChange,
   style,
+  includeEmptyOption = true,
 }: {
   value: string;
   placeholder: string;
   options: Option[];
   onChange: (value: string) => void;
   style?: object;
+  includeEmptyOption?: boolean;
 }) {
   const [visible, setVisible] = useState(false);
   const selectedLabel = useMemo(() => {
@@ -103,15 +117,17 @@ function SelectInput({
           <View style={styles.modalCard}>
             <Text style={styles.modalTitle}>{placeholder}</Text>
             <ScrollView style={styles.modalOptionsScroll} keyboardShouldPersistTaps="handled">
-              <Pressable
-                style={[styles.modalOption, value === '' && styles.modalOptionSelected]}
-                onPress={() => {
-                  onChange('');
-                  setVisible(false);
-                }}
-              >
-                <Text style={styles.modalOptionText}>{placeholder}</Text>
-              </Pressable>
+              {includeEmptyOption ? (
+                <Pressable
+                  style={[styles.modalOption, value === '' && styles.modalOptionSelected]}
+                  onPress={() => {
+                    onChange('');
+                    setVisible(false);
+                  }}
+                >
+                  <Text style={styles.modalOptionText}>{placeholder}</Text>
+                </Pressable>
+              ) : null}
               {options.map((option) => (
                 <Pressable
                   key={option.value}
@@ -157,14 +173,21 @@ function buildFriendNameById(friends: Friend[]): Map<string, string> {
 
 type ParticipantChip = { id: string; label: string; isMain: boolean };
 
+const VISIBILITY_MODE_OPTIONS: Option[] = [
+  { label: '公開', value: 'public' },
+  { label: '限定公開', value: 'limited' },
+  { label: '非公開', value: 'private' },
+];
+
 type EpisodeListCardProps = {
   title: string;
   date: string;
-  /** true = 「他の人の投稿」（投稿者タグ＋保存）、false = 自分が登録したエピソード（編集・削除のみ） */
+  /** true = 「他の人の投稿」（投稿者タグ＋保存）、false = 自分が登録したエピソード */
   isSharedPost: boolean;
   posterName?: string;
   chips: ParticipantChip[];
-  visibility: string[];
+  visibility?: string[];
+  visibilityMode?: EpisodeVisibilityMode;
   onEdit?: () => void;
   onDelete?: () => void;
 };
@@ -175,10 +198,12 @@ function EpisodeListCard({
   isSharedPost,
   posterName,
   chips,
-  visibility,
+  visibility = [],
+  visibilityMode,
   onEdit,
   onDelete,
 }: EpisodeListCardProps) {
+  const modeStyles = visibilityMode ? visibilityModeTagStyles(visibilityMode) : null;
   const showRow2 = chips.length > 0 || visibility.length > 0;
 
   return (
@@ -190,16 +215,14 @@ function EpisodeListCard({
           </Text>
         </View>
         <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
-        {!isSharedPost ? (
-          <View style={styles.episodeCardActions}>
-            <Pressable style={styles.episodeCardEditButton} onPress={onEdit}>
-              <Text style={styles.episodeCardEditButtonText}>編集</Text>
-            </Pressable>
-            <Pressable style={styles.episodeCardDeleteButton} onPress={onDelete}>
-              <Text style={styles.episodeCardDeleteButtonText}>削除</Text>
-            </Pressable>
+        {visibilityMode != null && modeStyles ? (
+          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
+            <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
+              {getVisibilityModeLabel(visibilityMode)}
+            </Text>
           </View>
-        ) : (
+        ) : null}
+        {isSharedPost ? (
           <View style={styles.episodeCardFriendActions}>
             <View style={styles.episodeParticipantTag}>
               <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
@@ -210,12 +233,26 @@ function EpisodeListCard({
               <Text style={styles.saveButtonDisabledText}>保存</Text>
             </Pressable>
           </View>
-        )}
+        ) : onEdit && onDelete ? (
+          <View style={styles.episodeCardActions}>
+            <Pressable style={styles.episodeCardEditButton} onPress={onEdit}>
+              <Text style={styles.episodeCardEditButtonText}>編集</Text>
+            </Pressable>
+            <Pressable style={styles.episodeCardDeleteButton} onPress={onDelete}>
+              <Text style={styles.episodeCardDeleteButtonText}>削除</Text>
+            </Pressable>
+          </View>
+        ) : null}
       </View>
       {showRow2 ? (
         <View style={styles.episodeCardRow2}>
           {chips.length > 0 ? (
-            <View style={styles.episodeParticipantTagWrap}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.episodeParticipantTagScroll}
+              contentContainerStyle={styles.episodeParticipantTagWrap}
+            >
               {chips.map((p) => (
                 <View
                   key={p.id}
@@ -224,9 +261,9 @@ function EpisodeListCard({
                   <Text style={styles.episodeParticipantTagName}>{p.label}</Text>
                 </View>
               ))}
-            </View>
+            </ScrollView>
           ) : null}
-          {visibility.length > 0 ? (
+          {visibilityMode == null && visibility.length > 0 ? (
             <View style={styles.visibilityCol}>
               <Text style={styles.visibilityLabelFixed}>公開先：</Text>
               <View style={styles.visibilityPills}>
@@ -261,6 +298,7 @@ export default function EpisodeScreen() {
   const [newEpisodeDescription, setNewEpisodeDescription] = useState('');
   const [isOwnerMainRole, setIsOwnerMainRole] = useState(true);
   const [episodeParticipants, setEpisodeParticipants] = useState<EpisodeParticipantDraft[]>([]);
+  const [episodeVisibilityMode, setEpisodeVisibilityMode] = useState<EpisodeVisibilityMode>('private');
   const [episodeVisibility, setEpisodeVisibility] = useState<EpisodeVisibilityDraft[]>([]);
   const [episodeFormError, setEpisodeFormError] = useState('');
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
@@ -323,6 +361,7 @@ export default function EpisodeScreen() {
     setNewEpisodeDescription('');
     setIsOwnerMainRole(true);
     setEpisodeParticipants([]);
+    setEpisodeVisibilityMode('private');
     setEpisodeVisibility([]);
     setPhotos([]);
     setNewPhotoUris([]);
@@ -362,6 +401,7 @@ export default function EpisodeScreen() {
     setNewEpisodeDescription(episode.description);
     setIsOwnerMainRole(episode.mainParticipants.includes(recordOwnerId));
     setEpisodeParticipants(participantDrafts);
+    setEpisodeVisibilityMode(episode.visibilityMode);
     setEpisodeVisibility(
       (episode.visibilityEntries ?? []).map((entry) => ({
         kind: entry.kind,
@@ -477,12 +517,16 @@ export default function EpisodeScreen() {
         value: participant.value,
         isMain: participant.isMain,
       }));
-    const visibilityEntries: EpisodeVisibilityEntry[] = episodeVisibility
-      .filter((entry) => entry.value.trim().length > 0)
-      .map((entry) => ({
-        kind: entry.kind,
-        value: entry.value.trim(),
-      }));
+    const visibilityMode = episodeVisibilityMode;
+    const visibilityEntries: EpisodeVisibilityEntry[] =
+      visibilityMode === 'limited'
+        ? episodeVisibility
+            .filter((entry) => entry.value.trim().length > 0)
+            .map((entry) => ({
+              kind: entry.kind,
+              value: entry.value.trim(),
+            }))
+        : [];
     const mainParticipants = isOwnerMainRole ? [ownerId] : [];
     const subParticipants = isOwnerMainRole ? [] : [ownerId];
 
@@ -491,6 +535,7 @@ export default function EpisodeScreen() {
         title,
         date,
         description,
+        visibilityMode,
         mainParticipants,
         subParticipants,
         participantEntries,
@@ -506,6 +551,7 @@ export default function EpisodeScreen() {
         title,
         date,
         description,
+        visibilityMode,
         mainParticipants,
         subParticipants,
         participantEntries,
@@ -591,9 +637,8 @@ export default function EpisodeScreen() {
                       date={row.episode.date}
                       isSharedPost={!isMyEpisode}
                       chips={chips}
-                      visibility={visibility}
-                      onEdit={isMyEpisode ? () => startEditEpisode(row) : undefined}
-                      onDelete={isMyEpisode ? () => handleDeleteEpisode(row) : undefined}
+                      visibility={isMyEpisode ? undefined : visibility}
+                      visibilityMode={isMyEpisode ? row.episode.visibilityMode : undefined}
                     />
                   </Pressable>
                 );
@@ -793,6 +838,19 @@ export default function EpisodeScreen() {
                 </View>
               ))}
               <View style={styles.episodeParticipantRow}>
+                <Text style={styles.episodeParticipantLabel}>公開設定</Text>
+                <SelectInput
+                  value={episodeVisibilityMode}
+                  placeholder="公開設定"
+                  options={VISIBILITY_MODE_OPTIONS}
+                  onChange={(value) => setEpisodeVisibilityMode(value as EpisodeVisibilityMode)}
+                  style={styles.visibilityModeSelect}
+                  includeEmptyOption={false}
+                />
+              </View>
+              {episodeVisibilityMode === 'limited' ? (
+                <>
+              <View style={styles.episodeParticipantRow}>
                 <Text style={styles.episodeParticipantLabel}>公開先</Text>
                 <Pressable
                   style={styles.addParticipantButton}
@@ -868,6 +926,8 @@ export default function EpisodeScreen() {
                   </View>
                 </View>
               ))}
+                </>
+              ) : null}
               <View style={styles.episodePhotoSection}>
                 <Text style={styles.episodeParticipantLabel}>写真</Text>
                 {(visibleExistingPhotos.length > 0 || newPhotoUris.length > 0) && (
@@ -1124,10 +1184,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#94a3b8',
   },
+  episodeParticipantTagScroll: {
+    flex: 1,
+    minWidth: 0,
+  },
   episodeParticipantTagWrap: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    flex: 1,
+    alignItems: 'center',
     gap: 6,
   },
   episodeParticipantTag: {
@@ -1168,6 +1231,14 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 6,
     justifyContent: 'flex-end',
+  },
+  visibilityModeTag: {
+    flexShrink: 0,
+    borderWidth: 1,
+  },
+  visibilityModeSelect: {
+    flex: 1,
+    maxWidth: 200,
   },
   episodeCardEditButton: {
     backgroundColor: '#e2e8f0',
