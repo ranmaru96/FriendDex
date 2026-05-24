@@ -86,7 +86,7 @@ export default function EpisodeDetailScreen() {
     [episode, friendNameById]
   );
   const showRow2 = chips.length > 0 || visibility.length > 0;
-  const isOwner = myselfId !== null && ownerId === myselfId;
+  const isOwner = myselfId !== null && episode?.authorFriendId === myselfId;
 
   const handleEdit = () => {
     router.push({

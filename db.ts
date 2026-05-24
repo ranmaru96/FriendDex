@@ -213,6 +213,7 @@ const sanitizeEpisode = (value: unknown): Episode | null => {
     title: candidate.title,
     date: candidate.date,
     description: candidate.description,
+    authorFriendId: typeof candidate.authorFriendId === 'string' ? candidate.authorFriendId : '',
     mainParticipants: normalizedMain,
     subParticipants: normalizedSub,
     participantEntries: participantEntries.length > 0 ? participantEntries : fallbackEntries,
@@ -849,7 +850,7 @@ export const deleteProfileById = (profileId: string): boolean => {
   return result.changes > 0;
 };
 
-type EpisodeInput = Omit<Episode, 'id'>;
+type EpisodeInput = Omit<Episode, 'id' | 'authorFriendId'>;
 
 const getDefaultProfileRowsByPersonIds = (personIds: string[]): ProfileRow[] => {
   if (personIds.length === 0) {
@@ -959,10 +960,9 @@ export const createEpisode = (ownerFriendId: string, input: EpisodeInput): Episo
   const resolved = ensureRequiredIndividualParticipants(resolveParticipantsFromEntries(input), ownerFriendId, getMyself());
   const visibilityEntries = uniqueVisibilityEntries(input.visibilityEntries ?? []);
   const episode: Episode = {
+    ...input,
     id: uuidv4(),
-    title: input.title,
-    date: input.date,
-    description: input.description,
+    authorFriendId: ownerFriendId,
     mainParticipants: resolved.mainParticipants,
     subParticipants: resolved.subParticipants,
     participantEntries: resolved.participantEntries,
@@ -1014,6 +1014,7 @@ export const updateEpisode = (ownerFriendId: string, episodeId: string, input: E
     title: input.title,
     date: input.date,
     description: input.description,
+    authorFriendId: previousEpisode.authorFriendId,
     mainParticipants: resolved.mainParticipants,
     subParticipants: resolved.subParticipants,
     participantEntries: resolved.participantEntries,

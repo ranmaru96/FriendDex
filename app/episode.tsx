@@ -575,6 +575,7 @@ export default function EpisodeScreen() {
               episodeRows.map((row) => {
                 const chips = buildParticipantChips(row.episode, friendNameById);
                 const visibility = visibilityDisplayLabels(row.episode, friendNameById);
+                const isMyEpisode = myselfId !== null && row.episode.authorFriendId === myselfId;
                 return (
                   <Pressable
                     key={row.episode.id}
@@ -588,11 +589,11 @@ export default function EpisodeScreen() {
                     <EpisodeListCard
                       title={row.episode.title}
                       date={row.episode.date}
-                      isSharedPost={false}
+                      isSharedPost={!isMyEpisode}
                       chips={chips}
                       visibility={visibility}
-                      onEdit={() => startEditEpisode(row)}
-                      onDelete={() => handleDeleteEpisode(row)}
+                      onEdit={isMyEpisode ? () => startEditEpisode(row) : undefined}
+                      onDelete={isMyEpisode ? () => handleDeleteEpisode(row) : undefined}
                     />
                   </Pressable>
                 );

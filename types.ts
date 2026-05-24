@@ -53,6 +53,7 @@ export type Episode = {
   title: string;
   date: string;
   description: string;
+  authorFriendId: string;
   mainParticipants: string[];
   subParticipants: string[];
   participantEntries: EpisodeParticipant[];
