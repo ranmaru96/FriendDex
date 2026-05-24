@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Dimensions,
+  FlatList,
   Image,
   Modal,
   Platform,
@@ -24,6 +26,7 @@ import {
   deleteEpisodePhoto,
   getAllFriends,
   getDistinctAffiliations,
+  getDistinctExperiences,
   getEpisodePhotos,
   getMyself,
   initializeDatabase,
@@ -148,6 +151,286 @@ function SelectInput({
         </View>
       </Modal>
     </>
+  );
+}
+
+const SELECTOR_COLUMNS = 3;
+const SELECTOR_GAP = 6;
+const SELECTOR_CARD_PADDING = 14;
+
+function SelectorFilterField({
+  label,
+  value,
+  options,
+  onValueChange,
+}: {
+  label: string;
+  value: string;
+  options: Option[];
+  onValueChange: (v: string) => void;
+}) {
+  const [visible, setVisible] = useState(false);
+  const displayLabel = useMemo(() => {
+    if (!value) return label;
+    return options.find((option) => option.value === value)?.label ?? label;
+  }, [label, options, value]);
+
+  return (
+    <View style={styles.selectorFilterSelectContainer}>
+      <Pressable style={styles.selectorFilterSelectButton} onPress={() => setVisible(true)}>
+        <Text style={value ? styles.selectorFilterSelectValue : styles.selectorFilterSelectPlaceholder}>
+          {displayLabel}
+        </Text>
+        <Text style={styles.selectorFilterSelectChevron}>▼</Text>
+      </Pressable>
+      <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
+        <View style={styles.selectorFilterModalBackdrop}>
+          <View style={styles.selectorFilterModalCard}>
+            <Text style={styles.selectorFilterModalTitle}>{label}</Text>
+            <ScrollView style={styles.selectorFilterModalOptions} keyboardShouldPersistTaps="handled">
+              <Pressable
+                style={[styles.selectorFilterModalOption, !value && styles.selectorFilterModalOptionSelected]}
+                onPress={() => {
+                  onValueChange('');
+                  setVisible(false);
+                }}
+              >
+                <Text style={styles.selectorFilterModalOptionText}>指定なし</Text>
+              </Pressable>
+              {options.map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={[
+                    styles.selectorFilterModalOption,
+                    option.value === value && styles.selectorFilterModalOptionSelected,
+                  ]}
+                  onPress={() => {
+                    onValueChange(option.value);
+                    setVisible(false);
+                  }}
+                >
+                  <Text style={styles.selectorFilterModalOptionText}>{option.label}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+            <Pressable style={styles.selectorFilterModalCloseButton} onPress={() => setVisible(false)}>
+              <Text style={styles.selectorFilterModalCloseButtonText}>閉じる</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}
+
+type EntrySelectorModalProps = {
+  visible: boolean;
+  selectorTab: 'individual' | 'group';
+  onTabChange: (tab: 'individual' | 'group') => void;
+  nameFilter: string;
+  onNameFilterChange: (value: string) => void;
+  affiliationFilter: string;
+  onAffiliationFilterChange: (value: string) => void;
+  experienceFilter: string;
+  onExperienceFilterChange: (value: string) => void;
+  friends: Friend[];
+  affiliationOptions: Option[];
+  experienceOptions: Option[];
+  groupOptions: Option[];
+  selectedIndividualIds: Set<string>;
+  selectedGroupValues: Set<string>;
+  onToggleIndividual: (friendId: string) => void;
+  onToggleGroup: (groupValue: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+};
+
+function EntrySelectorModal({
+  visible,
+  selectorTab,
+  onTabChange,
+  nameFilter,
+  onNameFilterChange,
+  affiliationFilter,
+  onAffiliationFilterChange,
+  experienceFilter,
+  onExperienceFilterChange,
+  friends,
+  affiliationOptions,
+  experienceOptions,
+  groupOptions,
+  selectedIndividualIds,
+  selectedGroupValues,
+  onToggleIndividual,
+  onToggleGroup,
+  onCancel,
+  onConfirm,
+}: EntrySelectorModalProps) {
+  const itemWidth = useMemo(() => {
+    const screenWidth = Dimensions.get('window').width;
+    const totalGap = SELECTOR_GAP * (SELECTOR_COLUMNS - 1);
+    return (screenWidth - SELECTOR_CARD_PADDING * 2 - totalGap) / SELECTOR_COLUMNS;
+  }, []);
+
+  const normalizedNameFilter = nameFilter.trim().toLowerCase();
+  const filteredFriends = useMemo(
+    () =>
+      friends.filter((friend) => {
+        if (normalizedNameFilter && !friend.name.toLowerCase().includes(normalizedNameFilter)) {
+          return false;
+        }
+        if (affiliationFilter && !(friend.affiliations ?? []).includes(affiliationFilter)) {
+          return false;
+        }
+        if (experienceFilter && !(friend.experiences ?? []).includes(experienceFilter)) {
+          return false;
+        }
+        return true;
+      }),
+    [friends, normalizedNameFilter, affiliationFilter, experienceFilter]
+  );
+  const filteredGroups = useMemo(
+    () =>
+      groupOptions.filter((option) =>
+        normalizedNameFilter ? option.label.toLowerCase().includes(normalizedNameFilter) : true
+      ),
+    [groupOptions, normalizedNameFilter]
+  );
+
+  const renderFriendItem = ({ item }: { item: Friend }) => {
+    const checked = selectedIndividualIds.has(item.id);
+    return (
+      <Pressable
+        style={[styles.selectorPersonRow, { width: itemWidth }]}
+        onPress={() => onToggleIndividual(item.id)}
+      >
+        <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+          {checked ? <Text style={styles.checkmark}>✓</Text> : null}
+        </View>
+        <Text style={styles.selectorPersonName} numberOfLines={1}>
+          {item.name}
+        </Text>
+      </Pressable>
+    );
+  };
+
+  const renderGroupItem = ({ item }: { item: Option }) => {
+    const checked = selectedGroupValues.has(item.value);
+    return (
+      <Pressable
+        style={[styles.selectorPersonRow, { width: itemWidth }]}
+        onPress={() => onToggleGroup(item.value)}
+      >
+        <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+          {checked ? <Text style={styles.checkmark}>✓</Text> : null}
+        </View>
+        <Text style={styles.selectorPersonName} numberOfLines={1}>
+          {item.label}
+        </Text>
+      </Pressable>
+    );
+  };
+
+  return (
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
+      <View style={styles.selectorOverlay}>
+        <View style={styles.selectorCard}>
+          <View style={styles.selectorTabRow}>
+            <Pressable
+              style={[styles.selectorTabButton, selectorTab === 'individual' && styles.selectorTabButtonActive]}
+              onPress={() => onTabChange('individual')}
+            >
+              <Text
+                style={[
+                  styles.selectorTabButtonText,
+                  selectorTab === 'individual' && styles.selectorTabButtonTextActive,
+                ]}
+              >
+                個人
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[styles.selectorTabButton, selectorTab === 'group' && styles.selectorTabButtonActive]}
+              onPress={() => onTabChange('group')}
+            >
+              <Text
+                style={[styles.selectorTabButtonText, selectorTab === 'group' && styles.selectorTabButtonTextActive]}
+              >
+                所属
+              </Text>
+            </Pressable>
+          </View>
+          <View style={styles.selectorDivider} />
+          {selectorTab === 'individual' ? (
+            <View style={styles.selectorFilterRow}>
+              <View style={styles.selectorFilterNameContainer}>
+                <TextInput
+                  style={styles.selectorFilterNameInput}
+                  value={nameFilter}
+                  onChangeText={onNameFilterChange}
+                  placeholder="名前"
+                  placeholderTextColor="#94a3b8"
+                  autoCapitalize="none"
+                />
+              </View>
+              <SelectorFilterField
+                label="所属"
+                value={affiliationFilter}
+                options={affiliationOptions}
+                onValueChange={onAffiliationFilterChange}
+              />
+              <SelectorFilterField
+                label="経験"
+                value={experienceFilter}
+                options={experienceOptions}
+                onValueChange={onExperienceFilterChange}
+              />
+            </View>
+          ) : (
+            <TextInput
+              style={styles.selectorNameInput}
+              value={nameFilter}
+              onChangeText={onNameFilterChange}
+              placeholder="名前"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="none"
+            />
+          )}
+          <View style={styles.selectorDivider} />
+          {selectorTab === 'individual' ? (
+            <FlatList
+              data={filteredFriends}
+              keyExtractor={(item) => item.id}
+              renderItem={renderFriendItem}
+              numColumns={SELECTOR_COLUMNS}
+              columnWrapperStyle={styles.selectorColumnWrapper}
+              style={styles.selectorListScroll}
+              contentContainerStyle={styles.selectorListContent}
+              keyboardShouldPersistTaps="handled"
+            />
+          ) : (
+            <FlatList
+              data={filteredGroups}
+              keyExtractor={(item) => item.value}
+              renderItem={renderGroupItem}
+              numColumns={SELECTOR_COLUMNS}
+              columnWrapperStyle={styles.selectorColumnWrapper}
+              style={styles.selectorListScroll}
+              contentContainerStyle={styles.selectorListContent}
+              keyboardShouldPersistTaps="handled"
+            />
+          )}
+          <View style={styles.selectorActions}>
+            <Pressable style={styles.selectorCancelButton} onPress={onCancel}>
+              <Text style={styles.selectorCancelButtonText}>キャンセル</Text>
+            </Pressable>
+            <Pressable style={styles.selectorOkButton} onPress={onConfirm}>
+              <Text style={styles.selectorOkButtonText}>OK</Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -287,6 +570,7 @@ export default function EpisodeScreen() {
   const pendingEditKeyRef = useRef<string | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
+  const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
 
   const [isFormVisible, setIsFormVisible] = useState(false);
@@ -305,10 +589,20 @@ export default function EpisodeScreen() {
   const [newPhotoUris, setNewPhotoUris] = useState<string[]>([]);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<number[]>([]);
 
+  const [selectorVisible, setSelectorVisible] = useState(false);
+  const [selectorTarget, setSelectorTarget] = useState<'participant' | 'visibility'>('participant');
+  const [selectorTab, setSelectorTab] = useState<'individual' | 'group'>('individual');
+  const [selectedIndividualIds, setSelectedIndividualIds] = useState<Set<string>>(new Set());
+  const [selectedGroupValues, setSelectedGroupValues] = useState<Set<string>>(new Set());
+  const [selectorNameFilter, setSelectorNameFilter] = useState('');
+  const [selectorAffiliationFilter, setSelectorAffiliationFilter] = useState('');
+  const [selectorExperienceFilter, setSelectorExperienceFilter] = useState('');
+
   const loadData = useCallback(() => {
     initializeDatabase();
     setFriends(getAllFriends());
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
+    setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setMyselfId(getMyself());
   }, []);
 
@@ -334,22 +628,138 @@ export default function EpisodeScreen() {
   const friendNameById = useMemo(() => buildFriendNameById(friends), [friends]);
   const episodeRows = useMemo(() => collectUniqueEpisodes(friends), [friends]);
 
-  const participantOptions: Option[] = useMemo(
-    () => friends.map((f) => ({ label: f.name, value: f.id })),
-    [friends]
-  );
-
-  const visibilityIndividualOptions: Option[] = useMemo(
-    () => friends.map((f) => ({ label: f.name, value: f.id })),
-    [friends]
-  );
-
   const visibleExistingPhotos = useMemo(
     () => photos.filter((photo) => !deletedPhotoIds.includes(photo.id)),
     [photos, deletedPhotoIds]
   );
 
   const isPhotoLimitReached = photos.length + newPhotoUris.length >= PHOTO_LIMITS.free;
+
+  const restoreSelectorFromParticipants = (participants: EpisodeParticipantDraft[]) => {
+    const individuals = new Set<string>();
+    const groups = new Set<string>();
+    participants.forEach((participant) => {
+      if (!participant.value.trim()) {
+        return;
+      }
+      if (participant.participantType === 'individual') {
+        individuals.add(participant.value);
+      } else {
+        groups.add(participant.value);
+      }
+    });
+    setSelectedIndividualIds(individuals);
+    setSelectedGroupValues(groups);
+  };
+
+  const restoreSelectorFromVisibility = (entries: EpisodeVisibilityDraft[]) => {
+    const individuals = new Set<string>();
+    const groups = new Set<string>();
+    entries.forEach((entry) => {
+      if (!entry.value.trim()) {
+        return;
+      }
+      if (entry.kind === 'individual') {
+        individuals.add(entry.value);
+      } else {
+        groups.add(entry.value);
+      }
+    });
+    setSelectedIndividualIds(individuals);
+    setSelectedGroupValues(groups);
+  };
+
+  const openParticipantSelector = () => {
+    restoreSelectorFromParticipants(episodeParticipants);
+    setSelectorTarget('participant');
+    setSelectorTab('individual');
+    setSelectorNameFilter('');
+    setSelectorAffiliationFilter('');
+    setSelectorExperienceFilter('');
+    setSelectorVisible(true);
+  };
+
+  const openVisibilitySelector = () => {
+    restoreSelectorFromVisibility(episodeVisibility);
+    setSelectorTarget('visibility');
+    setSelectorTab('individual');
+    setSelectorNameFilter('');
+    setSelectorAffiliationFilter('');
+    setSelectorExperienceFilter('');
+    setSelectorVisible(true);
+  };
+
+  const handleSelectorCancel = () => {
+    setSelectorVisible(false);
+    setSelectorNameFilter('');
+    setSelectorAffiliationFilter('');
+    setSelectorExperienceFilter('');
+  };
+
+  const handleSelectorConfirm = () => {
+    if (selectorTarget === 'participant') {
+      const mainByKey = new Map<string, boolean>();
+      episodeParticipants.forEach((participant) => {
+        if (!participant.value.trim()) {
+          return;
+        }
+        mainByKey.set(`${participant.participantType}:${participant.value}`, participant.isMain);
+      });
+      const nextParticipants: EpisodeParticipantDraft[] = [];
+      selectedIndividualIds.forEach((friendId) => {
+        const key = `individual:${friendId}`;
+        nextParticipants.push({
+          participantType: 'individual',
+          value: friendId,
+          isMain: mainByKey.get(key) ?? true,
+        });
+      });
+      selectedGroupValues.forEach((groupValue) => {
+        const key = `group:${groupValue}`;
+        nextParticipants.push({
+          participantType: 'group',
+          value: groupValue,
+          isMain: mainByKey.get(key) ?? false,
+        });
+      });
+      setEpisodeParticipants(nextParticipants);
+    } else {
+      const nextVisibility: EpisodeVisibilityDraft[] = [];
+      selectedIndividualIds.forEach((friendId) => {
+        nextVisibility.push({ kind: 'individual', value: friendId });
+      });
+      selectedGroupValues.forEach((groupValue) => {
+        nextVisibility.push({ kind: 'group', value: groupValue });
+      });
+      setEpisodeVisibility(nextVisibility);
+    }
+    setSelectorVisible(false);
+    setSelectorNameFilter('');
+  };
+
+  const toggleSelectorIndividual = (friendId: string) => {
+    setSelectedIndividualIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(friendId)) {
+        next.delete(friendId);
+      } else {
+        next.add(friendId);
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectorGroup = (groupValue: string) => {
+    setSelectedGroupValues((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupValue)) {
+        next.delete(groupValue);
+      } else {
+        next.add(groupValue);
+      }
+      return next;
+    });
+  };
 
   const resetEpisodeForm = () => {
     setEpisodeFormError('');
@@ -719,124 +1129,37 @@ export default function EpisodeScreen() {
               </View>
               <View style={styles.episodeParticipantRow}>
                 <Text style={styles.episodeParticipantLabel}>参加者</Text>
-                <Pressable
-                  style={styles.addParticipantButton}
-                  onPress={() =>
-                    setEpisodeParticipants((prev) => [
-                      ...prev,
-                      { participantType: 'individual', value: '', isMain: true },
-                    ])
-                  }
-                >
-                  <Text style={styles.addParticipantButtonText}>+ 追加</Text>
+                <Pressable style={styles.addParticipantButton} onPress={openParticipantSelector}>
+                  <Text style={styles.addParticipantButtonText}>参加者を選ぶ</Text>
                 </Pressable>
               </View>
-              {episodeParticipants.map((participant, index) => (
-                <View key={`participant-${index}`} style={styles.participantItemCard}>
-                  <View style={styles.participantTypeRow}>
-                    <Text style={styles.participantTypeLabel}>登録種別</Text>
-                    <Pressable
-                      style={[
-                        styles.roleToggleButton,
-                        participant.participantType === 'individual' && styles.roleToggleButtonActive,
-                      ]}
-                      onPress={() =>
-                        setEpisodeParticipants((prev) => {
-                          const next = [...prev];
-                          next[index] = { ...next[index], participantType: 'individual', value: '' };
-                          return next;
-                        })
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.roleToggleButtonText,
-                          participant.participantType === 'individual' && styles.roleToggleButtonTextActive,
-                        ]}
-                      >
-                        個人
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.roleToggleButton,
-                        participant.participantType === 'group' && styles.roleToggleButtonActive,
-                      ]}
-                      onPress={() =>
-                        setEpisodeParticipants((prev) => {
-                          const next = [...prev];
-                          next[index] = { ...next[index], participantType: 'group', value: '' };
-                          return next;
-                        })
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.roleToggleButtonText,
-                          participant.participantType === 'group' && styles.roleToggleButtonTextActive,
-                        ]}
-                      >
-                        所属
-                      </Text>
-                    </Pressable>
+              <Pressable style={styles.selectedEntryTagArea} onPress={openParticipantSelector}>
+                {episodeParticipants.filter((participant) => participant.value.trim().length > 0).length > 0 ? (
+                  <View style={styles.selectedEntryTagWrap}>
+                    {episodeParticipants
+                      .filter((participant) => participant.value.trim().length > 0)
+                      .map((participant, index) => {
+                        const label =
+                          participant.participantType === 'individual'
+                            ? friendNameById.get(participant.value) ?? participant.value
+                            : participant.value;
+                        return (
+                          <View
+                            key={`participant-tag-${participant.participantType}-${participant.value}-${index}`}
+                            style={[
+                              styles.episodeParticipantTag,
+                              participant.isMain && styles.episodeParticipantTagMain,
+                            ]}
+                          >
+                            <Text style={styles.episodeParticipantTagName}>{label}</Text>
+                          </View>
+                        );
+                      })}
                   </View>
-                  <View style={styles.participantItemTopRow}>
-                    <SelectInput
-                      value={participant.value}
-                      placeholder={
-                        participant.participantType === 'individual' ? '名前（選択式）' : '所属グループ（選択式）'
-                      }
-                      options={participant.participantType === 'individual' ? participantOptions : affiliationOptions}
-                      onChange={(value) =>
-                        setEpisodeParticipants((prev) => {
-                          const next = [...prev];
-                          next[index] = { ...next[index], value };
-                          return next;
-                        })
-                      }
-                      style={styles.participantNameSelect}
-                    />
-                  </View>
-                  <View style={styles.participantRoleRow}>
-                    <Text style={styles.participantRoleLabel}>メインか否か</Text>
-                    <Pressable
-                      style={[styles.roleToggleButton, participant.isMain && styles.roleToggleButtonActive]}
-                      onPress={() =>
-                        setEpisodeParticipants((prev) => {
-                          const next = [...prev];
-                          next[index] = { ...next[index], isMain: true };
-                          return next;
-                        })
-                      }
-                    >
-                      <Text
-                        style={[styles.roleToggleButtonText, participant.isMain && styles.roleToggleButtonTextActive]}
-                      >
-                        メイン
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.roleToggleButton, !participant.isMain && styles.roleToggleButtonActive]}
-                      onPress={() =>
-                        setEpisodeParticipants((prev) => {
-                          const next = [...prev];
-                          next[index] = { ...next[index], isMain: false };
-                          return next;
-                        })
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.roleToggleButtonText,
-                          !participant.isMain && styles.roleToggleButtonTextActive,
-                        ]}
-                      >
-                        サブ
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ))}
+                ) : (
+                  <Text style={styles.selectedEntryEmptyText}>参加者が選択されていません</Text>
+                )}
+              </Pressable>
               <View style={styles.episodeParticipantRow}>
                 <Text style={styles.episodeParticipantLabel}>公開設定</Text>
                 <SelectInput
@@ -850,82 +1173,36 @@ export default function EpisodeScreen() {
               </View>
               {episodeVisibilityMode === 'limited' ? (
                 <>
-              <View style={styles.episodeParticipantRow}>
-                <Text style={styles.episodeParticipantLabel}>公開先</Text>
-                <Pressable
-                  style={styles.addParticipantButton}
-                  onPress={() =>
-                    setEpisodeVisibility((prev) => [...prev, { kind: 'individual', value: '' }])
-                  }
-                >
-                  <Text style={styles.addParticipantButtonText}>+ 追加</Text>
-                </Pressable>
-              </View>
-              {episodeVisibility.map((entry, index) => (
-                <View key={`modal-vis-${index}`} style={styles.participantItemCard}>
-                  <View style={styles.participantTypeRow}>
-                    <Text style={styles.participantTypeLabel}>登録種別</Text>
-                    <Pressable
-                      style={[
-                        styles.roleToggleButton,
-                        entry.kind === 'individual' && styles.roleToggleButtonActive,
-                      ]}
-                      onPress={() =>
-                        setEpisodeVisibility((prev) => {
-                          const next = [...prev];
-                          next[index] = { ...next[index], kind: 'individual', value: '' };
-                          return next;
-                        })
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.roleToggleButtonText,
-                          entry.kind === 'individual' && styles.roleToggleButtonTextActive,
-                        ]}
-                      >
-                        個人
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.roleToggleButton, entry.kind === 'group' && styles.roleToggleButtonActive]}
-                      onPress={() =>
-                        setEpisodeVisibility((prev) => {
-                          const next = [...prev];
-                          next[index] = { ...next[index], kind: 'group', value: '' };
-                          return next;
-                        })
-                      }
-                    >
-                      <Text
-                        style={[
-                          styles.roleToggleButtonText,
-                          entry.kind === 'group' && styles.roleToggleButtonTextActive,
-                        ]}
-                      >
-                        所属
-                      </Text>
+                  <View style={styles.episodeParticipantRow}>
+                    <Text style={styles.episodeParticipantLabel}>公開先</Text>
+                    <Pressable style={styles.addParticipantButton} onPress={openVisibilitySelector}>
+                      <Text style={styles.addParticipantButtonText}>公開先を選ぶ</Text>
                     </Pressable>
                   </View>
-                  <View style={styles.participantItemTopRow}>
-                    <SelectInput
-                      value={entry.value}
-                      placeholder={
-                        entry.kind === 'individual' ? '名前（選択式）' : '所属グループ（選択式）'
-                      }
-                      options={entry.kind === 'individual' ? visibilityIndividualOptions : affiliationOptions}
-                      onChange={(value) =>
-                        setEpisodeVisibility((prev) => {
-                          const next = [...prev];
-                          next[index] = { ...next[index], value };
-                          return next;
-                        })
-                      }
-                      style={styles.participantNameSelect}
-                    />
-                  </View>
-                </View>
-              ))}
+                  <Pressable style={styles.selectedEntryTagArea} onPress={openVisibilitySelector}>
+                    {episodeVisibility.filter((entry) => entry.value.trim().length > 0).length > 0 ? (
+                      <View style={styles.selectedEntryTagWrap}>
+                        {episodeVisibility
+                          .filter((entry) => entry.value.trim().length > 0)
+                          .map((entry, index) => {
+                            const label =
+                              entry.kind === 'individual'
+                                ? friendNameById.get(entry.value) ?? entry.value
+                                : entry.value;
+                            return (
+                              <View
+                                key={`visibility-tag-${entry.kind}-${entry.value}-${index}`}
+                                style={styles.episodeParticipantTag}
+                              >
+                                <Text style={styles.episodeParticipantTagName}>{label}</Text>
+                              </View>
+                            );
+                          })}
+                      </View>
+                    ) : (
+                      <Text style={styles.selectedEntryEmptyText}>公開先が選択されていません</Text>
+                    )}
+                  </Pressable>
                 </>
               ) : null}
               <View style={styles.episodePhotoSection}>
@@ -1013,6 +1290,28 @@ export default function EpisodeScreen() {
           </KeyboardAwareScrollView>
         </View>
       )}
+
+      <EntrySelectorModal
+        visible={selectorVisible}
+        selectorTab={selectorTab}
+        onTabChange={setSelectorTab}
+        nameFilter={selectorNameFilter}
+        onNameFilterChange={setSelectorNameFilter}
+        affiliationFilter={selectorAffiliationFilter}
+        onAffiliationFilterChange={setSelectorAffiliationFilter}
+        experienceFilter={selectorExperienceFilter}
+        onExperienceFilterChange={setSelectorExperienceFilter}
+        friends={friends}
+        affiliationOptions={affiliationOptions}
+        experienceOptions={experienceOptions}
+        groupOptions={affiliationOptions}
+        selectedIndividualIds={selectedIndividualIds}
+        selectedGroupValues={selectedGroupValues}
+        onToggleIndividual={toggleSelectorIndividual}
+        onToggleGroup={toggleSelectorGroup}
+        onCancel={handleSelectorCancel}
+        onConfirm={handleSelectorConfirm}
+      />
 
     </SafeAreaView>
   );
@@ -1424,6 +1723,246 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     fontSize: 12,
     fontWeight: '700',
+  },
+  selectedEntryTagArea: {
+    borderColor: '#cbd5e1',
+    borderWidth: 1,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    padding: 8,
+    marginBottom: 8,
+  },
+  selectedEntryTagWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  selectedEntryEmptyText: {
+    fontSize: 13,
+    color: '#94a3b8',
+  },
+  selectorOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  selectorCard: {
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 20,
+    maxHeight: '85%',
+  },
+  selectorTabRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+  selectorTabButton: {
+    flex: 1,
+    backgroundColor: '#e2e8f0',
+    borderColor: '#94a3b8',
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  selectorTabButtonActive: {
+    backgroundColor: '#67e8f9',
+    borderColor: '#0891b2',
+  },
+  selectorTabButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  selectorTabButtonTextActive: {
+    color: '#083344',
+  },
+  selectorDivider: {
+    height: 1,
+    backgroundColor: '#e2e8f0',
+    marginBottom: 10,
+  },
+  selectorNameInput: {
+    minHeight: 38,
+    borderColor: '#cbd5e1',
+    borderWidth: 1,
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    color: '#0f172a',
+    paddingHorizontal: 10,
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  selectorFilterRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 10,
+  },
+  selectorFilterNameContainer: {
+    flex: 1,
+  },
+  selectorFilterNameInput: {
+    borderWidth: 1,
+    borderColor: '#94a3b8',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: '#111827',
+  },
+  selectorFilterSelectContainer: {
+    flex: 1,
+  },
+  selectorFilterSelectButton: {
+    borderWidth: 1,
+    borderColor: '#94a3b8',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectorFilterSelectValue: {
+    fontSize: 13,
+    color: '#111827',
+    flex: 1,
+  },
+  selectorFilterSelectPlaceholder: {
+    fontSize: 13,
+    color: '#6b7280',
+    flex: 1,
+  },
+  selectorFilterSelectChevron: {
+    fontSize: 10,
+    color: '#475569',
+    marginLeft: 4,
+  },
+  selectorFilterModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  selectorFilterModalCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 14,
+    maxHeight: '70%',
+  },
+  selectorFilterModalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+    marginBottom: 10,
+  },
+  selectorFilterModalOptions: {
+    marginBottom: 10,
+  },
+  selectorFilterModalOption: {
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  selectorFilterModalOptionSelected: {
+    backgroundColor: '#e0f2fe',
+  },
+  selectorFilterModalOptionText: {
+    fontSize: 14,
+    color: '#1e293b',
+  },
+  selectorFilterModalCloseButton: {
+    alignSelf: 'flex-end',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    backgroundColor: '#e2e8f0',
+  },
+  selectorFilterModalCloseButtonText: {
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  selectorListScroll: {
+    maxHeight: 320,
+    marginBottom: 12,
+  },
+  selectorListContent: {
+    paddingBottom: 8,
+  },
+  selectorColumnWrapper: {
+    gap: SELECTOR_GAP,
+    marginBottom: SELECTOR_GAP,
+  },
+  selectorPersonRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 2,
+    borderColor: '#d0d0d0',
+    borderRadius: 8,
+    backgroundColor: '#fafafa',
+    paddingHorizontal: 8,
+    paddingVertical: 10,
+  },
+  selectorPersonName: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#333',
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderWidth: 2,
+    borderColor: '#94a3b8',
+    borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+  },
+  checkboxChecked: {
+    backgroundColor: '#e8f5e9',
+    borderColor: '#4caf50',
+  },
+  checkmark: {
+    color: '#2e7d32',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  selectorActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  selectorCancelButton: {
+    backgroundColor: '#e2e8f0',
+    borderColor: '#94a3b8',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  selectorCancelButtonText: {
+    color: '#0f172a',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  selectorOkButton: {
+    backgroundColor: '#67e8f9',
+    borderColor: '#0891b2',
+    borderWidth: 1,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  selectorOkButtonText: {
+    color: '#083344',
+    fontWeight: '700',
+    fontSize: 13,
   },
   participantItemCard: {
     borderColor: '#cbd5e1',
