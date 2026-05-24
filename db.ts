@@ -235,6 +235,40 @@ const fromEpisodeJson = (value: string): Episode[] => {
   }
 };
 
+const backfillEpisodeAuthorFriendIds = (myselfId: string): void => {
+  const rows = db.getAllSync<{ id: string; episodes: string }>(
+    `SELECT id, episodes FROM ${PROFILES_TABLE} WHERE isDefault = 1;`
+  );
+  const timestamp = nowIso();
+
+  db.execSync('BEGIN IMMEDIATE;');
+  try {
+    rows.forEach((row) => {
+      const episodes = fromEpisodeJson(row.episodes);
+      let changed = false;
+      const nextEpisodes = episodes.map((episode) => {
+        if (episode.authorFriendId !== '') {
+          return episode;
+        }
+        changed = true;
+        return { ...episode, authorFriendId: myselfId };
+      });
+      if (!changed) {
+        return;
+      }
+      db.runSync(`UPDATE ${PROFILES_TABLE} SET episodes = ?, updatedAt = ? WHERE id = ?;`, [
+        toEpisodeJson(nextEpisodes),
+        timestamp,
+        row.id,
+      ]);
+    });
+    db.execSync('COMMIT;');
+  } catch {
+    db.execSync('ROLLBACK;');
+    throw new Error('FriendDex: authorFriendId バックフィルに失敗しました');
+  }
+};
+
 const rowToProfile = (row: ProfileRow): Profile => ({
   id: row.id,
   friendId: row.friendId,
@@ -514,6 +548,11 @@ export const initializeDatabase = (): void => {
       db.execSync('ROLLBACK;');
       throw new Error('FriendDex: friends → friend_profiles 移行に失敗しました');
     }
+  }
+
+  const myselfId = getMyself();
+  if (myselfId) {
+    backfillEpisodeAuthorFriendIds(myselfId);
   }
 };
 
