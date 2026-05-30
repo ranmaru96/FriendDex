@@ -23,7 +23,6 @@ import {
   deleteSaying,
   deleteEpisode,
   getAllFriends,
-  getEpisodePhotos,
   getFriendById,
   getMyself,
   getProfilesByFriendId,
@@ -33,7 +32,8 @@ import {
   updateEpisode,
   updateSaying,
 } from './db';
-import { Episode, EpisodeParticipant, EpisodePhoto, EpisodeVisibilityEntry, Friend, Profile, Saying } from './types';
+import { Episode, EpisodeParticipant, EpisodeVisibilityEntry, Friend, Profile, Saying } from './types';
+import { buildParticipantChips, getVisibilityModeLabel, visibilityModeTagStyles } from './utils/episodeHelpers';
 
 type KeyValueRowProps = {
   label: string;
@@ -58,6 +58,14 @@ const parseDateString = (s: string): Date => {
     return new Date(parts[0], parts[1] - 1, parts[2]);
   }
   return new Date();
+};
+
+const formatEpisodeDateForCard = (date: string): string => {
+  if (!date.trim()) return '-';
+  const parts = date.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return '-';
+  const [, month, day] = parts;
+  return `${month}月${day}日`;
 };
 
 type DetailTabKey = '情報' | 'エピソード' | '習性' | 'メモ' | '彼曰く';
@@ -208,8 +216,6 @@ export default function DetailScreen() {
   const [sayingDate, setSayingDate] = useState('');
   const [sayingInputHeight, setSayingInputHeight] = useState(48);
   const [sayingFormError, setSayingFormError] = useState('');
-  const [episodePhotosMap, setEpisodePhotosMap] = useState<Record<string, EpisodePhoto[]>>({});
-  const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null);
 
   const friendId = useMemo(() => {
     if (Array.isArray(params.id)) {
@@ -282,8 +288,6 @@ export default function DetailScreen() {
     setSayingDate('');
     setSayingInputHeight(48);
     setSayingFormError('');
-    setEpisodePhotosMap({});
-    setLightboxPhoto(null);
   }, [friendId]);
 
   const friendNameById = useMemo(() => {
@@ -356,45 +360,6 @@ export default function DetailScreen() {
     return [...friend.episodes].sort((a, b) => b.date.localeCompare(a.date));
   }, [friend]);
 
-  const renderableParticipantsByEpisode = useMemo(() => {
-    const map = new Map<
-      string,
-      {
-        id: string;
-        label: string;
-        isMain: boolean;
-      }[]
-    >();
-
-    sortedEpisodes.forEach((episode) => {
-      const entries: EpisodeParticipant[] =
-        episode.participantEntries && episode.participantEntries.length > 0
-          ? episode.participantEntries
-          : [
-              ...episode.mainParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: true })),
-              ...episode.subParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: false })),
-            ];
-      const unique = new Map<string, { id: string; label: string; isMain: boolean }>();
-      entries.forEach((entry) => {
-        if (entry.kind === 'individual' && entry.value === friendId) {
-          return;
-        }
-        const key = `${entry.kind}:${entry.value}`;
-        if (!entry.value.trim()) return;
-        if (!unique.has(key) || entry.isMain) {
-          unique.set(key, {
-            id: key,
-            label: entry.kind === 'group' ? entry.value : friendNameById.get(entry.value) ?? entry.value,
-            isMain: entry.isMain,
-          });
-        }
-      });
-      map.set(episode.id, Array.from(unique.values()));
-    });
-
-    return map;
-  }, [friendNameById, sortedEpisodes]);
-
   const filteredEpisodes = useMemo(() => {
     return sortedEpisodes.filter((episode) => {
       if (episodeRoleFilter === 'main' && !episode.mainParticipants.includes(friendId)) {
@@ -417,17 +382,6 @@ export default function DetailScreen() {
       return true;
     });
   }, [episodeOtherParticipantFilter, episodeRoleFilter, episodeTitleFilter, friendId, sortedEpisodes]);
-
-  useEffect(() => {
-    if (activeTab !== 'エピソード') {
-      return;
-    }
-    const map: Record<string, EpisodePhoto[]> = {};
-    filteredEpisodes.forEach((episode) => {
-      map[episode.id] = getEpisodePhotos(episode.id);
-    });
-    setEpisodePhotosMap(map);
-  }, [activeTab, filteredEpisodes]);
 
   const sortedSayings = useMemo(() => {
     if (!friend) return [];
@@ -1304,88 +1258,78 @@ export default function DetailScreen() {
             {filteredEpisodes.length === 0 ? (
               <Text style={styles.emptyEpisodeText}>該当するエピソードはありません。</Text>
             ) : (
-              filteredEpisodes.map((episode) => (
-                <View
-                  key={episode.id}
-                  style={[
-                    styles.episodeCard,
-                    !episode.mainParticipants.includes(friend.id) && styles.episodeCardSubBackground,
-                  ]}
-                >
-                  <View style={styles.episodeCardHeaderRow}>
-                    <Text style={styles.episodeCardTitle}>{episode.title || '-'}</Text>
-                    <View style={styles.episodeCardActions}>
-                      <Pressable style={styles.episodeCardEditButton} onPress={() => startEditEpisode(episode)}>
-                        <Text style={styles.episodeCardEditButtonText}>編集</Text>
-                      </Pressable>
-                      <Pressable style={styles.episodeCardDeleteButton} onPress={() => handleDeleteEpisode(episode.id)}>
-                        <Text style={styles.episodeCardDeleteButtonText}>削除</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                  <View style={styles.episodeCardMetaRow}>
-                    <View style={styles.episodeParticipantTagWrap}>
-                      {(renderableParticipantsByEpisode.get(episode.id) ?? []).map((participant) => {
-                        return (
-                          <View
-                            key={`${episode.id}-${participant.id}`}
-                            style={[
-                              styles.episodeParticipantTag,
-                              participant.isMain && styles.episodeParticipantTagMain,
-                            ]}
-                          >
-                            <Text style={styles.episodeParticipantTagName}>{participant.label}</Text>
-                          </View>
-                        );
-                      })}
-                    </View>
-                    <Text style={styles.episodeCardDate}>{episode.date || '-'}</Text>
-                  </View>
-                  <View style={styles.episodeVisibilityMetaRow}>
-                    <Text style={styles.episodeVisibilityMetaLabel}>公開範囲</Text>
-                    <View style={styles.episodeParticipantTagWrap}>
-                      {(episode.visibilityEntries ?? []).length === 0 ? (
-                        <Text style={styles.episodeVisibilityEmpty}>—</Text>
-                      ) : (
-                        (episode.visibilityEntries ?? []).map((entry) => {
-                          const label =
-                            entry.kind === 'group'
-                              ? entry.value
-                              : friendNameById.get(entry.value) ?? entry.value;
-                          return (
-                            <View
-                              key={`${episode.id}-vis-${entry.kind}-${entry.value}`}
-                              style={styles.episodeParticipantTag}
-                            >
-                              <Text style={styles.episodeParticipantTagName}>{label}</Text>
-                            </View>
-                          );
-                        })
-                      )}
-                    </View>
-                  </View>
-                  {(episodePhotosMap[episode.id] ?? []).length > 0 ? (
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.episodePhotoThumbScroll}
-                      contentContainerStyle={styles.episodePhotoThumbRow}
+              filteredEpisodes.map((episode) => {
+                const isMyEpisode = myselfId !== null && episode.authorFriendId === myselfId;
+                const chips = buildParticipantChips(episode, friendNameById);
+                const modeStyles = isMyEpisode ? visibilityModeTagStyles(episode.visibilityMode) : null;
+                const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
+
+                return (
+                  <Pressable
+                    key={episode.id}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/episode-detail',
+                        params: {
+                          episodeId: episode.id,
+                          ownerId: episode.authorFriendId || friend.id,
+                        },
+                      })
+                    }
+                  >
+                    <View
+                      style={[
+                        styles.episodeCard,
+                        !episode.mainParticipants.includes(friend.id) && styles.episodeCardSubBackground,
+                      ]}
                     >
-                      {(episodePhotosMap[episode.id] ?? []).map((photo) => (
-                        <Pressable
-                          key={`${episode.id}-photo-${photo.id}`}
-                          onPress={() => setLightboxPhoto(photo.photoUri)}
-                        >
-                          <Image source={{ uri: photo.photoUri }} style={styles.episodePhotoThumb} />
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  ) : null}
-                  <View style={styles.episodeDescriptionBox}>
-                    <Text style={styles.episodeDescriptionText}>{episode.description || '-'}</Text>
-                  </View>
-                </View>
-              ))
+                      <View style={styles.episodeCardRow1}>
+                        <View style={styles.titlePill}>
+                          <Text style={styles.titlePillText} numberOfLines={1}>
+                            {episode.title || '-'}
+                          </Text>
+                        </View>
+                        <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(episode.date)}</Text>
+                        {isMyEpisode && modeStyles ? (
+                          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
+                            <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
+                              {getVisibilityModeLabel(episode.visibilityMode)}
+                            </Text>
+                          </View>
+                        ) : !isMyEpisode ? (
+                          <View style={styles.episodeParticipantTag}>
+                            <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
+                              {posterName || '-'}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      {chips.length > 0 ? (
+                        <View style={styles.episodeCardRow2}>
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.episodeParticipantTagScroll}
+                            contentContainerStyle={styles.episodeParticipantTagWrap}
+                          >
+                            {chips.map((participant) => (
+                              <View
+                                key={participant.id}
+                                style={[
+                                  styles.episodeParticipantTag,
+                                  participant.isMain && styles.episodeParticipantTagMain,
+                                ]}
+                              >
+                                <Text style={styles.episodeParticipantTagName}>{participant.label}</Text>
+                              </View>
+                            ))}
+                          </ScrollView>
+                        </View>
+                      ) : null}
+                    </View>
+                  </Pressable>
+                );
+              })
             )}
             </View>
           )}
@@ -1478,23 +1422,6 @@ export default function DetailScreen() {
           </View>
         </View>
       </KeyboardAwareScrollView>
-
-      <Modal
-        transparent
-        animationType="fade"
-        visible={lightboxPhoto !== null}
-        onRequestClose={() => setLightboxPhoto(null)}
-      >
-        <View style={styles.lightboxBackdrop}>
-          <Pressable style={styles.lightboxBackdropPress} onPress={() => setLightboxPhoto(null)} />
-          {lightboxPhoto ? (
-            <Image source={{ uri: lightboxPhoto }} style={styles.lightboxImage} resizeMode="contain" />
-          ) : null}
-          <Pressable style={styles.lightboxCloseButton} onPress={() => setLightboxPhoto(null)}>
-            <Text style={styles.lightboxCloseButtonText}>閉じる</Text>
-          </Pressable>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -2030,54 +1957,42 @@ const styles = StyleSheet.create({
   episodeCardSubBackground: {
     backgroundColor: '#f1f5f9',
   },
-  episodeCardTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
-  episodeCardHeaderRow: {
+  episodeCardRow1: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
     gap: 8,
-  },
-  episodeCardMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     marginBottom: 8,
-    gap: 8,
   },
-  episodeVisibilityMetaRow: {
+  episodeCardRow2: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 8,
-    marginBottom: 8,
   },
-  episodeVisibilityMetaLabel: {
-    fontSize: 12,
+  titlePill: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: '#e5e7eb',
+    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  titlePillText: {
+    fontSize: 15,
     fontWeight: '700',
+    color: '#1e293b',
+  },
+  episodeCardDateText: {
+    fontSize: 12,
     color: '#64748b',
-    paddingTop: 4,
-    width: 64,
+    flexShrink: 0,
   },
-  episodeVisibilityEmpty: {
-    fontSize: 13,
-    color: '#94a3b8',
-    paddingTop: 4,
-  },
-  episodeCardDate: {
-    fontSize: 13,
-    fontWeight: 'normal',
-    color: '#9ca3af',
+  episodeParticipantTagScroll: {
+    flex: 1,
+    minWidth: 0,
   },
   episodeParticipantTagWrap: {
     flexDirection: 'row',
-    flexWrap: 'nowrap',
-    justifyContent: 'flex-start',
-    flex: 1,
+    alignItems: 'center',
     gap: 6,
   },
   episodeParticipantTag: {
@@ -2099,91 +2014,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#0f172a',
   },
-  episodeDescriptionText: {
-    fontSize: 14,
-    lineHeight: 20,
-    color: '#1e293b',
-  },
-  episodePhotoThumbScroll: {
-    marginBottom: 8,
-  },
-  episodePhotoThumbRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingVertical: 2,
-  },
-  episodePhotoThumb: {
-    width: 80,
-    height: 80,
-    borderRadius: 10,
+  visibilityModeTag: {
+    flexShrink: 0,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    backgroundColor: '#f1f5f9',
-  },
-  episodeDescriptionBox: {
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 8,
-  },
-  lightboxBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.92)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 48,
-  },
-  lightboxBackdropPress: {
-    ...StyleSheet.absoluteFillObject,
-  },
-  lightboxImage: {
-    width: '100%',
-    height: '80%',
-  },
-  lightboxCloseButton: {
-    position: 'absolute',
-    top: 52,
-    right: 16,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  lightboxCloseButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  episodeCardActions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  episodeCardEditButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeCardEditButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  episodeCardDeleteButton: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#ef4444',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeCardDeleteButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#991b1b',
   },
   emptyEpisodeText: {
     fontSize: 13,

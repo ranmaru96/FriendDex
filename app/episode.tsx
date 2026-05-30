@@ -440,7 +440,10 @@ function collectUniqueEpisodes(friends: Friend[]): EpisodeRow[] {
   sortedFriends.forEach((friend) => {
     friend.episodes.forEach((episode) => {
       if (!byId.has(episode.id)) {
-        byId.set(episode.id, { episode, recordOwnerId: friend.id });
+        byId.set(episode.id, {
+          episode,
+          recordOwnerId: episode.authorFriendId || friend.id,
+        });
       }
     });
   });
@@ -797,9 +800,7 @@ export default function EpisodeScreen() {
             ...episode.mainParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: true })),
             ...episode.subParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: false })),
           ];
-    const participantDrafts: EpisodeParticipantDraft[] = entries
-      .filter((entry) => !(entry.kind === 'individual' && entry.value === recordOwnerId))
-      .map((entry) => ({
+    const participantDrafts: EpisodeParticipantDraft[] = entries.map((entry) => ({
         participantType: entry.kind,
         value: entry.value,
         isMain: entry.isMain,

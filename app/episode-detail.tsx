@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -30,6 +30,38 @@ import {
 } from '../utils/episodeHelpers';
 
 const LIST_HORIZONTAL_INSET = 12;
+const PHOTO_GAP = 6;
+
+type PhotoDimensions = {
+  width: number;
+  height: number;
+};
+
+const PHOTO_FALLBACK_SIZE: PhotoDimensions = {
+  width: 4,
+  height: 5,
+};
+
+const resolvePhotoSize = (uri: string): Promise<PhotoDimensions> =>
+  new Promise((resolve) => {
+    Image.getSize(
+      uri,
+      (width, height) => {
+        if (width > 0 && height > 0) {
+          resolve({ width, height });
+          return;
+        }
+        resolve(PHOTO_FALLBACK_SIZE);
+      },
+      () => resolve(PHOTO_FALLBACK_SIZE)
+    );
+  });
+
+const getWidthForFixedHeight = (targetHeight: number, size?: PhotoDimensions): number => {
+  const width = size?.width ?? PHOTO_FALLBACK_SIZE.width;
+  const height = size?.height ?? PHOTO_FALLBACK_SIZE.height;
+  return targetHeight * (width / height);
+};
 
 const formatEpisodeDateForCard = (date: string): string => {
   if (!date.trim()) return '-';
@@ -44,6 +76,7 @@ export default function EpisodeDetailScreen() {
   const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string }>();
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
+  const [photoSizes, setPhotoSizes] = useState<Record<string, PhotoDimensions>>({});
   const [myselfId, setMyselfId] = useState<string | null>(null);
   const [friendNameById, setFriendNameById] = useState<Map<string, string>>(new Map());
   const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null);
@@ -58,7 +91,7 @@ export default function EpisodeDetailScreen() {
     return params.ownerId ?? '';
   }, [params.ownerId]);
 
-  const photoPageWidth = Dimensions.get('window').width - LIST_HORIZONTAL_INSET * 2;
+  const photoAreaWidth = Dimensions.get('window').width - LIST_HORIZONTAL_INSET * 2;
 
   const loadData = useCallback(() => {
     initializeDatabase();
@@ -82,6 +115,37 @@ export default function EpisodeDetailScreen() {
     }, [loadData])
   );
 
+  useEffect(() => {
+    if (photos.length === 0) {
+      return;
+    }
+
+    let active = true;
+    const missingPhotos = photos.filter((photo) => !photoSizes[photo.photoUri]);
+    if (missingPhotos.length === 0) {
+      return;
+    }
+
+    Promise.all(
+      missingPhotos.map(async (photo) => [photo.photoUri, await resolvePhotoSize(photo.photoUri)] as const)
+    ).then((entries) => {
+      if (!active) {
+        return;
+      }
+      setPhotoSizes((prev) => {
+        const next = { ...prev };
+        entries.forEach(([uri, size]) => {
+          next[uri] = size;
+        });
+        return next;
+      });
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [photoSizes, photos]);
+
   const chips = useMemo(
     () => (episode ? buildParticipantChips(episode, friendNameById) : []),
     [episode, friendNameById]
@@ -95,6 +159,24 @@ export default function EpisodeDetailScreen() {
   const showVisibilityTargets =
     episode?.visibilityMode === 'limited' && visibility.length > 0;
   const isOwner = myselfId !== null && episode?.authorFriendId === myselfId;
+  const basePhotoHeight = useMemo(() => (photoAreaWidth * 3) / 4, [photoAreaWidth]);
+
+  const renderPhotoFrame = (photo: EpisodePhoto, index: number) => (
+    <Pressable
+      key={photo.id}
+      style={[
+        styles.photoFrame,
+        index > 0 ? styles.photoFrameSpaced : null,
+        {
+          width: getWidthForFixedHeight(basePhotoHeight, photoSizes[photo.photoUri]),
+          height: basePhotoHeight,
+        },
+      ]}
+      onPress={() => setLightboxPhoto(photo.photoUri)}
+    >
+      <Image source={{ uri: photo.photoUri }} style={styles.photoImage} resizeMode="contain" />
+    </Pressable>
+  );
 
   const handleEdit = () => {
     router.push({
@@ -203,25 +285,15 @@ export default function EpisodeDetailScreen() {
 
         {photos.length > 0 ? (
           <View style={styles.photoSection}>
-            <ScrollView
-              horizontal
-              pagingEnabled
-              showsHorizontalScrollIndicator={false}
-              decelerationRate="fast"
-              snapToInterval={photoPageWidth}
-              snapToAlignment="start"
-              contentContainerStyle={styles.photoScrollContent}
-            >
-              {photos.map((photo) => (
-                <Pressable
-                  key={photo.id}
-                  style={[styles.photoPage, { width: photoPageWidth }]}
-                  onPress={() => setLightboxPhoto(photo.photoUri)}
-                >
-                  <Image source={{ uri: photo.photoUri }} style={styles.photoImage} resizeMode="cover" />
-                </Pressable>
-              ))}
-            </ScrollView>
+            <View style={[styles.photoViewport, { height: basePhotoHeight }]}>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.photoScrollContent}
+              >
+                {photos.map((photo, index) => renderPhotoFrame(photo, index))}
+              </ScrollView>
+            </View>
           </View>
         ) : null}
 
@@ -422,20 +494,31 @@ const styles = StyleSheet.create({
   photoSection: {
     marginBottom: 12,
   },
+  photoViewport: {
+    width: '100%',
+    backgroundColor: 'transparent',
+    overflow: 'visible',
+  },
   photoScrollContent: {
     alignItems: 'center',
+    minHeight: '100%',
   },
-  photoPage: {
-    justifyContent: 'center',
+  photoFrame: {
+    justifyContent: 'flex-start',
     alignItems: 'center',
-  },
-  photoImage: {
-    width: '100%',
-    aspectRatio: 4 / 5,
+    backgroundColor: '#000',
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#cbd5e1',
-    backgroundColor: '#f1f5f9',
+    overflow: 'hidden',
+  },
+  photoFrameSpaced: {
+    marginLeft: PHOTO_GAP,
+  },
+  photoImage: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#000',
   },
   privateMemoSection: {
     backgroundColor: '#ffffff',
