@@ -73,11 +73,9 @@ type Option = {
   label: string;
   value: string;
 };
-type RoleFilter = 'all' | 'main' | 'not-main';
 type EpisodeParticipantDraft = {
   participantType: 'individual' | 'group';
   value: string;
-  isMain: boolean;
 };
 
 type EpisodeVisibilityDraft = {
@@ -194,8 +192,6 @@ export default function DetailScreen() {
   const [habitInputHeight, setHabitInputHeight] = useState(48);
   const [habitFormError, setHabitFormError] = useState('');
   const [allFriends, setAllFriends] = useState<Friend[]>([]);
-  const [episodeRoleDraft, setEpisodeRoleDraft] = useState<RoleFilter>('all');
-  const [episodeRoleFilter, setEpisodeRoleFilter] = useState<RoleFilter>('all');
   const [episodeOtherParticipantDraft, setEpisodeOtherParticipantDraft] = useState('');
   const [episodeOtherParticipantFilter, setEpisodeOtherParticipantFilter] = useState('');
   const [episodeTitleDraft, setEpisodeTitleDraft] = useState('');
@@ -206,7 +202,6 @@ export default function DetailScreen() {
   const [newEpisodeDate, setNewEpisodeDate] = useState('');
   const [showEpisodeDatePicker, setShowEpisodeDatePicker] = useState(false);
   const [newEpisodeDescription, setNewEpisodeDescription] = useState('');
-  const [isOwnerMainRole, setIsOwnerMainRole] = useState(true);
   const [episodeParticipants, setEpisodeParticipants] = useState<EpisodeParticipantDraft[]>([]);
   const [episodeVisibility, setEpisodeVisibility] = useState<EpisodeVisibilityDraft[]>([]);
   const [episodeFormError, setEpisodeFormError] = useState('');
@@ -267,8 +262,6 @@ export default function DetailScreen() {
     setHabitText('');
     setHabitInputHeight(48);
     setHabitFormError('');
-    setEpisodeRoleDraft('all');
-    setEpisodeRoleFilter('all');
     setEpisodeOtherParticipantDraft('');
     setEpisodeOtherParticipantFilter('');
     setEpisodeTitleDraft('');
@@ -278,7 +271,6 @@ export default function DetailScreen() {
     setNewEpisodeTitle('');
     setNewEpisodeDate('');
     setNewEpisodeDescription('');
-    setIsOwnerMainRole(true);
     setEpisodeParticipants([]);
     setEpisodeVisibility([]);
     setEpisodeFormError('');
@@ -362,12 +354,6 @@ export default function DetailScreen() {
 
   const filteredEpisodes = useMemo(() => {
     return sortedEpisodes.filter((episode) => {
-      if (episodeRoleFilter === 'main' && !episode.mainParticipants.includes(friendId)) {
-        return false;
-      }
-      if (episodeRoleFilter === 'not-main' && episode.mainParticipants.includes(friendId)) {
-        return false;
-      }
       if (episodeOtherParticipantFilter) {
         const participants = [...episode.mainParticipants, ...episode.subParticipants];
         if (!participants.includes(episodeOtherParticipantFilter)) {
@@ -381,7 +367,7 @@ export default function DetailScreen() {
       }
       return true;
     });
-  }, [episodeOtherParticipantFilter, episodeRoleFilter, episodeTitleFilter, friendId, sortedEpisodes]);
+  }, [episodeOtherParticipantFilter, episodeTitleFilter, sortedEpisodes]);
 
   const sortedSayings = useMemo(() => {
     if (!friend) return [];
@@ -393,16 +379,7 @@ export default function DetailScreen() {
     });
   }, [friend]);
 
-  const roleOptions: Option[] = useMemo(
-    () => [
-      { label: 'メイン', value: 'main' },
-      { label: 'サブ', value: 'not-main' },
-    ],
-    []
-  );
-
   const handleEpisodeSearch = () => {
-    setEpisodeRoleFilter(episodeRoleDraft);
     setEpisodeOtherParticipantFilter(episodeOtherParticipantDraft);
     setEpisodeTitleFilter(episodeTitleDraft);
   };
@@ -593,7 +570,6 @@ export default function DetailScreen() {
     setNewEpisodeDate(formatDateToYMD(new Date()));
     setShowEpisodeDatePicker(false);
     setNewEpisodeDescription('');
-    setIsOwnerMainRole(true);
     setEpisodeParticipants([]);
     setEpisodeVisibility([]);
   };
@@ -611,16 +587,16 @@ export default function DetailScreen() {
             ...episode.mainParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: true })),
             ...episode.subParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: false })),
           ];
-    const participantDrafts: EpisodeParticipantDraft[] = entries.map((entry) => ({
+    const participantDrafts: EpisodeParticipantDraft[] = entries
+      .filter((entry) => !(entry.kind === 'individual' && entry.value === friendId))
+      .map((entry) => ({
         participantType: entry.kind,
         value: entry.value,
-        isMain: entry.isMain,
       }));
     setEditingEpisodeId(episode.id);
     setNewEpisodeTitle(episode.title);
     setNewEpisodeDate(episode.date);
     setNewEpisodeDescription(episode.description);
-    setIsOwnerMainRole(episode.mainParticipants.includes(friendId));
     setEpisodeParticipants(participantDrafts);
     setEpisodeVisibility(
       (episode.visibilityEntries ?? []).map((entry) => ({
@@ -676,7 +652,7 @@ export default function DetailScreen() {
       .map((participant) => ({
         kind: participant.participantType,
         value: participant.value,
-        isMain: participant.isMain,
+        isMain: true,
       }));
     const visibilityEntries: EpisodeVisibilityEntry[] = episodeVisibility
       .filter((entry) => entry.value.trim().length > 0)
@@ -689,8 +665,8 @@ export default function DetailScreen() {
       : null;
     const visibilityMode =
       visibilityEntries.length > 0 ? 'limited' : (previousEpisode?.visibilityMode ?? 'private');
-    const mainParticipants = isOwnerMainRole ? [friend.id] : [];
-    const subParticipants = isOwnerMainRole ? [] : [friend.id];
+    const mainParticipants = [friend.id];
+    const subParticipants: string[] = [];
     if (editingEpisodeId) {
       const updated = updateEpisode(friend.id, editingEpisodeId, {
         title,
@@ -935,13 +911,6 @@ export default function DetailScreen() {
             <View style={styles.tabPane}>
             <View style={styles.episodeSearchRow}>
               <SelectInput
-                value={episodeRoleDraft === 'all' ? '' : episodeRoleDraft}
-                placeholder="全て"
-                options={roleOptions}
-                onChange={(value) => setEpisodeRoleDraft((value as RoleFilter) || 'all')}
-                style={styles.episodeSearchCell}
-              />
-              <SelectInput
                 value={episodeOtherParticipantDraft}
                 placeholder="メンバー"
                 options={participantOptions}
@@ -1012,27 +981,6 @@ export default function DetailScreen() {
                     </Pressable>
                   </View>
                 )}
-                <View style={styles.ownerRoleRow}>
-                  <Text style={styles.ownerRoleLabel}>本人がメインか</Text>
-                  <Pressable
-                    style={[styles.roleToggleButton, isOwnerMainRole && styles.roleToggleButtonActive]}
-                    onPress={() => setIsOwnerMainRole(true)}
-                  >
-                    <Text style={[styles.roleToggleButtonText, isOwnerMainRole && styles.roleToggleButtonTextActive]}>
-                      メイン
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.roleToggleButton, !isOwnerMainRole && styles.roleToggleButtonActive]}
-                    onPress={() => setIsOwnerMainRole(false)}
-                  >
-                    <Text
-                      style={[styles.roleToggleButtonText, !isOwnerMainRole && styles.roleToggleButtonTextActive]}
-                    >
-                      サブ
-                    </Text>
-                  </Pressable>
-                </View>
                 <View style={styles.episodeParticipantRow}>
                   <Text style={styles.episodeParticipantLabel}>参加者</Text>
                   <Pressable
@@ -1040,7 +988,7 @@ export default function DetailScreen() {
                     onPress={() =>
                       setEpisodeParticipants((prev) => [
                         ...prev,
-                        { participantType: 'individual', value: '', isMain: true },
+                        { participantType: 'individual', value: '' },
                       ])
                     }
                   >
@@ -1112,44 +1060,6 @@ export default function DetailScreen() {
                         }
                         style={styles.participantNameSelect}
                       />
-                    </View>
-                    <View style={styles.participantRoleRow}>
-                      <Text style={styles.participantRoleLabel}>メインか否か</Text>
-                      <Pressable
-                        style={[styles.roleToggleButton, participant.isMain && styles.roleToggleButtonActive]}
-                        onPress={() =>
-                          setEpisodeParticipants((prev) => {
-                            const next = [...prev];
-                            next[index] = { ...next[index], isMain: true };
-                            return next;
-                          })
-                        }
-                      >
-                        <Text
-                          style={[styles.roleToggleButtonText, participant.isMain && styles.roleToggleButtonTextActive]}
-                        >
-                          メイン
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.roleToggleButton, !participant.isMain && styles.roleToggleButtonActive]}
-                        onPress={() =>
-                          setEpisodeParticipants((prev) => {
-                            const next = [...prev];
-                            next[index] = { ...next[index], isMain: false };
-                            return next;
-                          })
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.roleToggleButtonText,
-                            !participant.isMain && styles.roleToggleButtonTextActive,
-                          ]}
-                        >
-                          サブ
-                        </Text>
-                      </Pressable>
                     </View>
                   </View>
                 ))}
@@ -1277,12 +1187,7 @@ export default function DetailScreen() {
                       })
                     }
                   >
-                    <View
-                      style={[
-                        styles.episodeCard,
-                        !episode.mainParticipants.includes(friend.id) && styles.episodeCardSubBackground,
-                      ]}
-                    >
+                    <View style={styles.episodeCard}>
                       <View style={styles.episodeCardRow1}>
                         <View style={styles.titlePill}>
                           <Text style={styles.titlePillText} numberOfLines={1}>
@@ -1313,13 +1218,7 @@ export default function DetailScreen() {
                             contentContainerStyle={styles.episodeParticipantTagWrap}
                           >
                             {chips.map((participant) => (
-                              <View
-                                key={participant.id}
-                                style={[
-                                  styles.episodeParticipantTag,
-                                  participant.isMain && styles.episodeParticipantTagMain,
-                                ]}
-                              >
+                              <View key={participant.id} style={styles.episodeParticipantTag}>
                                 <Text style={styles.episodeParticipantTagName}>{participant.label}</Text>
                               </View>
                             ))}

@@ -259,10 +259,7 @@ export default function EpisodeDetailScreen() {
             <View style={styles.episodeCardRow2}>
               <View style={styles.episodeParticipantTagWrap}>
                 {chips.map((p) => (
-                  <View
-                    key={p.id}
-                    style={[styles.episodeParticipantTag, p.isMain && styles.episodeParticipantTagMain]}
-                  >
+                  <View key={p.id} style={styles.episodeParticipantTag}>
                     <Text style={styles.episodeParticipantTagName}>{p.label}</Text>
                   </View>
                 ))}

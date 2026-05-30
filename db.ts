@@ -952,12 +952,8 @@ const resolveParticipantsFromEntries = (
     const targetIds =
       entry.kind === 'individual' ? [entry.value] : collectAffiliationMemberIds(rows, entry.value);
     targetIds.forEach((id) => {
-      if (entry.isMain) {
-        mainSet.add(id);
-        subSet.delete(id);
-      } else if (!mainSet.has(id)) {
-        subSet.add(id);
-      }
+      mainSet.add(id);
+      subSet.delete(id);
     });
   });
 
@@ -978,8 +974,9 @@ const ensureRequiredIndividualParticipants = (
   const mainSet = new Set(resolved.mainParticipants);
   const subSet = new Set(resolved.subParticipants);
   requiredIds.forEach((id) => {
-    if (!mainSet.has(id) && !subSet.has(id)) {
-      subSet.add(id);
+    if (!mainSet.has(id)) {
+      mainSet.add(id);
+      subSet.delete(id);
     }
   });
 
@@ -987,7 +984,7 @@ const ensureRequiredIndividualParticipants = (
   requiredIds.forEach((id) => {
     const hasEntry = nextEntries.some((entry) => entry.kind === 'individual' && entry.value === id);
     if (!hasEntry) {
-      nextEntries.push({ kind: 'individual', value: id, isMain: mainSet.has(id) });
+      nextEntries.push({ kind: 'individual', value: id, isMain: true });
     }
   });
 
@@ -1268,7 +1265,7 @@ export const resyncEpisodesForFriendAffiliationChange = (friendId: string): bool
   }
 
   const allFriends = getAllFriends();
-  const relatedEpisodeMap = new Map<string, { episode: Episode; shouldBeMain: boolean }>();
+  const relatedEpisodeMap = new Map<string, Episode>();
 
   allFriends.forEach((friend) => {
     friend.episodes.forEach((episode) => {
@@ -1279,10 +1276,8 @@ export const resyncEpisodesForFriendAffiliationChange = (friendId: string): bool
       if (matchedEntries.length === 0) {
         return;
       }
-      const shouldBeMain = matchedEntries.some((entry) => entry.isMain);
-      const existing = relatedEpisodeMap.get(episode.id);
-      if (!existing || (!existing.shouldBeMain && shouldBeMain)) {
-        relatedEpisodeMap.set(episode.id, { episode, shouldBeMain });
+      if (!relatedEpisodeMap.has(episode.id)) {
+        relatedEpisodeMap.set(episode.id, episode);
       }
     });
   });
@@ -1294,7 +1289,7 @@ export const resyncEpisodesForFriendAffiliationChange = (friendId: string): bool
   const episodeById = new Map(targetFriend.episodes.map((episode) => [episode.id, episode]));
   let changed = false;
 
-  relatedEpisodeMap.forEach(({ episode, shouldBeMain }, episodeId) => {
+  relatedEpisodeMap.forEach((episode, episodeId) => {
     const existing = episodeById.get(episodeId);
     const source = existing ?? episode;
     const mainSet = new Set(source.mainParticipants);
@@ -1303,12 +1298,8 @@ export const resyncEpisodesForFriendAffiliationChange = (friendId: string): bool
     const hadMain = mainSet.has(friendId);
     const hadSub = subSet.has(friendId);
 
-    if (shouldBeMain) {
-      mainSet.add(friendId);
-      subSet.delete(friendId);
-    } else if (!mainSet.has(friendId)) {
-      subSet.add(friendId);
-    }
+    mainSet.add(friendId);
+    subSet.delete(friendId);
 
     if (!existing) {
       changed = true;

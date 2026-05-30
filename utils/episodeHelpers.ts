@@ -26,11 +26,11 @@ export function buildParticipantChips(
   entries.forEach((entry) => {
     if (!entry.value.trim()) return;
     const key = `${entry.kind}:${entry.value}`;
-    if (!unique.has(key) || entry.isMain) {
+    if (!unique.has(key)) {
       unique.set(key, {
         id: key,
         label: entry.kind === 'group' ? entry.value : friendNameById.get(entry.value) ?? entry.value,
-        isMain: entry.isMain,
+        isMain: true,
       });
     }
   });

@@ -77,7 +77,6 @@ type Option = { label: string; value: string };
 type EpisodeParticipantDraft = {
   participantType: 'individual' | 'group';
   value: string;
-  isMain: boolean;
 };
 
 type EpisodeVisibilityDraft = {
@@ -540,10 +539,7 @@ function EpisodeListCard({
               contentContainerStyle={styles.episodeParticipantTagWrap}
             >
               {chips.map((p) => (
-                <View
-                  key={p.id}
-                  style={[styles.episodeParticipantTag, p.isMain && styles.episodeParticipantTagMain]}
-                >
+                <View key={p.id} style={styles.episodeParticipantTag}>
                   <Text style={styles.episodeParticipantTagName}>{p.label}</Text>
                 </View>
               ))}
@@ -583,7 +579,6 @@ export default function EpisodeScreen() {
   const [newEpisodeDate, setNewEpisodeDate] = useState('');
   const [showEpisodeDatePicker, setShowEpisodeDatePicker] = useState(false);
   const [newEpisodeDescription, setNewEpisodeDescription] = useState('');
-  const [isOwnerMainRole, setIsOwnerMainRole] = useState(true);
   const [episodeParticipants, setEpisodeParticipants] = useState<EpisodeParticipantDraft[]>([]);
   const [episodeVisibilityMode, setEpisodeVisibilityMode] = useState<EpisodeVisibilityMode>('private');
   const [episodeVisibility, setEpisodeVisibility] = useState<EpisodeVisibilityDraft[]>([]);
@@ -701,28 +696,17 @@ export default function EpisodeScreen() {
 
   const handleSelectorConfirm = () => {
     if (selectorTarget === 'participant') {
-      const mainByKey = new Map<string, boolean>();
-      episodeParticipants.forEach((participant) => {
-        if (!participant.value.trim()) {
-          return;
-        }
-        mainByKey.set(`${participant.participantType}:${participant.value}`, participant.isMain);
-      });
       const nextParticipants: EpisodeParticipantDraft[] = [];
       selectedIndividualIds.forEach((friendId) => {
-        const key = `individual:${friendId}`;
         nextParticipants.push({
           participantType: 'individual',
           value: friendId,
-          isMain: mainByKey.get(key) ?? true,
         });
       });
       selectedGroupValues.forEach((groupValue) => {
-        const key = `group:${groupValue}`;
         nextParticipants.push({
           participantType: 'group',
           value: groupValue,
-          isMain: mainByKey.get(key) ?? false,
         });
       });
       setEpisodeParticipants(nextParticipants);
@@ -772,7 +756,6 @@ export default function EpisodeScreen() {
     setNewEpisodeDate(formatDateToYMD(new Date()));
     setShowEpisodeDatePicker(false);
     setNewEpisodeDescription('');
-    setIsOwnerMainRole(true);
     setEpisodeParticipants([]);
     setEpisodeVisibilityMode('private');
     setEpisodeVisibility([]);
@@ -800,17 +783,17 @@ export default function EpisodeScreen() {
             ...episode.mainParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: true })),
             ...episode.subParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: false })),
           ];
-    const participantDrafts: EpisodeParticipantDraft[] = entries.map((entry) => ({
+    const participantDrafts: EpisodeParticipantDraft[] = entries
+      .filter((entry) => !(entry.kind === 'individual' && entry.value === recordOwnerId))
+      .map((entry) => ({
         participantType: entry.kind,
         value: entry.value,
-        isMain: entry.isMain,
       }));
     setEditingEpisodeId(episode.id);
     setEditingOwnerId(recordOwnerId);
     setNewEpisodeTitle(episode.title);
     setNewEpisodeDate(episode.date);
     setNewEpisodeDescription(episode.description);
-    setIsOwnerMainRole(episode.mainParticipants.includes(recordOwnerId));
     setEpisodeParticipants(participantDrafts);
     setEpisodeVisibilityMode(episode.visibilityMode);
     setEpisodeVisibility(
@@ -926,7 +909,7 @@ export default function EpisodeScreen() {
       .map((participant) => ({
         kind: participant.participantType,
         value: participant.value,
-        isMain: participant.isMain,
+        isMain: true,
       }));
     const visibilityMode = episodeVisibilityMode;
     const visibilityEntries: EpisodeVisibilityEntry[] =
@@ -938,8 +921,8 @@ export default function EpisodeScreen() {
               value: entry.value.trim(),
             }))
         : [];
-    const mainParticipants = isOwnerMainRole ? [ownerId] : [];
-    const subParticipants = isOwnerMainRole ? [] : [ownerId];
+    const mainParticipants = [ownerId];
+    const subParticipants: string[] = [];
 
     if (editingEpisodeId) {
       const updated = updateEpisode(ownerId, editingEpisodeId, {
@@ -1109,25 +1092,6 @@ export default function EpisodeScreen() {
                   </Pressable>
                 </View>
               )}
-              <View style={styles.ownerRoleRow}>
-                <Text style={styles.ownerRoleLabel}>本人がメインか</Text>
-                <Pressable
-                  style={[styles.roleToggleButton, isOwnerMainRole && styles.roleToggleButtonActive]}
-                  onPress={() => setIsOwnerMainRole(true)}
-                >
-                  <Text style={[styles.roleToggleButtonText, isOwnerMainRole && styles.roleToggleButtonTextActive]}>
-                    メイン
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.roleToggleButton, !isOwnerMainRole && styles.roleToggleButtonActive]}
-                  onPress={() => setIsOwnerMainRole(false)}
-                >
-                  <Text style={[styles.roleToggleButtonText, !isOwnerMainRole && styles.roleToggleButtonTextActive]}>
-                    サブ
-                  </Text>
-                </Pressable>
-              </View>
               <View style={styles.episodeParticipantRow}>
                 <Text style={styles.episodeParticipantLabel}>参加者</Text>
                 <Pressable style={styles.addParticipantButton} onPress={openParticipantSelector}>
@@ -1147,10 +1111,7 @@ export default function EpisodeScreen() {
                         return (
                           <View
                             key={`participant-tag-${participant.participantType}-${participant.value}-${index}`}
-                            style={[
-                              styles.episodeParticipantTag,
-                              participant.isMain && styles.episodeParticipantTagMain,
-                            ]}
+                            style={styles.episodeParticipantTag}
                           >
                             <Text style={styles.episodeParticipantTagName}>{label}</Text>
                           </View>
@@ -1327,7 +1288,7 @@ function DummyEpisodeCard() {
       posterName="投稿者"
       chips={[
         { id: 'dummy-name', label: '名前', isMain: true },
-        { id: 'dummy-group', label: 'グループ', isMain: false },
+        { id: 'dummy-group', label: 'グループ', isMain: true },
       ]}
       visibility={['グループ']}
     />
