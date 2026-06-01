@@ -27,6 +27,7 @@ import {
   updateGroupOption,
 } from '../db';
 import { CommonItemKind, Friend } from '../types';
+import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 
 type CommonItemTabKey = '所属' | '経験' | '性格' | '公開先';
 type Option = { label: string; value: string };
@@ -381,7 +382,7 @@ export default function CommonItemsScreen() {
               onChangeText={setEditorText}
               style={styles.editorInput}
               placeholder={`${activeTab}を入力`}
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={Theme.inputPlaceholder}
               autoCapitalize="none"
               autoFocus
             />
@@ -408,7 +409,7 @@ export default function CommonItemsScreen() {
                 onChangeText={setGroupName}
                 style={styles.groupNameInput}
                 placeholder={`${activeTab}名`}
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={Theme.inputPlaceholder}
                 autoCapitalize="none"
               />
               <View style={styles.groupEditButtons}>
@@ -438,7 +439,7 @@ export default function CommonItemsScreen() {
                   value={personNameFilter}
                   onChangeText={setPersonNameFilter}
                   placeholder="名前"
-                  placeholderTextColor="#6b7280"
+                  placeholderTextColor={Theme.inputPlaceholder}
                   autoCapitalize="none"
                 />
               </View>
@@ -492,9 +493,9 @@ const styles = StyleSheet.create({
   navCurrent: {
     flex: 1,
     minWidth: 0,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: '#aaa',
+    borderColor: Theme.border,
     backgroundColor: '#3d3d3d',
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -502,7 +503,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   navCurrentText: {
-    color: '#fff',
+    color: Theme.bgSurface,
     fontWeight: '700',
     fontSize: 14,
     textAlign: 'center',
@@ -510,9 +511,9 @@ const styles = StyleSheet.create({
   secondaryNavPill: {
     flex: 1,
     minWidth: 0,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: '#aaa',
+    borderColor: Theme.border,
     backgroundColor: '#e5e5e5',
     paddingHorizontal: 8,
     paddingVertical: 8,
@@ -521,7 +522,7 @@ const styles = StyleSheet.create({
   },
   secondaryNavText: {
     fontSize: 12,
-    color: '#555',
+    color: Theme.textSecondary,
     fontWeight: '700',
     textAlign: 'center',
   },
@@ -533,8 +534,8 @@ const styles = StyleSheet.create({
   tabSection: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#aaa',
-    borderRadius: 12,
+    borderColor: Theme.border,
+    borderRadius: Radius.md,
     backgroundColor: '#e9e9e9',
     padding: 10,
   },
@@ -584,7 +585,7 @@ const styles = StyleSheet.create({
     borderColor: '#888',
     borderWidth: 2,
     borderTopWidth: 0,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
     backgroundColor: '#efefef',
@@ -607,7 +608,7 @@ const styles = StyleSheet.create({
     paddingVertical: 7,
   },
   valueTagText: {
-    color: '#555',
+    color: Theme.textSecondary,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -641,8 +642,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   editorCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Theme.bgSurface,
+    borderRadius: Radius.md,
     borderWidth: 1,
     borderColor: '#94a3b8',
     padding: 14,
@@ -656,7 +657,7 @@ const styles = StyleSheet.create({
   editorInput: {
     borderWidth: 1,
     borderColor: '#94a3b8',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 10,
     fontSize: 14,
@@ -670,27 +671,27 @@ const styles = StyleSheet.create({
   editorCancelButton: {
     borderWidth: 1,
     borderColor: '#94a3b8',
-    borderRadius: 8,
-    backgroundColor: '#fff',
+    borderRadius: Radius.sm,
+    backgroundColor: Theme.bgSurface,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   editorCancelText: {
     color: '#0f172a',
-    fontSize: 13,
+    fontSize: Typography.base,
     fontWeight: '700',
   },
   editorSaveButton: {
     borderWidth: 1,
     borderColor: '#2e7d32',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#4caf50',
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   editorSaveText: {
-    color: '#fff',
-    fontSize: 13,
+    color: Theme.bgSurface,
+    fontSize: Typography.base,
     fontWeight: '700',
   },
 
@@ -701,7 +702,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   groupEditorCard: {
-    backgroundColor: '#fff',
+    backgroundColor: Theme.bgSurface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     height: '90%',
@@ -717,7 +718,7 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 2,
     borderColor: '#94a3b8',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 10,
     fontSize: 16,
@@ -731,20 +732,20 @@ const styles = StyleSheet.create({
   groupCancelButton: {
     borderWidth: 1,
     borderColor: '#94a3b8',
-    borderRadius: 8,
-    backgroundColor: '#fff',
+    borderRadius: Radius.sm,
+    backgroundColor: Theme.bgSurface,
     paddingHorizontal: 12,
     paddingVertical: 10,
   },
   groupCancelButtonText: {
     color: '#0f172a',
-    fontSize: 13,
+    fontSize: Typography.base,
     fontWeight: '700',
   },
   groupCreateButton: {
     borderWidth: 2,
     borderColor: '#2e7d32',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#c8e6c9',
     paddingHorizontal: 16,
     paddingVertical: 10,
@@ -757,13 +758,13 @@ const styles = StyleSheet.create({
   groupSaveButton: {
     borderWidth: 2,
     borderColor: '#2e7d32',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#4caf50',
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
   groupSaveButtonText: {
-    color: '#fff',
+    color: Theme.bgSurface,
     fontSize: 14,
     fontWeight: '700',
   },
@@ -783,10 +784,10 @@ const styles = StyleSheet.create({
   filterNameInput: {
     borderWidth: 1,
     borderColor: '#94a3b8',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 8,
     paddingVertical: 8,
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#111827',
   },
   filterSelectContainer: {
@@ -795,19 +796,19 @@ const styles = StyleSheet.create({
   filterSelectButton: {
     borderWidth: 1,
     borderColor: '#94a3b8',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 8,
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
   },
   filterSelectValue: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#111827',
     flex: 1,
   },
   filterSelectPlaceholder: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#6b7280',
     flex: 1,
   },
@@ -823,8 +824,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   selectModalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Theme.bgSurface,
+    borderRadius: Radius.md,
     padding: 14,
     maxHeight: '70%',
   },
@@ -840,7 +841,7 @@ const styles = StyleSheet.create({
   selectModalOption: {
     paddingVertical: 10,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
   },
   selectModalOptionSelected: {
     backgroundColor: '#e0f2fe',
@@ -853,7 +854,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#e2e8f0',
   },
   selectModalCloseButtonText: {
@@ -878,7 +879,7 @@ const styles = StyleSheet.create({
     gap: 6,
     borderWidth: 2,
     borderColor: '#d0d0d0',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#fafafa',
     paddingHorizontal: 8,
     paddingVertical: 10,
@@ -891,7 +892,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: Theme.bgSurface,
   },
   checkboxChecked: {
     backgroundColor: '#e8f5e9',

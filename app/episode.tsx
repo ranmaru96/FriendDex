@@ -18,6 +18,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 
 import { PHOTO_LIMITS } from '../constants';
 import {
@@ -45,8 +46,25 @@ import {
   buildParticipantChips,
   getVisibilityModeLabel,
   visibilityDisplayLabels,
-  visibilityModeTagStyles,
 } from '../utils/episodeHelpers';
+
+const EPISODE_VISIBILITY_MODE_TAG_STYLES: Record<
+  EpisodeVisibilityMode,
+  { tag: object; text: object }
+> = {
+  private: {
+    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#aaaaaa' },
+    text: { color: '#666666' },
+  },
+  public: {
+    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#2a9d5a' },
+    text: { color: '#1a6b38' },
+  },
+  limited: {
+    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#7c5cbf' },
+    text: { color: '#5c3a9f' },
+  },
+};
 
 const LIST_HORIZONTAL_INSET = 12;
 
@@ -368,7 +386,7 @@ function EntrySelectorModal({
                   value={nameFilter}
                   onChangeText={onNameFilterChange}
                   placeholder="名前"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={Theme.inputPlaceholder}
                   autoCapitalize="none"
                 />
               </View>
@@ -391,7 +409,7 @@ function EntrySelectorModal({
               value={nameFilter}
               onChangeText={onNameFilterChange}
               placeholder="名前"
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={Theme.inputPlaceholder}
               autoCapitalize="none"
             />
           )}
@@ -488,7 +506,7 @@ function EpisodeListCard({
   onEdit,
   onDelete,
 }: EpisodeListCardProps) {
-  const modeStyles = visibilityMode ? visibilityModeTagStyles(visibilityMode) : null;
+  const modeStyles = visibilityMode ? EPISODE_VISIBILITY_MODE_TAG_STYLES[visibilityMode] : null;
   const showRow2 = chips.length > 0 || visibility.length > 0;
 
   return (
@@ -1061,7 +1079,7 @@ export default function EpisodeScreen() {
                 <TextInput
                   style={[styles.episodeInput, styles.episodeTitleInput]}
                   placeholder="タイトル"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={Theme.inputPlaceholder}
                   value={newEpisodeTitle}
                   onChangeText={setNewEpisodeTitle}
                 />
@@ -1223,7 +1241,7 @@ export default function EpisodeScreen() {
               <TextInput
                 style={styles.episodeDescriptionInput}
                 placeholder="説明文の記入（記入式）"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor={Theme.inputPlaceholder}
                 multiline
                 value={newEpisodeDescription}
                 onChangeText={setNewEpisodeDescription}
@@ -1314,9 +1332,9 @@ const styles = StyleSheet.create({
   navCurrent: {
     flex: 1,
     minWidth: 0,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: '#aaa',
+    borderColor: Theme.border,
     backgroundColor: '#3d3d3d',
     paddingHorizontal: 10,
     paddingVertical: 9.6,
@@ -1326,7 +1344,7 @@ const styles = StyleSheet.create({
   navCurrentText: {
     fontSize: 14.4,
     fontWeight: '700',
-    color: '#fff',
+    color: Theme.bgSurface,
   },
   topNavSecondary: {
     flexDirection: 'row',
@@ -1335,9 +1353,9 @@ const styles = StyleSheet.create({
   secondaryNavPill: {
     flex: 1,
     minWidth: 0,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: '#aaa',
+    borderColor: Theme.border,
     backgroundColor: '#e5e5e5',
     paddingHorizontal: 8,
     paddingVertical: 8,
@@ -1350,7 +1368,7 @@ const styles = StyleSheet.create({
   secondaryNavText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#555',
+    color: Theme.textSecondary,
     textAlign: 'center',
   },
   mainScroll: {
@@ -1363,12 +1381,12 @@ const styles = StyleSheet.create({
   mainCard: {
     borderWidth: 1,
     borderColor: '#ccc',
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    borderRadius: Radius.md,
+    backgroundColor: Theme.bgSurface,
     padding: 12,
   },
   sectionLabel: {
-    fontSize: 13,
+    fontSize: Typography.base,
     fontWeight: '700',
     color: '#475569',
     marginBottom: 8,
@@ -1383,8 +1401,8 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   episodeCard: {
-    backgroundColor: '#ffffff',
-    borderColor: '#cbd5e1',
+    backgroundColor: Theme.bgSurface,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
     padding: 10,
@@ -1405,7 +1423,7 @@ const styles = StyleSheet.create({
   titlePill: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: 'transparent',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -1434,8 +1452,8 @@ const styles = StyleSheet.create({
   saveButtonDisabled: {
     backgroundColor: '#f1f5f9',
     borderWidth: 1,
-    borderColor: '#cbd5e1',
-    borderRadius: 8,
+    borderColor: Theme.inputBorder,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
     opacity: 0.55,
@@ -1457,21 +1475,21 @@ const styles = StyleSheet.create({
   episodeParticipantTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderColor: '#cbd5e1',
+    borderColor: '#aaaaaa',
     borderWidth: 1,
     borderRadius: 999,
-    backgroundColor: '#f8fafc',
+    backgroundColor: 'transparent',
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   episodeParticipantTagMain: {
-    backgroundColor: '#e0f2fe',
-    borderColor: '#7dd3fc',
+    backgroundColor: 'transparent',
+    borderColor: '#aaaaaa',
   },
   episodeParticipantTagName: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#555555',
   },
   visibilityCol: {
     flexDirection: 'row',
@@ -1495,7 +1513,6 @@ const styles = StyleSheet.create({
   },
   visibilityModeTag: {
     flexShrink: 0,
-    borderWidth: 1,
   },
   visibilityModeSelect: {
     flex: 1,
@@ -1505,7 +1522,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
     borderColor: '#94a3b8',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -1518,7 +1535,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fee2e2',
     borderColor: '#ef4444',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -1574,12 +1591,12 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   episodeFormCard: {
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     padding: 10,
     marginBottom: 10,
-    backgroundColor: '#f8fafc',
+    backgroundColor: Theme.inputBg,
   },
   episodeTitleDateRow: {
     flexDirection: 'row',
@@ -1589,10 +1606,10 @@ const styles = StyleSheet.create({
   },
   episodeInput: {
     minHeight: 38,
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
-    backgroundColor: '#ffffff',
+    backgroundColor: Theme.bgSurface,
     color: '#0f172a',
     paddingHorizontal: 10,
     fontSize: 14,
@@ -1605,11 +1622,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   episodeDateText: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#111827',
   },
   episodeDatePlaceholder: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#94a3b8',
   },
   datePickerWrap: {
@@ -1622,14 +1639,14 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#e2e8f0',
     marginTop: 8,
   },
   datePickerDoneText: {
     color: '#0f172a',
     fontWeight: '600',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   ownerRoleRow: {
     flexDirection: 'row',
@@ -1638,7 +1655,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   ownerRoleLabel: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#334155',
     fontWeight: '700',
   },
@@ -1677,7 +1694,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
     borderColor: '#94a3b8',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -1687,10 +1704,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   selectedEntryTagArea: {
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
-    backgroundColor: '#fff',
+    backgroundColor: Theme.bgSurface,
     padding: 8,
     marginBottom: 8,
   },
@@ -1700,7 +1717,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   selectedEntryEmptyText: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#94a3b8',
   },
   selectorOverlay: {
@@ -1709,7 +1726,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   selectorCard: {
-    backgroundColor: '#fff',
+    backgroundColor: Theme.bgSurface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingHorizontal: 14,
@@ -1737,7 +1754,7 @@ const styles = StyleSheet.create({
     borderColor: '#0891b2',
   },
   selectorTabButtonText: {
-    fontSize: 13,
+    fontSize: Typography.base,
     fontWeight: '700',
     color: '#0f172a',
   },
@@ -1751,10 +1768,10 @@ const styles = StyleSheet.create({
   },
   selectorNameInput: {
     minHeight: 38,
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
-    backgroundColor: '#f8fafc',
+    backgroundColor: Theme.inputBg,
     color: '#0f172a',
     paddingHorizontal: 10,
     fontSize: 14,
@@ -1771,10 +1788,10 @@ const styles = StyleSheet.create({
   selectorFilterNameInput: {
     borderWidth: 1,
     borderColor: '#94a3b8',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 8,
     paddingVertical: 8,
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#111827',
   },
   selectorFilterSelectContainer: {
@@ -1783,19 +1800,19 @@ const styles = StyleSheet.create({
   selectorFilterSelectButton: {
     borderWidth: 1,
     borderColor: '#94a3b8',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 8,
     paddingVertical: 8,
     flexDirection: 'row',
     alignItems: 'center',
   },
   selectorFilterSelectValue: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#111827',
     flex: 1,
   },
   selectorFilterSelectPlaceholder: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#6b7280',
     flex: 1,
   },
@@ -1811,8 +1828,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   selectorFilterModalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Theme.bgSurface,
+    borderRadius: Radius.md,
     padding: 14,
     maxHeight: '70%',
   },
@@ -1828,7 +1845,7 @@ const styles = StyleSheet.create({
   selectorFilterModalOption: {
     paddingVertical: 10,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
   },
   selectorFilterModalOptionSelected: {
     backgroundColor: '#e0f2fe',
@@ -1841,7 +1858,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#e2e8f0',
   },
   selectorFilterModalCloseButtonText: {
@@ -1865,7 +1882,7 @@ const styles = StyleSheet.create({
     gap: 6,
     borderWidth: 2,
     borderColor: '#d0d0d0',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#fafafa',
     paddingHorizontal: 8,
     paddingVertical: 10,
@@ -1884,7 +1901,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: Theme.bgSurface,
   },
   checkboxChecked: {
     backgroundColor: '#e8f5e9',
@@ -1904,35 +1921,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
     borderColor: '#94a3b8',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   selectorCancelButtonText: {
     color: '#0f172a',
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   selectorOkButton: {
     backgroundColor: '#67e8f9',
     borderColor: '#0891b2',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   selectorOkButtonText: {
     color: '#083344',
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   participantItemCard: {
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
     padding: 8,
     marginBottom: 8,
-    backgroundColor: '#fff',
+    backgroundColor: Theme.bgSurface,
   },
   participantTypeRow: {
     flexDirection: 'row',
@@ -1984,7 +2001,7 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     backgroundColor: '#f1f5f9',
   },
   episodePhotoRemoveButton: {
@@ -2001,7 +2018,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   episodePhotoRemoveButtonText: {
-    color: '#fff',
+    color: Theme.bgSurface,
     fontSize: 14,
     fontWeight: '700',
     lineHeight: 16,
@@ -2011,14 +2028,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
     borderColor: '#94a3b8',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   episodePhotoAddButtonDisabled: {
     opacity: 0.45,
     backgroundColor: '#e2e8f0',
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
   },
   episodePhotoAddButtonText: {
     color: '#0f172a',
@@ -2035,10 +2052,10 @@ const styles = StyleSheet.create({
   },
   episodeDescriptionInput: {
     minHeight: 86,
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+    borderRadius: Radius.md,
+    backgroundColor: Theme.bgSurface,
     textAlignVertical: 'top',
     color: '#0f172a',
     paddingHorizontal: 10,
@@ -2062,46 +2079,46 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   episodeCancelButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
+    backgroundColor: 'transparent',
+    borderColor: Theme.btnGhostBorder,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   episodeCancelButtonText: {
-    color: '#0f172a',
+    color: Theme.btnGhostText,
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   episodeCreateButton: {
-    backgroundColor: '#67e8f9',
-    borderColor: '#0891b2',
+    backgroundColor: Theme.btnPrimaryBg,
+    borderColor: Theme.btnPrimaryBg,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   episodeCreateButtonText: {
-    color: '#083344',
+    color: Theme.btnPrimaryText,
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   episodeSelectButton: {
     minHeight: 38,
-    backgroundColor: '#f8fafc',
-    borderColor: '#cbd5e1',
+    backgroundColor: Theme.inputBg,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 8,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
     justifyContent: 'center',
   },
   episodeSelectText: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#0f172a',
   },
   episodeSelectPlaceholder: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#94a3b8',
   },
   modalBackdrop: {
@@ -2111,8 +2128,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Theme.bgSurface,
+    borderRadius: Radius.md,
     padding: 14,
     maxHeight: '70%',
   },
@@ -2129,7 +2146,7 @@ const styles = StyleSheet.create({
   modalOption: {
     paddingVertical: 10,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
   },
   modalOptionSelected: {
     backgroundColor: '#e0f2fe',
@@ -2142,7 +2159,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#e2e8f0',
   },
   modalCloseButtonText: {

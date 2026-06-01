@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import {
   Alert,
   Image,
@@ -13,10 +13,11 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 
 import {
   createEpisode,
@@ -33,8 +34,26 @@ import {
   updateEpisode,
   updateSaying,
 } from './db';
-import { Episode, EpisodeParticipant, EpisodeVisibilityEntry, Friend, Profile, Saying } from './types';
-import { buildParticipantChips, getVisibilityModeLabel, visibilityModeTagStyles } from './utils/episodeHelpers';
+import { Episode, EpisodeParticipant, EpisodeVisibilityEntry, EpisodeVisibilityMode, Friend, Profile, Saying } from './types';
+import { buildParticipantChips, getVisibilityModeLabel } from './utils/episodeHelpers';
+
+const EPISODE_VISIBILITY_MODE_TAG_STYLES: Record<
+  EpisodeVisibilityMode,
+  { tag: object; text: object }
+> = {
+  private: {
+    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#aaaaaa' },
+    text: { color: '#666666' },
+  },
+  public: {
+    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#2a9d5a' },
+    text: { color: '#1a6b38' },
+  },
+  limited: {
+    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#7c5cbf' },
+    text: { color: '#5c3a9f' },
+  },
+};
 
 type MultiValueRow = {
   title: string;
@@ -91,7 +110,22 @@ const computeProfileCompleteness = (friend: Friend, hasPhoto: boolean): number =
   return Math.round((completenessFields.filter(Boolean).length / completenessFields.length) * 100);
 };
 
-type DetailTabKey = '情報' | 'エピソード' | '習性' | 'メモ' | '彼曰く';
+type DetailTabKey = '情報' | 'ステータス' | 'エピソード' | '習性' | '彼曰く' | 'メモ';
+
+const DETAIL_TABS: {
+  key: DetailTabKey;
+  icon: string;
+  iconSet?: 'ionicons' | 'material';
+  caption: string;
+  color: string;
+}[] = [
+  { key: '情報', icon: 'book-outline', caption: 'info', color: '#4a7fd4' },
+  { key: 'ステータス', icon: 'stats-chart-outline', caption: 'status', color: '#c9a227' },
+  { key: 'エピソード', icon: 'film-outline', caption: 'episode', color: '#e07a2a' },
+  { key: '習性', icon: 'cat', iconSet: 'material', caption: 'habit', color: '#3a9d5a' },
+  { key: '彼曰く', icon: 'comment-account-outline', iconSet: 'material', caption: 'says', color: '#d44a4a' },
+  { key: 'メモ', icon: 'notebook', iconSet: 'material', caption: 'note', color: '#8b5fd4' },
+];
 type Option = {
   label: string;
   value: string;
@@ -169,30 +203,46 @@ function SelectInput({
   );
 }
 
-const INFO_CHIP_STYLES: Record<string, { backgroundColor: string; color: string }> = {
-  所属: { backgroundColor: '#2d1f50', color: '#c4b5fd' },
-  経験: { backgroundColor: '#0f2e28', color: '#5eead4' },
-  性格: { backgroundColor: '#0d1e32', color: '#93c5fd' },
-  好物: { backgroundColor: '#1e2010', color: '#a3e635' },
-  苦手: { backgroundColor: '#2e1010', color: '#f87171' },
+const INFO_CHIP_STYLES: Record<string, { backgroundColor: string; borderColor: string; color: string; borderWidth: number }> = {
+  所属: { backgroundColor: 'transparent', borderColor: Theme.tagAffilBorder, color: Theme.tagAffilText, borderWidth: 1.5 },
+  経験: { backgroundColor: 'transparent', borderColor: Theme.tagExpBorder, color: Theme.tagExpText, borderWidth: 1.5 },
+  性格: { backgroundColor: 'transparent', borderColor: Theme.tagCharBorder, color: Theme.tagCharText, borderWidth: 1.5 },
+  好物: { backgroundColor: 'transparent', borderColor: Theme.tagLikeBorder, color: Theme.tagLikeText, borderWidth: 1.5 },
+  苦手: { backgroundColor: 'transparent', borderColor: Theme.tagDislikeBorder, color: Theme.tagDislikeText, borderWidth: 1.5 },
 };
 
 function MultiValueSummarySection({ rows, withCard = true }: { rows: MultiValueRow[]; withCard?: boolean }) {
   return (
     <View style={withCard ? styles.multiValueCard : styles.multiValuePlainContainer}>
       {rows.map((row, rowIndex) => {
-        const chipColors = INFO_CHIP_STYLES[row.title] ?? { backgroundColor: '#1e1e2e', color: '#9ca3af' };
+        const chipColors = INFO_CHIP_STYLES[row.title] ?? {
+          backgroundColor: 'transparent',
+          borderColor: Theme.border,
+          color: Theme.textSecondary,
+          borderWidth: 1.5,
+        };
         return (
           <View
             key={row.title}
-            style={[styles.multiValueRow, rowIndex < rows.length - 1 && styles.multiValueRowWithDivider]}
+            style={[
+              styles.multiValueRow,
+              rowIndex < rows.length - 1 && styles.multiValueRowWithDivider,
+              rowIndex === rows.length - 1 && styles.multiValueRowLast,
+            ]}
           >
             <Text style={styles.multiValueLabel}>{row.title}</Text>
             <View style={styles.multiValueChipArea}>
               {(row.values.length > 0 ? row.values : ['-']).map((value, index) => (
                 <View
                   key={`${row.title}-${index}-${value}`}
-                  style={[styles.chip, { backgroundColor: chipColors.backgroundColor }]}
+                  style={[
+                    styles.chip,
+                    {
+                      backgroundColor: chipColors.backgroundColor,
+                      borderColor: chipColors.borderColor,
+                      borderWidth: chipColors.borderWidth,
+                    },
+                  ]}
                 >
                   <Text style={[styles.chipText, { color: chipColors.color }]}>{value}</Text>
                 </View>
@@ -813,6 +863,7 @@ export default function DetailScreen() {
         extraScrollHeight={18}
         keyboardShouldPersistTaps="handled"
       >
+        <View style={styles.profileCardOuter}>
         <View style={styles.hero}>
           <View style={styles.heroIdentityRow}>
             {friend.photoUri && !profileImageLoadError ? (
@@ -836,10 +887,10 @@ export default function DetailScreen() {
                     style={styles.heroEditButton}
                     onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
                   >
-                    <Ionicons name="pencil-outline" size={16} color="#a78bfa" />
+                    <Ionicons name="pencil-outline" size={16} color={Theme.accent} />
                   </Pressable>
                   <Pressable style={styles.heroHomeButton} onPress={() => router.replace('/')}>
-                    <Ionicons name="home-outline" size={16} color="#555566" />
+                    <Ionicons name="home" size={16} color={Theme.textMuted} />
                   </Pressable>
                 </View>
               </View>
@@ -910,18 +961,61 @@ export default function DetailScreen() {
         </View>
 
         <View style={styles.tabSection}>
-          <View style={styles.tabRowContainer}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabButtonRow}>
-              {(['情報', 'エピソード', '習性', '彼曰く', 'メモ'] as DetailTabKey[]).map((tab) => (
-                <TouchableOpacity
-                  key={tab}
-                  onPress={() => setActiveTab(tab)}
-                  style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]}
-                >
-                  <Text style={[styles.tabButtonText, activeTab === tab && styles.tabButtonTextActive]}>{tab}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
+          <View style={styles.tabTrack}>
+            <View style={styles.tabInner}>
+              {DETAIL_TABS.map((tab) => {
+                const isActive = activeTab === tab.key;
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
+                    onPress={() => setActiveTab(tab.key)}
+                    style={[
+                      styles.tabPill,
+                      isActive && {
+                        borderColor: tab.color,
+                        backgroundColor: tab.color,
+                      },
+                    ]}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: isActive }}
+                    accessibilityLabel={tab.key}
+                  >
+                    <View style={styles.tabPillContent}>
+                      <View
+                        style={[
+                          styles.tabPillIconCircle,
+                          isActive
+                            ? styles.tabPillIconCircleActive
+                            : { backgroundColor: tab.color },
+                        ]}
+                      >
+                        {tab.iconSet === 'material' ? (
+                          <MaterialCommunityIcons
+                            name={tab.icon as ComponentProps<typeof MaterialCommunityIcons>['name']}
+                            size={16}
+                            color="#ffffff"
+                          />
+                        ) : (
+                          <Ionicons
+                            name={tab.icon as ComponentProps<typeof Ionicons>['name']}
+                            size={16}
+                            color="#ffffff"
+                          />
+                        )}
+                      </View>
+                      <Text
+                        style={[
+                          styles.tabPillCaption,
+                          isActive ? styles.tabPillCaptionActive : styles.tabPillCaptionInactive,
+                        ]}
+                      >
+                        {tab.caption}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
           </View>
 
           <View style={styles.tabContentArea}>
@@ -936,6 +1030,32 @@ export default function DetailScreen() {
                 { title: '苦手', values: friend.dislikes },
               ]}
             />
+          )}
+
+          {activeTab === 'ステータス' && (
+            <View style={styles.tabPane}>
+              {[
+                { label: '出身', value: friend.origin.trim() || '—' },
+                { label: '居住地', value: friend.residence.trim() || '—' },
+                { label: '誕生日', value: heroBirthdayLabel || '—' },
+                {
+                  label: '身長',
+                  value: friend.height != null ? `${friend.height} cm` : '—',
+                },
+                {
+                  label: '体重',
+                  value: friend.weight != null ? `${friend.weight} kg` : '—',
+                },
+              ].map((row, index, rows) => (
+                <View
+                  key={row.label}
+                  style={[styles.statusRow, index < rows.length - 1 && styles.statusRowDivider]}
+                >
+                  <Text style={styles.statusLabel}>{row.label}</Text>
+                  <Text style={styles.statusValue}>{row.value}</Text>
+                </View>
+              ))}
+            </View>
           )}
 
           {(activeTab === '習性' || activeTab === 'メモ') && (
@@ -966,7 +1086,7 @@ export default function DetailScreen() {
                 <TextInput
                   style={[styles.sayingTextInput, { height: Math.max(48, habitInputHeight) }]}
                   placeholder="習性（自由記入）"
-                  placeholderTextColor="#555566"
+                  placeholderTextColor={Theme.inputPlaceholder}
                   multiline
                   value={habitText}
                   onContentSizeChange={(event) => {
@@ -1026,7 +1146,7 @@ export default function DetailScreen() {
               <TextInput
                 style={[styles.episodeSearchInput, styles.episodeSearchCell]}
                 placeholder="タイトル名"
-                placeholderTextColor="#555566"
+                placeholderTextColor={Theme.inputPlaceholder}
                 value={episodeTitleDraft}
                 onChangeText={setEpisodeTitleDraft}
               />
@@ -1056,7 +1176,7 @@ export default function DetailScreen() {
                   <TextInput
                     style={[styles.episodeInput, styles.episodeTitleInput]}
                     placeholder="タイトル"
-                    placeholderTextColor="#555566"
+                    placeholderTextColor={Theme.inputPlaceholder}
                     value={newEpisodeTitle}
                     onChangeText={setNewEpisodeTitle}
                   />
@@ -1250,7 +1370,7 @@ export default function DetailScreen() {
                 <TextInput
                   style={styles.episodeDescriptionInput}
                   placeholder="説明文の記入（記入式）"
-                  placeholderTextColor="#555566"
+                  placeholderTextColor={Theme.inputPlaceholder}
                   multiline
                   value={newEpisodeDescription}
                   onChangeText={setNewEpisodeDescription}
@@ -1279,7 +1399,7 @@ export default function DetailScreen() {
               filteredEpisodes.map((episode) => {
                 const isMyEpisode = myselfId !== null && episode.authorFriendId === myselfId;
                 const chips = buildParticipantChips(episode, friendNameById);
-                const modeStyles = isMyEpisode ? visibilityModeTagStyles(episode.visibilityMode) : null;
+                const modeStyles = isMyEpisode ? EPISODE_VISIBILITY_MODE_TAG_STYLES[episode.visibilityMode] : null;
                 const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
 
                 return (
@@ -1371,7 +1491,7 @@ export default function DetailScreen() {
                 <TextInput
                   style={[styles.sayingTextInput, { height: Math.max(48, sayingInputHeight) }]}
                   placeholder="彼曰く（自由記入）"
-                  placeholderTextColor="#555566"
+                  placeholderTextColor={Theme.inputPlaceholder}
                   multiline
                   value={sayingText}
                   onContentSizeChange={(event) => {
@@ -1452,6 +1572,7 @@ export default function DetailScreen() {
           )}
           </View>
         </View>
+        </View>
       </KeyboardAwareScrollView>
     </SafeAreaView>
   );
@@ -1463,17 +1584,28 @@ const styles = StyleSheet.create({
     backgroundColor: '#f2f5f8',
   },
   scrollContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: 0,
     paddingTop: 8,
     paddingBottom: 24,
     gap: 10,
   },
+  profileCardOuter: {
+    borderWidth: 4,
+    borderColor: '#aaaaaa',
+    borderRadius: 12,
+    marginHorizontal: 6,
+    overflow: 'hidden',
+    backgroundColor: '#ffffff',
+  },
   hero: {
-    backgroundColor: '#0d0d14',
+    backgroundColor: Theme.bgBase,
     paddingTop: 16,
     paddingHorizontal: 14,
     paddingBottom: 14,
-    borderRadius: 12,
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
+    borderBottomLeftRadius: 0,
+    borderBottomRightRadius: 0,
   },
   heroIdentityRow: {
     flexDirection: 'row',
@@ -1482,12 +1614,12 @@ const styles = StyleSheet.create({
   heroPhoto: {
     width: 132,
     height: 132,
-    borderRadius: 12,
+    borderRadius: Radius.md,
   },
   heroPhotoInitial: {
     width: 132,
     height: 132,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     backgroundColor: '#1e1230',
     borderWidth: 1.5,
     borderColor: 'rgba(167,139,250,0.2)',
@@ -1514,7 +1646,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 22,
     fontWeight: '500',
-    color: '#e8e8f0',
+    color: Theme.textPrimary,
   },
   heroIconActions: {
     flexDirection: 'row',
@@ -1524,26 +1656,26 @@ const styles = StyleSheet.create({
   heroEditButton: {
     width: 30,
     height: 30,
-    borderRadius: 8,
-    backgroundColor: 'rgba(45,31,80,0.2)',
-    borderWidth: 1,
-    borderColor: 'rgba(167,139,250,0.27)',
+    borderRadius: Radius.sm,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: Theme.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroHomeButton: {
     width: 30,
     height: 30,
-    borderRadius: 8,
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: '#2a2a3a',
+    borderRadius: Radius.sm,
+    backgroundColor: '#ffffff',
+    borderWidth: 2,
+    borderColor: Theme.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
   heroNickname: {
     fontSize: 14,
-    color: '#a78bfa',
+    color: Theme.accent,
   },
   heroByTag: {
     fontSize: 10,
@@ -1556,7 +1688,7 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   heroTagMbti: {
-    backgroundColor: '#2d1f50',
+    backgroundColor: Theme.heroTagBg,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 20,
@@ -1564,10 +1696,10 @@ const styles = StyleSheet.create({
   heroTagMbtiText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#c4b5fd',
+    color: Theme.heroTagText,
   },
   heroTagBirthday: {
-    backgroundColor: '#0f2e28',
+    backgroundColor: Theme.heroTagBg,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 20,
@@ -1575,10 +1707,10 @@ const styles = StyleSheet.create({
   heroTagBirthdayText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#5eead4',
+    color: Theme.heroTagText,
   },
   heroTagCategory: {
-    backgroundColor: '#1e1e2e',
+    backgroundColor: Theme.bgElevated,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 20,
@@ -1586,11 +1718,11 @@ const styles = StyleSheet.create({
   heroTagCategoryText: {
     fontSize: 12,
     fontWeight: '500',
-    color: '#888899',
+    color: Theme.textMuted,
   },
   heroDescription: {
     fontSize: 11,
-    color: '#555566',
+    color: Theme.textMuted,
     lineHeight: 16,
   },
   heroStatsRow: {
@@ -1600,16 +1732,16 @@ const styles = StyleSheet.create({
   },
   heroStatCell: {
     flex: 1,
-    backgroundColor: '#13131f',
+    backgroundColor: Theme.statBg,
     borderWidth: 0.5,
-    borderColor: '#2a2a3a',
+    borderColor: Theme.statBorder,
     borderRadius: 10,
     paddingVertical: 8,
     alignItems: 'center',
   },
   heroStatLabel: {
     fontSize: 9,
-    color: '#555566',
+    color: Theme.textMuted,
     textTransform: 'uppercase',
     marginBottom: 2,
   },
@@ -1621,11 +1753,11 @@ const styles = StyleSheet.create({
   heroStatValue: {
     fontSize: 18,
     fontWeight: '500',
-    color: '#e8e8f0',
+    color: Theme.textPrimary,
   },
   heroStatUnit: {
     fontSize: 10,
-    color: '#555566',
+    color: Theme.textMuted,
   },
   heroCompletenessSection: {
     marginTop: 10,
@@ -1637,76 +1769,130 @@ const styles = StyleSheet.create({
   },
   heroCompletenessLabel: {
     fontSize: 9,
-    color: '#555566',
+    color: Theme.textMuted,
     letterSpacing: 0.3,
   },
   heroCompletenessPercent: {
     fontSize: 10,
-    color: '#a78bfa',
+    color: Theme.barPct,
   },
   heroCompletenessTrack: {
     height: 4,
-    backgroundColor: '#1e1e2e',
+    backgroundColor: Theme.barTrack,
     borderRadius: 2,
     marginTop: 4,
     overflow: 'hidden',
   },
   heroCompletenessFill: {
     height: 4,
-    backgroundColor: '#a78bfa',
+    backgroundColor: Theme.barFill,
     borderRadius: 2,
   },
   tabSection: {
     gap: 0,
-    backgroundColor: '#0d0d14',
-    borderRadius: 12,
+    backgroundColor: Theme.bgBase,
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
     overflow: 'hidden',
   },
-  tabRowContainer: {
-    backgroundColor: '#0d0d14',
+  tabTrack: {
+    backgroundColor: '#e0e0e6',
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: '#b8b8c4',
+    paddingVertical: 1.5,
+    paddingHorizontal: 3,
+    marginHorizontal: 12,
+    marginTop: 5,
+    marginBottom: 5,
+  },
+  tabInner: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 2,
+    width: '100%',
+  },
+  tabPill: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 1,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  tabPillContent: {
+    alignItems: 'center',
+    gap: 3,
+  },
+  tabPillCaption: {
+    fontSize: 9,
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  tabPillCaptionInactive: {
+    color: '#888888',
+  },
+  tabPillCaptionActive: {
+    color: '#ffffff',
+  },
+  tabPillIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabPillIconCircleActive: {
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+    gap: 12,
+  },
+  statusRowDivider: {
     borderBottomWidth: 0.5,
     borderBottomColor: '#1e1e2e',
   },
-  tabButtonRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
+  statusLabel: {
+    width: 56,
+    fontSize: Typography.base,
+    color: Theme.textMuted,
+    flexShrink: 0,
   },
-  tabButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    backgroundColor: 'transparent',
-  },
-  tabButtonActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: '#a78bfa',
-  },
-  tabButtonText: {
-    fontSize: 12,
-    color: '#555566',
-  },
-  tabButtonTextActive: {
-    color: '#a78bfa',
+  statusValue: {
+    flex: 1,
+    fontSize: Typography.base,
+    color: Theme.textPrimary,
+    textAlign: 'right',
   },
   tabContentArea: {
-    backgroundColor: '#0d0d14',
+    backgroundColor: Theme.bgBase,
     margin: 0,
     paddingTop: 0,
   },
   tabPane: {
-    backgroundColor: '#0d0d14',
+    backgroundColor: Theme.bgBase,
     paddingHorizontal: 12,
     paddingTop: 10,
     paddingBottom: 10,
   },
   multiValuePlainContainer: {
     padding: 0,
-    backgroundColor: '#0d0d14',
+    backgroundColor: Theme.bgBase,
   },
   multiValueCard: {
-    backgroundColor: '#0d0d14',
+    backgroundColor: Theme.bgBase,
     paddingHorizontal: 14,
     paddingTop: 14,
-    paddingBottom: 4,
+    paddingBottom: 0,
   },
   habitInput: {
     borderColor: '#cbd5e1',
@@ -1725,14 +1911,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
     borderColor: '#94a3b8',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   addHabitButtonText: {
     color: '#0f172a',
     fontWeight: '700',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   episodeSearchRow: {
     flexDirection: 'row',
@@ -1745,30 +1931,30 @@ const styles = StyleSheet.create({
   },
   episodeSelectButton: {
     height: 36,
-    backgroundColor: '#13131f',
-    borderColor: '#2a2a3a',
+    backgroundColor: Theme.bgSurface,
+    borderColor: Theme.border,
     borderWidth: 0.5,
     borderRadius: 10,
     paddingHorizontal: 12,
     justifyContent: 'center',
   },
   episodeSelectText: {
-    fontSize: 13,
-    color: '#e8e8f0',
+    fontSize: Typography.base,
+    color: Theme.textPrimary,
   },
   episodeSelectPlaceholder: {
-    fontSize: 13,
-    color: '#555566',
+    fontSize: Typography.base,
+    color: Theme.textMuted,
   },
   episodeSearchInput: {
     height: 36,
-    backgroundColor: '#13131f',
-    borderColor: '#2a2a3a',
+    backgroundColor: Theme.bgSurface,
+    borderColor: Theme.border,
     borderWidth: 0.5,
     borderRadius: 10,
     paddingHorizontal: 12,
-    fontSize: 13,
-    color: '#e8e8f0',
+    fontSize: Typography.base,
+    color: Theme.textPrimary,
   },
   episodeSearchButton: {
     minWidth: 58,
@@ -1782,24 +1968,24 @@ const styles = StyleSheet.create({
   episodeSearchButtonText: {
     color: '#c4b5fd',
     fontWeight: '500',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   episodeAddButton: {
     alignSelf: 'flex-end',
-    backgroundColor: '#a78bfa',
+    backgroundColor: Theme.btnPrimaryBg,
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 7,
     marginBottom: 10,
   },
   episodeAddButtonText: {
-    color: '#0d0d14',
+    color: Theme.btnPrimaryText,
     fontWeight: '500',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   episodeFormCard: {
-    backgroundColor: '#13131f',
-    borderColor: '#2a2a3a',
+    backgroundColor: Theme.bgSurface,
+    borderColor: Theme.border,
     borderWidth: 0.5,
     borderRadius: 14,
     padding: 14,
@@ -1814,14 +2000,14 @@ const styles = StyleSheet.create({
   },
   episodeInput: {
     minHeight: 38,
-    borderColor: '#2a2a3a',
-    borderWidth: 0.5,
-    borderRadius: 10,
-    backgroundColor: '#0d0d14',
-    color: '#e8e8f0',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
+    borderColor: Theme.inputBorder,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    backgroundColor: Theme.inputBg,
+    color: Theme.inputText,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: Typography.base,
     marginBottom: 8,
   },
   episodeTitleInput: {
@@ -1832,16 +2018,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   episodeDateText: {
-    fontSize: 13,
-    color: '#e8e8f0',
+    fontSize: Typography.base,
+    color: Theme.textPrimary,
   },
   episodeDatePlaceholder: {
-    fontSize: 13,
-    color: '#555566',
+    fontSize: Typography.base,
+    color: Theme.textMuted,
   },
   datePickerWrap: {
     marginBottom: 8,
-    backgroundColor: '#0d0d14',
+    backgroundColor: Theme.bgBase,
     borderRadius: 10,
     paddingVertical: 4,
   },
@@ -1852,14 +2038,14 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#2d1f50',
     marginTop: 8,
   },
   datePickerDoneText: {
     color: '#c4b5fd',
     fontWeight: '600',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   episodeParticipantRow: {
     flexDirection: 'row',
@@ -1868,13 +2054,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   episodeParticipantLabel: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#9ca3af',
     fontWeight: '500',
   },
   addParticipantButton: {
     backgroundColor: '#2d1f50',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -1890,13 +2076,13 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   ownerRoleLabel: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#334155',
     fontWeight: '700',
   },
   roleToggleButton: {
-    backgroundColor: '#0d0d14',
-    borderColor: '#2a2a3a',
+    backgroundColor: Theme.bgBase,
+    borderColor: Theme.border,
     borderWidth: 0.5,
     borderRadius: 999,
     paddingHorizontal: 12,
@@ -1904,10 +2090,10 @@ const styles = StyleSheet.create({
   },
   roleToggleButtonActive: {
     backgroundColor: '#2d1f50',
-    borderColor: '#a78bfa',
+    borderColor: Theme.accent,
   },
   roleToggleButtonText: {
-    color: '#555566',
+    color: Theme.textMuted,
     fontSize: 12,
     fontWeight: '500',
   },
@@ -1915,12 +2101,12 @@ const styles = StyleSheet.create({
     color: '#c4b5fd',
   },
   participantItemCard: {
-    borderColor: '#2a2a3a',
+    borderColor: Theme.border,
     borderWidth: 0.5,
     borderRadius: 10,
     padding: 8,
     marginBottom: 8,
-    backgroundColor: '#0d0d14',
+    backgroundColor: Theme.bgBase,
   },
   participantTypeRow: {
     flexDirection: 'row',
@@ -1953,28 +2139,28 @@ const styles = StyleSheet.create({
   },
   episodeDescriptionInput: {
     minHeight: 86,
-    borderColor: '#2a2a3a',
-    borderWidth: 0.5,
-    borderRadius: 10,
-    backgroundColor: '#0d0d14',
+    borderColor: Theme.inputBorder,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    backgroundColor: Theme.inputBg,
     textAlignVertical: 'top',
-    color: '#e8e8f0',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
+    color: Theme.inputText,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: Typography.base,
     marginBottom: 8,
   },
   episodeCreateButton: {
     alignSelf: 'flex-end',
-    backgroundColor: '#a78bfa',
-    borderRadius: 8,
+    backgroundColor: Theme.btnPrimaryBg,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   episodeCreateButtonText: {
-    color: '#0d0d14',
+    color: Theme.btnPrimaryText,
     fontWeight: '500',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   episodeFormActions: {
     flexDirection: 'row',
@@ -1983,16 +2169,16 @@ const styles = StyleSheet.create({
   },
   episodeCancelButton: {
     backgroundColor: 'transparent',
-    borderColor: '#2a2a3a',
+    borderColor: Theme.btnGhostBorder,
     borderWidth: 0.5,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   episodeCancelButtonText: {
-    color: '#555566',
+    color: Theme.btnGhostText,
     fontWeight: '500',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   episodeErrorText: {
     color: '#b91c1c',
@@ -2000,8 +2186,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   episodeCard: {
-    backgroundColor: '#13131f',
-    borderColor: '#2a2a3a',
+    backgroundColor: Theme.episodeBg,
+    borderColor: Theme.episodeBorder,
     borderWidth: 0.5,
     borderRadius: 14,
     padding: 12,
@@ -2016,19 +2202,19 @@ const styles = StyleSheet.create({
   titlePill: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: '#1e1e2e',
+    backgroundColor: 'transparent',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   titlePillText: {
-    fontSize: 13,
+    fontSize: Typography.base,
     fontWeight: '500',
-    color: '#e8e8f0',
+    color: Theme.episodeTitle,
   },
   episodeCardDateText: {
     fontSize: 11,
-    color: '#555566',
+    color: Theme.episodeDate,
     flexShrink: 0,
   },
   episodeCardRow2: {
@@ -2049,29 +2235,28 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    borderColor: '#2a2a3a',
-    borderWidth: 0.5,
+    borderColor: '#aaaaaa',
+    borderWidth: 1,
     borderRadius: 999,
-    backgroundColor: '#1e1e2e',
+    backgroundColor: 'transparent',
     paddingHorizontal: 10,
     paddingVertical: 6,
     flexShrink: 0,
   },
   episodeParticipantTagMain: {
-    borderColor: '#67e8f9',
+    borderColor: '#aaaaaa',
   },
   episodeParticipantTagName: {
     fontSize: 10,
     fontWeight: '500',
-    color: '#9ca3af',
+    color: '#555555',
   },
   visibilityModeTag: {
     flexShrink: 0,
-    borderWidth: 1,
   },
   emptyEpisodeText: {
-    fontSize: 13,
-    color: '#555566',
+    fontSize: Typography.base,
+    color: Theme.textMuted,
   },
   sayingTopRow: {
     flexDirection: 'row',
@@ -2080,23 +2265,23 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sayingFormCard: {
-    backgroundColor: '#13131f',
-    borderColor: '#2a2a3a',
+    backgroundColor: Theme.bgSurface,
+    borderColor: Theme.border,
     borderWidth: 0.5,
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
   },
   sayingTextInput: {
-    borderColor: '#2a2a3a',
-    borderWidth: 0.5,
-    borderRadius: 10,
-    backgroundColor: '#0d0d14',
-    color: '#e8e8f0',
+    borderColor: Theme.inputBorder,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    backgroundColor: Theme.inputBg,
+    color: Theme.inputText,
     textAlignVertical: 'top',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    fontSize: 13,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    fontSize: Typography.base,
     minHeight: 72,
     marginBottom: 8,
   },
@@ -2115,34 +2300,34 @@ const styles = StyleSheet.create({
   habitCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#13131f',
+    backgroundColor: Theme.traitBg,
     borderWidth: 0.5,
-    borderColor: '#1e1e2e',
-    borderRadius: 12,
+    borderColor: Theme.traitBorder,
+    borderRadius: Radius.md,
     padding: 12,
     marginBottom: 6,
   },
   habitCardAccent: {
     width: 2,
     alignSelf: 'stretch',
-    backgroundColor: '#a78bfa',
+    backgroundColor: Theme.traitAccentLine,
     borderRadius: 1,
   },
   habitCardText: {
     flex: 1,
-    fontSize: 13,
-    color: '#c4c4d4',
+    fontSize: Typography.base,
+    color: Theme.traitText,
     lineHeight: 20,
     paddingLeft: 10,
   },
   sayingQuoteCard: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    backgroundColor: '#13131f',
+    backgroundColor: Theme.traitBg,
     borderWidth: 0.5,
-    borderColor: '#2a2a3a',
-    borderTopRightRadius: 12,
-    borderBottomRightRadius: 12,
+    borderColor: Theme.traitBorder,
+    borderTopRightRadius: Radius.md,
+    borderBottomRightRadius: Radius.md,
     borderTopLeftRadius: 0,
     borderBottomLeftRadius: 0,
     padding: 12,
@@ -2151,7 +2336,7 @@ const styles = StyleSheet.create({
   sayingQuoteAccent: {
     width: 2,
     alignSelf: 'stretch',
-    backgroundColor: '#a78bfa',
+    backgroundColor: Theme.traitAccentLine,
     borderRadius: 1,
   },
   sayingQuoteBody: {
@@ -2159,14 +2344,14 @@ const styles = StyleSheet.create({
     paddingLeft: 10,
   },
   sayingQuoteText: {
-    fontSize: 13,
-    color: '#c4b5fd',
+    fontSize: Typography.base,
+    color: Theme.quoteText,
     fontStyle: 'italic',
     lineHeight: 20,
   },
   sayingQuoteDate: {
     fontSize: 10,
-    color: '#555566',
+    color: Theme.quoteDateText,
     marginTop: 4,
   },
   modalBackdrop: {
@@ -2176,8 +2361,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Theme.bgSurface,
+    borderRadius: Radius.md,
     padding: 14,
   },
   modalTitle: {
@@ -2192,7 +2377,7 @@ const styles = StyleSheet.create({
   modalOption: {
     paddingVertical: 10,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
   },
   modalOptionSelected: {
     backgroundColor: '#e0f2fe',
@@ -2205,7 +2390,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#e2e8f0',
   },
   modalCloseButtonText: {
@@ -2223,10 +2408,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 0.5,
     borderBottomColor: '#1e1e2e',
   },
+  multiValueRowLast: {
+    paddingBottom: 12,
+    marginBottom: 0,
+  },
   multiValueLabel: {
     width: 40,
-    fontSize: 13,
-    color: '#555566',
+    fontSize: Typography.base,
+    color: Theme.textMuted,
     flexShrink: 0,
   },
   multiValueChipArea: {
@@ -2244,10 +2433,10 @@ const styles = StyleSheet.create({
   chip: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 20,
+    borderRadius: Radius.full,
   },
   chipText: {
-    fontSize: 13,
+    fontSize: Typography.sm,
     fontWeight: '500',
   },
   missingContainer: {
@@ -2263,7 +2452,7 @@ const styles = StyleSheet.create({
   },
   backButton: {
     backgroundColor: '#e2e8f0',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },

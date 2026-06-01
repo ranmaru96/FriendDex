@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 
 import {
   deleteProfileById,
@@ -363,9 +364,9 @@ const styles = StyleSheet.create({
   },
   profileNavPill: {
     flexShrink: 0,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: '#aaa',
+    borderColor: Theme.border,
     backgroundColor: '#3d3d3d',
     paddingHorizontal: 10,
     paddingVertical: 9.6,
@@ -375,7 +376,7 @@ const styles = StyleSheet.create({
   profileNavText: {
     fontSize: 14.4,
     fontWeight: '700',
-    color: '#fff',
+    color: Theme.bgSurface,
   },
   topNavSecondary: {
     flex: 1,
@@ -387,9 +388,9 @@ const styles = StyleSheet.create({
   secondaryNavPill: {
     flex: 1,
     minWidth: 0,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: '#aaa',
+    borderColor: Theme.border,
     backgroundColor: '#e5e5e5',
     paddingHorizontal: 8,
     paddingVertical: 8,
@@ -402,7 +403,7 @@ const styles = StyleSheet.create({
   secondaryNavText: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#555',
+    color: Theme.textSecondary,
     textAlign: 'center',
   },
   listContent: {
@@ -413,7 +414,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#dfe9ef',
     borderColor: '#7e8b94',
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     padding: 10,
     marginBottom: 10,
   },
@@ -426,33 +427,34 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   textInput: {
-    backgroundColor: '#fff',
-    borderColor: '#8aa0ad',
+    backgroundColor: Theme.inputBg,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: Radius.md,
+    color: Theme.inputText,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     fontSize: 14,
   },
   selectButton: {
-    backgroundColor: '#fff',
-    borderColor: '#8aa0ad',
+    backgroundColor: Theme.inputBg,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     minHeight: 38,
   },
   selectValue: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#111827',
     flex: 1,
   },
   selectPlaceholder: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#6b7280',
     flex: 1,
   },
@@ -468,9 +470,9 @@ const styles = StyleSheet.create({
   },
   card: {
     borderWidth: CARD_BORDER_WIDTH,
-    borderColor: '#aaa',
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    borderColor: Theme.border,
+    borderRadius: Radius.md,
+    backgroundColor: Theme.bgSurface,
     overflow: 'visible',
     padding: 0,
   },
@@ -491,7 +493,7 @@ const styles = StyleSheet.create({
     borderColor: '#0f766e',
   },
   myselfBadgeText: {
-    color: '#fff',
+    color: Theme.bgSurface,
     fontSize: 11,
     fontWeight: '800',
   },
@@ -500,7 +502,7 @@ const styles = StyleSheet.create({
     marginLeft: -2,
     marginRight: -2,
     borderWidth: 2,
-    borderColor: '#aaa',
+    borderColor: Theme.border,
     borderRadius: 10,
     overflow: 'hidden',
   },
@@ -565,8 +567,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Theme.bgSurface,
+    borderRadius: Radius.md,
     padding: 14,
     maxHeight: '70%',
   },
@@ -582,7 +584,7 @@ const styles = StyleSheet.create({
   modalOption: {
     paddingVertical: 10,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
   },
   modalOptionSelected: {
     backgroundColor: '#e0f2fe',
@@ -595,7 +597,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#e2e8f0',
   },
   modalCloseButtonText: {

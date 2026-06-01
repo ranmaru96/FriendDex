@@ -16,6 +16,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 
 import {
   createFriend,
@@ -387,7 +388,7 @@ export default function EditScreen() {
                   onChangeText={(text) => updateText('name', text)}
                   style={[styles.input, showNameError && styles.inputNameError]}
                   placeholder="苗字 名前"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor={Theme.inputPlaceholder}
                 />
               </View>
               {showNameError ? <Text style={styles.nameErrorText}>名前は必須項目です</Text> : null}
@@ -526,15 +527,15 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   saveButtonFloating: {
-    backgroundColor: '#86efac',
-    borderColor: '#16a34a',
+    backgroundColor: Theme.btnPrimaryBg,
+    borderColor: Theme.btnPrimaryBg,
     borderWidth: 1,
     borderRadius: 10,
     paddingHorizontal: 16,
     paddingVertical: 9,
   },
   saveButtonText: {
-    color: '#14532d',
+    color: Theme.btnPrimaryText,
     fontWeight: '700',
     fontSize: 15,
   },
@@ -574,10 +575,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   profileBlock: {
-    backgroundColor: '#ffffff',
+    backgroundColor: Theme.bgSurface,
     borderColor: '#94a3b8',
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     padding: 10,
     flexDirection: 'row',
     gap: 10,
@@ -610,7 +611,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fee2e2',
     borderColor: '#ef4444',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -643,36 +644,37 @@ const styles = StyleSheet.create({
   },
   formLabel: {
     width: 52,
-    fontSize: 13,
+    fontSize: Typography.base,
     fontWeight: '600',
     color: '#334155',
   },
   input: {
     flex: 1,
-    backgroundColor: '#f8fafc',
-    borderColor: '#cbd5e1',
+    backgroundColor: Theme.inputBg,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 8,
-    fontSize: 13,
-    paddingHorizontal: 9,
-    paddingVertical: 6,
+    borderRadius: Radius.md,
+    fontSize: Typography.base,
+    color: Theme.inputText,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   dateButton: {
     flex: 1,
-    backgroundColor: '#f8fafc',
-    borderColor: '#cbd5e1',
+    backgroundColor: Theme.inputBg,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 8,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     justifyContent: 'center',
   },
   dateButtonText: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#111827',
   },
   dateButtonPlaceholder: {
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#94a3b8',
   },
   datePickerWrap: {
@@ -685,40 +687,40 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingHorizontal: 16,
     paddingVertical: 6,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#e2e8f0',
     marginTop: 4,
   },
   datePickerDoneText: {
     color: '#0f172a',
     fontWeight: '600',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   selectButton: {
     flex: 1,
-    backgroundColor: '#f8fafc',
-    borderColor: '#cbd5e1',
+    backgroundColor: Theme.inputBg,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
   selectValue: {
     color: '#0f172a',
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   selectIcon: {
     color: '#475569',
     fontSize: 10,
   },
   descriptionBlock: {
-    backgroundColor: '#ffffff',
+    backgroundColor: Theme.bgSurface,
     borderColor: '#94a3b8',
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     padding: 10,
   },
   descriptionLabel: {
@@ -729,20 +731,21 @@ const styles = StyleSheet.create({
   },
   descriptionInput: {
     minHeight: 80,
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 8,
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: Radius.md,
+    backgroundColor: Theme.inputBg,
+    color: Theme.inputText,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     fontSize: 14,
     lineHeight: 20,
   },
   multiSection: {
-    backgroundColor: '#ffffff',
+    backgroundColor: Theme.bgSurface,
     borderColor: '#94a3b8',
     borderWidth: 1,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     padding: 10,
     gap: 8,
   },
@@ -780,19 +783,20 @@ const styles = StyleSheet.create({
   },
   multiInput: {
     flex: 1,
-    backgroundColor: '#f8fafc',
-    borderColor: '#cbd5e1',
+    backgroundColor: Theme.inputBg,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.md,
+    color: Theme.inputText,
     fontSize: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
   },
   removeButton: {
     backgroundColor: '#fee2e2',
     borderColor: '#ef4444',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
@@ -808,8 +812,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Theme.bgSurface,
+    borderRadius: Radius.md,
     padding: 14,
     maxHeight: '70%',
   },
@@ -825,7 +829,7 @@ const styles = StyleSheet.create({
   modalOption: {
     paddingVertical: 10,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
   },
   modalOptionSelected: {
     backgroundColor: '#e0f2fe',
@@ -838,7 +842,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#e2e8f0',
   },
   modalCloseText: {

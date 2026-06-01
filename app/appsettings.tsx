@@ -12,6 +12,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { confirmAndExportBackup, confirmAndImportBackup } from '../backup';
 import { getAllProfiles, getMyself, initializeDatabase, setMyself } from '../db';
 import { Profile } from '../types';
+import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 
 type Option = { label: string; value: string };
 
@@ -175,7 +176,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingTop: 8,
     paddingBottom: 8,
-    fontSize: 13,
+    fontSize: Typography.base,
     fontWeight: '600',
     color: '#64748b',
     textTransform: 'uppercase',
@@ -183,10 +184,10 @@ const styles = StyleSheet.create({
   },
   group: {
     marginHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: '#fff',
+    borderRadius: Radius.md,
+    backgroundColor: Theme.bgSurface,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: '#cbd5e1',
+    borderColor: Theme.border,
     overflow: 'hidden',
   },
   row: {
@@ -210,16 +211,17 @@ const styles = StyleSheet.create({
   hint: {
     marginTop: 12,
     marginHorizontal: 16,
-    fontSize: 13,
+    fontSize: Typography.base,
     color: '#64748b',
     lineHeight: 18,
   },
   selectButton: {
     borderWidth: 1,
-    borderColor: '#94a3b8',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
+    borderColor: Theme.inputBorder,
+    borderRadius: Radius.md,
+    backgroundColor: Theme.inputBg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -246,8 +248,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   modalCard: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
+    backgroundColor: Theme.bgSurface,
+    borderRadius: Radius.md,
     padding: 14,
     maxHeight: '70%',
   },
@@ -263,7 +265,7 @@ const styles = StyleSheet.create({
   modalOption: {
     paddingVertical: 12,
     paddingHorizontal: 8,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
   },
   modalOptionSelected: {
     backgroundColor: '#e0f2fe',
@@ -276,7 +278,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: '#e2e8f0',
   },
   modalCloseButtonText: {

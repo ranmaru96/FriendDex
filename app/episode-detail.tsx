@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 
 import {
   deleteEpisode,
@@ -355,8 +356,8 @@ const styles = StyleSheet.create({
     color: '#334155',
   },
   headerCard: {
-    backgroundColor: '#ffffff',
-    borderColor: '#cbd5e1',
+    backgroundColor: Theme.bgSurface,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
     padding: 10,
@@ -410,7 +411,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
     borderColor: '#94a3b8',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -423,7 +424,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#fee2e2',
     borderColor: '#ef4444',
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -441,10 +442,10 @@ const styles = StyleSheet.create({
   episodeParticipantTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 999,
-    backgroundColor: '#f8fafc',
+    backgroundColor: Theme.inputBg,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
@@ -476,8 +477,8 @@ const styles = StyleSheet.create({
     color: '#0f172a',
   },
   descriptionSection: {
-    backgroundColor: '#ffffff',
-    borderColor: '#cbd5e1',
+    backgroundColor: Theme.bgSurface,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
     padding: 12,
@@ -503,10 +504,10 @@ const styles = StyleSheet.create({
   photoFrame: {
     justifyContent: 'flex-start',
     alignItems: 'center',
-    backgroundColor: '#000',
-    borderRadius: 12,
+    backgroundColor: Theme.textPrimary,
+    borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: '#cbd5e1',
+    borderColor: Theme.inputBorder,
     overflow: 'hidden',
   },
   photoFrameSpaced: {
@@ -515,17 +516,17 @@ const styles = StyleSheet.create({
   photoImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: '#000',
+    backgroundColor: Theme.textPrimary,
   },
   privateMemoSection: {
-    backgroundColor: '#ffffff',
-    borderColor: '#cbd5e1',
+    backgroundColor: Theme.bgSurface,
+    borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
     padding: 12,
   },
   privateMemoLabel: {
-    fontSize: 13,
+    fontSize: Typography.base,
     fontWeight: '700',
     color: '#475569',
     marginBottom: 8,
@@ -554,12 +555,12 @@ const styles = StyleSheet.create({
     top: 52,
     right: 16,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
   lightboxCloseButtonText: {
-    color: '#fff',
+    color: Theme.bgSurface,
     fontSize: 14,
     fontWeight: '700',
   },
