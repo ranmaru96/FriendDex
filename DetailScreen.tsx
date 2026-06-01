@@ -13,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -34,11 +35,6 @@ import {
 } from './db';
 import { Episode, EpisodeParticipant, EpisodeVisibilityEntry, Friend, Profile, Saying } from './types';
 import { buildParticipantChips, getVisibilityModeLabel, visibilityModeTagStyles } from './utils/episodeHelpers';
-
-type KeyValueRowProps = {
-  label: string;
-  value: string;
-};
 
 type MultiValueRow = {
   title: string;
@@ -66,6 +62,33 @@ const formatEpisodeDateForCard = (date: string): string => {
   if (parts.length !== 3 || parts.some(isNaN)) return '-';
   const [, month, day] = parts;
   return `${month}月${day}日`;
+};
+
+const formatProfileSinceYear = (createdAt: string | undefined): string => {
+  if (!createdAt?.trim()) {
+    return '—';
+  }
+  const year = new Date(createdAt).getFullYear();
+  return Number.isNaN(year) ? '—' : String(year);
+};
+
+const computeProfileCompleteness = (friend: Friend, hasPhoto: boolean): number => {
+  const completenessFields = [
+    hasPhoto ? friend.photoUri : null,
+    friend.mbti?.trim() || null,
+    friend.birthday?.trim() || null,
+    friend.origin?.trim() || null,
+    friend.residence?.trim() || null,
+    friend.height,
+    friend.weight,
+    friend.description?.trim() || null,
+    friend.category?.trim() || null,
+    friend.affiliations.some((value) => value.trim()) ? 'ok' : null,
+    friend.personalities.some((value) => value.trim()) ? 'ok' : null,
+    friend.likes.some((value) => value.trim()) ? 'ok' : null,
+    friend.dislikes.some((value) => value.trim()) ? 'ok' : null,
+  ];
+  return Math.round((completenessFields.filter(Boolean).length / completenessFields.length) * 100);
 };
 
 type DetailTabKey = '情報' | 'エピソード' | '習性' | 'メモ' | '彼曰く';
@@ -146,36 +169,41 @@ function SelectInput({
   );
 }
 
-function KeyValueRow({ label, value }: KeyValueRowProps) {
-  return (
-    <View style={styles.keyValueRow}>
-      <Text style={styles.keyValueLabel}>{label}</Text>
-      <Text style={styles.keyValueValue}>{value || '-'}</Text>
-    </View>
-  );
-}
+const INFO_CHIP_STYLES: Record<string, { backgroundColor: string; color: string }> = {
+  所属: { backgroundColor: '#2d1f50', color: '#c4b5fd' },
+  経験: { backgroundColor: '#0f2e28', color: '#5eead4' },
+  性格: { backgroundColor: '#0d1e32', color: '#93c5fd' },
+  好物: { backgroundColor: '#1e2010', color: '#a3e635' },
+  苦手: { backgroundColor: '#2e1010', color: '#f87171' },
+};
 
 function MultiValueSummarySection({ rows, withCard = true }: { rows: MultiValueRow[]; withCard?: boolean }) {
   return (
     <View style={withCard ? styles.multiValueCard : styles.multiValuePlainContainer}>
-      {rows.map((row, rowIndex) => (
-        <View key={row.title} style={[styles.multiValueRow, rowIndex > 0 && styles.multiValueRowWithDivider]}>
-          <Text style={styles.multiValueLabel}>{row.title}</Text>
-          <View style={styles.multiValueChipArea}>
-            {(row.values.length > 0 ? row.values : ['-']).map((value, index) => (
-              <View key={`${row.title}-${index}-${value}`} style={styles.chip}>
-                <Text style={styles.chipText}>{value}</Text>
-              </View>
-            ))}
+      {rows.map((row, rowIndex) => {
+        const chipColors = INFO_CHIP_STYLES[row.title] ?? { backgroundColor: '#1e1e2e', color: '#9ca3af' };
+        return (
+          <View
+            key={row.title}
+            style={[styles.multiValueRow, rowIndex < rows.length - 1 && styles.multiValueRowWithDivider]}
+          >
+            <Text style={styles.multiValueLabel}>{row.title}</Text>
+            <View style={styles.multiValueChipArea}>
+              {(row.values.length > 0 ? row.values : ['-']).map((value, index) => (
+                <View
+                  key={`${row.title}-${index}-${value}`}
+                  style={[styles.chip, { backgroundColor: chipColors.backgroundColor }]}
+                >
+                  <Text style={[styles.chipText, { color: chipColors.color }]}>{value}</Text>
+                </View>
+              ))}
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
-
-const formatHeight = (height: number | null): string => (height === null ? '-' : `${height} cm`);
-const formatWeight = (weight: number | null): string => (weight === null ? '-' : `${weight} kg`);
 
 export default function DetailScreen() {
   const router = useRouter();
@@ -201,6 +229,7 @@ export default function DetailScreen() {
   const [newEpisodeTitle, setNewEpisodeTitle] = useState('');
   const [newEpisodeDate, setNewEpisodeDate] = useState('');
   const [showEpisodeDatePicker, setShowEpisodeDatePicker] = useState(false);
+  const [showSayingDatePicker, setShowSayingDatePicker] = useState(false);
   const [newEpisodeDescription, setNewEpisodeDescription] = useState('');
   const [episodeParticipants, setEpisodeParticipants] = useState<EpisodeParticipantDraft[]>([]);
   const [episodeVisibility, setEpisodeVisibility] = useState<EpisodeVisibilityDraft[]>([]);
@@ -280,6 +309,7 @@ export default function DetailScreen() {
     setSayingDate('');
     setSayingInputHeight(48);
     setSayingFormError('');
+    setShowSayingDatePicker(false);
   }, [friendId]);
 
   const friendNameById = useMemo(() => {
@@ -379,6 +409,34 @@ export default function DetailScreen() {
     });
   }, [friend]);
 
+  const heroInitial = useMemo(() => {
+    if (!friend?.name.trim()) {
+      return '?';
+    }
+    return friend.name.trim().slice(0, 1);
+  }, [friend]);
+
+  const heroBirthdayLabel = useMemo(() => {
+    if (!friend?.birthday.trim()) {
+      return '';
+    }
+    const formatted = formatEpisodeDateForCard(friend.birthday);
+    return formatted === '-' ? '' : formatted;
+  }, [friend]);
+
+  const profileCompleteness = useMemo(() => {
+    if (!friend) {
+      return 0;
+    }
+    const hasPhoto = Boolean(friend.photoUri?.trim()) && !profileImageLoadError;
+    return computeProfileCompleteness(friend, hasPhoto);
+  }, [friend, profileImageLoadError]);
+
+  const sinceYear = useMemo(
+    () => formatProfileSinceYear(selectedProfile?.createdAt),
+    [selectedProfile]
+  );
+
   const handleEpisodeSearch = () => {
     setEpisodeOtherParticipantFilter(episodeOtherParticipantDraft);
     setEpisodeTitleFilter(episodeTitleDraft);
@@ -411,6 +469,7 @@ export default function DetailScreen() {
     setSayingText('');
     setSayingDate('');
     setSayingInputHeight(48);
+    setShowSayingDatePicker(false);
     loadFriend();
   };
 
@@ -420,6 +479,7 @@ export default function DetailScreen() {
     setSayingText('');
     setSayingDate('');
     setSayingInputHeight(48);
+    setShowSayingDatePicker(false);
     setIsSayingFormVisible(true);
   };
 
@@ -429,6 +489,7 @@ export default function DetailScreen() {
     setSayingText(saying.text);
     setSayingDate(saying.date);
     setSayingInputHeight(48);
+    setShowSayingDatePicker(false);
     setIsSayingFormVisible(true);
   };
 
@@ -450,6 +511,7 @@ export default function DetailScreen() {
             setSayingText('');
             setSayingDate('');
             setSayingInputHeight(48);
+            setShowSayingDatePicker(false);
           }
           loadFriend();
         },
@@ -751,72 +813,115 @@ export default function DetailScreen() {
         extraScrollHeight={18}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.headerName}>{friend.name}</Text>
-            {selectableProfiles.length > 0 ? (
-              <Pressable style={styles.byTag} onPress={openProfileSwitcher}>
-                <Text style={styles.byTagText}>{`by ${profileTagLabel}`}</Text>
-              </Pressable>
-            ) : null}
-          </View>
-          <View style={styles.headerActions}>
-            <Pressable style={styles.editButton} onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}>
-              <Text style={styles.editButtonText}>編集</Text>
-            </Pressable>
-            <Pressable style={styles.homeButton} onPress={() => router.replace('/')}>
-              <Text style={styles.homeButtonText}>Home</Text>
-            </Pressable>
-          </View>
-        </View>
-
-        <View style={styles.profileCard}>
-          {friend.photoUri && !profileImageLoadError ? (
-            <Image
-              source={{ uri: friend.photoUri }}
-              style={styles.profilePhoto}
-              onError={() => setProfileImageLoadError(true)}
-            />
-          ) : (
-            <View style={[styles.profilePhoto, styles.profilePhotoPlaceholder]}>
-              <Text style={styles.profilePhotoPlaceholderText}>No Image</Text>
+        <View style={styles.hero}>
+          <View style={styles.heroIdentityRow}>
+            {friend.photoUri && !profileImageLoadError ? (
+              <Image
+                source={{ uri: friend.photoUri }}
+                style={styles.heroPhoto}
+                onError={() => setProfileImageLoadError(true)}
+              />
+            ) : (
+              <View style={styles.heroPhotoInitial}>
+                <Text style={styles.heroPhotoInitialText}>{heroInitial}</Text>
+              </View>
+            )}
+            <View style={styles.heroIdentityCol}>
+              <View style={styles.heroNameRow}>
+                <Text style={styles.heroName} numberOfLines={2}>
+                  {friend.name}
+                </Text>
+                <View style={styles.heroIconActions}>
+                  <Pressable
+                    style={styles.heroEditButton}
+                    onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
+                  >
+                    <Ionicons name="pencil-outline" size={16} color="#a78bfa" />
+                  </Pressable>
+                  <Pressable style={styles.heroHomeButton} onPress={() => router.replace('/')}>
+                    <Ionicons name="home-outline" size={16} color="#555566" />
+                  </Pressable>
+                </View>
+              </View>
+              {friend.nickname.trim() ? <Text style={styles.heroNickname}>{friend.nickname}</Text> : null}
+              {selectableProfiles.length > 0 ? (
+                <Pressable onPress={openProfileSwitcher}>
+                  <Text style={styles.heroByTag}>{`by ${profileTagLabel}`}</Text>
+                </Pressable>
+              ) : null}
+              {friend.mbti || heroBirthdayLabel || friend.category.trim() ? (
+                <View style={styles.heroTagRow}>
+                  {friend.mbti ? (
+                    <View style={styles.heroTagMbti}>
+                      <Text style={styles.heroTagMbtiText}>{friend.mbti}</Text>
+                    </View>
+                  ) : null}
+                  {heroBirthdayLabel ? (
+                    <View style={styles.heroTagBirthday}>
+                      <Text style={styles.heroTagBirthdayText}>{heroBirthdayLabel}</Text>
+                    </View>
+                  ) : null}
+                  {friend.category.trim() ? (
+                    <View style={styles.heroTagCategory}>
+                      <Text style={styles.heroTagCategoryText}>{friend.category}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              ) : null}
+              {friend.description.trim() ? (
+                <Text style={styles.heroDescription}>{friend.description}</Text>
+              ) : null}
             </View>
-          )}
-
-          <View style={styles.profileRight}>
-            <KeyValueRow label="通称" value={friend.nickname} />
-            <KeyValueRow label="出身" value={friend.origin} />
-            <KeyValueRow label="居住地" value={friend.residence} />
-            <KeyValueRow label="MBTI" value={friend.mbti} />
-            <KeyValueRow label="誕生日" value={friend.birthday} />
-            <KeyValueRow label="身長" value={formatHeight(friend.height)} />
-            <KeyValueRow label="体重" value={formatWeight(friend.weight)} />
-            <KeyValueRow label="分類" value={friend.category} />
           </View>
-        </View>
 
-        <View style={styles.sectionCard}>
-          <Text style={styles.descriptionText}>{friend.description || '-'}</Text>
+          <View style={styles.heroStatsRow}>
+            <View style={styles.heroStatCell}>
+              <Text style={styles.heroStatLabel}>EPISODES</Text>
+              <View style={styles.heroStatValueRow}>
+                <Text style={styles.heroStatValue}>{friend.episodes.length}</Text>
+                <Text style={styles.heroStatUnit}>件</Text>
+              </View>
+            </View>
+            <View style={styles.heroStatCell}>
+              <Text style={styles.heroStatLabel}>習性 + 彼曰く</Text>
+              <View style={styles.heroStatValueRow}>
+                <Text style={styles.heroStatValue}>{habitNotes.length + sortedSayings.length}</Text>
+                <Text style={styles.heroStatUnit}>件</Text>
+              </View>
+            </View>
+            <View style={styles.heroStatCell}>
+              <Text style={styles.heroStatLabel}>SINCE</Text>
+              <View style={styles.heroStatValueRow}>
+                <Text style={styles.heroStatValue}>{sinceYear}</Text>
+                <Text style={styles.heroStatUnit}>年〜</Text>
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.heroCompletenessSection}>
+            <View style={styles.heroCompletenessHeader}>
+              <Text style={styles.heroCompletenessLabel}>PROFILE COMPLETENESS</Text>
+              <Text style={styles.heroCompletenessPercent}>{profileCompleteness}%</Text>
+            </View>
+            <View style={styles.heroCompletenessTrack}>
+              <View style={[styles.heroCompletenessFill, { width: `${profileCompleteness}%` }]} />
+            </View>
+          </View>
         </View>
 
         <View style={styles.tabSection}>
           <View style={styles.tabRowContainer}>
-            <View style={styles.tabButtonRow}>
-              {(['情報', 'エピソード', '習性', '彼曰く', 'メモ'] as DetailTabKey[]).map((tab, index) => (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabButtonRow}>
+              {(['情報', 'エピソード', '習性', '彼曰く', 'メモ'] as DetailTabKey[]).map((tab) => (
                 <TouchableOpacity
                   key={tab}
                   onPress={() => setActiveTab(tab)}
-                  style={[
-                    styles.tabButton,
-                    activeTab === tab ? styles.tabButtonActive : styles.tabButtonInactive,
-                  ]}
+                  style={[styles.tabButton, activeTab === tab && styles.tabButtonActive]}
                 >
-                  <Text style={[styles.tabButtonText, activeTab === tab ? styles.tabButtonTextActive : styles.tabButtonTextInactive]}>
-                    {tab}
-                  </Text>
+                  <Text style={[styles.tabButtonText, activeTab === tab && styles.tabButtonTextActive]}>{tab}</Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
           </View>
 
           <View style={styles.tabContentArea}>
@@ -861,7 +966,7 @@ export default function DetailScreen() {
                 <TextInput
                   style={[styles.sayingTextInput, { height: Math.max(48, habitInputHeight) }]}
                   placeholder="習性（自由記入）"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor="#555566"
                   multiline
                   value={habitText}
                   onContentSizeChange={(event) => {
@@ -896,11 +1001,12 @@ export default function DetailScreen() {
               habitNotes.map((note, index) => (
                 <Pressable
                   key={`habit-${index}`}
-                  style={styles.sayingCard}
+                  style={styles.habitCard}
                   onLongPress={() => handleLongPressHabit(index)}
                   delayLongPress={300}
                 >
-                  <Text style={styles.sayingCardText}>{note}</Text>
+                  <View style={styles.habitCardAccent} />
+                  <Text style={styles.habitCardText}>{note}</Text>
                 </Pressable>
               ))
             )}
@@ -920,7 +1026,7 @@ export default function DetailScreen() {
               <TextInput
                 style={[styles.episodeSearchInput, styles.episodeSearchCell]}
                 placeholder="タイトル名"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor="#555566"
                 value={episodeTitleDraft}
                 onChangeText={setEpisodeTitleDraft}
               />
@@ -950,7 +1056,7 @@ export default function DetailScreen() {
                   <TextInput
                     style={[styles.episodeInput, styles.episodeTitleInput]}
                     placeholder="タイトル"
-                    placeholderTextColor="#94a3b8"
+                    placeholderTextColor="#555566"
                     value={newEpisodeTitle}
                     onChangeText={setNewEpisodeTitle}
                   />
@@ -970,6 +1076,8 @@ export default function DetailScreen() {
                       mode="date"
                       display="spinner"
                       locale="ja-JP"
+                      themeVariant="dark"
+                      textColor="#ffffff"
                       style={styles.datePickerSelf}
                       onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                         if (Platform.OS !== 'ios') setShowEpisodeDatePicker(false);
@@ -1142,7 +1250,7 @@ export default function DetailScreen() {
                 <TextInput
                   style={styles.episodeDescriptionInput}
                   placeholder="説明文の記入（記入式）"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor="#555566"
                   multiline
                   value={newEpisodeDescription}
                   onChangeText={setNewEpisodeDescription}
@@ -1246,6 +1354,7 @@ export default function DetailScreen() {
                     setSayingText('');
                     setSayingDate('');
                     setSayingInputHeight(48);
+                    setShowSayingDatePicker(false);
                   } else {
                     startCreateSaying();
                   }
@@ -1262,7 +1371,7 @@ export default function DetailScreen() {
                 <TextInput
                   style={[styles.sayingTextInput, { height: Math.max(48, sayingInputHeight) }]}
                   placeholder="彼曰く（自由記入）"
-                  placeholderTextColor="#94a3b8"
+                  placeholderTextColor="#555566"
                   multiline
                   value={sayingText}
                   onContentSizeChange={(event) => {
@@ -1270,13 +1379,34 @@ export default function DetailScreen() {
                   }}
                   onChangeText={setSayingText}
                 />
-                <TextInput
-                  style={styles.sayingDateInput}
-                  placeholder="YYYY-MM-DD（任意）"
-                  placeholderTextColor="#94a3b8"
-                  value={sayingDate}
-                  onChangeText={setSayingDate}
-                />
+                <Pressable
+                  style={[styles.episodeInput, styles.sayingDateInput]}
+                  onPress={() => setShowSayingDatePicker(true)}
+                >
+                  <Text style={sayingDate ? styles.episodeDateText : styles.episodeDatePlaceholder}>
+                    {sayingDate || 'YYYY-MM-DD（任意）'}
+                  </Text>
+                </Pressable>
+                {showSayingDatePicker && (
+                  <View style={styles.datePickerWrap}>
+                    <DateTimePicker
+                      value={parseDateString(sayingDate)}
+                      mode="date"
+                      display="spinner"
+                      locale="ja-JP"
+                      themeVariant="dark"
+                      textColor="#ffffff"
+                      style={styles.datePickerSelf}
+                      onChange={(_event: DateTimePickerEvent, selected?: Date) => {
+                        if (Platform.OS !== 'ios') setShowSayingDatePicker(false);
+                        if (selected) setSayingDate(formatDateToYMD(selected));
+                      }}
+                    />
+                    <Pressable style={styles.datePickerDone} onPress={() => setShowSayingDatePicker(false)}>
+                      <Text style={styles.datePickerDoneText}>完了</Text>
+                    </Pressable>
+                  </View>
+                )}
                 <View style={styles.sayingActionRow}>
                   <Pressable
                     style={styles.episodeCancelButton}
@@ -1286,6 +1416,7 @@ export default function DetailScreen() {
                       setSayingText('');
                       setSayingDate('');
                       setSayingInputHeight(48);
+                      setShowSayingDatePicker(false);
                       setSayingFormError('');
                     }}
                   >
@@ -1305,13 +1436,14 @@ export default function DetailScreen() {
               sortedSayings.map((saying: Saying) => (
                 <Pressable
                   key={saying.id}
-                  style={styles.sayingCard}
+                  style={styles.sayingQuoteCard}
                   onLongPress={() => handleLongPressSaying(saying)}
                   delayLongPress={300}
                 >
-                  <View style={styles.sayingInlineRow}>
-                    <Text style={styles.sayingCardText}>{saying.text}</Text>
-                    {saying.date ? <Text style={styles.sayingCardDate}>{saying.date}</Text> : null}
+                  <View style={styles.sayingQuoteAccent} />
+                  <View style={styles.sayingQuoteBody}>
+                    <Text style={styles.sayingQuoteText}>{saying.text}</Text>
+                    {saying.date ? <Text style={styles.sayingQuoteDate}>{saying.date}</Text> : null}
                   </View>
                 </Pressable>
               ))
@@ -1336,221 +1468,245 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     gap: 10,
   },
-  headerRow: {
+  hero: {
+    backgroundColor: '#0d0d14',
+    paddingTop: 16,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
+    borderRadius: 12,
+  },
+  heroIdentityRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  heroPhoto: {
+    width: 132,
+    height: 132,
+    borderRadius: 12,
+  },
+  heroPhotoInitial: {
+    width: 132,
+    height: 132,
+    borderRadius: 12,
+    backgroundColor: '#1e1230',
+    borderWidth: 1.5,
+    borderColor: 'rgba(167,139,250,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroPhotoInitialText: {
+    fontSize: 48,
+    fontWeight: '500',
+    color: '#c4b5fd',
+  },
+  heroIdentityCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  heroNameRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
   },
-  headerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  heroName: {
     flex: 1,
-    minWidth: 0,
+    fontSize: 22,
+    fontWeight: '500',
+    color: '#e8e8f0',
   },
-  headerActions: {
+  heroIconActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
-  headerName: {
-    width: '60%',
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0f172a',
-    backgroundColor: '#fff',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
+  heroEditButton: {
+    width: 30,
+    height: 30,
     borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-  },
-  byTag: {
+    backgroundColor: 'rgba(45,31,80,0.2)',
     borderWidth: 1,
-    borderColor: '#94a3b8',
-    borderRadius: 999,
-    backgroundColor: '#f8fafc',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    flexShrink: 0,
-  },
-  byTagText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#334155',
-  },
-  editButton: {
-    backgroundColor: '#67e8f9',
-    borderColor: '#0891b2',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 9,
-  },
-  editButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#083344',
-  },
-  homeButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  homeButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  profileCard: {
-    backgroundColor: '#ffffff',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 10,
-    flexDirection: 'row',
-    gap: 10,
-  },
-  profilePhoto: {
-    width: 118,
-    height: 150,
-    borderRadius: 10,
-  },
-  profilePhotoPlaceholder: {
-    backgroundColor: '#f1f5f9',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
+    borderColor: 'rgba(167,139,250,0.27)',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
   },
-  profilePhotoPlaceholderText: {
-    color: '#64748b',
+  heroHomeButton: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: '#2a2a3a',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroNickname: {
     fontSize: 14,
-    textAlign: 'center',
-    fontWeight: '600',
+    color: '#a78bfa',
   },
-  profileRight: {
-    flex: 1,
-    gap: 3,
+  heroByTag: {
+    fontSize: 10,
+    color: '#c4b5fd',
+    fontWeight: '500',
   },
-  keyValueRow: {
+  heroTagRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  heroTagMbti: {
+    backgroundColor: '#2d1f50',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+  },
+  heroTagMbtiText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#c4b5fd',
+  },
+  heroTagBirthday: {
+    backgroundColor: '#0f2e28',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+  },
+  heroTagBirthdayText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#5eead4',
+  },
+  heroTagCategory: {
+    backgroundColor: '#1e1e2e',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 20,
+  },
+  heroTagCategoryText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#888899',
+  },
+  heroDescription: {
+    fontSize: 11,
+    color: '#555566',
+    lineHeight: 16,
+  },
+  heroStatsRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 14,
+  },
+  heroStatCell: {
+    flex: 1,
+    backgroundColor: '#13131f',
+    borderWidth: 0.5,
+    borderColor: '#2a2a3a',
+    borderRadius: 10,
+    paddingVertical: 8,
     alignItems: 'center',
   },
-  keyValueLabel: {
-    width: 58,
-    fontSize: 13,
-    color: '#334155',
-    fontWeight: '600',
+  heroStatLabel: {
+    fontSize: 9,
+    color: '#555566',
+    textTransform: 'uppercase',
+    marginBottom: 2,
   },
-  keyValueValue: {
-    flex: 1,
-    fontSize: 13,
-    color: '#0f172a',
-    backgroundColor: '#f8fafc',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+  heroStatValueRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
   },
-  sectionCard: {
-    backgroundColor: '#ffffff',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 10,
+  heroStatValue: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#e8e8f0',
   },
-  descriptionText: {
-    color: '#1e293b',
-    lineHeight: 20,
-    fontSize: 14,
+  heroStatUnit: {
+    fontSize: 10,
+    color: '#555566',
+  },
+  heroCompletenessSection: {
+    marginTop: 10,
+  },
+  heroCompletenessHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  heroCompletenessLabel: {
+    fontSize: 9,
+    color: '#555566',
+    letterSpacing: 0.3,
+  },
+  heroCompletenessPercent: {
+    fontSize: 10,
+    color: '#a78bfa',
+  },
+  heroCompletenessTrack: {
+    height: 4,
+    backgroundColor: '#1e1e2e',
+    borderRadius: 2,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  heroCompletenessFill: {
+    height: 4,
+    backgroundColor: '#a78bfa',
+    borderRadius: 2,
   },
   tabSection: {
     gap: 0,
-    backgroundColor: 'transparent',
+    backgroundColor: '#0d0d14',
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   tabRowContainer: {
-    borderWidth: 0,
-    backgroundColor: 'transparent',
-    paddingTop: 0,
-    paddingBottom: 0,
-    paddingHorizontal: 0,
-    margin: 0,
+    backgroundColor: '#0d0d14',
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#1e1e2e',
   },
   tabButtonRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 0,
-    paddingTop: 0,
-    paddingBottom: 0,
-    margin: 0,
-    gap: 0,
+    alignItems: 'flex-end',
   },
   tabButton: {
-    paddingHorizontal: 17.5,
-    paddingVertical: 8,
-    borderColor: '#aaa',
-    borderWidth: 2,
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-    marginBottom: 0,
-  },
-  tabButtonInactive: {
-    backgroundColor: '#e0e0e0',
-    borderBottomWidth: 2,
-    zIndex: 0,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: 'transparent',
   },
   tabButtonActive: {
-    backgroundColor: '#fff',
-    borderBottomWidth: 0,
-    zIndex: 2,
+    borderBottomWidth: 2,
+    borderBottomColor: '#a78bfa',
   },
   tabButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
-  },
-  tabButtonTextInactive: {
-    color: '#aaa',
+    fontSize: 12,
+    color: '#555566',
   },
   tabButtonTextActive: {
-    color: '#888',
+    color: '#a78bfa',
   },
   tabContentArea: {
-    backgroundColor: '#fff',
-    borderColor: '#aaa',
-    borderWidth: 2,
-    borderTopWidth: 0,
-    borderRadius: 8,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    zIndex: 0,
+    backgroundColor: '#0d0d14',
     margin: 0,
     paddingTop: 0,
   },
-  tabContentAreaLeftConnected: {
-    borderTopLeftRadius: 0,
-  },
-  tabContentAreaRounded: {
-    borderTopLeftRadius: 8,
-    borderTopRightRadius: 8,
-  },
   tabPane: {
-    padding: 10,
+    backgroundColor: '#0d0d14',
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 10,
   },
   multiValuePlainContainer: {
     padding: 0,
+    backgroundColor: '#0d0d14',
   },
   multiValueCard: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: 8,
-    margin: 8,
-    padding: 10,
-    backgroundColor: '#fff',
+    backgroundColor: '#0d0d14',
+    paddingHorizontal: 14,
+    paddingTop: 14,
+    paddingBottom: 4,
   },
   habitInput: {
     borderColor: '#cbd5e1',
@@ -1588,70 +1744,67 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   episodeSelectButton: {
-    minHeight: 38,
-    backgroundColor: '#f8fafc',
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
+    height: 36,
+    backgroundColor: '#13131f',
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
     borderRadius: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     justifyContent: 'center',
   },
   episodeSelectText: {
     fontSize: 13,
-    color: '#0f172a',
+    color: '#e8e8f0',
   },
   episodeSelectPlaceholder: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: '#555566',
   },
   episodeSearchInput: {
-    minHeight: 38,
-    backgroundColor: '#f8fafc',
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
+    height: 36,
+    backgroundColor: '#13131f',
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
     borderRadius: 10,
-    paddingHorizontal: 8,
+    paddingHorizontal: 12,
     fontSize: 13,
-    color: '#0f172a',
+    color: '#e8e8f0',
   },
   episodeSearchButton: {
     minWidth: 58,
-    minHeight: 38,
-    backgroundColor: '#ffffff',
-    borderColor: '#0f172a',
-    borderWidth: 1,
+    height: 36,
+    backgroundColor: '#2d1f50',
     borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 10,
+    paddingHorizontal: 14,
   },
   episodeSearchButtonText: {
-    color: '#0f172a',
-    fontWeight: '700',
+    color: '#c4b5fd',
+    fontWeight: '500',
     fontSize: 13,
   },
   episodeAddButton: {
     alignSelf: 'flex-end',
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
+    backgroundColor: '#a78bfa',
+    borderRadius: 10,
+    paddingHorizontal: 14,
     paddingVertical: 7,
     marginBottom: 10,
   },
   episodeAddButtonText: {
-    color: '#0f172a',
-    fontWeight: '700',
+    color: '#0d0d14',
+    fontWeight: '500',
     fontSize: 13,
   },
   episodeFormCard: {
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 10,
+    backgroundColor: '#13131f',
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 10,
     marginBottom: 10,
-    backgroundColor: '#f8fafc',
   },
   episodeTitleDateRow: {
     flexDirection: 'row',
@@ -1661,13 +1814,15 @@ const styles = StyleSheet.create({
   },
   episodeInput: {
     minHeight: 38,
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
     borderRadius: 10,
-    backgroundColor: '#ffffff',
-    color: '#0f172a',
-    paddingHorizontal: 10,
-    fontSize: 14,
+    backgroundColor: '#0d0d14',
+    color: '#e8e8f0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    marginBottom: 8,
   },
   episodeTitleInput: {
     flex: 1,
@@ -1678,14 +1833,17 @@ const styles = StyleSheet.create({
   },
   episodeDateText: {
     fontSize: 13,
-    color: '#111827',
+    color: '#e8e8f0',
   },
   episodeDatePlaceholder: {
     fontSize: 13,
-    color: '#94a3b8',
+    color: '#555566',
   },
   datePickerWrap: {
     marginBottom: 8,
+    backgroundColor: '#0d0d14',
+    borderRadius: 10,
+    paddingVertical: 4,
   },
   datePickerSelf: {
     alignSelf: 'flex-end',
@@ -1695,11 +1853,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 6,
     borderRadius: 8,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: '#2d1f50',
     marginTop: 8,
   },
   datePickerDoneText: {
-    color: '#0f172a',
+    color: '#c4b5fd',
     fontWeight: '600',
     fontSize: 13,
   },
@@ -1710,22 +1868,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   episodeParticipantLabel: {
-    fontSize: 14,
-    color: '#0f172a',
-    fontWeight: '700',
+    fontSize: 13,
+    color: '#9ca3af',
+    fontWeight: '500',
   },
   addParticipantButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
+    backgroundColor: '#2d1f50',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   addParticipantButtonText: {
-    color: '#0f172a',
+    color: '#c4b5fd',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '500',
   },
   ownerRoleRow: {
     flexDirection: 'row',
@@ -1739,32 +1895,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   roleToggleButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
+    backgroundColor: '#0d0d14',
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
   roleToggleButtonActive: {
-    backgroundColor: '#67e8f9',
-    borderColor: '#0891b2',
+    backgroundColor: '#2d1f50',
+    borderColor: '#a78bfa',
   },
   roleToggleButtonText: {
-    color: '#0f172a',
+    color: '#555566',
     fontSize: 12,
-    fontWeight: '700',
+    fontWeight: '500',
   },
   roleToggleButtonTextActive: {
-    color: '#083344',
+    color: '#c4b5fd',
   },
   participantItemCard: {
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
     borderRadius: 10,
     padding: 8,
     marginBottom: 8,
-    backgroundColor: '#fff',
+    backgroundColor: '#0d0d14',
   },
   participantTypeRow: {
     flexDirection: 'row',
@@ -1774,8 +1930,8 @@ const styles = StyleSheet.create({
   },
   participantTypeLabel: {
     fontSize: 12,
-    color: '#334155',
-    fontWeight: '700',
+    color: '#9ca3af',
+    fontWeight: '500',
   },
   participantItemTopRow: {
     flexDirection: 'row',
@@ -1797,29 +1953,27 @@ const styles = StyleSheet.create({
   },
   episodeDescriptionInput: {
     minHeight: 86,
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
-    borderRadius: 12,
-    backgroundColor: '#ffffff',
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
+    borderRadius: 10,
+    backgroundColor: '#0d0d14',
     textAlignVertical: 'top',
-    color: '#0f172a',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    fontSize: 14,
+    color: '#e8e8f0',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
     marginBottom: 8,
   },
   episodeCreateButton: {
     alignSelf: 'flex-end',
-    backgroundColor: '#67e8f9',
-    borderColor: '#0891b2',
-    borderWidth: 1,
+    backgroundColor: '#a78bfa',
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   episodeCreateButtonText: {
-    color: '#083344',
-    fontWeight: '700',
+    color: '#0d0d14',
+    fontWeight: '500',
     fontSize: 13,
   },
   episodeFormActions: {
@@ -1828,16 +1982,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   episodeCancelButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
+    backgroundColor: 'transparent',
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   episodeCancelButtonText: {
-    color: '#0f172a',
-    fontWeight: '700',
+    color: '#555566',
+    fontWeight: '500',
     fontSize: 13,
   },
   episodeErrorText: {
@@ -1846,15 +2000,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   episodeCard: {
-    backgroundColor: '#ffffff',
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 10,
+    backgroundColor: '#13131f',
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
+    borderRadius: 14,
+    padding: 12,
     marginBottom: 8,
-  },
-  episodeCardSubBackground: {
-    backgroundColor: '#f1f5f9',
   },
   episodeCardRow1: {
     flexDirection: 'row',
@@ -1862,28 +2013,28 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 8,
   },
-  episodeCardRow2: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
   titlePill: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: '#1e1e2e',
     borderRadius: 20,
     paddingHorizontal: 12,
     paddingVertical: 8,
   },
   titlePillText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1e293b',
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#e8e8f0',
   },
   episodeCardDateText: {
-    fontSize: 12,
-    color: '#64748b',
+    fontSize: 11,
+    color: '#555566',
     flexShrink: 0,
+  },
+  episodeCardRow2: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   episodeParticipantTagScroll: {
     flex: 1,
@@ -1898,20 +2049,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
     borderRadius: 999,
-    backgroundColor: '#ffffff',
+    backgroundColor: '#1e1e2e',
     paddingHorizontal: 10,
     paddingVertical: 6,
+    flexShrink: 0,
   },
   episodeParticipantTagMain: {
     borderColor: '#67e8f9',
   },
   episodeParticipantTagName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0f172a',
+    fontSize: 10,
+    fontWeight: '500',
+    color: '#9ca3af',
   },
   visibilityModeTag: {
     flexShrink: 0,
@@ -1919,7 +2071,7 @@ const styles = StyleSheet.create({
   },
   emptyEpisodeText: {
     fontSize: 13,
-    color: '#64748b',
+    color: '#555566',
   },
   sayingTopRow: {
     flexDirection: 'row',
@@ -1928,34 +2080,30 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   sayingFormCard: {
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 10,
-    marginBottom: 8,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#13131f',
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
   },
   sayingTextInput: {
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
+    borderColor: '#2a2a3a',
+    borderWidth: 0.5,
     borderRadius: 10,
-    backgroundColor: '#f8fafc',
-    color: '#0f172a',
+    backgroundColor: '#0d0d14',
+    color: '#e8e8f0',
     textAlignVertical: 'top',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    fontSize: 14,
-    marginBottom: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    minHeight: 72,
+    marginBottom: 8,
   },
   sayingDateInput: {
-    minHeight: 38,
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
-    borderRadius: 10,
-    backgroundColor: '#f8fafc',
-    color: '#0f172a',
-    paddingHorizontal: 10,
-    fontSize: 13,
+    width: '100%',
+    marginBottom: 8,
+    justifyContent: 'center',
   },
   sayingActionRow: {
     flexDirection: 'row',
@@ -1964,31 +2112,62 @@ const styles = StyleSheet.create({
     marginTop: 8,
     gap: 8,
   },
-  sayingCard: {
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
-    borderRadius: 10,
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+  habitCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#13131f',
+    borderWidth: 0.5,
+    borderColor: '#1e1e2e',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 6,
+  },
+  habitCardAccent: {
+    width: 2,
+    alignSelf: 'stretch',
+    backgroundColor: '#a78bfa',
+    borderRadius: 1,
+  },
+  habitCardText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#c4c4d4',
+    lineHeight: 20,
+    paddingLeft: 10,
+  },
+  sayingQuoteCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: '#13131f',
+    borderWidth: 0.5,
+    borderColor: '#2a2a3a',
+    borderTopRightRadius: 12,
+    borderBottomRightRadius: 12,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    padding: 12,
     marginBottom: 8,
   },
-  sayingInlineRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'flex-end',
+  sayingQuoteAccent: {
+    width: 2,
+    alignSelf: 'stretch',
+    backgroundColor: '#a78bfa',
+    borderRadius: 1,
   },
-  sayingCardText: {
+  sayingQuoteBody: {
     flex: 1,
-    fontSize: 14,
-    color: '#1e293b',
-    lineHeight: 20,
-    textAlign: 'left',
+    paddingLeft: 10,
   },
-  sayingCardDate: {
-    fontSize: 12,
-    color: '#999',
-    fontWeight: 'normal',
+  sayingQuoteText: {
+    fontSize: 13,
+    color: '#c4b5fd',
+    fontStyle: 'italic',
+    lineHeight: 20,
+  },
+  sayingQuoteDate: {
+    fontSize: 10,
+    color: '#555566',
+    marginTop: 4,
   },
   modalBackdrop: {
     flex: 1,
@@ -2035,25 +2214,27 @@ const styles = StyleSheet.create({
   },
   multiValueRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    paddingVertical: 8,
+    alignItems: 'center',
+    paddingBottom: 12,
+    marginBottom: 12,
+    gap: 10,
   },
   multiValueRowWithDivider: {
-    borderTopColor: '#cbd5e1',
-    borderTopWidth: 1,
+    borderBottomWidth: 0.5,
+    borderBottomColor: '#1e1e2e',
   },
   multiValueLabel: {
-    width: 58,
+    width: 40,
     fontSize: 13,
-    color: '#334155',
-    fontWeight: '700',
-    paddingTop: 4,
+    color: '#555566',
+    flexShrink: 0,
   },
   multiValueChipArea: {
     flex: 1,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    alignItems: 'flex-start',
+    gap: 4,
+    justifyContent: 'flex-start',
   },
   chipContainer: {
     flexDirection: 'row',
@@ -2061,19 +2242,13 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   chip: {
-    backgroundColor: '#f8fafc',
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
-    borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginRight: 6,
-    marginBottom: 6,
-    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    borderRadius: 20,
   },
   chipText: {
-    color: '#1e293b',
-    fontSize: 14,
+    fontSize: 13,
+    fontWeight: '500',
   },
   missingContainer: {
     flex: 1,
