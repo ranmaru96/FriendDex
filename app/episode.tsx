@@ -14,6 +14,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
@@ -45,6 +46,7 @@ import {
 import {
   buildParticipantChips,
   getVisibilityModeLabel,
+  resolveEpisodeRecordOwnerId,
   visibilityDisplayLabels,
 } from '../utils/episodeHelpers';
 
@@ -459,7 +461,7 @@ function collectUniqueEpisodes(friends: Friend[]): EpisodeRow[] {
       if (!byId.has(episode.id)) {
         byId.set(episode.id, {
           episode,
-          recordOwnerId: episode.authorFriendId || friend.id,
+          recordOwnerId: resolveEpisodeRecordOwnerId(episode, friend.id),
         });
       }
     });
@@ -512,11 +514,9 @@ function EpisodeListCard({
   return (
     <View style={styles.episodeCard}>
       <View style={styles.episodeCardRow1}>
-        <View style={styles.titlePill}>
-          <Text style={styles.titlePillText} numberOfLines={1}>
-            {title || '-'}
-          </Text>
-        </View>
+        <Text style={styles.episodeCardTitle} numberOfLines={1}>
+          {title || '-'}
+        </Text>
         <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
         {visibilityMode != null && modeStyles ? (
           <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
@@ -538,11 +538,11 @@ function EpisodeListCard({
           </View>
         ) : onEdit && onDelete ? (
           <View style={styles.episodeCardActions}>
-            <Pressable style={styles.episodeCardEditButton} onPress={onEdit}>
-              <Text style={styles.episodeCardEditButtonText}>編集</Text>
+            <Pressable style={styles.episodeCardEditButton} onPress={onEdit} accessibilityLabel="編集">
+              <Ionicons name="pencil-outline" size={18} color="#0f172a" />
             </Pressable>
-            <Pressable style={styles.episodeCardDeleteButton} onPress={onDelete}>
-              <Text style={styles.episodeCardDeleteButtonText}>削除</Text>
+            <Pressable style={styles.episodeCardDeleteButton} onPress={onDelete} accessibilityLabel="削除">
+              <Ionicons name="trash-outline" size={18} color="#b91c1c" />
             </Pressable>
           </View>
         ) : null}
@@ -889,7 +889,8 @@ export default function EpisodeScreen() {
         text: '削除',
         style: 'destructive',
         onPress: () => {
-          const deleted = deleteEpisode(row.recordOwnerId, row.episode.id);
+          const ownerId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
+          const deleted = deleteEpisode(ownerId, row.episode.id);
           if (!deleted) {
             Alert.alert('エラー', 'エピソードの削除に失敗しました。');
             return;
@@ -1032,25 +1033,23 @@ export default function EpisodeScreen() {
             ) : (
               episodeRows.map((row) => {
                 const chips = buildParticipantChips(row.episode, friendNameById);
-                const visibility = visibilityDisplayLabels(row.episode, friendNameById);
-                const isMyEpisode = myselfId !== null && row.episode.authorFriendId === myselfId;
+                const ownerId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
                 return (
                   <Pressable
                     key={row.episode.id}
                     onPress={() =>
                       router.push({
                         pathname: '/episode-detail',
-                        params: { episodeId: row.episode.id, ownerId: row.recordOwnerId },
+                        params: { episodeId: row.episode.id, ownerId },
                       })
                     }
                   >
                     <EpisodeListCard
                       title={row.episode.title}
                       date={row.episode.date}
-                      isSharedPost={!isMyEpisode}
+                      isSharedPost={false}
                       chips={chips}
-                      visibility={isMyEpisode ? undefined : visibility}
-                      visibilityMode={isMyEpisode ? row.episode.visibilityMode : undefined}
+                      visibilityMode={row.episode.visibilityMode}
                     />
                   </Pressable>
                 );
@@ -1405,30 +1404,25 @@ const styles = StyleSheet.create({
     borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
-    padding: 10,
-    marginBottom: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 6,
   },
   episodeCardRow1: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+    gap: 6,
+    marginBottom: 4,
   },
   episodeCardRow2: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 8,
+    gap: 6,
   },
-  titlePill: {
+  episodeCardTitle: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: 'transparent',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  titlePillText: {
     fontSize: 15,
     fontWeight: '700',
     color: '#1e293b',
@@ -1519,30 +1513,24 @@ const styles = StyleSheet.create({
     maxWidth: 200,
   },
   episodeCardEditButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
+    width: 32,
+    height: 32,
+    backgroundColor: '#ffffff',
+    borderColor: Theme.border,
+    borderWidth: 2,
     borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeCardEditButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   episodeCardDeleteButton: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#ef4444',
-    borderWidth: 1,
+    width: 32,
+    height: 32,
+    backgroundColor: '#ffffff',
+    borderColor: Theme.border,
+    borderWidth: 2,
     borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeCardDeleteButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#b91c1c',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   fab: {
     position: 'absolute',

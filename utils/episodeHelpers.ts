@@ -1,5 +1,24 @@
 import { Episode, EpisodeParticipant, EpisodeVisibilityMode } from '../types';
 
+/** update/delete に渡すプロフィール所有者 ID */
+export function resolveEpisodeRecordOwnerId(episode: Episode, profileFriendId: string): string {
+  const author = episode.authorFriendId.trim();
+  return author || profileFriendId;
+}
+
+/**
+ * 編集・削除可能か。
+ * 現状は共有エピソードがないため、本人設定済みならすべて操作可能。
+ * TODO: 他ユーザーから共有されたエピソード（author !== myself かつ shared）では false にする。
+ */
+export function canManageEpisode(
+  _episode: Episode,
+  _profileFriendId: string,
+  myselfId: string | null
+): boolean {
+  return myselfId !== null;
+}
+
 export function getVisibilityModeLabel(mode: EpisodeVisibilityMode): string {
   switch (mode) {
     case 'public':

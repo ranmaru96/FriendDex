@@ -253,11 +253,16 @@ const backfillEpisodeAuthorFriendIds = (myselfId: string): void => {
       const episodes = fromEpisodeJson(row.episodes);
       let changed = false;
       const nextEpisodes = episodes.map((episode) => {
-        if (episode.authorFriendId !== '') {
-          return episode;
+        const author = episode.authorFriendId.trim();
+        if (author === '') {
+          changed = true;
+          return { ...episode, authorFriendId: row.friendId };
         }
-        changed = true;
-        return { ...episode, authorFriendId: myselfId };
+        if (author === myselfId && row.friendId !== myselfId) {
+          changed = true;
+          return { ...episode, authorFriendId: row.friendId };
+        }
+        return episode;
       });
       if (!changed) {
         return;

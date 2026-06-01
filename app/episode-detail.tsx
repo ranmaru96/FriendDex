@@ -12,6 +12,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 
 import {
@@ -25,7 +26,9 @@ import {
 import { Episode, EpisodePhoto } from '../types';
 import {
   buildParticipantChips,
+  canManageEpisode,
   getVisibilityModeLabel,
+  resolveEpisodeRecordOwnerId,
   visibilityDisplayLabels,
   visibilityModeTagStyles,
 } from '../utils/episodeHelpers';
@@ -159,7 +162,9 @@ export default function EpisodeDetailScreen() {
   const showParticipantRow = chips.length > 0;
   const showVisibilityTargets =
     episode?.visibilityMode === 'limited' && visibility.length > 0;
-  const isOwner = myselfId !== null && episode?.authorFriendId === myselfId;
+  const canManage =
+    episode && ownerId ? canManageEpisode(episode, ownerId, myselfId) : false;
+  const recordOwnerId = episode ? resolveEpisodeRecordOwnerId(episode, ownerId) : ownerId;
   const basePhotoHeight = useMemo(() => (photoAreaWidth * 3) / 4, [photoAreaWidth]);
 
   const renderPhotoFrame = (photo: EpisodePhoto, index: number) => (
@@ -182,7 +187,7 @@ export default function EpisodeDetailScreen() {
   const handleEdit = () => {
     router.push({
       pathname: '/episode',
-      params: { editEpisodeId: episodeId, ownerId },
+      params: { editEpisodeId: episodeId, ownerId: recordOwnerId },
     });
   };
 
@@ -193,7 +198,7 @@ export default function EpisodeDetailScreen() {
         text: '削除',
         style: 'destructive',
         onPress: () => {
-          const deleted = deleteEpisode(ownerId, episodeId);
+          const deleted = deleteEpisode(recordOwnerId, episodeId);
           if (!deleted) {
             Alert.alert('エラー', 'エピソードの削除に失敗しました。');
             return;
@@ -244,13 +249,21 @@ export default function EpisodeDetailScreen() {
                   </Text>
                 </View>
               ) : null}
-              {isOwner ? (
+              {canManage ? (
                 <View style={styles.episodeCardActions}>
-                  <Pressable style={styles.episodeCardEditButton} onPress={handleEdit}>
-                    <Text style={styles.episodeCardEditButtonText}>編集</Text>
+                  <Pressable
+                    style={styles.episodeCardEditButton}
+                    onPress={handleEdit}
+                    accessibilityLabel="編集"
+                  >
+                    <Ionicons name="pencil-outline" size={18} color="#0f172a" />
                   </Pressable>
-                  <Pressable style={styles.episodeCardDeleteButton} onPress={handleDelete}>
-                    <Text style={styles.episodeCardDeleteButtonText}>削除</Text>
+                  <Pressable
+                    style={styles.episodeCardDeleteButton}
+                    onPress={handleDelete}
+                    accessibilityLabel="削除"
+                  >
+                    <Ionicons name="trash-outline" size={18} color="#b91c1c" />
                   </Pressable>
                 </View>
               ) : null}
@@ -408,30 +421,24 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   episodeCardEditButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
+    width: 32,
+    height: 32,
+    backgroundColor: '#ffffff',
+    borderColor: Theme.border,
+    borderWidth: 2,
     borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeCardEditButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   episodeCardDeleteButton: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#ef4444',
-    borderWidth: 1,
+    width: 32,
+    height: 32,
+    backgroundColor: '#ffffff',
+    borderColor: Theme.border,
+    borderWidth: 2,
     borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeCardDeleteButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#b91c1c',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   episodeParticipantTagWrap: {
     flexDirection: 'row',
