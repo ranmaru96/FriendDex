@@ -986,39 +986,9 @@ export default function EpisodeScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={styles.topNavRow}>
-          <Pressable
-            style={({ pressed }) => [styles.secondaryNavPill, pressed ? styles.navPressed : null]}
-            onPress={() => router.push('/')}
-          >
-            <Text style={styles.secondaryNavText} numberOfLines={2}>
-              Profile一覧
-            </Text>
-          </Pressable>
-          <View style={styles.navCurrent}>
-            <Text style={styles.navCurrentText}>エピソード</Text>
-          </View>
-          <Pressable
-            style={({ pressed }) => [styles.secondaryNavPill, pressed ? styles.navPressed : null]}
-            onPress={() => router.push('/commonitems')}
-          >
-            <Text style={styles.secondaryNavText} numberOfLines={2}>
-              共通項目
-            </Text>
-          </Pressable>
-          <Pressable
-            style={({ pressed }) => [styles.secondaryNavPill, pressed ? styles.navPressed : null]}
-            onPress={() => router.push('/friends')}
-          >
-            <Text style={styles.secondaryNavText} numberOfLines={2}>
-              友達
-            </Text>
-          </Pressable>
-        </View>
-
         <ScrollView
           style={styles.mainScroll}
-          contentContainerStyle={styles.mainScrollContent}
+          contentContainerStyle={[styles.mainScrollContent, { paddingBottom: 80 }]}
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.mainCard}>
@@ -1320,55 +1290,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 8,
-  },
-  topNavRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    marginHorizontal: LIST_HORIZONTAL_INSET,
-    marginBottom: 8,
-  },
-  navCurrent: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Theme.border,
-    backgroundColor: '#3d3d3d',
-    paddingHorizontal: 10,
-    paddingVertical: 9.6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  navCurrentText: {
-    fontSize: 14.4,
-    fontWeight: '700',
-    color: Theme.bgSurface,
-  },
-  topNavSecondary: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  secondaryNavPill: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Theme.border,
-    backgroundColor: '#e5e5e5',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  navPressed: {
-    opacity: 0.85,
-  },
-  secondaryNavText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Theme.textSecondary,
-    textAlign: 'center',
   },
   mainScroll: {
     flex: 1,

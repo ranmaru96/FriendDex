@@ -312,20 +312,6 @@ export default function CommonItemsScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.container}>
-        <View style={styles.topNavRow}>
-          <Pressable style={styles.secondaryNavPill} onPress={() => router.push('/')}>
-            <Text style={styles.secondaryNavText}>Profile一覧</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryNavPill} onPress={() => router.push('/episode')}>
-            <Text style={styles.secondaryNavText}>エピソード</Text>
-          </Pressable>
-          <View style={styles.navCurrent}>
-            <Text style={styles.navCurrentText}>共通項目</Text>
-          </View>
-          <Pressable style={styles.secondaryNavPill} onPress={() => router.push('/friends')}>
-            <Text style={styles.secondaryNavText}>友達</Text>
-          </Pressable>
-        </View>
         <View style={styles.body}>
           <View style={styles.tabSection}>
             <View style={styles.tabRowContainer}>
@@ -350,7 +336,7 @@ export default function CommonItemsScreen() {
             </View>
 
             <View style={styles.tabContentArea}>
-              <ScrollView contentContainerStyle={styles.tagsContainer}>
+              <ScrollView contentContainerStyle={[styles.tagsContainer, { paddingBottom: 80 }]}>
                 {mergedLabels.map((label) => (
                   <Pressable
                     key={label}
@@ -482,49 +468,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 8,
-  },
-  topNavRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    marginHorizontal: 12,
-    marginBottom: 8,
-  },
-  navCurrent: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Theme.border,
-    backgroundColor: '#3d3d3d',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navCurrentText: {
-    color: Theme.bgSurface,
-    fontWeight: '700',
-    fontSize: 14,
-    textAlign: 'center',
-  },
-  secondaryNavPill: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Theme.border,
-    backgroundColor: '#e5e5e5',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  secondaryNavText: {
-    fontSize: 12,
-    color: Theme.textSecondary,
-    fontWeight: '700',
-    textAlign: 'center',
   },
   body: {
     flex: 1,

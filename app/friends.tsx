@@ -194,21 +194,6 @@ export default function FriendsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={styles.topNavRow}>
-          <Pressable style={styles.secondaryNavPill} onPress={() => router.push('/')}>
-            <Text style={styles.secondaryNavText}>Profile一覧</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryNavPill} onPress={() => router.push('/episode')}>
-            <Text style={styles.secondaryNavText}>エピソード</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryNavPill} onPress={() => router.push('/commonitems')}>
-            <Text style={styles.secondaryNavText}>共通項目</Text>
-          </Pressable>
-          <View style={styles.navCurrent}>
-            <Text style={styles.navCurrentText}>友達</Text>
-          </View>
-        </View>
-
         <View style={styles.actionRow}>
           <Pressable
             style={styles.primaryActionButton}
@@ -224,7 +209,10 @@ export default function FriendsScreen() {
           </Pressable>
         </View>
 
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 80 }]}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Profileが届いた</Text>
             {incomingProfiles.map((item) => (
@@ -420,52 +408,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 8,
-  },
-  topNavRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    marginHorizontal: 12,
-    marginBottom: 8,
-  },
-  navCurrent: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#aaa',
-    backgroundColor: '#3d3d3d',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  navCurrentText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-  },
-  topNavSecondary: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  secondaryNavPill: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#aaa',
-    backgroundColor: '#e5e5e5',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  secondaryNavText: {
-    fontSize: 12,
-    color: '#555',
-    fontWeight: '700',
-    textAlign: 'center',
   },
   actionRow: {
     marginHorizontal: 12,

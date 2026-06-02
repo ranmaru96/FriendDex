@@ -46,14 +46,6 @@ const birthMonthOptions: Option[] = Array.from({ length: 12 }, (_, index) => ({
 
 const toOptions = (values: string[]): Option[] => values.map((value) => ({ label: value, value }));
 
-const formatBirthdayForCard = (birthday: string): string => {
-  if (!birthday.trim()) return '-';
-  const parts = birthday.split('-').map(Number);
-  if (parts.length !== 3 || parts.some(isNaN)) return '-';
-  const [, month, day] = parts;
-  return `${month}月${day}日`;
-};
-
 const CARD_GAP = 10;
 /** 検索エリアの marginHorizontal とカード一覧の左右を揃える */
 const LIST_HORIZONTAL_INSET = 12;
@@ -207,42 +199,10 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={styles.topNavRow}>
-          <View style={styles.profileNavPill}>
-            <Text style={styles.profileNavText}>Profile一覧</Text>
-          </View>
-          <View style={styles.topNavSecondary}>
-            <Pressable
-              style={({ pressed }) => [styles.secondaryNavPill, pressed ? styles.secondaryNavPillPressed : null]}
-              onPress={() => router.push('/episode')}
-            >
-              <Text style={styles.secondaryNavText} numberOfLines={2}>
-                エピソード
-              </Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.secondaryNavPill, pressed ? styles.secondaryNavPillPressed : null]}
-              onPress={() => router.push('/commonitems')}
-            >
-              <Text style={styles.secondaryNavText} numberOfLines={2}>
-                共通項目
-              </Text>
-            </Pressable>
-            <Pressable
-              style={({ pressed }) => [styles.secondaryNavPill, pressed ? styles.secondaryNavPillPressed : null]}
-              onPress={() => router.push('/friends')}
-            >
-              <Text style={styles.secondaryNavText} numberOfLines={2}>
-                友達
-              </Text>
-            </Pressable>
-          </View>
-        </View>
-
         <FlatList
           data={friends}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[styles.listContent, { paddingBottom: 80 }]}
           ListHeaderComponent={
             <View style={styles.searchArea}>
               <View style={styles.row}>
@@ -305,30 +265,30 @@ export default function HomeScreen() {
                     <Text style={styles.myselfBadgeText}>本人</Text>
                   </View>
                 ) : null}
-                <View style={[styles.photoWrapper, isMyself && styles.photoWrapperMyself]}>
-                  {item.photoUri && !imageErrorById[item.id] ? (
-                    <Image
-                      source={{ uri: item.photoUri }}
-                      style={styles.cardPhoto}
-                      resizeMode="cover"
-                      onError={() =>
-                        setImageErrorById((prev) => ({
-                          ...prev,
-                          [item.id]: true,
-                        }))
-                      }
-                    />
-                  ) : (
-                    <View style={[styles.cardPhoto, styles.cardPhotoPlaceholder]}>
-                      <Text style={styles.cardPhotoPlaceholderText}>No Image</Text>
-                    </View>
-                  )}
-                </View>
-                <View style={styles.cardTextBlock}>
-                  <Text style={styles.cardMainName}>{item.name}</Text>
-                  <Text style={styles.cardSubText}>
-                    {birthMonth ? formatBirthdayForCard(item.birthday) : item.nickname || '-'}
-                  </Text>
+                <View style={styles.cardBody}>
+                  <View style={styles.cardNameBackdrop} />
+                  <View style={[styles.photoWrapper, isMyself && styles.photoWrapperMyself]}>
+                    {item.photoUri && !imageErrorById[item.id] ? (
+                      <Image
+                        source={{ uri: item.photoUri }}
+                        style={styles.cardPhoto}
+                        resizeMode="cover"
+                        onError={() =>
+                          setImageErrorById((prev) => ({
+                            ...prev,
+                            [item.id]: true,
+                          }))
+                        }
+                      />
+                    ) : (
+                      <View style={[styles.cardPhoto, styles.cardPhotoPlaceholder]}>
+                        <Text style={styles.cardPhotoPlaceholderText}>No Image</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.cardTextBlock}>
+                    <Text style={styles.cardMainName}>{item.name}</Text>
+                  </View>
                 </View>
               </Pressable>
             );
@@ -354,57 +314,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingTop: 8,
-  },
-  topNavRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    marginHorizontal: LIST_HORIZONTAL_INSET,
-    marginBottom: 8,
-  },
-  profileNavPill: {
-    flexShrink: 0,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Theme.border,
-    backgroundColor: '#3d3d3d',
-    paddingHorizontal: 10,
-    paddingVertical: 9.6,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  profileNavText: {
-    fontSize: 14.4,
-    fontWeight: '700',
-    color: Theme.bgSurface,
-  },
-  topNavSecondary: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-    minWidth: 0,
-  },
-  secondaryNavPill: {
-    flex: 1,
-    minWidth: 0,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: Theme.border,
-    backgroundColor: '#e5e5e5',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  secondaryNavPillPressed: {
-    opacity: 0.85,
-  },
-  secondaryNavText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Theme.textSecondary,
-    textAlign: 'center',
   },
   listContent: {
     paddingBottom: 100,
@@ -473,7 +382,7 @@ const styles = StyleSheet.create({
     borderColor: Theme.border,
     borderRadius: Radius.md,
     backgroundColor: Theme.bgSurface,
-    overflow: 'visible',
+    overflow: 'hidden',
     padding: 0,
   },
   cardMyself: {
@@ -497,6 +406,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '800',
   },
+  cardBody: {
+    position: 'relative',
+  },
+  cardNameBackdrop: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 36,
+    backgroundColor: '#8a8a8a',
+    zIndex: 0,
+  },
   photoWrapper: {
     marginTop: -2,
     marginLeft: -2,
@@ -505,12 +426,18 @@ const styles = StyleSheet.create({
     borderColor: Theme.border,
     borderRadius: 10,
     overflow: 'hidden',
+    zIndex: 1,
   },
   photoWrapperMyself: {
     borderColor: '#0d9488',
   },
   cardTextBlock: {
-    padding: 8,
+    width: '100%',
+    alignSelf: 'stretch',
+    paddingVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
   },
   cardPhoto: {
     width: '100%',
@@ -526,15 +453,11 @@ const styles = StyleSheet.create({
     color: '#64748b',
   },
   cardMainName: {
-    fontSize: 16,
+    width: '100%',
+    fontSize: 14,
     fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 6,
-  },
-  cardSubText: {
-    fontSize: 12,
-    color: '#334155',
-    marginBottom: 0,
+    color: '#ffffff',
+    textAlign: 'center',
   },
   emptyText: {
     textAlign: 'center',
