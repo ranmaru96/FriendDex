@@ -19,10 +19,12 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "プロフィール写真の選択・保存などのために、写真ライブラリへのアクセスが必要になる場合があります。",
+        "NSCameraUsageDescription": "QRコードをスキャンして友達を登録するために、カメラへのアクセスが必要です。",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
+      "package": "com.ranmaru96.frienddex",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
@@ -37,7 +39,13 @@
       "expo-sqlite",
       "expo-router",
       "@react-native-community/datetimepicker",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "QRコードをスキャンして友達を登録するために、カメラへのアクセスが必要です。"
+        }
+      ]
     ],
     "extra": {
       "router": {},

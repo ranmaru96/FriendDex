@@ -72,6 +72,8 @@ type ProfileRow = {
   episodes: string;
   sayings: string;
   createdAt: string;
+  userId?: string | null;
+  publicFields?: string | null;
   updatedAt: string;
 };
 
@@ -306,6 +308,8 @@ const rowToProfile = (row: ProfileRow): Profile => ({
   episodes: fromEpisodeJson(row.episodes),
   sayings: fromSayingJson(row.sayings),
   createdAt: row.createdAt,
+  userId: row.userId ?? '',
+  publicFields: row.publicFields != null ? fromJson(row.publicFields) : [],
   updatedAt: row.updatedAt,
 });
 
@@ -466,6 +470,8 @@ export const initializeDatabase = (): void => {
   const profileAdditiveMigrations: { column: string; sql: string }[] = [
     { column: 'name', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN name TEXT NOT NULL DEFAULT '';` },
     { column: 'residence', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN residence TEXT NOT NULL DEFAULT '';` },
+    { column: 'userId', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN userId TEXT NOT NULL DEFAULT '';` },
+    { column: 'publicFields', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN publicFields TEXT NOT NULL DEFAULT '[]';` },
   ];
 
   db.execSync('BEGIN IMMEDIATE;');
@@ -796,6 +802,29 @@ export const getMyself = (): string | null => {
   return row?.value ?? null;
 };
 
+export const DETAIL_DESIGN_VARIANT_KEY = 'detail_design_variant';
+
+export const getAppSetting = (key: string): string | null => {
+  const row = db.getFirstSync<{ value: string }>(`SELECT value FROM ${SETTINGS_TABLE} WHERE key = ?;`, [key]);
+  return row?.value ?? null;
+};
+
+export const setAppSetting = (key: string, value: string): void => {
+  db.runSync(
+    `INSERT INTO ${SETTINGS_TABLE} (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+    [key, value]
+  );
+};
+
+export const getDetailDesignVariant = (): 'main' | 'light' => {
+  const value = getAppSetting(DETAIL_DESIGN_VARIANT_KEY);
+  return value === 'light' ? 'light' : 'main';
+};
+
+export const setDetailDesignVariant = (variant: 'main' | 'light'): void => {
+  setAppSetting(DETAIL_DESIGN_VARIANT_KEY, variant);
+};
+
 export const setMyself = (friendId: string | null): boolean => {
   if (friendId === null) {
     db.runSync(`DELETE FROM ${SETTINGS_TABLE} WHERE key = ?;`, [MYSELF_KEY]);
@@ -878,6 +907,60 @@ export const updateFriend = (id: string, input: FriendInput): boolean => {
   const timestamp = nowIso();
   upsertDefaultProfileFromFriend(id, input, timestamp);
   return true;
+};
+
+export type ProfileSelfUpdateInput = {
+  name: string;
+  nickname: string;
+  birthday: string;
+  height: number | null;
+  weight: number | null;
+  origin: string;
+  residence: string;
+  mbti: Friend['mbti'];
+  publicFields: string[];
+};
+
+export const updateProfile = (profileId: string, input: ProfileSelfUpdateInput): boolean => {
+  const row = db.getFirstSync<ProfileRow>(`SELECT * FROM ${PROFILES_TABLE} WHERE id = ?;`, [profileId]);
+  if (!row) {
+    return false;
+  }
+  const timestamp = nowIso();
+  db.runSync(`UPDATE ${PROFILES_TABLE} SET name = ?, updatedAt = ? WHERE friendId = ?;`, [
+    input.name,
+    timestamp,
+    row.friendId,
+  ]);
+  const result = db.runSync(
+    `
+      UPDATE ${PROFILES_TABLE}
+      SET
+        nickname = ?,
+        origin = ?,
+        residence = ?,
+        mbti = ?,
+        birthday = ?,
+        height = ?,
+        weight = ?,
+        publicFields = ?,
+        updatedAt = ?
+      WHERE id = ?;
+    `,
+    [
+      input.nickname,
+      input.origin,
+      input.residence,
+      input.mbti,
+      input.birthday,
+      input.height,
+      input.weight,
+      toJson(input.publicFields),
+      timestamp,
+      profileId,
+    ]
+  );
+  return result.changes > 0;
 };
 
 export const deleteFriend = (id: string): boolean => {

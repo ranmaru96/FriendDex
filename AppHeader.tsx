@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Theme } from '@/constants/theme';
 
 const SIDE_WIDTH = 44;
 
@@ -14,7 +15,7 @@ export default function AppHeader() {
       <View style={styles.row}>
         <View style={styles.side} />
         <View style={styles.center}>
-          <Ionicons name="people" size={22} color="#1e293b" />
+          <Ionicons name="people" size={22} color={Theme.heading} />
           <Text style={styles.title}>FriendDex</Text>
         </View>
         <View style={styles.side}>
@@ -24,7 +25,7 @@ export default function AppHeader() {
             accessibilityLabel="アプリ設定"
             hitSlop={8}
           >
-            <Ionicons name="settings-outline" size={24} color="#334155" />
+            <Ionicons name="settings-outline" size={24} color={Theme.heading} />
           </Pressable>
         </View>
       </View>
@@ -34,9 +35,9 @@ export default function AppHeader() {
 
 const styles = StyleSheet.create({
   wrapper: {
-    backgroundColor: '#f2f5f8',
+    backgroundColor: Theme.surface,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#cbd5e1',
+    borderBottomColor: Theme.border,
   },
   row: {
     flexDirection: 'row',
@@ -59,7 +60,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#0f172a',
+    color: Theme.heading,
     letterSpacing: 0.3,
   },
   gearButton: {

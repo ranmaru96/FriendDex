@@ -17,8 +17,11 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
-
+import type { DetailTabKey } from '@/constants/detailThemes';
+import { Radius, Typography, Spacing } from '@/constants/theme';
+import { useDetailDesign } from './contexts/DetailDesignContext';
+import { createDetailStyles } from './utils/detailStyles';
+import type { DetailThemeColors } from '@/constants/detailThemes';
 import {
   createEpisode,
   createSayings,
@@ -35,7 +38,15 @@ import {
   updateEpisode,
   updateSaying,
 } from './db';
-import { Episode, EpisodeParticipant, EpisodeVisibilityEntry, EpisodeVisibilityMode, Friend, Profile, Saying } from './types';
+import {
+  Episode,
+  EpisodeParticipant,
+  EpisodeVisibilityEntry,
+  EpisodeVisibilityMode,
+  Friend,
+  Profile,
+  Saying,
+} from './types';
 import {
   buildParticipantChips,
   canManageEpisode,
@@ -46,23 +57,25 @@ import {
 const EPISODE_PICKER_COLUMNS = 3;
 const EPISODE_PICKER_GAP = 6;
 
-const EPISODE_VISIBILITY_MODE_TAG_STYLES: Record<
+function buildEpisodeVisibilityTagStyles(c: DetailThemeColors): Record<
   EpisodeVisibilityMode,
   { tag: object; text: object }
-> = {
-  private: {
-    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#aaaaaa' },
-    text: { color: '#666666' },
-  },
-  public: {
-    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#2a9d5a' },
-    text: { color: '#1a6b38' },
-  },
-  limited: {
-    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#7c5cbf' },
-    text: { color: '#5c3a9f' },
-  },
-};
+> {
+  return {
+    private: {
+      tag: { backgroundColor: c.badgePrivateBg, borderWidth: 1, borderColor: c.border },
+      text: { color: c.badgePrivateText },
+    },
+    public: {
+      tag: { backgroundColor: c.badgePublicBg, borderWidth: 1, borderColor: c.accent },
+      text: { color: c.badgePublicText },
+    },
+    limited: {
+      tag: { backgroundColor: c.badgeLimitedBg, borderWidth: 1, borderColor: c.border },
+      text: { color: c.badgeLimitedText },
+    },
+  };
+}
 
 type MultiValueRow = {
   title: string;
@@ -119,22 +132,6 @@ const computeProfileCompleteness = (friend: Friend, hasPhoto: boolean): number =
   return Math.round((completenessFields.filter(Boolean).length / completenessFields.length) * 100);
 };
 
-type DetailTabKey = '情報' | 'ステータス' | 'エピソード' | '習性' | '彼曰く' | 'メモ';
-
-const DETAIL_TABS: {
-  key: DetailTabKey;
-  icon: string;
-  iconSet?: 'ionicons' | 'material';
-  caption: string;
-  color: string;
-}[] = [
-  { key: '情報', icon: 'book-outline', caption: 'info', color: '#4a7fd4' },
-  { key: 'ステータス', icon: 'stats-chart-outline', caption: 'status', color: '#c9a227' },
-  { key: 'エピソード', icon: 'film-outline', caption: 'episode', color: '#e07a2a' },
-  { key: '習性', icon: 'cat', iconSet: 'material', caption: 'habit', color: '#3a9d5a' },
-  { key: '彼曰く', icon: 'comment-account-outline', iconSet: 'material', caption: 'says', color: '#d44a4a' },
-  { key: 'メモ', icon: 'notebook', iconSet: 'material', caption: 'note', color: '#8b5fd4' },
-];
 type Option = {
   label: string;
   value: string;
@@ -162,6 +159,8 @@ function SelectInput({
   onChange: (value: string) => void;
   style?: object;
 }) {
+  const { bundle } = useDetailDesign();
+  const styles = useMemo(() => createDetailStyles(bundle.colors), [bundle.colors]);
   const [visible, setVisible] = useState(false);
   const selectedLabel = useMemo(() => {
     const selected = options.find((option) => option.value === value);
@@ -212,22 +211,17 @@ function SelectInput({
   );
 }
 
-const INFO_CHIP_STYLES: Record<string, { backgroundColor: string; borderColor: string; color: string; borderWidth: number }> = {
-  所属: { backgroundColor: 'transparent', borderColor: Theme.tagAffilBorder, color: Theme.tagAffilText, borderWidth: 1.5 },
-  経験: { backgroundColor: 'transparent', borderColor: Theme.tagExpBorder, color: Theme.tagExpText, borderWidth: 1.5 },
-  性格: { backgroundColor: 'transparent', borderColor: Theme.tagCharBorder, color: Theme.tagCharText, borderWidth: 1.5 },
-  好物: { backgroundColor: 'transparent', borderColor: Theme.tagLikeBorder, color: Theme.tagLikeText, borderWidth: 1.5 },
-  苦手: { backgroundColor: 'transparent', borderColor: Theme.tagDislikeBorder, color: Theme.tagDislikeText, borderWidth: 1.5 },
-};
-
 function MultiValueSummarySection({ rows, withCard = true }: { rows: MultiValueRow[]; withCard?: boolean }) {
+  const { bundle } = useDetailDesign();
+  const styles = useMemo(() => createDetailStyles(bundle.colors), [bundle.colors]);
+  const c = bundle.colors;
   return (
     <View style={withCard ? styles.multiValueCard : styles.multiValuePlainContainer}>
       {rows.map((row, rowIndex) => {
-        const chipColors = INFO_CHIP_STYLES[row.title] ?? {
+        const chipColors = bundle.infoChipStyles[row.title] ?? {
           backgroundColor: 'transparent',
-          borderColor: Theme.border,
-          color: Theme.textSecondary,
+          borderColor: c.border,
+          color: c.textSecondary,
           borderWidth: 1.5,
         };
         return (
@@ -265,6 +259,11 @@ function MultiValueSummarySection({ rows, withCard = true }: { rows: MultiValueR
 }
 
 export default function DetailScreen() {
+  const { bundle, reload: reloadDetailDesign } = useDetailDesign();
+  const c = bundle.colors;
+  const styles = useMemo(() => createDetailStyles(c), [c]);
+  const detailTabs = bundle.detailTabs;
+  const episodeVisibilityTagStyles = useMemo(() => buildEpisodeVisibilityTagStyles(c), [c]);
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
   const [friend, setFriend] = useState<Friend | null>(null);
@@ -310,6 +309,12 @@ export default function DetailScreen() {
     }
     return params.id ?? '';
   }, [params.id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      reloadDetailDesign();
+    }, [reloadDetailDesign])
+  );
 
   const loadFriend = useCallback(() => {
     initializeDatabase();
@@ -943,10 +948,10 @@ export default function DetailScreen() {
                     style={styles.heroEditButton}
                     onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
                   >
-                    <Ionicons name="pencil-outline" size={16} color={Theme.accent} />
+                    <Ionicons name="pencil-outline" size={16} color={c.accent} />
                   </Pressable>
                   <Pressable style={styles.heroHomeButton} onPress={() => router.replace('/')}>
-                    <Ionicons name="home" size={16} color={Theme.textMuted} />
+                    <Ionicons name="home" size={16} color={c.textMuted} />
                   </Pressable>
                 </View>
               </View>
@@ -1019,8 +1024,10 @@ export default function DetailScreen() {
         <View style={styles.tabSection}>
           <View style={styles.tabTrack}>
             <View style={styles.tabInner}>
-              {DETAIL_TABS.map((tab) => {
+              {detailTabs.map((tab) => {
                 const isActive = activeTab === tab.key;
+                const activeColor = bundle.tabMode === 'perTab' ? tab.color : c.accent;
+                const inactiveIconBg = bundle.tabMode === 'perTab' ? tab.color : c.tabInactive;
                 return (
                   <TouchableOpacity
                     key={tab.key}
@@ -1028,8 +1035,8 @@ export default function DetailScreen() {
                     style={[
                       styles.tabPill,
                       isActive && {
-                        borderColor: tab.color,
-                        backgroundColor: tab.color,
+                        borderColor: activeColor,
+                        backgroundColor: activeColor,
                       },
                     ]}
                     accessibilityRole="tab"
@@ -1042,20 +1049,20 @@ export default function DetailScreen() {
                           styles.tabPillIconCircle,
                           isActive
                             ? styles.tabPillIconCircleActive
-                            : { backgroundColor: tab.color },
+                            : { backgroundColor: inactiveIconBg },
                         ]}
                       >
                         {tab.iconSet === 'material' ? (
                           <MaterialCommunityIcons
                             name={tab.icon as ComponentProps<typeof MaterialCommunityIcons>['name']}
                             size={16}
-                            color="#ffffff"
+                            color={c.onAccent}
                           />
                         ) : (
                           <Ionicons
                             name={tab.icon as ComponentProps<typeof Ionicons>['name']}
                             size={16}
-                            color="#ffffff"
+                            color={c.onAccent}
                           />
                         )}
                       </View>
@@ -1142,7 +1149,7 @@ export default function DetailScreen() {
                 <TextInput
                   style={[styles.sayingTextInput, { height: Math.max(48, habitInputHeight) }]}
                   placeholder="習性（自由記入）"
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={c.inputPlaceholder}
                   multiline
                   value={habitText}
                   onContentSizeChange={(event) => {
@@ -1204,7 +1211,7 @@ export default function DetailScreen() {
               <TextInput
                 style={[styles.episodeFilterField, styles.episodeTitleFilterField]}
                 placeholder="タイトル"
-                placeholderTextColor={Theme.inputPlaceholder}
+                placeholderTextColor={c.inputPlaceholder}
                 value={episodeTitleDraft}
                 onChangeText={setEpisodeTitleDraft}
                 onSubmitEditing={handleEpisodeTitleSubmit}
@@ -1271,7 +1278,7 @@ export default function DetailScreen() {
                   <TextInput
                     style={[styles.episodeInput, styles.episodeTitleInput]}
                     placeholder="タイトル"
-                    placeholderTextColor={Theme.inputPlaceholder}
+                    placeholderTextColor={c.inputPlaceholder}
                     value={newEpisodeTitle}
                     onChangeText={setNewEpisodeTitle}
                   />
@@ -1465,7 +1472,7 @@ export default function DetailScreen() {
                 <TextInput
                   style={styles.episodeDescriptionInput}
                   placeholder="説明文の記入（記入式）"
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={c.inputPlaceholder}
                   multiline
                   value={newEpisodeDescription}
                   onChangeText={setNewEpisodeDescription}
@@ -1495,7 +1502,7 @@ export default function DetailScreen() {
                 const canManage = canManageEpisode(episode, friend.id, myselfId);
                 const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
                 const chips = buildParticipantChips(episode, friendNameById);
-                const modeStyles = canManage ? EPISODE_VISIBILITY_MODE_TAG_STYLES[episode.visibilityMode] : null;
+                const modeStyles = canManage ? episodeVisibilityTagStyles[episode.visibilityMode] : null;
                 const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
 
                 return (
@@ -1601,7 +1608,7 @@ export default function DetailScreen() {
                 <TextInput
                   style={[styles.sayingTextInput, { height: Math.max(48, sayingInputHeight) }]}
                   placeholder="彼曰く（自由記入）"
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={c.inputPlaceholder}
                   multiline
                   value={sayingText}
                   onContentSizeChange={(event) => {
@@ -1687,977 +1694,4 @@ export default function DetailScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#f2f5f8',
-  },
-  scrollContent: {
-    paddingHorizontal: 0,
-    paddingTop: 8,
-    paddingBottom: 24,
-    gap: 10,
-  },
-  profileCardOuter: {
-    borderWidth: 4,
-    borderColor: '#aaaaaa',
-    borderRadius: 12,
-    marginHorizontal: 6,
-    overflow: 'hidden',
-    backgroundColor: '#ffffff',
-  },
-  hero: {
-    backgroundColor: Theme.bgBase,
-    paddingTop: 16,
-    paddingHorizontal: 14,
-    paddingBottom: 14,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    borderBottomLeftRadius: 0,
-    borderBottomRightRadius: 0,
-  },
-  heroIdentityRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  heroPhoto: {
-    width: 132,
-    height: 132,
-    borderRadius: Radius.md,
-  },
-  heroPhotoInitial: {
-    width: 132,
-    height: 132,
-    borderRadius: Radius.md,
-    backgroundColor: '#1e1230',
-    borderWidth: 1.5,
-    borderColor: 'rgba(167,139,250,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroPhotoInitialText: {
-    fontSize: 48,
-    fontWeight: '500',
-    color: '#c4b5fd',
-  },
-  heroIdentityCol: {
-    flex: 1,
-    minWidth: 0,
-    gap: 4,
-  },
-  heroNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  heroName: {
-    flex: 1,
-    fontSize: 22,
-    fontWeight: '500',
-    color: Theme.textPrimary,
-  },
-  heroIconActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  heroEditButton: {
-    width: 30,
-    height: 30,
-    borderRadius: Radius.sm,
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
-    borderColor: Theme.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroHomeButton: {
-    width: 30,
-    height: 30,
-    borderRadius: Radius.sm,
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
-    borderColor: Theme.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  heroNickname: {
-    fontSize: 14,
-    color: Theme.accent,
-  },
-  heroByTag: {
-    fontSize: 10,
-    color: '#c4b5fd',
-    fontWeight: '500',
-  },
-  heroTagRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-  },
-  heroTagMbti: {
-    backgroundColor: Theme.heroTagBg,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 20,
-  },
-  heroTagMbtiText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: Theme.heroTagText,
-  },
-  heroTagBirthday: {
-    backgroundColor: Theme.heroTagBg,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 20,
-  },
-  heroTagBirthdayText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: Theme.heroTagText,
-  },
-  heroTagCategory: {
-    backgroundColor: Theme.bgElevated,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 20,
-  },
-  heroTagCategoryText: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: Theme.textMuted,
-  },
-  heroDescription: {
-    fontSize: 11,
-    color: Theme.textMuted,
-    lineHeight: 16,
-  },
-  heroStatsRow: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 14,
-  },
-  heroStatCell: {
-    flex: 1,
-    backgroundColor: Theme.statBg,
-    borderWidth: 0.5,
-    borderColor: Theme.statBorder,
-    borderRadius: 10,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  heroStatLabel: {
-    fontSize: 9,
-    color: Theme.textMuted,
-    textTransform: 'uppercase',
-    marginBottom: 2,
-  },
-  heroStatValueRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 2,
-  },
-  heroStatValue: {
-    fontSize: 18,
-    fontWeight: '500',
-    color: Theme.textPrimary,
-  },
-  heroStatUnit: {
-    fontSize: 10,
-    color: Theme.textMuted,
-  },
-  heroCompletenessSection: {
-    marginTop: 10,
-  },
-  heroCompletenessHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  heroCompletenessLabel: {
-    fontSize: 9,
-    color: Theme.textMuted,
-    letterSpacing: 0.3,
-  },
-  heroCompletenessPercent: {
-    fontSize: 10,
-    color: Theme.barPct,
-  },
-  heroCompletenessTrack: {
-    height: 4,
-    backgroundColor: Theme.barTrack,
-    borderRadius: 2,
-    marginTop: 4,
-    overflow: 'hidden',
-  },
-  heroCompletenessFill: {
-    height: 4,
-    backgroundColor: Theme.barFill,
-    borderRadius: 2,
-  },
-  tabSection: {
-    gap: 0,
-    backgroundColor: Theme.bgBase,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
-    overflow: 'hidden',
-  },
-  tabTrack: {
-    backgroundColor: '#e0e0e6',
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: '#b8b8c4',
-    paddingVertical: 1.5,
-    paddingHorizontal: 3,
-    marginHorizontal: 12,
-    marginTop: 5,
-    marginBottom: 5,
-  },
-  tabInner: {
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 2,
-    width: '100%',
-  },
-  tabPill: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 4,
-    paddingHorizontal: 1,
-    borderRadius: 8,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  tabPillContent: {
-    alignItems: 'center',
-    gap: 3,
-  },
-  tabPillCaption: {
-    fontSize: 9,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  tabPillCaptionInactive: {
-    color: '#888888',
-  },
-  tabPillCaptionActive: {
-    color: '#ffffff',
-  },
-  tabPillIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  tabPillIconCircleActive: {
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    gap: 12,
-  },
-  statusRowDivider: {
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#1e1e2e',
-  },
-  statusLabel: {
-    width: 56,
-    fontSize: Typography.base,
-    color: Theme.textMuted,
-    flexShrink: 0,
-  },
-  statusValue: {
-    flex: 1,
-    fontSize: Typography.base,
-    color: Theme.textPrimary,
-    textAlign: 'right',
-  },
-  tabContentArea: {
-    backgroundColor: Theme.bgBase,
-    margin: 0,
-    paddingTop: 0,
-  },
-  tabPane: {
-    backgroundColor: Theme.bgBase,
-    paddingHorizontal: 12,
-    paddingTop: 10,
-    paddingBottom: 10,
-  },
-  multiValuePlainContainer: {
-    padding: 0,
-    backgroundColor: Theme.bgBase,
-  },
-  multiValueCard: {
-    backgroundColor: Theme.bgBase,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 0,
-  },
-  habitInput: {
-    borderColor: '#cbd5e1',
-    borderWidth: 1,
-    borderRadius: 10,
-    backgroundColor: '#f8fafc',
-    color: '#0f172a',
-    textAlignVertical: 'top',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    marginBottom: 8,
-    fontSize: 14,
-  },
-  addHabitButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  addHabitButtonText: {
-    color: '#0f172a',
-    fontWeight: '700',
-    fontSize: Typography.base,
-  },
-  episodeToolbarRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 10,
-  },
-  episodeFilterField: {
-    flex: 1,
-    minWidth: 0,
-    height: 36,
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.border,
-    borderWidth: 0.5,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    justifyContent: 'center',
-  },
-  episodeParticipantFilterField: {
-    gap: 2,
-  },
-  episodeTitleFilterField: {
-    fontSize: Typography.base,
-    color: Theme.textPrimary,
-    paddingVertical: 0,
-  },
-  episodeFilterFieldLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: Theme.textMuted,
-  },
-  episodeFilterFieldValue: {
-    fontSize: Typography.base,
-    color: Theme.textPrimary,
-  },
-  episodeToolbarAddButton: {
-    height: 36,
-    flexShrink: 0,
-    backgroundColor: Theme.btnPrimaryBg,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  episodeParticipantPickerPanel: {
-    marginBottom: 10,
-    padding: 10,
-    borderWidth: 0.5,
-    borderColor: Theme.border,
-    borderRadius: 10,
-    backgroundColor: Theme.bgSurface,
-  },
-  episodeParticipantPickerGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: EPISODE_PICKER_GAP,
-    marginBottom: 10,
-  },
-  episodePickerSearchButton: {
-    alignSelf: 'flex-end',
-    minWidth: 72,
-    height: 36,
-    backgroundColor: '#2d1f50',
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-  },
-  episodePersonRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 2,
-    borderColor: '#d0d0d0',
-    borderRadius: Radius.sm,
-    backgroundColor: '#fafafa',
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-  },
-  episodePersonCheckbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: '#94a3b8',
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: Theme.bgSurface,
-  },
-  episodePersonCheckboxChecked: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#4caf50',
-  },
-  episodePersonCheckmark: {
-    color: '#2e7d32',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  episodePersonName: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333333',
-  },
-  episodeSelectButton: {
-    height: 36,
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.border,
-    borderWidth: 0.5,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    justifyContent: 'center',
-  },
-  episodeSelectText: {
-    fontSize: Typography.base,
-    color: Theme.textPrimary,
-  },
-  episodeSelectPlaceholder: {
-    fontSize: Typography.base,
-    color: Theme.textMuted,
-  },
-  episodeSearchInput: {
-    height: 36,
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.border,
-    borderWidth: 0.5,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    fontSize: Typography.base,
-    color: Theme.textPrimary,
-  },
-  episodeSearchButton: {
-    minWidth: 58,
-    height: 36,
-    backgroundColor: '#2d1f50',
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 14,
-  },
-  episodeSearchButtonText: {
-    color: '#c4b5fd',
-    fontWeight: '500',
-    fontSize: Typography.base,
-  },
-  episodeAddButton: {
-    alignSelf: 'flex-end',
-    backgroundColor: Theme.btnPrimaryBg,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    marginBottom: 10,
-  },
-  episodeAddButtonText: {
-    color: Theme.btnPrimaryText,
-    fontWeight: '500',
-    fontSize: Typography.base,
-  },
-  episodeFormCard: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.border,
-    borderWidth: 0.5,
-    borderRadius: 14,
-    padding: 14,
-    marginTop: 10,
-    marginBottom: 10,
-  },
-  episodeTitleDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  episodeInput: {
-    minHeight: 38,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    backgroundColor: Theme.inputBg,
-    color: Theme.inputText,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: Typography.base,
-    marginBottom: 8,
-  },
-  episodeTitleInput: {
-    flex: 1,
-  },
-  episodeDateInput: {
-    width: 130,
-    justifyContent: 'center',
-  },
-  episodeDateText: {
-    fontSize: Typography.base,
-    color: Theme.textPrimary,
-  },
-  episodeDatePlaceholder: {
-    fontSize: Typography.base,
-    color: Theme.textMuted,
-  },
-  datePickerWrap: {
-    marginBottom: 8,
-    backgroundColor: Theme.bgBase,
-    borderRadius: 10,
-    paddingVertical: 4,
-  },
-  datePickerSelf: {
-    alignSelf: 'flex-end',
-  },
-  datePickerDone: {
-    alignSelf: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: Radius.sm,
-    backgroundColor: '#2d1f50',
-    marginTop: 8,
-  },
-  datePickerDoneText: {
-    color: '#c4b5fd',
-    fontWeight: '600',
-    fontSize: Typography.base,
-  },
-  episodeParticipantRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  episodeParticipantLabel: {
-    fontSize: Typography.base,
-    color: '#9ca3af',
-    fontWeight: '500',
-  },
-  addParticipantButton: {
-    backgroundColor: '#2d1f50',
-    borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  addParticipantButtonText: {
-    color: '#c4b5fd',
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  ownerRoleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  ownerRoleLabel: {
-    fontSize: Typography.base,
-    color: '#334155',
-    fontWeight: '700',
-  },
-  roleToggleButton: {
-    backgroundColor: Theme.bgBase,
-    borderColor: Theme.border,
-    borderWidth: 0.5,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  roleToggleButtonActive: {
-    backgroundColor: '#2d1f50',
-    borderColor: Theme.accent,
-  },
-  roleToggleButtonText: {
-    color: Theme.textMuted,
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  roleToggleButtonTextActive: {
-    color: '#c4b5fd',
-  },
-  participantItemCard: {
-    borderColor: Theme.border,
-    borderWidth: 0.5,
-    borderRadius: 10,
-    padding: 8,
-    marginBottom: 8,
-    backgroundColor: Theme.bgBase,
-  },
-  participantTypeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
-  },
-  participantTypeLabel: {
-    fontSize: 12,
-    color: '#9ca3af',
-    fontWeight: '500',
-  },
-  participantItemTopRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 6,
-  },
-  participantNameSelect: {
-    flex: 1,
-  },
-  participantRoleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  participantRoleLabel: {
-    fontSize: 12,
-    color: '#334155',
-    fontWeight: '700',
-  },
-  episodeDescriptionInput: {
-    minHeight: 86,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    backgroundColor: Theme.inputBg,
-    textAlignVertical: 'top',
-    color: Theme.inputText,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: Typography.base,
-    marginBottom: 8,
-  },
-  episodeCreateButton: {
-    alignSelf: 'flex-end',
-    backgroundColor: Theme.btnPrimaryBg,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  episodeCreateButtonText: {
-    color: Theme.btnPrimaryText,
-    fontWeight: '500',
-    fontSize: Typography.base,
-  },
-  episodeFormActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-  },
-  episodeCancelButton: {
-    backgroundColor: 'transparent',
-    borderColor: Theme.btnGhostBorder,
-    borderWidth: 0.5,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  episodeCancelButtonText: {
-    color: Theme.btnGhostText,
-    fontWeight: '500',
-    fontSize: Typography.base,
-  },
-  episodeErrorText: {
-    color: '#b91c1c',
-    marginBottom: 8,
-    fontSize: 12,
-  },
-  episodeCard: {
-    backgroundColor: Theme.episodeBg,
-    borderColor: Theme.episodeBorder,
-    borderWidth: 0.5,
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 6,
-  },
-  episodeCardRow1: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  episodeCardTitle: {
-    flex: 1,
-    minWidth: 0,
-    fontSize: Typography.base,
-    fontWeight: '700',
-    color: Theme.episodeTitle,
-  },
-  episodeCardDateText: {
-    fontSize: 11,
-    color: Theme.episodeDate,
-    flexShrink: 0,
-  },
-  episodeCardRow2: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  episodeParticipantTagScroll: {
-    flex: 1,
-    minWidth: 0,
-  },
-  episodeParticipantTagWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  episodeParticipantTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderColor: '#aaaaaa',
-    borderWidth: 1,
-    borderRadius: 999,
-    backgroundColor: 'transparent',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    flexShrink: 0,
-  },
-  episodeParticipantTagMain: {
-    borderColor: '#aaaaaa',
-  },
-  episodeParticipantTagName: {
-    fontSize: 10,
-    fontWeight: '500',
-    color: '#555555',
-  },
-  visibilityModeTag: {
-    flexShrink: 0,
-  },
-  emptyEpisodeText: {
-    fontSize: Typography.base,
-    color: Theme.textMuted,
-  },
-  sayingTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  sayingFormCard: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.border,
-    borderWidth: 0.5,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 10,
-  },
-  sayingTextInput: {
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    backgroundColor: Theme.inputBg,
-    color: Theme.inputText,
-    textAlignVertical: 'top',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: Typography.base,
-    minHeight: 72,
-    marginBottom: 8,
-  },
-  sayingDateInput: {
-    width: '100%',
-    marginBottom: 8,
-    justifyContent: 'center',
-  },
-  sayingActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-    marginTop: 8,
-    gap: 8,
-  },
-  habitCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: Theme.traitBg,
-    borderWidth: 0.5,
-    borderColor: Theme.traitBorder,
-    borderRadius: Radius.md,
-    padding: 12,
-    marginBottom: 6,
-  },
-  habitCardAccent: {
-    width: 2,
-    alignSelf: 'stretch',
-    backgroundColor: Theme.traitAccentLine,
-    borderRadius: 1,
-  },
-  habitCardText: {
-    flex: 1,
-    fontSize: Typography.base,
-    color: Theme.traitText,
-    lineHeight: 20,
-    paddingLeft: 10,
-  },
-  sayingQuoteCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: Theme.traitBg,
-    borderWidth: 0.5,
-    borderColor: Theme.traitBorder,
-    borderTopRightRadius: Radius.md,
-    borderBottomRightRadius: Radius.md,
-    borderTopLeftRadius: 0,
-    borderBottomLeftRadius: 0,
-    padding: 12,
-    marginBottom: 8,
-  },
-  sayingQuoteAccent: {
-    width: 2,
-    alignSelf: 'stretch',
-    backgroundColor: Theme.traitAccentLine,
-    borderRadius: 1,
-  },
-  sayingQuoteBody: {
-    flex: 1,
-    paddingLeft: 10,
-  },
-  sayingQuoteText: {
-    fontSize: Typography.base,
-    color: Theme.quoteText,
-    fontStyle: 'italic',
-    lineHeight: 20,
-  },
-  sayingQuoteDate: {
-    fontSize: 10,
-    color: Theme.quoteDateText,
-    marginTop: 4,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-  modalCard: {
-    backgroundColor: Theme.bgSurface,
-    borderRadius: Radius.md,
-    padding: 14,
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 10,
-  },
-  modalOptions: {
-    marginBottom: 10,
-  },
-  modalOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: Radius.sm,
-  },
-  modalOptionSelected: {
-    backgroundColor: '#e0f2fe',
-  },
-  modalOptionText: {
-    fontSize: 14,
-    color: '#1e293b',
-  },
-  modalCloseButton: {
-    alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: Radius.sm,
-    backgroundColor: '#e2e8f0',
-  },
-  modalCloseButtonText: {
-    color: '#0f172a',
-    fontWeight: '600',
-  },
-  multiValueRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingBottom: 12,
-    marginBottom: 12,
-    gap: 10,
-  },
-  multiValueRowWithDivider: {
-    borderBottomWidth: 0.5,
-    borderBottomColor: '#1e1e2e',
-  },
-  multiValueRowLast: {
-    paddingBottom: 12,
-    marginBottom: 0,
-  },
-  multiValueLabel: {
-    width: 40,
-    fontSize: Typography.base,
-    color: Theme.textMuted,
-    flexShrink: 0,
-  },
-  multiValueChipArea: {
-    flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 4,
-    justifyContent: 'flex-start',
-  },
-  chipContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'flex-start',
-  },
-  chip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: Radius.full,
-  },
-  chipText: {
-    fontSize: Typography.sm,
-    fontWeight: '500',
-  },
-  missingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    gap: 10,
-  },
-  missingText: {
-    fontSize: 15,
-    color: '#334155',
-  },
-  backButton: {
-    backgroundColor: '#e2e8f0',
-    borderRadius: Radius.sm,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-  },
-  backButtonText: {
-    color: '#0f172a',
-    fontWeight: '600',
-  },
-});
 

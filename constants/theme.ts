@@ -1,210 +1,224 @@
-// constants/theme.ts
+// constants/theme.ts — FriendDex デザインシステム（ライト・ポップモダン）
 
+/** プリミティブ（色の定義はここだけ） */
+export const Palette = {
+  background: '#F8F9FA',
+  surface: '#FFFFFF',
+  card: '#FFFFFF',
+
+  border: '#E2E8F0',
+  borderSoft: '#E2E8F0',
+
+  textPrimary: '#2B2D42',
+  textSecondary: '#A0AEC0',
+  heading: '#2B2D42',
+
+  accent: '#4E9A87',
+  accentLight: '#E8F4F1',
+
+  fab: '#4E9A87',
+  fabBorder: '#3D7A6B',
+  fabText: '#FFFFFF',
+
+  onAccent: '#FFFFFF',
+  overlay: 'rgba(43, 45, 66, 0.45)',
+
+  /** Home 人物カード一覧 */
+  homeCardBorder: '#E2E8F0',
+  homeCardName: '#2B2D42',
+} as const;
+
+/** セマンティック（画面・コンポーネントが参照） */
 export const LightTheme = {
-  // 背景
-  bgBase:     '#f0f0f2',
-  bgSurface:  '#ffffff',
-  bgElevated: '#f8f8f8',
+  ...Palette,
 
-  // ボーダー
-  border:       '#aaaaaa',
-  borderStrong: '#333333',
+  // --- 背景（Detail 互換エイリアス）---
+  bgBase: Palette.background,
+  bgSurface: Palette.card,
+  bgElevated: Palette.surface,
 
-  // テキスト
-  textPrimary:   '#111111',
-  textSecondary: '#555555',
-  textMuted:     '#888888',
+  // --- 文字（Detail 互換）---
+  textMuted: Palette.textSecondary,
 
-  // アクセント（タブ・バー・アクティブ）
-  accent:      '#333333',
-  accentLight: '#f0f0f2',
+  borderStrong: Palette.textPrimary,
 
-  // ヒーロータグ（塗りつぶし）
-  heroTagBg:   '#333333',
-  heroTagText: '#f0f0f2',
+  // --- ヒーロー ---
+  heroTagBg: Palette.accentLight,
+  heroTagText: Palette.accent,
 
-  // セクションタグ（輪郭線のみ）- 所属
-  tagAffilBorder: '#7c5cbf',
-  tagAffilText:   '#5c3a9f',
-  // 経験
-  tagExpBorder:   '#2a9d5a',
-  tagExpText:     '#1a6b38',
-  // 性格
-  tagCharBorder:  '#3a7abf',
-  tagCharText:    '#1a4a8a',
-  // 好物
-  tagLikeBorder:  '#c49a00',
-  tagLikeText:    '#7a5f00',
-  // 苦手
-  tagDislikeBorder: '#bf4a3a',
-  tagDislikeText:   '#8a1a1a',
+  // --- 入力 ---
+  inputBg: Palette.card,
+  inputBorder: Palette.border,
+  inputText: Palette.textPrimary,
+  inputPlaceholder: Palette.textSecondary,
 
-  // Statカード
-  statBg:     '#ffffff',
-  statBorder: '#aaaaaa',
+  // --- ボタン ---
+  btnPrimaryBg: Palette.accent,
+  btnPrimaryText: Palette.onAccent,
+  btnGhostBorder: Palette.border,
+  btnGhostText: Palette.textSecondary,
 
-  // バー
-  barTrack: '#cccccc',
-  barFill:  '#333333',
-  barPct:   '#111111',
+  // --- ステータスバー ---
+  barTrack: Palette.border,
+  barFill: Palette.accent,
+  barPct: Palette.accent,
 
-  // タブ
-  tabBg:           '#ffffff',
-  tabBorder:       '#bbbbbb',
-  tabText:         '#999999',
-  tabActiveBg:     '#ffffff',
-  tabActiveBorder: '#333333',
-  tabActiveText:   '#111111',
-  tabActiveShadow: '#333333',
+  // --- タブ UI ---
+  tabTrackBg: Palette.border,
+  tabTrackBorder: Palette.border,
+  tabInactive: Palette.textSecondary,
+  tabActiveText: Palette.onAccent,
+  tabBg: Palette.card,
+  tabBorder: Palette.border,
+  tabText: Palette.textSecondary,
+  tabActiveBg: Palette.accent,
+  tabActiveBorder: Palette.accent,
+  tabActiveShadow: Palette.accent,
 
-  // トレイト・彼曰くカード
-  traitBg:          '#ffffff',
-  traitBorder:      '#aaaaaa',
-  traitAccentLine:  '#555555',
-  traitText:        '#222222',
-  quoteText:        '#333333',
-  quoteDateText:    '#888888',
+  // --- カード系 ---
+  statBg: Palette.card,
+  statBorder: Palette.border,
+  traitBg: Palette.card,
+  traitBorder: Palette.border,
+  traitAccentLine: Palette.accent,
+  traitText: Palette.textPrimary,
+  quoteText: Palette.textPrimary,
+  quoteDateText: Palette.textSecondary,
+  episodeBg: Palette.card,
+  episodeBorder: Palette.border,
+  episodeTitle: Palette.textPrimary,
+  episodeDate: Palette.textSecondary,
 
-  // エピソードカード
-  episodeBg:      '#ffffff',
-  episodeBorder:  '#aaaaaa',
-  episodeTitle:   '#111111',
-  episodeDate:    '#888888',
+  // --- カテゴリチップ（パターンA：統一グレー）---
+  tagAffilBorder: Palette.border,
+  tagAffilText: Palette.textPrimary,
+  tagExpBorder: Palette.border,
+  tagExpText: Palette.textPrimary,
+  tagCharBorder: Palette.border,
+  tagCharText: Palette.textPrimary,
+  tagLikeBorder: Palette.border,
+  tagLikeText: Palette.textPrimary,
+  tagDislikeBorder: Palette.border,
+  tagDislikeText: Palette.textPrimary,
+  tagChipBg: Palette.border,
 
-  // 公開設定バッジ
-  badgePrivateBg:   '#eeeeee',
-  badgePrivateText: '#666666',
-  badgePublicBg:    '#d8f0ec',
-  badgePublicText:  '#1a6b5a',
-  badgeLimitedBg:   '#ede8f8',
-  badgeLimitedText: '#5c3a9f',
+  // --- 公開設定バッジ ---
+  badgePrivateBg: Palette.border,
+  badgePrivateText: Palette.textSecondary,
+  badgePublicBg: Palette.accentLight,
+  badgePublicText: Palette.accent,
+  badgeLimitedBg: Palette.border,
+  badgeLimitedText: Palette.textPrimary,
 
-  // 入力フォーム
-  inputBg:          '#ffffff',
-  inputBorder:      '#aaaaaa',
-  inputText:        '#111111',
-  inputPlaceholder: '#aaaaaa',
-
-  // ボタン
-  btnPrimaryBg:   '#222222',
-  btnPrimaryText: '#f0f0f2',
-  btnGhostBorder: '#aaaaaa',
-  btnGhostText:   '#555555',
+  // --- BottomNav ---
+  navShell: Palette.surface,
+  navTrack: Palette.background,
+  navTrackBorder: Palette.border,
+  navPillActive: Palette.accentLight,
+  navInactive: Palette.textSecondary,
+  navActive: Palette.textPrimary,
 } as const;
 
 export const RPGTheme = {
-  // 背景
-  bgBase:     '#0d0d14',
-  bgSurface:  '#13131f',
+  bgBase: '#0d0d14',
+  bgSurface: '#13131f',
   bgElevated: '#1e1e2e',
-
-  // ボーダー
-  border:       '#2a2a3a',
+  border: '#2a2a3a',
   borderStrong: '#a78bfa',
-
-  // テキスト
-  textPrimary:   '#e8e8f0',
+  textPrimary: '#e8e8f0',
   textSecondary: '#9ca3af',
-  textMuted:     '#555566',
-
-  // アクセント
-  accent:      '#a78bfa',
+  textMuted: '#555566',
+  accent: '#a78bfa',
   accentLight: '#c4b5fd',
-
-  // ヒーロータグ
-  heroTagBg:   '#2d1f50',
+  heroTagBg: '#2d1f50',
   heroTagText: '#c4b5fd',
-
-  // セクションタグ - 所属
   tagAffilBorder: '#7060c0',
-  tagAffilText:   '#c4b5fd',
-  // 経験
-  tagExpBorder:   '#2a7a4a',
-  tagExpText:     '#86efac',
-  // 性格
-  tagCharBorder:  '#3060a0',
-  tagCharText:    '#93c5fd',
-  // 好物
-  tagLikeBorder:  '#9a7a00',
-  tagLikeText:    '#fde68a',
-  // 苦手
+  tagAffilText: '#c4b5fd',
+  tagExpBorder: '#2a7a4a',
+  tagExpText: '#86efac',
+  tagCharBorder: '#3060a0',
+  tagCharText: '#93c5fd',
+  tagLikeBorder: '#9a7a00',
+  tagLikeText: '#fde68a',
   tagDislikeBorder: '#a03030',
-  tagDislikeText:   '#f87171',
-
-  // Statカード
-  statBg:     '#13131f',
+  tagDislikeText: '#f87171',
+  statBg: '#13131f',
   statBorder: '#3a3a50',
-
-  // バー
   barTrack: '#2a2a3a',
-  barFill:  '#a78bfa',
-  barPct:   '#a78bfa',
-
-  // タブ
-  tabBg:           '#13131f',
-  tabBorder:       '#2a2a3a',
-  tabText:         '#555566',
-  tabActiveBg:     '#1e1230',
+  barFill: '#a78bfa',
+  barPct: '#a78bfa',
+  tabBg: '#13131f',
+  tabBorder: '#2a2a3a',
+  tabText: '#555566',
+  tabActiveBg: '#1e1230',
   tabActiveBorder: '#a78bfa',
-  tabActiveText:   '#c4b5fd',
+  tabActiveText: '#c4b5fd',
   tabActiveShadow: '#a78bfa',
-
-  // トレイト・彼曰くカード
-  traitBg:         '#13131f',
-  traitBorder:     '#2a2a3a',
+  traitBg: '#13131f',
+  traitBorder: '#2a2a3a',
   traitAccentLine: '#a78bfa',
-  traitText:       '#c4c4d4',
-  quoteText:       '#c4b5fd',
-  quoteDateText:   '#555566',
-
-  // エピソードカード
-  episodeBg:     '#13131f',
+  traitText: '#c4c4d4',
+  quoteText: '#c4b5fd',
+  quoteDateText: '#555566',
+  episodeBg: '#13131f',
   episodeBorder: '#2a2a3a',
-  episodeTitle:  '#e8e8f0',
-  episodeDate:   '#555566',
-
-  // 公開設定バッジ
-  badgePrivateBg:   '#1e1e2e',
+  episodeTitle: '#e8e8f0',
+  episodeDate: '#555566',
+  badgePrivateBg: '#1e1e2e',
   badgePrivateText: '#555566',
-  badgePublicBg:    '#0f2e28',
-  badgePublicText:  '#5eead4',
-  badgeLimitedBg:   '#2d1f50',
+  badgePublicBg: '#0f2e28',
+  badgePublicText: '#5eead4',
+  badgeLimitedBg: '#2d1f50',
   badgeLimitedText: '#c4b5fd',
-
-  // 入力フォーム
-  inputBg:          '#0d0d14',
-  inputBorder:      '#2a2a3a',
-  inputText:        '#e8e8f0',
+  inputBg: '#0d0d14',
+  inputBorder: '#2a2a3a',
+  inputText: '#e8e8f0',
   inputPlaceholder: '#555566',
-
-  // ボタン
-  btnPrimaryBg:   '#a78bfa',
+  btnPrimaryBg: '#a78bfa',
   btnPrimaryText: '#0d0d14',
   btnGhostBorder: '#2a2a3a',
-  btnGhostText:   '#555566',
+  btnGhostText: '#555566',
 } as const;
 
-// 現在のアクティブテーマ（LG固定、後でAsyncStorageから動的切替に変更予定）
 export const Theme = LightTheme;
-
-// 型エクスポート
 export type AppTheme = typeof LightTheme;
 
-// 後方互換用（既存のColors/Radius/Typographyを参照している箇所向け）
-export const Colors = {
-  bgBase:      Theme.bgBase,
-  bgSurface:   Theme.bgSurface,
-  bgElevated:  Theme.bgElevated,
-  border:      Theme.border,
-  accent:      Theme.accent,
-  accentLight: Theme.accentLight,
-  textPrimary: Theme.textPrimary,
-  textMuted:   Theme.textMuted,
-  textMid:     Theme.textSecondary,
+/** Detail タブ（ライトモード：アクティブのみアクセント、非アクティブは tabInactive） */
+export const DetailTabColors = {
+  情報: Palette.accent,
+  ステータス: Palette.accent,
+  エピソード: Palette.accent,
+  習性: Palette.accent,
+  彼曰く: Palette.accent,
+  メモ: Palette.accent,
 } as const;
 
-export const Radius = { sm: 8, md: 12, lg: 14, full: 999 } as const;
+/** 後方互換 */
+export const Colors = {
+  bgBase: Theme.bgBase,
+  bgSurface: Theme.bgSurface,
+  bgElevated: Theme.bgElevated,
+  border: Theme.border,
+  accent: Theme.accent,
+  accentLight: Theme.accentLight,
+  textPrimary: Theme.textPrimary,
+  textMuted: Theme.textMuted,
+  textMid: Theme.textSecondary,
+} as const;
+
+export const BorderWidth = {
+  card: 1,
+  cardEmphasis: 2,
+  input: 1,
+} as const;
+
+export const Radius = { sm: 8, md: 12, lg: 14, photo: 10, full: 999 } as const;
 export const Spacing = { xs: 4, sm: 8, md: 12, lg: 16 } as const;
 export const Typography = {
-  xs: 9, sm: 11, base: 13, lg: 16, xl: 20, xxl: 22,
+  xs: 9,
+  sm: 11,
+  base: 13,
+  lg: 16,
+  xl: 20,
+  xxl: 22,
 } as const;

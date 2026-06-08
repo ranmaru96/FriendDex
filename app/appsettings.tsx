@@ -12,7 +12,9 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { confirmAndExportBackup, confirmAndImportBackup } from '../backup';
 import { getAllProfiles, getMyself, initializeDatabase, setMyself } from '../db';
 import { Profile } from '../types';
+import { DETAIL_DESIGN_OPTIONS } from '@/constants/detailThemes';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { useDetailDesign } from '../contexts/DetailDesignContext';
 
 type Option = { label: string; value: string };
 
@@ -80,6 +82,7 @@ const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | nu
 
 export default function AppSettingsScreen() {
   const router = useRouter();
+  const { variant: detailDesignVariant, setVariant: setDetailDesignVariant } = useDetailDesign();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
 
@@ -139,6 +142,30 @@ export default function AppSettingsScreen() {
           )}
         </View>
 
+        <Text style={styles.sectionHeader}>自分のプロフィール</Text>
+        <View style={styles.group}>
+          <Pressable style={styles.row} onPress={() => router.push('/myprofile')}>
+            <Text style={styles.rowLabel}>プロフィールを確認・編集</Text>
+            <Text style={styles.rowChevron}>›</Text>
+          </Pressable>
+        </View>
+
+        <Text style={styles.sectionHeader}>Detail 画面デザイン</Text>
+        <View style={styles.group}>
+          {DETAIL_DESIGN_OPTIONS.map((option, index) => (
+            <View key={option.value}>
+              {index > 0 ? <View style={styles.separator} /> : null}
+              <Pressable style={styles.row} onPress={() => setDetailDesignVariant(option.value)}>
+                <Text style={styles.rowLabel}>{option.label}</Text>
+                {detailDesignVariant === option.value ? (
+                  <Text style={styles.selectedMark}>✓</Text>
+                ) : null}
+              </Pressable>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.hint}>Detail 画面の配色とタブ・タグのスタイルを切り替えます</Text>
+
         <Text style={styles.sectionHeader}>バックアップ</Text>
         <View style={styles.group}>
           <Pressable style={styles.row} onPress={confirmAndExportBackup}>
@@ -191,6 +218,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
@@ -198,6 +228,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#0f172a',
     fontWeight: '500',
+  },
+  rowChevron: {
+    fontSize: 22,
+    color: '#94a3b8',
+    fontWeight: '500',
+  },
+  selectedMark: {
+    fontSize: 18,
+    color: Theme.accent,
+    fontWeight: '700',
   },
   emptyText: {
     fontSize: 15,

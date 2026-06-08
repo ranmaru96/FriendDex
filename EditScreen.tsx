@@ -25,7 +25,7 @@ import {
   resyncEpisodesForFriendAffiliationChange,
   updateFriend,
 } from './db';
-import { FriendInput, MBTI_TYPES } from './types';
+import { FriendInput, MBTIType, MBTI_TYPES } from './types';
 
 type Option = { label: string; value: string };
 
@@ -164,14 +164,38 @@ function DynamicInputList({ title, values, onChange, placeholder }: DynamicInput
   );
 }
 
+const getParam = (value: string | string[] | undefined): string => {
+  if (Array.isArray(value)) return value[0] ?? '';
+  return value ?? '';
+};
+
+const parseOptionalNumber = (value: string): number | null => {
+  if (!value) return null;
+  const parsed = Number(value);
+  return Number.isNaN(parsed) ? null : parsed;
+};
+
 export default function EditScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{
+    id?: string;
+    name?: string;
+    nickname?: string;
+    birthday?: string;
+    height?: string;
+    weight?: string;
+    origin?: string;
+    residence?: string;
+    mbti?: string;
+    fromScan?: string;
+  }>();
 
   const friendId = useMemo(() => {
     if (Array.isArray(params.id)) return params.id[0] ?? '';
     return params.id ?? '';
   }, [params.id]);
+
+  const fromScan = getParam(params.fromScan) === 'true';
 
   const isEditMode = !!friendId;
   const [form, setForm] = useState<FriendInput>(EMPTY_FORM);
@@ -189,7 +213,21 @@ export default function EditScreen() {
   const loadFriend = useCallback(() => {
     initializeDatabase();
     if (!friendId) {
-      setForm(EMPTY_FORM);
+      if (fromScan) {
+        setForm({
+          ...EMPTY_FORM,
+          name: getParam(params.name),
+          nickname: getParam(params.nickname),
+          birthday: getParam(params.birthday),
+          height: parseOptionalNumber(getParam(params.height)),
+          weight: parseOptionalNumber(getParam(params.weight)),
+          origin: getParam(params.origin),
+          residence: getParam(params.residence),
+          mbti: getParam(params.mbti) as MBTIType,
+        });
+      } else {
+        setForm(EMPTY_FORM);
+      }
       return;
     }
     const friend = getFriendById(friendId);
@@ -219,7 +257,7 @@ export default function EditScreen() {
       episodes: friend.episodes,
       sayings: friend.sayings,
     });
-  }, [friendId, router]);
+  }, [friendId, fromScan, params.birthday, params.height, params.mbti, params.name, params.nickname, params.origin, params.residence, params.weight, router]);
 
   useFocusEffect(
     useCallback(() => {

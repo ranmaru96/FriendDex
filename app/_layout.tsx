@@ -6,6 +6,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppHeader from '../AppHeader';
 import { runAutoBackup } from '../backup';
 import BottomNav from '../components/BottomNav';
+import { Theme } from '@/constants/theme';
+import { DetailDesignProvider } from '../contexts/DetailDesignContext';
 import { initializeDatabase } from '../db';
 
 type TabKey = 'home' | 'episode' | 'commonitems' | 'friends';
@@ -19,7 +21,7 @@ function getActiveTab(pathname: string): TabKey {
 
 function AppShell() {
   const pathname = usePathname();
-  const hideNav = ['detail', 'edit', 'episode-detail'].some((p) => pathname.includes(p));
+  const hideNav = ['detail', 'edit', 'episode-detail', 'myprofile', 'myprofile-qr', 'scan'].some((p) => pathname.includes(p));
   const activeTab = getActiveTab(pathname);
 
   return (
@@ -42,7 +44,9 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        <AppShell />
+        <DetailDesignProvider>
+          <AppShell />
+        </DetailDesignProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -54,7 +58,7 @@ const styles = StyleSheet.create({
   },
   shell: {
     flex: 1,
-    backgroundColor: '#f0f0f2',
+    backgroundColor: Theme.background,
   },
   content: {
     flex: 1,

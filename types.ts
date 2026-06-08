@@ -104,6 +104,10 @@ export type Profile = {
   episodes: Episode[];
   sayings: Saying[];
   createdAt: string;
+  /** ver001では空文字。ver002でサーバー採番 */
+  userId: string;
+  /** 公開する項目のキー一覧 */
+  publicFields: string[];
   updatedAt: string;
 };
 

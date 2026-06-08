@@ -14,7 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { BorderWidth, Radius, Spacing, Theme, Typography } from '@/constants/theme';
 
 import {
   deleteProfileById,
@@ -49,8 +49,8 @@ const toOptions = (values: string[]): Option[] => values.map((value) => ({ label
 const CARD_GAP = 10;
 /** 検索エリアの marginHorizontal とカード一覧の左右を揃える */
 const LIST_HORIZONTAL_INSET = 12;
-/** 人物カードの borderWidth */
-const CARD_BORDER_WIDTH = 2;
+/** 人物カードの borderWidth（通常・本人とも 2px、本人は枠色のみ accent） */
+const CARD_BORDER_WIDTH = BorderWidth.cardEmphasis;
 
 function SelectField({ label, value, options, onValueChange }: SelectFieldProps) {
   const [visible, setVisible] = useState(false);
@@ -211,6 +211,7 @@ export default function HomeScreen() {
                     value={name}
                     onChangeText={setName}
                     placeholder="名前"
+                    placeholderTextColor={Theme.textSecondary}
                     style={styles.textInput}
                     autoCapitalize="none"
                   />
@@ -254,43 +255,44 @@ export default function HomeScreen() {
           renderItem={({ item }) => {
             const isMyself = myselfId === item.id;
             return (
-              <Pressable
-                style={[styles.card, { width: cardWidth }, isMyself && styles.cardMyself]}
-                onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
-                onLongPress={() => handleLongPressDeleteProfile(item)}
-                delayLongPress={400}
-              >
-                {isMyself ? (
-                  <View style={styles.myselfBadge} pointerEvents="none">
-                    <Text style={styles.myselfBadgeText}>本人</Text>
-                  </View>
-                ) : null}
-                <View style={styles.cardBody}>
-                  <View style={styles.cardNameBackdrop} />
-                  <View style={[styles.photoWrapper, isMyself && styles.photoWrapperMyself]}>
-                    {item.photoUri && !imageErrorById[item.id] ? (
-                      <Image
-                        source={{ uri: item.photoUri }}
-                        style={styles.cardPhoto}
-                        resizeMode="cover"
-                        onError={() =>
-                          setImageErrorById((prev) => ({
-                            ...prev,
-                            [item.id]: true,
-                          }))
-                        }
-                      />
-                    ) : (
-                      <View style={[styles.cardPhoto, styles.cardPhotoPlaceholder]}>
-                        <Text style={styles.cardPhotoPlaceholderText}>No Image</Text>
-                      </View>
-                    )}
+              <View style={[styles.cardShadow, { width: cardWidth }]}>
+                <Pressable
+                  style={[styles.cardOuter, isMyself && styles.cardOuterMyself]}
+                  onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
+                  onLongPress={() => handleLongPressDeleteProfile(item)}
+                  delayLongPress={400}
+                >
+                  {isMyself ? (
+                    <View style={styles.myselfBadge} pointerEvents="none">
+                      <Text style={styles.myselfBadgeText}>本人</Text>
+                    </View>
+                  ) : null}
+                  <View style={[styles.photoOuterFrame, isMyself && styles.photoOuterFrameMyself]}>
+                    <View style={[styles.photoInnerFrame, isMyself && styles.photoInnerFrameMyself]}>
+                      {item.photoUri && !imageErrorById[item.id] ? (
+                        <Image
+                          source={{ uri: item.photoUri }}
+                          style={styles.cardPhoto}
+                          resizeMode="cover"
+                          onError={() =>
+                            setImageErrorById((prev) => ({
+                              ...prev,
+                              [item.id]: true,
+                            }))
+                          }
+                        />
+                      ) : (
+                        <View style={[styles.cardPhoto, styles.cardPhotoPlaceholder]}>
+                          <Text style={styles.cardPhotoPlaceholderText}>No Image</Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                   <View style={styles.cardTextBlock}>
                     <Text style={styles.cardMainName}>{item.name}</Text>
                   </View>
-                </View>
-              </Pressable>
+                </Pressable>
+              </View>
             );
           }}
           numColumns={3}
@@ -309,10 +311,11 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
+    backgroundColor: '#1a1e2e',
   },
   container: {
     flex: 1,
+    backgroundColor: '#1a1e2e',
     paddingTop: 8,
   },
   listContent: {
@@ -320,8 +323,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: LIST_HORIZONTAL_INSET,
   },
   searchArea: {
-    backgroundColor: '#dfe9ef',
-    borderColor: '#7e8b94',
+    backgroundColor: '#252a3a',
+    borderColor: '#3a4060',
     borderWidth: 1,
     borderRadius: Radius.md,
     padding: 10,
@@ -336,19 +339,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   textInput: {
-    backgroundColor: Theme.inputBg,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
+    backgroundColor: Theme.card,
+    borderColor: Theme.border,
+    borderWidth: BorderWidth.input,
     borderRadius: Radius.md,
-    color: Theme.inputText,
+    color: Theme.textPrimary,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     fontSize: 14,
   },
   selectButton: {
-    backgroundColor: Theme.inputBg,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
+    backgroundColor: Theme.card,
+    borderColor: Theme.border,
+    borderWidth: BorderWidth.input,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
@@ -359,17 +362,17 @@ const styles = StyleSheet.create({
   },
   selectValue: {
     fontSize: Typography.base,
-    color: '#111827',
+    color: Theme.textPrimary,
     flex: 1,
   },
   selectPlaceholder: {
     fontSize: Typography.base,
-    color: '#6b7280',
+    color: Theme.textSecondary,
     flex: 1,
   },
   selectChevron: {
     fontSize: 10,
-    color: '#475569',
+    color: Theme.textSecondary,
     marginLeft: 6,
   },
   column: {
@@ -377,91 +380,94 @@ const styles = StyleSheet.create({
     marginBottom: CARD_GAP,
     gap: CARD_GAP,
   },
-  card: {
-    borderWidth: CARD_BORDER_WIDTH,
-    borderColor: Theme.border,
+  cardShadow: {
     borderRadius: Radius.md,
-    backgroundColor: Theme.bgSurface,
-    overflow: 'hidden',
-    padding: 0,
+    backgroundColor: 'transparent',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.65,
+    shadowRadius: 12,
+    elevation: 16,
   },
-  cardMyself: {
-    borderColor: '#0d9488',
-    backgroundColor: '#f0fdfa',
+  cardOuter: {
+    borderRadius: Radius.md,
+    borderWidth: 2,
+    borderColor: '#c8d0e0',
+    backgroundColor: '#1a1e2e',
+    overflow: 'hidden',
+    paddingBottom: 4,
+  },
+  cardOuterMyself: {
+    borderColor: Theme.accent,
+  },
+  photoOuterFrame: {
+    marginTop: -2,
+    marginLeft: -2,
+    marginRight: -2,
+    borderWidth: 3,
+    borderColor: '#c8d0e0',
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  photoOuterFrameMyself: {
+    borderColor: Theme.accent,
+  },
+  photoInnerFrame: {
+    borderWidth: 2,
+    borderColor: '#4a5a7a',
+    borderRadius: Radius.md - 3,
+    overflow: 'hidden',
+  },
+  photoInnerFrameMyself: {
+    borderColor: Theme.accent,
   },
   myselfBadge: {
     position: 'absolute',
     top: 6,
     right: 6,
     zIndex: 3,
-    backgroundColor: '#0d9488',
+    backgroundColor: Theme.accent,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#0f766e',
+    borderColor: Theme.accent,
   },
   myselfBadgeText: {
-    color: Theme.bgSurface,
+    color: Theme.onAccent,
     fontSize: 11,
     fontWeight: '800',
   },
-  cardBody: {
-    position: 'relative',
-  },
-  cardNameBackdrop: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 36,
-    backgroundColor: '#8a8a8a',
-    zIndex: 0,
-  },
-  photoWrapper: {
-    marginTop: -2,
-    marginLeft: -2,
-    marginRight: -2,
-    borderWidth: 2,
-    borderColor: Theme.border,
-    borderRadius: 10,
-    overflow: 'hidden',
-    zIndex: 1,
-  },
-  photoWrapperMyself: {
-    borderColor: '#0d9488',
-  },
   cardTextBlock: {
-    width: '100%',
-    alignSelf: 'stretch',
-    paddingVertical: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    zIndex: 2,
   },
   cardPhoto: {
     width: '100%',
     aspectRatio: 1,
   },
   cardPhotoPlaceholder: {
-    backgroundColor: '#f1f5f9',
+    backgroundColor: '#2a3050',
     alignItems: 'center',
     justifyContent: 'center',
   },
   cardPhotoPlaceholderText: {
     fontSize: 12,
-    color: '#64748b',
+    color: '#6a7090',
   },
   cardMainName: {
     width: '100%',
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#e8eaf6',
     textAlign: 'center',
+    letterSpacing: 0.5,
   },
   emptyText: {
     textAlign: 'center',
-    color: '#475569',
+    color: Theme.textSecondary,
     marginTop: 20,
   },
   fab: {
@@ -480,17 +486,17 @@ const styles = StyleSheet.create({
   fabText: {
     fontSize: 34,
     lineHeight: 34,
-    color: '#082f49',
+    color: '#0f172a',
     fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    backgroundColor: Theme.overlay,
     justifyContent: 'center',
     paddingHorizontal: 18,
   },
   modalCard: {
-    backgroundColor: Theme.bgSurface,
+    backgroundColor: Theme.card,
     borderRadius: Radius.md,
     padding: 14,
     maxHeight: '70%',
@@ -498,7 +504,7 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Theme.heading,
     marginBottom: 10,
   },
   modalOptions: {
@@ -510,21 +516,21 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
   },
   modalOptionSelected: {
-    backgroundColor: '#e0f2fe',
+    backgroundColor: Theme.accentLight,
   },
   modalOptionText: {
     fontSize: 14,
-    color: '#1e293b',
+    color: Theme.textPrimary,
   },
   modalCloseButton: {
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: Radius.sm,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: Theme.borderSoft,
   },
   modalCloseButtonText: {
-    color: '#0f172a',
+    color: Theme.heading,
     fontWeight: '600',
   },
 });
