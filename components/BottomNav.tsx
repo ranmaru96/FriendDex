@@ -5,7 +5,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme } from '@/constants/theme';
 
-type TabKey = 'home' | 'commonitems' | 'episode' | 'tools' | 'friends';
+type TabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'friends';
 
 type BottomNavProps = {
   active: TabKey;
@@ -15,12 +15,13 @@ const TABS: {
   key: TabKey;
   label: string;
   icon: ComponentProps<typeof Ionicons>['name'];
-  route: '/' | '/commonitems' | '/episode' | '/tools' | '/friends';
+  route: '/' | '/commonitems' | '/calendar' | '/episode' | '/tools' | '/friends';
 }[] = [
   { key: 'home', label: '一覧', icon: 'people-outline', route: '/' },
   { key: 'commonitems', label: '共通項目', icon: 'pricetag-outline', route: '/commonitems' },
+  { key: 'calendar', label: 'カレンダー', icon: 'calendar-outline', route: '/calendar' },
   { key: 'episode', label: 'エピソード', icon: 'book-outline', route: '/episode' },
-  { key: 'tools', label: 'その他', icon: 'ellipsis-horizontal-circle-outline', route: '/tools' },
+  { key: 'tools', label: 'ツール', icon: 'construct-outline', route: '/tools' },
   { key: 'friends', label: '友達', icon: 'people-circle-outline', route: '/friends' },
 ];
 

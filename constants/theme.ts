@@ -227,7 +227,7 @@ export const BorderWidth = {
 
 export const Radius = { sm: 8, md: 12, lg: 14, photo: 10, full: 999 } as const;
 export const Spacing = { xs: 4, sm: 8, md: 12, lg: 16 } as const;
-/** ボトムタブ画面の左右余白（一覧・共通項目・エピソード・その他・友達） */
+/** ボトムタブ画面の左右余白（一覧・共通項目・カレンダー・エピソード・ツール・友達） */
 export const ScreenHorizontalInset = Spacing.lg;
 export const Typography = {
   xs: 9,

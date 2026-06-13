@@ -10,10 +10,11 @@ import { Theme } from '@/constants/theme';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
 import { initializeDatabase } from '../db';
 
-type TabKey = 'home' | 'commonitems' | 'episode' | 'tools' | 'friends';
+type TabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'friends';
 
 function getActiveTab(pathname: string): TabKey {
   if (pathname.includes('/commonitems')) return 'commonitems';
+  if (pathname.includes('/calendar')) return 'calendar';
   if (pathname.includes('/friends')) return 'friends';
   if (pathname.includes('/episode')) return 'episode';
   if (pathname.includes('/tools')) return 'tools';

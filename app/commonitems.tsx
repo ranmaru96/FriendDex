@@ -35,6 +35,9 @@ import { AddCircleButton } from '@/components/AddCircleButton';
 type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先';
 type Option = { label: string; value: string };
 
+const TAGS_SCROLL_MAX_HEIGHT = Math.max(120, Dimensions.get('window').height - 280);
+const TAB_TAG_DIVIDER_INSET = Spacing.md;
+
 const TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '好物', '苦手', '公開先'];
 
 const TAB_ICONS: Record<CommonItemTabKey, ComponentProps<typeof Ionicons>['name']> = {
@@ -349,7 +352,7 @@ export default function CommonItemsScreen() {
       <View style={styles.container}>
         <View style={styles.body}>
           <View style={[detailStyles.tabSection, styles.tabSectionFill, styles.tabSectionNoFrame]}>
-            <View style={[detailStyles.tabTrack, styles.tabTrackAligned]}>
+            <View style={[detailStyles.tabTrack, styles.tabTrackAligned, styles.itemsPanel]}>
               <View style={detailStyles.tabInner}>
                 {TAB_ORDER.map((tab) => {
                   const isActive = activeTab === tab;
@@ -394,22 +397,19 @@ export default function CommonItemsScreen() {
                   );
                 })}
               </View>
-            </View>
 
-            <View style={[detailStyles.tabContentArea, styles.tabContentInner, styles.tabContentNoFrame]}>
-              <View
-                style={[
-                  styles.tagsPanel,
-                  {
-                    borderColor: themeColors.border,
-                    backgroundColor: themeColors.tabPaneBackground,
-                  },
-                ]}
-              >
+              <View style={styles.tabTagSeparator}>
+                <View
+                  style={[styles.tabTagDivider, { backgroundColor: themeColors.tabTrackBorder }]}
+                />
+              </View>
+
+              <View style={styles.tagsBody}>
                 <ScrollView
-                  style={styles.tagsScroll}
+                  style={[styles.tagsScroll, { maxHeight: TAGS_SCROLL_MAX_HEIGHT }]}
                   contentContainerStyle={styles.tagsContainer}
                   showsVerticalScrollIndicator={false}
+                  nestedScrollEnabled
                 >
                   {mergedLabels.map((label) => (
                     <Pressable
@@ -558,40 +558,43 @@ const styles = StyleSheet.create({
   },
   tabSectionFill: {
     flex: 1,
+    alignItems: 'stretch',
   },
   tabSectionNoFrame: {
     backgroundColor: 'transparent',
   },
   tabTrackAligned: {
     marginHorizontal: 0,
+    marginTop: 0,
+    marginBottom: 0,
   },
-  tabContentInner: {
-    flex: 1,
-    flexDirection: 'column',
-    paddingHorizontal: 0,
-    paddingVertical: Spacing.sm,
-    minHeight: 0,
+  itemsPanel: {
+    alignSelf: 'stretch',
+    paddingBottom: Spacing.sm,
   },
-  tabContentNoFrame: {
-    backgroundColor: 'transparent',
+  tabTagSeparator: {
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
+    alignItems: 'center',
   },
-  tagsPanel: {
-    flex: 1,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    padding: Spacing.sm,
-    minHeight: 0,
+  tabTagDivider: {
+    height: 1,
+    alignSelf: 'stretch',
+    marginHorizontal: TAB_TAG_DIVIDER_INSET,
+  },
+  tagsBody: {
+    paddingHorizontal: Spacing.xs,
   },
   tagsScroll: {
-    flex: 1,
+    flexGrow: 0,
+    flexShrink: 1,
   },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'flex-start',
     gap: 8,
-    paddingBottom: Spacing.sm,
-    flexGrow: 1,
+    paddingBottom: Spacing.xs,
   },
   valueChip: {
     paddingHorizontal: 14,
@@ -603,7 +606,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   addButtonRow: {
-    marginTop: 'auto',
     alignItems: 'flex-end',
     paddingTop: Spacing.sm,
   },

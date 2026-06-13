@@ -23,7 +23,7 @@ export default function ToolsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.screenTitle}>その他</Text>
+        <Text style={styles.screenTitle}>ツール</Text>
         <Text style={styles.screenSubtitle}>便利ツールをここにまとめます</Text>
 
         {TOOL_ENTRIES.map((entry) => (
