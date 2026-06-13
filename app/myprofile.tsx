@@ -254,7 +254,7 @@ export default function MyProfileScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
+    backgroundColor: Theme.screenBase,
   },
   header: {
     flexDirection: 'row',

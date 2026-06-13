@@ -1,8 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Alert, Image, Modal, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useRouter } from 'expo-router';
-import { getAllFriends, initializeDatabase } from '../db';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useRouter } from 'expo-router';
+import { getAllFriends, getQrScannedFriends, initializeDatabase } from '../db';
 import { Friend } from '../types';
+import { formatScannedAtLabel } from '@/utils/qrScanHelpers';
+import { Theme, ScreenHorizontalInset } from '@/constants/theme';
+
+/** 将来復活予定の友達一覧・Profile共有UI */
+const SHOW_LEGACY_FRIENDS_UI = false;
 
 type Option = { label: string; value: string };
 
@@ -110,6 +116,7 @@ function SelectField({
 
 export default function FriendsScreen() {
   const router = useRouter();
+  const [qrFriends, setQrFriends] = useState<Friend[]>([]);
   const [name, setName] = useState('');
   const [affiliation1, setAffiliation1] = useState('');
   const [affiliation2, setAffiliation2] = useState('');
@@ -122,6 +129,17 @@ export default function FriendsScreen() {
   const [profileExperienceFilter, setProfileExperienceFilter] = useState('');
   const [selectedProfileIds, setSelectedProfileIds] = useState<string[]>([]);
   const [shareProfiles, setShareProfiles] = useState<ShareProfile[]>([]);
+
+  const loadQrFriends = useCallback(() => {
+    initializeDatabase();
+    setQrFriends(getQrScannedFriends());
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadQrFriends();
+    }, [loadQrFriends])
+  );
 
   const filteredFriends = useMemo(() => {
     return dummyFriends.filter((friend) => {
@@ -194,18 +212,28 @@ export default function FriendsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={styles.actionRow}>
+        <View style={styles.toolbarRow}>
+          <View style={styles.toolbarSpacer} />
           <Pressable
-            style={styles.primaryActionButton}
-            onPress={() => Alert.alert('案内', '「あなたは今」は後で実装します')}
+            style={styles.toolbarIconButton}
+            onPress={() => router.push('/myprofile')}
+            accessibilityLabel="QR公開項目の設定"
           >
-            <Text style={styles.primaryActionButtonText}>あなたは今</Text>
+            <Ionicons name="person-circle-outline" size={24} color="#334155" />
           </Pressable>
           <Pressable
-            style={styles.primaryActionButton}
-            onPress={() => Alert.alert('案内', '「友達追加」は後で実装します')}
+            style={styles.toolbarIconButton}
+            onPress={() => router.push('/myprofile-qr')}
+            accessibilityLabel="QRコードを表示"
           >
-            <Text style={styles.primaryActionButtonText}>友達追加</Text>
+            <Ionicons name="qr-code-outline" size={24} color="#334155" />
+          </Pressable>
+          <Pressable
+            style={styles.toolbarIconButton}
+            onPress={() => router.push('/scan')}
+            accessibilityLabel="QRコードを読み取る"
+          >
+            <Ionicons name="scan-outline" size={24} color="#334155" />
           </Pressable>
         </View>
 
@@ -214,67 +242,107 @@ export default function FriendsScreen() {
           keyboardShouldPersistTaps="handled"
         >
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Profileが届いた</Text>
-            {incomingProfiles.map((item) => (
-              <View key={item.accountName} style={styles.incomingCard}>
-                <Text style={styles.incomingText}>
-                  「{item.accountName}」から{item.profileCount}個のProfileが届いています
-                </Text>
+            <Text style={styles.sectionTitle}>QRで追加した人</Text>
+            {qrFriends.length === 0 ? (
+              <Text style={styles.emptyQrText}>QRコードを読み取って追加した人がここに表示されます。</Text>
+            ) : (
+              qrFriends.map((friend) => (
                 <Pressable
-                  style={styles.checkProfileButton}
-                  onPress={() => Alert.alert('案内', '「Profile確認」は後で実装します')}
+                  key={friend.id}
+                  style={styles.qrFriendRow}
+                  onPress={() => router.push({ pathname: '/detail', params: { id: friend.id } })}
                 >
-                  <Text style={styles.checkProfileButtonText}>Profile確認</Text>
+                  <View style={styles.qrFriendMain}>
+                    <Text style={styles.qrFriendName}>{friend.name || '-'}</Text>
+                    {friend.nickname.trim() ? (
+                      <Text style={styles.qrFriendNickname}>{friend.nickname}</Text>
+                    ) : null}
+                  </View>
+                  <Text style={styles.qrFriendDate}>{formatScannedAtLabel(friend.scannedAt)}</Text>
                 </Pressable>
-              </View>
-            ))}
+              ))
+            )}
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>友達一覧</Text>
-            <View style={styles.searchArea}>
-              <View style={styles.row}>
-                <View style={styles.fieldContainer}>
-                  <TextInput
-                    value={name}
-                    onChangeText={setName}
-                    placeholder="名前"
-                    style={styles.textInput}
-                    autoCapitalize="none"
-                  />
+          {SHOW_LEGACY_FRIENDS_UI ? (
+            <>
+              <View style={styles.actionRow}>
+                <Pressable
+                  style={styles.primaryActionButton}
+                  onPress={() => Alert.alert('案内', '「あなたは今」は後で実装します')}
+                >
+                  <Text style={styles.primaryActionButtonText}>あなたは今</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.primaryActionButton}
+                  onPress={() => Alert.alert('案内', '「友達追加」は後で実装します')}
+                >
+                  <Text style={styles.primaryActionButtonText}>友達追加</Text>
+                </Pressable>
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Profileが届いた</Text>
+                {incomingProfiles.map((item) => (
+                  <View key={item.accountName} style={styles.incomingCard}>
+                    <Text style={styles.incomingText}>
+                      「{item.accountName}」から{item.profileCount}個のProfileが届いています
+                    </Text>
+                    <Pressable
+                      style={styles.checkProfileButton}
+                      onPress={() => Alert.alert('案内', '「Profile確認」は後で実装します')}
+                    >
+                      <Text style={styles.checkProfileButtonText}>Profile確認</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>友達一覧</Text>
+                <View style={styles.searchArea}>
+                  <View style={styles.row}>
+                    <View style={styles.fieldContainer}>
+                      <TextInput
+                        value={name}
+                        onChangeText={setName}
+                        placeholder="名前"
+                        style={styles.textInput}
+                        autoCapitalize="none"
+                      />
+                    </View>
+                    <SelectField
+                      label="所属1"
+                      value={affiliation1}
+                      options={affiliationOptions}
+                      onValueChange={setAffiliation1}
+                    />
+                    <SelectField
+                      label="所属2"
+                      value={affiliation2}
+                      options={affiliationOptions}
+                      onValueChange={setAffiliation2}
+                    />
+                  </View>
                 </View>
-                <SelectField
-                  label="所属1"
-                  value={affiliation1}
-                  options={affiliationOptions}
-                  onValueChange={setAffiliation1}
-                />
-                <SelectField
-                  label="所属2"
-                  value={affiliation2}
-                  options={affiliationOptions}
-                  onValueChange={setAffiliation2}
-                />
-              </View>
-            </View>
 
-            {filteredFriends.map((friend) => (
-              <View key={friend.id} style={styles.friendRow}>
-                <Text style={styles.friendName}>{friend.name}</Text>
-                <Text style={styles.friendStatus} numberOfLines={1}>
-                  {friend.status}
-                </Text>
-                <Pressable
-                  style={styles.shareButton}
-                  onPress={() => openShareModal(friend)}
-                >
-                  <Text style={styles.shareButtonText}>Profile共有</Text>
-                </Pressable>
+                {filteredFriends.map((friend) => (
+                  <View key={friend.id} style={styles.friendRow}>
+                    <Text style={styles.friendName}>{friend.name}</Text>
+                    <Text style={styles.friendStatus} numberOfLines={1}>
+                      {friend.status}
+                    </Text>
+                    <Pressable style={styles.shareButton} onPress={() => openShareModal(friend)}>
+                      <Text style={styles.shareButtonText}>Profile共有</Text>
+                    </Pressable>
+                  </View>
+                ))}
               </View>
-            ))}
-          </View>
+            </>
+          ) : null}
         </ScrollView>
 
+        {SHOW_LEGACY_FRIENDS_UI ? (
         <Modal
           visible={shareModalVisible}
           animationType="slide"
@@ -395,6 +463,7 @@ export default function FriendsScreen() {
             </View>
           </Modal>
         </Modal>
+        ) : null}
       </View>
     </SafeAreaView>
   );
@@ -403,11 +472,66 @@ export default function FriendsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
+    backgroundColor: Theme.screenBase,
   },
   container: {
     flex: 1,
     paddingTop: 8,
+  },
+  toolbarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    paddingHorizontal: ScreenHorizontalInset,
+    marginBottom: 8,
+    gap: 4,
+  },
+  toolbarSpacer: {
+    flex: 1,
+  },
+  toolbarIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+  },
+  emptyQrText: {
+    fontSize: 14,
+    color: '#64748b',
+    lineHeight: 20,
+  },
+  qrFriendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  qrFriendMain: {
+    flex: 1,
+    gap: 2,
+  },
+  qrFriendName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1e293b',
+  },
+  qrFriendNickname: {
+    fontSize: 13,
+    color: '#64748b',
+  },
+  qrFriendDate: {
+    fontSize: 12,
+    color: '#64748b',
   },
   actionRow: {
     marginHorizontal: 12,
@@ -430,7 +554,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   scrollContent: {
-    paddingHorizontal: 12,
+    paddingHorizontal: ScreenHorizontalInset,
     paddingBottom: 24,
     gap: 12,
   },

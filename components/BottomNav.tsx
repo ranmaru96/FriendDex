@@ -3,8 +3,9 @@ import { router } from 'expo-router';
 import { ComponentProps } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Theme } from '@/constants/theme';
 
-type TabKey = 'home' | 'episode' | 'commonitems' | 'friends';
+type TabKey = 'home' | 'commonitems' | 'episode' | 'tools' | 'friends';
 
 type BottomNavProps = {
   active: TabKey;
@@ -14,11 +15,12 @@ const TABS: {
   key: TabKey;
   label: string;
   icon: ComponentProps<typeof Ionicons>['name'];
-  route: '/' | '/episode' | '/commonitems' | '/friends';
+  route: '/' | '/commonitems' | '/episode' | '/tools' | '/friends';
 }[] = [
   { key: 'home', label: '一覧', icon: 'people-outline', route: '/' },
-  { key: 'episode', label: 'エピソード', icon: 'book-outline', route: '/episode' },
   { key: 'commonitems', label: '共通項目', icon: 'pricetag-outline', route: '/commonitems' },
+  { key: 'episode', label: 'エピソード', icon: 'book-outline', route: '/episode' },
+  { key: 'tools', label: 'その他', icon: 'ellipsis-horizontal-circle-outline', route: '/tools' },
   { key: 'friends', label: '友達', icon: 'people-circle-outline', route: '/friends' },
 ];
 
@@ -27,49 +29,38 @@ export default function BottomNav({ active }: BottomNavProps) {
 
   return (
     <View style={[styles.container, { paddingBottom: insets.bottom / 2 + 8 }]}>
-      <View style={styles.track}>
-        {TABS.map((tab) => {
-          const isActive = active === tab.key;
-          return (
-            <TouchableOpacity
-              key={tab.key}
-              style={[styles.tabPill, isActive && styles.tabPillActive]}
-              onPress={() => router.replace(tab.route)}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: isActive }}
-              accessibilityLabel={tab.label}
-            >
-              <Ionicons
-                name={tab.icon}
-                size={22}
-                color={isActive ? '#ffffff' : '#888888'}
-              />
-              <Text style={[styles.label, isActive && styles.labelActive]}>{tab.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
+      {TABS.map((tab) => {
+        const isActive = active === tab.key;
+        return (
+          <TouchableOpacity
+            key={tab.key}
+            style={[styles.tabPill, isActive && styles.tabPillActive]}
+            onPress={() => router.replace(tab.route)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isActive }}
+            accessibilityLabel={tab.label}
+          >
+            <Ionicons
+              name={tab.icon}
+              size={22}
+              color={isActive ? '#ffffff' : '#888888'}
+            />
+            <Text style={[styles.label, isActive && styles.labelActive]}>{tab.label}</Text>
+          </TouchableOpacity>
+        );
+      })}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: '#d8d8de',
-    borderWidth: 1.5,
-    borderColor: '#b8b8c4',
-    borderBottomWidth: 0,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    overflow: 'hidden',
-    paddingTop: 8,
-  },
-  track: {
-    marginHorizontal: 8,
-    borderRadius: 12,
-    backgroundColor: '#e0e0e6',
-    padding: 3,
     flexDirection: 'row',
+    backgroundColor: Theme.tabBarBase,
+    borderTopWidth: 1.5,
+    borderColor: Theme.tabBarBorder,
+    paddingTop: 8,
+    paddingHorizontal: 8,
   },
   tabPill: {
     flex: 1,
@@ -81,7 +72,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   tabPillActive: {
-    backgroundColor: '#222222',
+    backgroundColor: Theme.screenBase,
   },
   label: {
     fontSize: 9,

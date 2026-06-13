@@ -21,6 +21,7 @@ import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 
 import {
   createFriend,
+  createFriendFromQrScan,
   getFriendById,
   initializeDatabase,
   resyncEpisodesForFriendAffiliationChange,
@@ -230,6 +231,8 @@ export default function EditScreen() {
     residence?: string;
     mbti?: string;
     fromScan?: string;
+    scannedUserId?: string;
+    publicFields?: string;
   }>();
 
   const friendId = useMemo(() => {
@@ -238,6 +241,7 @@ export default function EditScreen() {
   }, [params.id]);
 
   const fromScan = getParam(params.fromScan) === 'true';
+  const scannedUserId = getParam(params.scannedUserId);
 
   const isEditMode = !!friendId;
   const [form, setForm] = useState<FriendInput>(EMPTY_FORM);
@@ -375,6 +379,12 @@ export default function EditScreen() {
       dislikes: cleanArray(form.dislikes),
     };
 
+    const finishSave = (targetId: string, message = '人物データを登録しました。') => {
+      Alert.alert('保存完了', message, [
+        { text: 'OK', onPress: () => router.replace({ pathname: '/detail', params: { id: targetId } }) },
+      ]);
+    };
+
     if (isEditMode) {
       const existing = getFriendById(friendId);
       if (!existing) {
@@ -390,16 +400,23 @@ export default function EditScreen() {
         Alert.alert('保存エラー', '更新に失敗しました。');
         return;
       }
-      Alert.alert('保存完了', '人物データを更新しました。', [
-        { text: 'OK', onPress: () => router.replace({ pathname: '/detail', params: { id: friendId } }) },
-      ]);
+      finishSave(friendId, '人物データを更新しました。');
+      return;
+    }
+
+    if (fromScan) {
+      const normalizedUserId = scannedUserId.trim();
+      if (!normalizedUserId) {
+        Alert.alert('保存エラー', 'QRコードのユーザー情報が不正です。');
+        return;
+      }
+      const created = createFriendFromQrScan(payload, normalizedUserId);
+      finishSave(created.id);
       return;
     }
 
     const created = createFriend(payload);
-    Alert.alert('保存完了', '人物データを登録しました。', [
-      { text: 'OK', onPress: () => router.replace({ pathname: '/detail', params: { id: created.id } }) },
-    ]);
+    finishSave(created.id);
   };
 
   const handleResyncAffiliationEpisodes = () => {
@@ -637,7 +654,7 @@ export default function EditScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.background,
+    backgroundColor: Theme.screenBase,
   },
   topBar: {
     flexDirection: 'row',

@@ -18,7 +18,7 @@ import QRCode from 'react-native-qrcode-skia';
 import Svg, { Circle, Path } from 'react-native-svg';
 import ViewShot from 'react-native-view-shot';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
-import { getAllProfiles, getMyself, initializeDatabase } from '../db';
+import { getAllProfiles, ensureProfileUserId, getMyself, initializeDatabase } from '../db';
 import { Profile } from '../types';
 
 const QR_SIZE = 280;
@@ -130,7 +130,11 @@ export default function MyProfileQrScreen() {
     initializeDatabase();
     const profiles = getAllProfiles();
     const resolvedId = resolveMyselfProfileId(profiles, getMyself());
-    const myselfProfile = profiles.find((item) => item.id === resolvedId) ?? null;
+    if (resolvedId) {
+      ensureProfileUserId(resolvedId);
+    }
+    const refreshedProfiles = getAllProfiles();
+    const myselfProfile = refreshedProfiles.find((item) => item.id === resolvedId) ?? null;
     setProfile(myselfProfile);
     setIsReady(true);
   }, []);
@@ -299,7 +303,7 @@ export default function MyProfileQrScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: Theme.screenBase,
   },
   header: {
     flexDirection: 'row',

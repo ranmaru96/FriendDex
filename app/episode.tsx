@@ -6,12 +6,16 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { Theme, Radius, Typography, Spacing, ScreenHorizontalInset } from '@/constants/theme';
+import { searchAreaStyles } from '@/utils/searchAreaStyles';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
+import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
+import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import type { Option } from '@/components/episode/types';
 import { useEpisodeForm } from '@/hooks/useEpisodeForm';
@@ -21,11 +25,12 @@ import {
   getAllFriends,
   getDistinctAffiliations,
   getDistinctExperiences,
+  getEpisodeParticipantFriendIds,
   getMyself,
   initializeDatabase,
   updateEpisode,
 } from '../db';
-import { Episode, EpisodeVisibilityMode, Friend } from '../types';
+import { Episode, EpisodeParticipant, EpisodeVisibilityMode, Friend } from '../types';
 import {
   buildParticipantChips,
   getVisibilityModeLabel,
@@ -50,7 +55,6 @@ const EPISODE_VISIBILITY_MODE_TAG_STYLES: Record<
   },
 };
 
-const LIST_HORIZONTAL_INSET = 12;
 
 const formatEpisodeDateForCard = (date: string): string => {
   if (!date.trim()) return '-';
@@ -90,9 +94,6 @@ type ParticipantChip = { id: string; label: string };
 type EpisodeListCardProps = {
   title: string;
   date: string;
-  /** true = 「他の人の投稿」（投稿者タグ＋保存）、false = 自分が登録したエピソード */
-  isSharedPost: boolean;
-  posterName?: string;
   chips: ParticipantChip[];
   visibility?: string[];
   visibilityMode?: EpisodeVisibilityMode;
@@ -103,8 +104,6 @@ type EpisodeListCardProps = {
 function EpisodeListCard({
   title,
   date,
-  isSharedPost,
-  posterName,
   chips,
   visibility = [],
   visibilityMode,
@@ -121,25 +120,14 @@ function EpisodeListCard({
           {title || '-'}
         </Text>
         <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
-        {visibilityMode != null && !isSharedPost && modeStyles ? (
+        {visibilityMode != null && modeStyles ? (
           <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
             <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
               {getVisibilityModeLabel(visibilityMode)}
             </Text>
           </View>
         ) : null}
-        {isSharedPost ? (
-          <View style={styles.episodeCardFriendActions}>
-            <View style={styles.episodeParticipantTag}>
-              <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
-                {posterName || '-'}
-              </Text>
-            </View>
-            <Pressable style={styles.saveButtonDisabled} disabled>
-              <Text style={styles.saveButtonDisabledText}>保存</Text>
-            </Pressable>
-          </View>
-        ) : onEdit && onDelete ? (
+        {onEdit && onDelete ? (
           <View style={styles.episodeCardActions}>
             <Pressable style={styles.episodeCardEditButton} onPress={onEdit} accessibilityLabel="編集">
               <Ionicons name="pencil-outline" size={18} color="#0f172a" />
@@ -195,6 +183,16 @@ export default function EpisodeScreen() {
 
   const [isFormVisible, setIsFormVisible] = useState(false);
 
+  const [filterTitle, setFilterTitle] = useState('');
+  const [filterParticipants, setFilterParticipants] = useState<EpisodeParticipantDraft[]>([]);
+  const [filterSelectorVisible, setFilterSelectorVisible] = useState(false);
+  const [filterSelectorTab, setFilterSelectorTab] = useState<'individual' | 'group'>('individual');
+  const [filterSelectedIndividualIds, setFilterSelectedIndividualIds] = useState<Set<string>>(new Set());
+  const [filterSelectedGroupValues, setFilterSelectedGroupValues] = useState<Set<string>>(new Set());
+  const [filterSelectorNameFilter, setFilterSelectorNameFilter] = useState('');
+  const [filterSelectorAffiliationFilter, setFilterSelectorAffiliationFilter] = useState('');
+  const [filterSelectorExperienceFilter, setFilterSelectorExperienceFilter] = useState('');
+
   const hiddenParticipantIds = useMemo(
     () => (myselfId ? [myselfId] : []),
     [myselfId]
@@ -234,6 +232,113 @@ export default function EpisodeScreen() {
 
   const friendNameById = useMemo(() => buildFriendNameById(friends), [friends]);
   const episodeRows = useMemo(() => collectUniqueEpisodes(friends), [friends]);
+
+  const restoreFilterSelectorFromParticipants = useCallback((drafts: EpisodeParticipantDraft[]) => {
+    const individuals = new Set<string>();
+    const groups = new Set<string>();
+    drafts.forEach((participant) => {
+      if (!participant.value.trim()) return;
+      if (participant.participantType === 'individual') {
+        individuals.add(participant.value);
+      } else {
+        groups.add(participant.value);
+      }
+    });
+    setFilterSelectedIndividualIds(individuals);
+    setFilterSelectedGroupValues(groups);
+  }, []);
+
+  const openFilterParticipantSelector = useCallback(() => {
+    restoreFilterSelectorFromParticipants(filterParticipants);
+    setFilterSelectorTab('individual');
+    setFilterSelectorNameFilter('');
+    setFilterSelectorAffiliationFilter('');
+    setFilterSelectorExperienceFilter('');
+    setFilterSelectorVisible(true);
+  }, [filterParticipants, restoreFilterSelectorFromParticipants]);
+
+  const handleFilterSelectorCancel = useCallback(() => {
+    setFilterSelectorVisible(false);
+    setFilterSelectorNameFilter('');
+    setFilterSelectorAffiliationFilter('');
+    setFilterSelectorExperienceFilter('');
+  }, []);
+
+  const handleFilterSelectorConfirm = useCallback(() => {
+    const nextParticipants: EpisodeParticipantDraft[] = [];
+    filterSelectedIndividualIds.forEach((friendId) => {
+      nextParticipants.push({ participantType: 'individual', value: friendId });
+    });
+    filterSelectedGroupValues.forEach((groupValue) => {
+      nextParticipants.push({ participantType: 'group', value: groupValue });
+    });
+    setFilterParticipants(nextParticipants);
+    setFilterSelectorVisible(false);
+    setFilterSelectorNameFilter('');
+    setFilterSelectorAffiliationFilter('');
+    setFilterSelectorExperienceFilter('');
+  }, [filterSelectedGroupValues, filterSelectedIndividualIds]);
+
+  const toggleFilterSelectorIndividual = useCallback((friendId: string) => {
+    setFilterSelectedIndividualIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(friendId)) next.delete(friendId);
+      else next.add(friendId);
+      return next;
+    });
+  }, []);
+
+  const toggleFilterSelectorGroup = useCallback((groupValue: string) => {
+    setFilterSelectedGroupValues((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupValue)) next.delete(groupValue);
+      else next.add(groupValue);
+      return next;
+    });
+  }, []);
+
+  const filterParticipantEntries = useMemo((): EpisodeParticipant[] => {
+    return filterParticipants
+      .filter((participant) => participant.value.trim().length > 0)
+      .map((participant) => ({
+        kind: participant.participantType,
+        value: participant.value,
+      }));
+  }, [filterParticipants]);
+
+  const filteredEpisodeRows = useMemo(() => {
+    const normalizedTitle = filterTitle.trim().toLowerCase();
+    return episodeRows.filter((row) => {
+      if (normalizedTitle && !row.episode.title.toLowerCase().includes(normalizedTitle)) {
+        return false;
+      }
+      if (filterParticipantEntries.length > 0) {
+        const filterIds = getEpisodeParticipantFriendIds({ participantEntries: filterParticipantEntries });
+        const episodeIds = getEpisodeParticipantFriendIds(row.episode);
+        if (!filterIds.some((id) => episodeIds.includes(id))) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [episodeRows, filterParticipantEntries, filterTitle]);
+
+  const filterParticipantSummary = useMemo(() => {
+    const labels = filterParticipants
+      .filter((participant) => participant.value.trim().length > 0)
+      .map((participant) =>
+        participant.participantType === 'individual'
+          ? friendNameById.get(participant.value) ?? participant.value
+          : participant.value
+      );
+    if (labels.length === 0) {
+      return '';
+    }
+    if (labels.length <= 2) {
+      return labels.join('、');
+    }
+    return `${labels.length}件`;
+  }, [filterParticipants, friendNameById]);
 
   const openCreateForm = () => {
     if (!myselfId) {
@@ -327,23 +432,47 @@ export default function EpisodeScreen() {
           contentContainerStyle={[styles.mainScrollContent, { paddingBottom: 80 }]}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.mainCard}>
-            <Text style={styles.sectionLabel}>他の人の投稿（ダミー）</Text>
-            <DummyEpisodeCard />
-            <DummyEpisodeCard />
+          <View style={searchAreaStyles.area}>
+            <View style={searchAreaStyles.row}>
+              <View style={searchAreaStyles.fieldContainer}>
+                <TextInput
+                  style={searchAreaStyles.textInput}
+                  value={filterTitle}
+                  onChangeText={setFilterTitle}
+                  placeholder="タイトル"
+                  placeholderTextColor={Theme.textSecondary}
+                  autoCapitalize="none"
+                />
+              </View>
+              <Pressable style={searchAreaStyles.selectButton} onPress={openFilterParticipantSelector}>
+                <Text
+                  style={filterParticipantSummary ? searchAreaStyles.selectValue : searchAreaStyles.selectPlaceholder}
+                  numberOfLines={1}
+                >
+                  {filterParticipantSummary || '参加者'}
+                </Text>
+                <Text style={searchAreaStyles.selectChevron}>▼</Text>
+              </Pressable>
+              <View style={[searchAreaStyles.fieldContainer, searchAreaStyles.tagField]}>
+                <View style={searchAreaStyles.tagPlaceholder} pointerEvents="none">
+                  <Text style={searchAreaStyles.tagPlaceholderText}>タグ</Text>
+                </View>
+              </View>
+            </View>
+          </View>
 
-            <Text style={[styles.sectionLabel, styles.sectionLabelSpaced]}>自分のエピソード</Text>
+          <>
             {!myselfId ? <Text style={styles.emptyText}>本人が設定されていません</Text> : null}
-            {episodeRows.length === 0 ? (
-              <Text style={styles.emptyText}>登録されたエピソードはありません。</Text>
+            {filteredEpisodeRows.length === 0 ? (
+              <Text style={styles.emptyText}>
+                {episodeRows.length === 0
+                  ? '登録されたエピソードはありません。'
+                  : '条件に一致するエピソードはありません。'}
+              </Text>
             ) : (
-              episodeRows.map((row) => {
+              filteredEpisodeRows.map((row) => {
                 const chips = buildParticipantChips(row.episode, friendNameById);
                 const authorId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
-                const isSharedPost = myselfId != null && row.episode.authorFriendId.trim() !== myselfId;
-                const posterName = isSharedPost
-                  ? friendNameById.get(row.episode.authorFriendId) ?? row.episode.authorFriendId
-                  : undefined;
                 return (
                   <Pressable
                     key={row.episode.id}
@@ -357,16 +486,14 @@ export default function EpisodeScreen() {
                     <EpisodeListCard
                       title={row.episode.title}
                       date={row.episode.date}
-                      isSharedPost={isSharedPost}
-                      posterName={posterName}
                       chips={chips}
-                      visibilityMode={isSharedPost ? undefined : row.episode.visibilityMode}
+                      visibilityMode={row.episode.visibilityMode}
                     />
                   </Pressable>
                 );
               })
             )}
-          </View>
+          </>
         </ScrollView>
 
         <AddCircleButton
@@ -390,23 +517,29 @@ export default function EpisodeScreen() {
         onSave={handleSaveEpisode}
       />
 
-    </SafeAreaView>
-  );
-}
+      <EntrySelectorModal
+        visible={filterSelectorVisible}
+        selectorTab={filterSelectorTab}
+        onTabChange={setFilterSelectorTab}
+        nameFilter={filterSelectorNameFilter}
+        onNameFilterChange={setFilterSelectorNameFilter}
+        affiliationFilter={filterSelectorAffiliationFilter}
+        onAffiliationFilterChange={setFilterSelectorAffiliationFilter}
+        experienceFilter={filterSelectorExperienceFilter}
+        onExperienceFilterChange={setFilterSelectorExperienceFilter}
+        friends={friends}
+        affiliationOptions={affiliationOptions}
+        experienceOptions={experienceOptions}
+        groupOptions={affiliationOptions}
+        selectedIndividualIds={filterSelectedIndividualIds}
+        selectedGroupValues={filterSelectedGroupValues}
+        onToggleIndividual={toggleFilterSelectorIndividual}
+        onToggleGroup={toggleFilterSelectorGroup}
+        onCancel={handleFilterSelectorCancel}
+        onConfirm={handleFilterSelectorConfirm}
+      />
 
-function DummyEpisodeCard() {
-  return (
-    <EpisodeListCard
-      title="タイトル"
-      date="2024-03-05"
-      isSharedPost
-      posterName="投稿者"
-      chips={[
-        { id: 'dummy-name', label: '名前' },
-        { id: 'dummy-group', label: 'グループ' },
-      ]}
-      visibility={['グループ']}
-    />
+    </SafeAreaView>
   );
 }
 
@@ -415,7 +548,7 @@ const SELECTOR_GAP = 6;
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
+    backgroundColor: Theme.screenBase,
   },
   container: {
     flex: 1,
@@ -425,24 +558,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   mainScrollContent: {
-    paddingHorizontal: LIST_HORIZONTAL_INSET,
+    paddingHorizontal: ScreenHorizontalInset,
     paddingBottom: 120,
-  },
-  mainCard: {
-    borderWidth: 1,
-    borderColor: '#ccc',
-    borderRadius: Radius.md,
-    backgroundColor: Theme.bgSurface,
-    padding: 12,
-  },
-  sectionLabel: {
-    fontSize: Typography.base,
-    fontWeight: '700',
-    color: '#475569',
-    marginBottom: 8,
-  },
-  sectionLabelSpaced: {
-    marginTop: 16,
   },
   emptyText: {
     fontSize: 14,
@@ -487,26 +604,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     flexShrink: 0,
-  },
-  episodeCardFriendActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 0,
-  },
-  saveButtonDisabled: {
-    backgroundColor: '#f1f5f9',
-    borderWidth: 1,
-    borderColor: Theme.inputBorder,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    opacity: 0.55,
-  },
-  saveButtonDisabledText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#94a3b8',
   },
   episodeParticipantTagScroll: {
     flex: 1,

@@ -23,9 +23,22 @@ export const Palette = {
   onAccent: '#FFFFFF',
   overlay: 'rgba(43, 45, 66, 0.45)',
 
-  /** Home 人物カード一覧 */
-  homeCardBorder: '#E2E8F0',
+  /** Home 人物カード一覧（カード外枠・写真外枠で共通） */
+  homeCardBorder: '#d8d8de',
+  homeCardBackground: '#333333',
+  homeCardPhotoInnerBorder: '#333333',
+  homeCardPhotoPlaceholder: '#333333',
   homeCardName: '#2B2D42',
+
+  /** 各画面 SafeArea のベース背景（カード・サーフェスには使わない） */
+  screenBase: '#9E9E9E',
+
+  /** ボトムタブバーのベース背景（アクティブピルは screenBase） */
+  tabBarBase: '#d8d8de',
+  tabBarBorder: '#b8b8c4',
+
+  /** 一覧・エピソードなど上部検索エリアのベース背景 */
+  searchAreaBase: '#403D39',
 } as const;
 
 /** セマンティック（画面・コンポーネントが参照） */
@@ -214,6 +227,8 @@ export const BorderWidth = {
 
 export const Radius = { sm: 8, md: 12, lg: 14, photo: 10, full: 999 } as const;
 export const Spacing = { xs: 4, sm: 8, md: 12, lg: 16 } as const;
+/** ボトムタブ画面の左右余白（一覧・共通項目・エピソード・その他・友達） */
+export const ScreenHorizontalInset = Spacing.lg;
 export const Typography = {
   xs: 9,
   sm: 11,

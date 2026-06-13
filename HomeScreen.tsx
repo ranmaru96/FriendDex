@@ -14,7 +14,8 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { BorderWidth, Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import { BorderWidth, Radius, ScreenHorizontalInset, Theme } from '@/constants/theme';
+import { searchAreaStyles } from '@/utils/searchAreaStyles';
 import { AddCircleButton } from '@/components/AddCircleButton';
 
 import {
@@ -48,8 +49,7 @@ const birthMonthOptions: Option[] = Array.from({ length: 12 }, (_, index) => ({
 const toOptions = (values: string[]): Option[] => values.map((value) => ({ label: value, value }));
 
 const CARD_GAP = 10;
-/** 検索エリアの marginHorizontal とカード一覧の左右を揃える */
-const LIST_HORIZONTAL_INSET = 12;
+/** 検索エリアとカード一覧の左右余白 */
 /** 人物カードの borderWidth（通常・本人とも 2px、本人は枠色のみ accent） */
 const CARD_BORDER_WIDTH = BorderWidth.cardEmphasis;
 
@@ -62,10 +62,10 @@ function SelectField({ label, value, options, onValueChange }: SelectFieldProps)
   }, [label, options, value]);
 
   return (
-    <View style={styles.fieldContainer}>
-      <Pressable style={styles.selectButton} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.selectValue : styles.selectPlaceholder}>{displayLabel}</Text>
-        <Text style={styles.selectChevron}>▼</Text>
+    <View style={searchAreaStyles.fieldContainer}>
+      <Pressable style={searchAreaStyles.selectButton} onPress={() => setVisible(true)}>
+        <Text style={value ? searchAreaStyles.selectValue : searchAreaStyles.selectPlaceholder}>{displayLabel}</Text>
+        <Text style={searchAreaStyles.selectChevron}>▼</Text>
       </Pressable>
 
       <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
@@ -109,7 +109,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const cardWidth = useMemo(() => {
-    const rowInnerWidth = screenWidth - LIST_HORIZONTAL_INSET * 2;
+    const rowInnerWidth = screenWidth - ScreenHorizontalInset * 2;
     return (rowInnerWidth - CARD_GAP * 2) / 3;
   }, [screenWidth]);
 
@@ -205,15 +205,15 @@ export default function HomeScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.listContent, { paddingBottom: 80 }]}
           ListHeaderComponent={
-            <View style={styles.searchArea}>
-              <View style={styles.row}>
-                <View style={styles.fieldContainer}>
+            <View style={searchAreaStyles.area}>
+              <View style={searchAreaStyles.row}>
+                <View style={searchAreaStyles.fieldContainer}>
                   <TextInput
                     value={name}
                     onChangeText={setName}
                     placeholder="名前"
                     placeholderTextColor={Theme.textSecondary}
-                    style={styles.textInput}
+                    style={searchAreaStyles.textInput}
                     autoCapitalize="none"
                   />
                 </View>
@@ -231,7 +231,7 @@ export default function HomeScreen() {
                 />
               </View>
 
-              <View style={styles.row}>
+              <View style={searchAreaStyles.row}>
                 <SelectField
                   label="経験"
                   value={experience}
@@ -258,7 +258,7 @@ export default function HomeScreen() {
             return (
               <View style={[styles.cardShadow, { width: cardWidth }]}>
                 <Pressable
-                  style={[styles.cardOuter, isMyself && styles.cardOuterMyself]}
+                  style={styles.cardOuter}
                   onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
                   onLongPress={() => handleLongPressDeleteProfile(item)}
                   delayLongPress={400}
@@ -268,8 +268,8 @@ export default function HomeScreen() {
                       <Text style={styles.myselfBadgeText}>本人</Text>
                     </View>
                   ) : null}
-                  <View style={[styles.photoOuterFrame, isMyself && styles.photoOuterFrameMyself]}>
-                    <View style={[styles.photoInnerFrame, isMyself && styles.photoInnerFrameMyself]}>
+                  <View style={styles.photoOuterFrame}>
+                    <View style={styles.photoInnerFrame}>
                       {item.photoUri && !imageErrorById[item.id] ? (
                         <Image
                           source={{ uri: item.photoUri }}
@@ -314,69 +314,15 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#1a1e2e',
+    backgroundColor: Theme.screenBase,
   },
   container: {
     flex: 1,
-    backgroundColor: '#1a1e2e',
     paddingTop: 8,
   },
   listContent: {
     paddingBottom: 100,
-    paddingHorizontal: LIST_HORIZONTAL_INSET,
-  },
-  searchArea: {
-    backgroundColor: '#252a3a',
-    borderColor: '#3a4060',
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    padding: 10,
-    marginBottom: 10,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 8,
-  },
-  fieldContainer: {
-    flex: 1,
-  },
-  textInput: {
-    backgroundColor: Theme.card,
-    borderColor: Theme.border,
-    borderWidth: BorderWidth.input,
-    borderRadius: Radius.md,
-    color: Theme.textPrimary,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: 14,
-  },
-  selectButton: {
-    backgroundColor: Theme.card,
-    borderColor: Theme.border,
-    borderWidth: BorderWidth.input,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    minHeight: 38,
-  },
-  selectValue: {
-    fontSize: Typography.base,
-    color: Theme.textPrimary,
-    flex: 1,
-  },
-  selectPlaceholder: {
-    fontSize: Typography.base,
-    color: Theme.textSecondary,
-    flex: 1,
-  },
-  selectChevron: {
-    fontSize: 10,
-    color: Theme.textSecondary,
-    marginLeft: 6,
+    paddingHorizontal: ScreenHorizontalInset,
   },
   column: {
     justifyContent: 'flex-start',
@@ -395,34 +341,25 @@ const styles = StyleSheet.create({
   cardOuter: {
     borderRadius: Radius.md,
     borderWidth: 2,
-    borderColor: '#c8d0e0',
-    backgroundColor: '#1a1e2e',
+    borderColor: Theme.homeCardBorder,
+    backgroundColor: Theme.homeCardBackground,
     overflow: 'hidden',
     paddingBottom: 4,
-  },
-  cardOuterMyself: {
-    borderColor: Theme.accent,
   },
   photoOuterFrame: {
     marginTop: -2,
     marginLeft: -2,
     marginRight: -2,
     borderWidth: 3,
-    borderColor: '#c8d0e0',
+    borderColor: Theme.homeCardBorder,
     borderRadius: Radius.md,
     overflow: 'hidden',
   },
-  photoOuterFrameMyself: {
-    borderColor: Theme.accent,
-  },
   photoInnerFrame: {
     borderWidth: 2,
-    borderColor: '#4a5a7a',
+    borderColor: Theme.homeCardPhotoInnerBorder,
     borderRadius: Radius.md - 3,
     overflow: 'hidden',
-  },
-  photoInnerFrameMyself: {
-    borderColor: Theme.accent,
   },
   myselfBadge: {
     position: 'absolute',
@@ -452,7 +389,7 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
   },
   cardPhotoPlaceholder: {
-    backgroundColor: '#2a3050',
+    backgroundColor: Theme.homeCardPhotoPlaceholder,
     alignItems: 'center',
     justifyContent: 'center',
   },

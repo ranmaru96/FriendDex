@@ -29,7 +29,7 @@ import {
   updateGroupOption,
 } from '../db';
 import { CommonItemKind, Friend } from '../types';
-import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { Theme, Radius, Typography, Spacing, ScreenHorizontalInset } from '@/constants/theme';
 import { AddCircleButton } from '@/components/AddCircleButton';
 
 type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先';
@@ -345,10 +345,10 @@ export default function CommonItemsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.background }]}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: Theme.screenBase }]}>
       <View style={styles.container}>
         <View style={styles.body}>
-          <View style={[detailStyles.tabSection, styles.tabSectionFill]}>
+          <View style={[detailStyles.tabSection, styles.tabSectionFill, styles.tabSectionNoFrame]}>
             <View style={[detailStyles.tabTrack, styles.tabTrackAligned]}>
               <View style={detailStyles.tabInner}>
                 {TAB_ORDER.map((tab) => {
@@ -396,7 +396,7 @@ export default function CommonItemsScreen() {
               </View>
             </View>
 
-            <View style={[detailStyles.tabContentArea, styles.tabContentInner]}>
+            <View style={[detailStyles.tabContentArea, styles.tabContentInner, styles.tabContentNoFrame]}>
               <View
                 style={[
                   styles.tagsPanel,
@@ -553,21 +553,27 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-    marginHorizontal: Spacing.md,
+    marginHorizontal: ScreenHorizontalInset,
     marginBottom: Spacing.md,
   },
   tabSectionFill: {
     flex: 1,
   },
+  tabSectionNoFrame: {
+    backgroundColor: 'transparent',
+  },
   tabTrackAligned: {
-    marginHorizontal: Spacing.sm,
+    marginHorizontal: 0,
   },
   tabContentInner: {
     flex: 1,
     flexDirection: 'column',
-    paddingHorizontal: Spacing.sm,
+    paddingHorizontal: 0,
     paddingVertical: Spacing.sm,
     minHeight: 0,
+  },
+  tabContentNoFrame: {
+    backgroundColor: 'transparent',
   },
   tagsPanel: {
     flex: 1,

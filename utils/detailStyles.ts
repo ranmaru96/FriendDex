@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { Radius, Spacing, Typography } from '@/constants/theme';
+import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import type { DetailThemeColors } from '@/constants/detailThemes';
 
 const EPISODE_PICKER_GAP = 6;
@@ -8,7 +8,7 @@ export function createDetailStyles(c: DetailThemeColors) {
   return StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: c.background,
+    backgroundColor: Theme.screenBase,
   },
   scrollContent: {
     paddingHorizontal: 0,
@@ -103,6 +103,11 @@ export function createDetailStyles(c: DetailThemeColors) {
   heroNickname: {
     fontSize: 14,
     color: c.accent,
+  },
+  heroNicknameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   heroByTag: {
     fontSize: 10,

@@ -16,9 +16,11 @@ import {
   FriendDexBackupTableName,
   FriendInput,
   FriendSearchFilters,
+  ImportSource,
   Profile,
   Saying,
 } from './types';
+import { mergeFriendInputWithPublicFields } from './utils/qrScanHelpers';
 
 /** 移行用: 旧 friends テーブル行（DROP 後は未使用） */
 type FriendRow = {
@@ -74,6 +76,9 @@ type ProfileRow = {
   createdAt: string;
   userId?: string | null;
   publicFields?: string | null;
+  importSource?: string | null;
+  scannedUserId?: string | null;
+  scannedAt?: string | null;
   updatedAt: string;
 };
 
@@ -328,6 +333,9 @@ const rowToProfile = (row: ProfileRow): Profile => ({
   createdAt: row.createdAt,
   userId: row.userId ?? '',
   publicFields: row.publicFields != null ? fromJson(row.publicFields) : [],
+  importSource: (row.importSource === 'qr_scan' ? 'qr_scan' : 'manual') as ImportSource,
+  scannedUserId: row.scannedUserId ?? '',
+  scannedAt: row.scannedAt ?? '',
   updatedAt: row.updatedAt,
 });
 
@@ -411,6 +419,9 @@ const defaultProfileRowToFriend = (row: ProfileRow): Friend => ({
   dislikes: fromJson(row.dislikes),
   episodes: fromEpisodeJson(row.episodes),
   sayings: fromSayingJson(row.sayings),
+  importSource: (row.importSource === 'qr_scan' ? 'qr_scan' : 'manual') as ImportSource,
+  scannedUserId: row.scannedUserId ?? '',
+  scannedAt: row.scannedAt ?? '',
 });
 
 export const initializeDatabase = (): void => {
@@ -490,6 +501,9 @@ export const initializeDatabase = (): void => {
     { column: 'residence', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN residence TEXT NOT NULL DEFAULT '';` },
     { column: 'userId', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN userId TEXT NOT NULL DEFAULT '';` },
     { column: 'publicFields', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN publicFields TEXT NOT NULL DEFAULT '[]';` },
+    { column: 'importSource', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN importSource TEXT NOT NULL DEFAULT 'manual';` },
+    { column: 'scannedUserId', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN scannedUserId TEXT NOT NULL DEFAULT '';` },
+    { column: 'scannedAt', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN scannedAt TEXT NOT NULL DEFAULT '';` },
   ];
 
   db.execSync('BEGIN IMMEDIATE;');
@@ -702,8 +716,9 @@ export const createFriend = (input: FriendInput): Friend => {
     `
       INSERT INTO ${PROFILES_TABLE} (
         id, friendId, name, authorUserId, source, isDefault, nickname, origin, residence, mbti, birthday, height, weight, category,
-        description, photoUri, affiliations, personalities, experiences, traits, likes, dislikes, episodes, sayings, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        description, photoUri, affiliations, personalities, experiences, traits, likes, dislikes, episodes, sayings,
+        importSource, scannedUserId, scannedAt, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `,
     [
       profileId,
@@ -730,12 +745,199 @@ export const createFriend = (input: FriendInput): Friend => {
       toJson(input.dislikes),
       toEpisodeJson(input.episodes ?? []),
       toSayingJson(input.sayings ?? []),
+      'manual',
+      '',
+      '',
       timestamp,
       timestamp,
     ]
   );
 
-  return { id: personId, ...input, episodes: input.episodes ?? [], sayings: input.sayings ?? [] };
+  return {
+    id: personId,
+    ...input,
+    episodes: input.episodes ?? [],
+    sayings: input.sayings ?? [],
+    importSource: 'manual',
+    scannedUserId: '',
+    scannedAt: '',
+  };
+};
+
+export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string): Friend => {
+  const personId = uuidv4();
+  const profileId = uuidv4();
+  const timestamp = nowIso();
+  const normalizedUserId = scannedUserId.trim();
+
+  db.runSync(
+    `
+      INSERT INTO ${PROFILES_TABLE} (
+        id, friendId, name, authorUserId, source, isDefault, nickname, origin, residence, mbti, birthday, height, weight, category,
+        description, photoUri, affiliations, personalities, experiences, traits, likes, dislikes, episodes, sayings,
+        importSource, scannedUserId, scannedAt, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    `,
+    [
+      profileId,
+      personId,
+      input.name,
+      null,
+      'shared',
+      1,
+      input.nickname,
+      input.origin,
+      input.residence,
+      input.mbti,
+      input.birthday,
+      input.height,
+      input.weight,
+      input.category,
+      input.description,
+      input.photoUri,
+      toJson(input.affiliations),
+      toJson(input.personalities),
+      toJson(input.experiences),
+      toJson(input.traits),
+      toJson(input.likes),
+      toJson(input.dislikes),
+      toEpisodeJson(input.episodes ?? []),
+      toSayingJson(input.sayings ?? []),
+      'qr_scan',
+      normalizedUserId,
+      timestamp,
+      timestamp,
+      timestamp,
+    ]
+  );
+
+  return {
+    id: personId,
+    ...input,
+    episodes: input.episodes ?? [],
+    sayings: input.sayings ?? [],
+    importSource: 'qr_scan',
+    scannedUserId: normalizedUserId,
+    scannedAt: timestamp,
+  };
+};
+
+export const findFriendByScannedUserId = (scannedUserId: string): Friend | null => {
+  const normalized = scannedUserId.trim();
+  if (!normalized) return null;
+  const row = db.getFirstSync<ProfileRow>(
+    `SELECT * FROM ${PROFILES_TABLE} WHERE isDefault = 1 AND importSource = 'qr_scan' AND scannedUserId = ? LIMIT 1;`,
+    [normalized]
+  );
+  if (!row) return null;
+  const baseFriend = defaultProfileRowToFriend(row);
+  return applyDefaultProfileToFriend(baseFriend, getEffectiveProfile(baseFriend.id));
+};
+
+export const getQrScannedFriends = (): Friend[] => {
+  const rows = db.getAllSync<ProfileRow>(
+    `SELECT * FROM ${PROFILES_TABLE} WHERE isDefault = 1 AND importSource = 'qr_scan' ORDER BY scannedAt DESC, name COLLATE NOCASE ASC;`
+  );
+  return rows.map((row) => {
+    const baseFriend = defaultProfileRowToFriend(row);
+    return applyDefaultProfileToFriend(baseFriend, getEffectiveProfile(baseFriend.id));
+  });
+};
+
+export const getQrUserIdOwnerFriendId = (scannedUserId: string): string | null => {
+  const linked = findFriendByScannedUserId(scannedUserId);
+  return linked?.id ?? null;
+};
+
+export const applyQrLinkToFriend = (
+  friendId: string,
+  input: FriendInput,
+  publicFields: string[],
+  scannedUserId: string
+): boolean => {
+  const existing = getFriendById(friendId);
+  if (!existing) {
+    return false;
+  }
+
+  const normalizedUserId = scannedUserId.trim();
+  if (!normalizedUserId) {
+    return false;
+  }
+
+  const ownerId = getQrUserIdOwnerFriendId(normalizedUserId);
+  if (ownerId && ownerId !== friendId) {
+    return false;
+  }
+
+  const merged = mergeFriendInputWithPublicFields(existing, input, publicFields);
+  const timestamp = nowIso();
+  const defaultProfile = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM ${PROFILES_TABLE} WHERE friendId = ? AND isDefault = 1 ORDER BY updatedAt DESC LIMIT 1;`,
+    [friendId]
+  );
+  if (!defaultProfile) {
+    return false;
+  }
+
+  if (publicFields.includes('name')) {
+    db.runSync(`UPDATE ${PROFILES_TABLE} SET name = ?, updatedAt = ? WHERE friendId = ?;`, [
+      merged.name.trim(),
+      timestamp,
+      friendId,
+    ]);
+  }
+
+  const assignments: string[] = [
+    `importSource = 'qr_scan'`,
+    'scannedUserId = ?',
+    'scannedAt = ?',
+    'authorUserId = NULL',
+    "source = 'shared'",
+  ];
+  const values: (string | number | null)[] = [normalizedUserId, timestamp];
+
+  const updatableFields: { key: string; value: string | number | null; publicKey: string }[] = [
+    { key: 'nickname', value: merged.nickname, publicKey: 'nickname' },
+    { key: 'origin', value: merged.origin, publicKey: 'origin' },
+    { key: 'residence', value: merged.residence, publicKey: 'residence' },
+    { key: 'mbti', value: merged.mbti, publicKey: 'mbti' },
+    { key: 'birthday', value: merged.birthday, publicKey: 'birthday' },
+    { key: 'height', value: merged.height, publicKey: 'height' },
+    { key: 'weight', value: merged.weight, publicKey: 'weight' },
+  ];
+
+  updatableFields.forEach(({ key, value, publicKey }) => {
+    if (!publicFields.includes(publicKey)) return;
+    assignments.push(`${key} = ?`);
+    values.push(value);
+  });
+
+  assignments.push('updatedAt = ?');
+  values.push(timestamp, defaultProfile.id);
+
+  const result = db.runSync(
+    `UPDATE ${PROFILES_TABLE} SET ${assignments.join(', ')} WHERE id = ?;`,
+    values
+  );
+  return result.changes > 0;
+};
+
+export const updateQrScannedFriend = (
+  friendId: string,
+  input: FriendInput,
+  publicFields: string[],
+  scannedUserId?: string
+): boolean => {
+  const existing = getFriendById(friendId);
+  if (!existing) {
+    return false;
+  }
+  const userId = (scannedUserId ?? existing.scannedUserId).trim();
+  if (!userId) {
+    return false;
+  }
+  return applyQrLinkToFriend(friendId, input, publicFields, userId);
 };
 
 export const getFriendById = (id: string): Friend | null => {
@@ -939,11 +1141,29 @@ export type ProfileSelfUpdateInput = {
   publicFields: string[];
 };
 
+export const ensureProfileUserId = (profileId: string): string | null => {
+  const row = db.getFirstSync<Pick<ProfileRow, 'id' | 'userId'>>(`SELECT id, userId FROM ${PROFILES_TABLE} WHERE id = ?;`, [
+    profileId,
+  ]);
+  if (!row) {
+    return null;
+  }
+  const existing = (row.userId ?? '').trim();
+  if (existing) {
+    return existing;
+  }
+  const userId = uuidv4();
+  const timestamp = nowIso();
+  db.runSync(`UPDATE ${PROFILES_TABLE} SET userId = ?, updatedAt = ? WHERE id = ?;`, [userId, timestamp, profileId]);
+  return userId;
+};
+
 export const updateProfile = (profileId: string, input: ProfileSelfUpdateInput): boolean => {
   const row = db.getFirstSync<ProfileRow>(`SELECT * FROM ${PROFILES_TABLE} WHERE id = ?;`, [profileId]);
   if (!row) {
     return false;
   }
+  ensureProfileUserId(profileId);
   const timestamp = nowIso();
   db.runSync(`UPDATE ${PROFILES_TABLE} SET name = ?, updatedAt = ? WHERE friendId = ?;`, [
     input.name,

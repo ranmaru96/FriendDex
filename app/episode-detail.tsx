@@ -337,7 +337,7 @@ export default function EpisodeDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
+    backgroundColor: Theme.screenBase,
   },
   mainScroll: {
     flex: 1,

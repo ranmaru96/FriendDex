@@ -142,14 +142,6 @@ export default function AppSettingsScreen() {
           )}
         </View>
 
-        <Text style={styles.sectionHeader}>自分のプロフィール</Text>
-        <View style={styles.group}>
-          <Pressable style={styles.row} onPress={() => router.push('/myprofile')}>
-            <Text style={styles.rowLabel}>プロフィールを確認・編集</Text>
-            <Text style={styles.rowChevron}>›</Text>
-          </Pressable>
-        </View>
-
         <Text style={styles.sectionHeader}>Detail 画面デザイン</Text>
         <View style={styles.group}>
           {DETAIL_DESIGN_OPTIONS.map((option, index) => (
@@ -185,7 +177,7 @@ export default function AppSettingsScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
+    backgroundColor: Theme.screenBase,
   },
   scrollContent: {
     paddingBottom: 32,

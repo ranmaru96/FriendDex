@@ -10,18 +10,19 @@ import { Theme } from '@/constants/theme';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
 import { initializeDatabase } from '../db';
 
-type TabKey = 'home' | 'episode' | 'commonitems' | 'friends';
+type TabKey = 'home' | 'commonitems' | 'episode' | 'tools' | 'friends';
 
 function getActiveTab(pathname: string): TabKey {
   if (pathname.includes('/commonitems')) return 'commonitems';
   if (pathname.includes('/friends')) return 'friends';
   if (pathname.includes('/episode')) return 'episode';
+  if (pathname.includes('/tools')) return 'tools';
   return 'home';
 }
 
 function AppShell() {
   const pathname = usePathname();
-  const hideNav = ['detail', 'edit', 'episode-detail', 'myprofile', 'myprofile-qr', 'scan'].some((p) => pathname.includes(p));
+  const hideNav = ['detail', 'edit', 'episode-detail', 'myprofile', 'myprofile-qr', 'scan', 'qr-import'].some((p) => pathname.includes(p));
   const activeTab = getActiveTab(pathname);
 
   return (

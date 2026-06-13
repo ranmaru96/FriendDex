@@ -74,6 +74,8 @@ export type Saying = {
   date: string;
 };
 
+export type ImportSource = 'manual' | 'qr_scan';
+
 export type Profile = {
   id: string;
   friendId: string;
@@ -105,6 +107,9 @@ export type Profile = {
   userId: string;
   /** 公開する項目のキー一覧 */
   publicFields: string[];
+  importSource: ImportSource;
+  scannedUserId: string;
+  scannedAt: string;
   updatedAt: string;
 };
 
@@ -131,9 +136,15 @@ export type Friend = {
   sayings: Saying[];
   profiles?: Profile[];
   activeProfileId?: string;
+  importSource: ImportSource;
+  scannedUserId: string;
+  scannedAt: string;
 };
 
-export type FriendInput = Omit<Friend, 'id' | 'episodes' | 'sayings'> & {
+export type FriendInput = Omit<
+  Friend,
+  'id' | 'episodes' | 'sayings' | 'importSource' | 'scannedUserId' | 'scannedAt'
+> & {
   episodes?: Episode[];
   sayings?: Saying[];
 };

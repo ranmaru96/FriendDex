@@ -336,7 +336,7 @@ export default function DetailScreen() {
     return selfProfile ?? profiles[0] ?? null;
   }, [friend, profiles, myselfId]);
   const selectableProfiles = useMemo(() => {
-    if (profiles.length === 0) return [];
+    if (!friend || friend.importSource === 'qr_scan' || profiles.length === 0) return [];
     const hasOnlyOneSelfProfile =
       profiles.length === 1 &&
       (profiles[0].source === 'self' || (myselfId !== null && profiles[0].authorUserId === myselfId));
@@ -344,7 +344,7 @@ export default function DetailScreen() {
       return [];
     }
     return profiles;
-  }, [profiles, myselfId]);
+  }, [friend, profiles, myselfId]);
   const profileTagLabel = useMemo(() => {
     if (!selectedProfile) return '';
     const isSelf =
@@ -352,7 +352,10 @@ export default function DetailScreen() {
     if (isSelf) {
       return 'me';
     }
-    return selectedProfile.authorUserId ? friendNameById.get(selectedProfile.authorUserId) ?? selectedProfile.authorUserId : 'shared';
+    if (!selectedProfile.authorUserId) {
+      return '';
+    }
+    return friendNameById.get(selectedProfile.authorUserId) ?? '';
   }, [selectedProfile, myselfId, friendNameById]);
   const episodePickerCardWidth = useMemo(() => {
     if (episodePickerGridWidth <= 0) {
@@ -746,10 +749,10 @@ export default function DetailScreen() {
       const label = isSelf
         ? 'me'
         : profile.authorUserId
-          ? friendNameById.get(profile.authorUserId) ?? profile.authorUserId
-          : 'shared';
+          ? friendNameById.get(profile.authorUserId) ?? ''
+          : '';
       return {
-        text: `by ${label}`,
+        text: label ? `by ${label}` : profile.name || 'プロフィール',
         onPress: () => {
           const changed = setDefaultProfile(friend.id, profile.id);
           if (changed) {
@@ -803,10 +806,21 @@ export default function DetailScreen() {
                   </Pressable>
                 </View>
               </View>
-              {friend.nickname.trim() ? <Text style={styles.heroNickname}>{friend.nickname}</Text> : null}
+              {(friend.nickname.trim() || friend.importSource === 'qr_scan') ? (
+                <View style={styles.heroNicknameRow}>
+                  {friend.nickname.trim() ? (
+                    <Text style={styles.heroNickname}>{friend.nickname}</Text>
+                  ) : null}
+                  {friend.importSource === 'qr_scan' ? (
+                    <Ionicons name="qr-code-outline" size={14} color={c.textMuted} />
+                  ) : null}
+                </View>
+              ) : null}
               {selectableProfiles.length > 0 ? (
                 <Pressable onPress={openProfileSwitcher}>
-                  <Text style={styles.heroByTag}>{`by ${profileTagLabel}`}</Text>
+                  <Text style={styles.heroByTag}>
+                    {profileTagLabel ? `by ${profileTagLabel}` : 'プロフィールを切り替え'}
+                  </Text>
                 </Pressable>
               ) : null}
               {friend.mbti || heroBirthdayLabel || friend.category.trim() ? (
