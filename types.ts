@@ -39,7 +39,6 @@ export const MBTI_TYPES: MBTIType[] = [
 export type EpisodeParticipant = {
   kind: 'individual' | 'group';
   value: string;
-  isMain: boolean;
 };
 
 /** エピソードの公開範囲（参加者とは別に保持） */
@@ -57,8 +56,6 @@ export type Episode = {
   description: string;
   authorFriendId: string;
   visibilityMode: EpisodeVisibilityMode;
-  mainParticipants: string[];
-  subParticipants: string[];
   participantEntries: EpisodeParticipant[];
   visibilityEntries: EpisodeVisibilityEntry[];
 };
@@ -150,7 +147,13 @@ export type FriendSearchFilters = {
   experience?: string;
 };
 
-export type CommonItemKind = 'affiliation' | 'experience' | 'personality' | 'visibility_group';
+export type CommonItemKind =
+  | 'affiliation'
+  | 'experience'
+  | 'personality'
+  | 'like'
+  | 'dislike'
+  | 'visibility_group';
 
 export type CommonItemOption = {
   id: string;

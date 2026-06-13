@@ -98,5 +98,6 @@ export const mainDetailDesign: DetailDesignBundle = {
     性格: { backgroundColor: 'transparent', borderColor: '#3a7abf', color: '#1a4a8a', borderWidth: 1.5 },
     好物: { backgroundColor: 'transparent', borderColor: '#c49a00', color: '#7a5f00', borderWidth: 1.5 },
     苦手: { backgroundColor: 'transparent', borderColor: '#bf4a3a', color: '#8a1a1a', borderWidth: 1.5 },
+    公開先: { backgroundColor: 'transparent', borderColor: '#b8b8c4', color: '#888888', borderWidth: 1.5 },
   },
 };

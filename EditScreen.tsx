@@ -12,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
@@ -26,6 +27,11 @@ import {
   updateFriend,
 } from './db';
 import { FriendInput, MBTIType, MBTI_TYPES } from './types';
+
+const PHOTO_SIZE = 80;
+const LABEL_WIDTH = 56;
+const INPUT_H = 36;
+const ICON_BTN = 36;
 
 type Option = { label: string; value: string };
 
@@ -42,6 +48,15 @@ type DynamicInputListProps = {
   values: string[];
   onChange: (values: string[]) => void;
   placeholder: string;
+};
+
+type IconButtonProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  accessibilityLabel: string;
+  color?: string;
+  backgroundColor?: string;
+  borderColor?: string;
 };
 
 const formatDateToYMD = (d: Date): string => {
@@ -83,6 +98,26 @@ const EMPTY_FORM: FriendInput = {
 
 const cleanArray = (values: string[]): string[] => values.map((item) => item.trim()).filter(Boolean);
 
+function IconButton({
+  icon,
+  onPress,
+  accessibilityLabel,
+  color = Theme.textPrimary,
+  backgroundColor = Theme.bgSurface,
+  borderColor = Theme.border,
+}: IconButtonProps) {
+  return (
+    <Pressable
+      style={[styles.iconButton, { backgroundColor, borderColor }]}
+      onPress={onPress}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityRole="button"
+    >
+      <Ionicons name={icon} size={20} color={color} />
+    </Pressable>
+  );
+}
+
 function SelectField({ label, value, options, placeholder = '選択', onChange }: SelectFieldProps) {
   const [visible, setVisible] = useState(false);
   const selectedLabel = useMemo(() => {
@@ -94,8 +129,10 @@ function SelectField({ label, value, options, placeholder = '選択', onChange }
     <View style={styles.formRow}>
       <Text style={styles.formLabel}>{label}</Text>
       <Pressable style={styles.selectButton} onPress={() => setVisible(true)}>
-        <Text style={styles.selectValue}>{selectedLabel}</Text>
-        <Text style={styles.selectIcon}>▼</Text>
+        <Text style={styles.selectValue} numberOfLines={1}>
+          {selectedLabel}
+        </Text>
+        <Ionicons name="chevron-down" size={14} color={Theme.textMuted} />
       </Pressable>
 
       <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
@@ -137,11 +174,11 @@ function DynamicInputList({ title, values, onChange, placeholder }: DynamicInput
   const removeItem = (index: number) => onChange(values.filter((_, itemIndex) => itemIndex !== index));
 
   return (
-    <View style={styles.multiSection}>
+    <View style={styles.card}>
       <View style={styles.multiSectionHeader}>
-        <Text style={styles.multiSectionTitle}>{title}</Text>
-        <Pressable style={styles.circleButton} onPress={addItem}>
-          <Text style={styles.circleButtonText}>＋</Text>
+        <Text style={styles.sectionCaption}>{title}</Text>
+        <Pressable style={styles.addIconButton} onPress={addItem} accessibilityLabel={`${title}を追加`}>
+          <Ionicons name="add" size={18} color={Theme.accent} />
         </Pressable>
       </View>
 
@@ -151,11 +188,16 @@ function DynamicInputList({ title, values, onChange, placeholder }: DynamicInput
             value={value}
             onChangeText={(text) => updateItem(index, text)}
             placeholder={placeholder}
+            placeholderTextColor={Theme.inputPlaceholder}
             style={styles.multiInput}
           />
           {values.length > 1 && (
-            <Pressable style={styles.removeButton} onPress={() => removeItem(index)}>
-              <Text style={styles.removeButtonText}>削除</Text>
+            <Pressable
+              style={styles.removeIconButton}
+              onPress={() => removeItem(index)}
+              accessibilityLabel="削除"
+            >
+              <Ionicons name="close" size={16} color="#b91c1c" />
             </Pressable>
           )}
         </View>
@@ -270,6 +312,7 @@ export default function EditScreen() {
       mediaTypes: ['images'],
       quality: 0.7,
       allowsEditing: true,
+      aspect: [1, 1],
     });
     if (!result.canceled && result.assets[0]) {
       setForm((prev) => ({ ...prev, photoUri: result.assets[0].uri }));
@@ -377,18 +420,31 @@ export default function EditScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.topActions}>
-        <Pressable style={styles.saveButtonFloating} onPress={handleSave}>
-          <Text style={styles.saveButtonText}>保存</Text>
-        </Pressable>
-        {isEditMode && (
-          <Pressable style={styles.syncButton} onPress={handleResyncAffiliationEpisodes}>
-            <Text style={styles.syncButtonText}>所属グループのエピソードを同期</Text>
+      <View style={styles.topBar}>
+        <Text style={styles.screenTitle} numberOfLines={1}>
+          {isEditMode ? '人物編集' : '新規登録'}
+        </Text>
+        <View style={styles.topBarActions}>
+          {isEditMode && (
+            <IconButton
+              icon="sync-outline"
+              onPress={handleResyncAffiliationEpisodes}
+              accessibilityLabel="所属グループのエピソードを同期"
+              backgroundColor={Theme.accentLight}
+              borderColor={Theme.accent}
+              color={Theme.accent}
+            />
+          )}
+          <IconButton
+            icon="home-outline"
+            onPress={() => router.replace('/')}
+            accessibilityLabel="ホームへ戻る"
+          />
+          <Pressable style={styles.saveButton} onPress={handleSave} accessibilityLabel="保存">
+            <Ionicons name="save-outline" size={18} color={Theme.btnPrimaryText} />
+            <Text style={styles.saveButtonText}>保存</Text>
           </Pressable>
-        )}
-        <Pressable style={styles.homeButton} onPress={() => router.replace('/')}>
-          <Text style={styles.homeButtonText}>Home</Text>
-        </Pressable>
+        </View>
       </View>
 
       <KeyboardAwareScrollView
@@ -397,51 +453,74 @@ export default function EditScreen() {
         enableOnAndroid
         extraScrollHeight={20}
       >
-        <View style={styles.topBar}>
-          <Text style={styles.screenTitle}>{isEditMode ? '人物編集' : '新規登録'}</Text>
-        </View>
-
-        <View style={styles.profileBlock}>
-          <View>
-            <Pressable onPress={onPickImage} style={styles.photoBox}>
-              {form.photoUri ? (
-                <Image source={{ uri: form.photoUri }} style={styles.photoImage} />
-              ) : (
-                <Text style={styles.photoPlaceholder}>No Image</Text>
-              )}
-            </Pressable>
-            {form.photoUri ? (
-              <Pressable style={styles.photoDeleteButton} onPress={handleDeletePhoto}>
-                <Text style={styles.photoDeleteButtonText}>写真を削除</Text>
+        <View style={styles.card}>
+          <View style={styles.profileTopRow}>
+            <View style={styles.photoColumn}>
+              <Pressable onPress={onPickImage} style={styles.photoBox} accessibilityLabel="写真を選択">
+                {form.photoUri ? (
+                  <Image source={{ uri: form.photoUri }} style={styles.photoImage} />
+                ) : (
+                  <Ionicons name="camera-outline" size={28} color={Theme.textMuted} />
+                )}
               </Pressable>
-            ) : null}
-          </View>
+              {form.photoUri ? (
+                <Pressable
+                  style={styles.photoDeleteIcon}
+                  onPress={handleDeletePhoto}
+                  accessibilityLabel="写真を削除"
+                >
+                  <Ionicons name="trash-outline" size={14} color="#b91c1c" />
+                </Pressable>
+              ) : null}
+            </View>
 
-          <View style={styles.profileFields}>
-            <View style={styles.nameFieldBlock}>
+            <View style={styles.profileNameFields}>
+              <View style={styles.nameFieldBlock}>
+                <View style={styles.formRow}>
+                  <Text style={styles.formLabel}>名前</Text>
+                  <TextInput
+                    value={form.name}
+                    onChangeText={(text) => updateText('name', text)}
+                    style={[styles.input, showNameError && styles.inputNameError]}
+                    placeholder="苗字 名前"
+                    placeholderTextColor={Theme.inputPlaceholder}
+                  />
+                </View>
+                {showNameError ? <Text style={styles.nameErrorText}>名前は必須項目です</Text> : null}
+              </View>
               <View style={styles.formRow}>
-                <Text style={styles.formLabel}>名前</Text>
+                <Text style={styles.formLabel}>通称</Text>
                 <TextInput
-                  value={form.name}
-                  onChangeText={(text) => updateText('name', text)}
-                  style={[styles.input, showNameError && styles.inputNameError]}
-                  placeholder="苗字 名前"
+                  value={form.nickname}
+                  onChangeText={(text) => updateText('nickname', text)}
+                  style={styles.input}
+                  placeholder="記入式"
                   placeholderTextColor={Theme.inputPlaceholder}
                 />
               </View>
-              {showNameError ? <Text style={styles.nameErrorText}>名前は必須項目です</Text> : null}
             </View>
-            <View style={styles.formRow}>
-              <Text style={styles.formLabel}>通称</Text>
-              <TextInput value={form.nickname} onChangeText={(text) => updateText('nickname', text)} style={styles.input} placeholder="記入式" />
-            </View>
+          </View>
+
+          <View style={styles.profileRestFields}>
             <View style={styles.formRow}>
               <Text style={styles.formLabel}>出身</Text>
-              <TextInput value={form.origin} onChangeText={(text) => updateText('origin', text)} style={styles.input} placeholder="記入式" />
+              <TextInput
+                value={form.origin}
+                onChangeText={(text) => updateText('origin', text)}
+                style={styles.input}
+                placeholder="記入式"
+                placeholderTextColor={Theme.inputPlaceholder}
+              />
             </View>
             <View style={styles.formRow}>
               <Text style={styles.formLabel}>居住地</Text>
-              <TextInput value={form.residence} onChangeText={(text) => updateText('residence', text)} style={styles.input} placeholder="記入式" />
+              <TextInput
+                value={form.residence}
+                onChangeText={(text) => updateText('residence', text)}
+                style={styles.input}
+                placeholder="記入式"
+                placeholderTextColor={Theme.inputPlaceholder}
+              />
             </View>
             <SelectField label="MBTI" value={form.mbti} options={mbtiOptions} onChange={(value) => updateText('mbti', value)} />
             <View style={styles.formRow}>
@@ -470,40 +549,51 @@ export default function EditScreen() {
                 </Pressable>
               </View>
             )}
-            <View style={styles.formRow}>
-              <Text style={styles.formLabel}>身長</Text>
-              <TextInput
-                value={form.height === null ? '' : String(form.height)}
-                onChangeText={(text) => updateNumber('height', text)}
-                style={styles.input}
-                keyboardType="decimal-pad"
-                placeholder="数字のみ"
-              />
-            </View>
-            <View style={styles.formRow}>
-              <Text style={styles.formLabel}>体重</Text>
-              <TextInput
-                value={form.weight === null ? '' : String(form.weight)}
-                onChangeText={(text) => updateNumber('weight', text)}
-                style={styles.input}
-                keyboardType="decimal-pad"
-                placeholder="数字のみ"
-              />
+            <View style={styles.twinRow}>
+              <View style={[styles.formRow, styles.twinField]}>
+                <Text style={styles.formLabel}>身長</Text>
+                <TextInput
+                  value={form.height === null ? '' : String(form.height)}
+                  onChangeText={(text) => updateNumber('height', text)}
+                  style={styles.input}
+                  keyboardType="decimal-pad"
+                  placeholder="cm"
+                  placeholderTextColor={Theme.inputPlaceholder}
+                />
+              </View>
+              <View style={[styles.formRow, styles.twinField]}>
+                <Text style={styles.formLabel}>体重</Text>
+                <TextInput
+                  value={form.weight === null ? '' : String(form.weight)}
+                  onChangeText={(text) => updateNumber('weight', text)}
+                  style={styles.input}
+                  keyboardType="decimal-pad"
+                  placeholder="kg"
+                  placeholderTextColor={Theme.inputPlaceholder}
+                />
+              </View>
             </View>
             <View style={styles.formRow}>
               <Text style={styles.formLabel}>分類</Text>
-              <TextInput value={form.category} onChangeText={(text) => updateText('category', text)} style={styles.input} placeholder="記入式" />
+              <TextInput
+                value={form.category}
+                onChangeText={(text) => updateText('category', text)}
+                style={styles.input}
+                placeholder="記入式"
+                placeholderTextColor={Theme.inputPlaceholder}
+              />
             </View>
           </View>
         </View>
 
-        <View style={styles.descriptionBlock}>
-          <Text style={styles.descriptionLabel}>説明</Text>
+        <View style={styles.card}>
+          <Text style={styles.sectionCaption}>説明</Text>
           <TextInput
             value={form.description}
             onChangeText={(text) => updateText('description', text)}
             style={styles.descriptionInput}
             placeholder="複数行で入力"
+            placeholderTextColor={Theme.inputPlaceholder}
             multiline
             textAlignVertical="top"
           />
@@ -547,345 +637,310 @@ export default function EditScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
-  },
-  container: {
-    paddingHorizontal: 12,
-    paddingTop: 52,
-    paddingBottom: 24,
-    gap: 10,
+    backgroundColor: Theme.background,
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: Theme.border,
+    backgroundColor: Theme.bgSurface,
   },
   screenTitle: {
-    fontSize: 22,
+    flex: 1,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#0f172a',
+    color: Theme.textPrimary,
   },
-  saveButtonFloating: {
+  topBarActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  iconButton: {
+    width: ICON_BTN,
+    height: ICON_BTN,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  saveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    height: ICON_BTN,
+    paddingHorizontal: 10,
+    borderRadius: 8,
     backgroundColor: Theme.btnPrimaryBg,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: Theme.btnPrimaryBg,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
   },
   saveButtonText: {
     color: Theme.btnPrimaryText,
     fontWeight: '700',
-    fontSize: 15,
+    fontSize: 13,
   },
-  syncButton: {
-    backgroundColor: '#e0e7ff',
-    borderColor: '#6366f1',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 9,
+  container: {
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.lg,
+    gap: 6,
   },
-  syncButtonText: {
-    color: '#312e81',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  topActions: {
-    position: 'absolute',
-    top: 8,
-    right: 12,
-    zIndex: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  homeButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-  },
-  homeButtonText: {
-    color: '#0f172a',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  profileBlock: {
+  card: {
     backgroundColor: Theme.bgSurface,
-    borderColor: '#94a3b8',
-    borderWidth: 1,
+    borderColor: Theme.border,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.md,
     padding: 10,
+    gap: 6,
+  },
+  profileTopRow: {
     flexDirection: 'row',
     gap: 10,
+    alignItems: 'flex-start',
+  },
+  photoColumn: {
+    alignItems: 'center',
+    gap: 4,
   },
   photoBox: {
-    width: 118,
-    height: 150,
+    width: PHOTO_SIZE,
+    height: PHOTO_SIZE,
     borderRadius: 10,
-    backgroundColor: '#f1f5f9',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
+    backgroundColor: Theme.background,
+    borderColor: Theme.border,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 8,
     overflow: 'hidden',
   },
-  photoPlaceholder: {
-    textAlign: 'center',
-    color: '#64748b',
-    fontSize: 14,
-    fontWeight: '600',
-  },
   photoImage: {
-    width: '100%',
-    height: '100%',
+    width: PHOTO_SIZE,
+    height: PHOTO_SIZE,
   },
-  photoDeleteButton: {
-    marginTop: 8,
-    alignSelf: 'center',
+  photoDeleteIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
     backgroundColor: '#fee2e2',
-    borderColor: '#ef4444',
-    borderWidth: 1,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderColor: '#fecaca',
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  photoDeleteButtonText: {
-    color: '#991b1b',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  profileFields: {
+  profileNameFields: {
     flex: 1,
     gap: 6,
+  },
+  profileRestFields: {
+    gap: 6,
+    marginTop: 2,
   },
   formRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
+  twinRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  twinField: {
+    flex: 1,
+  },
   nameFieldBlock: {
-    gap: 4,
+    gap: 2,
   },
   nameErrorText: {
-    marginLeft: 60,
-    fontSize: 12,
+    marginLeft: LABEL_WIDTH + 8,
+    fontSize: 11,
     color: '#dc2626',
     fontWeight: '600',
   },
   inputNameError: {
     borderColor: '#dc2626',
-    borderWidth: 2,
+    borderWidth: 1.5,
   },
   formLabel: {
-    width: 52,
-    fontSize: Typography.base,
+    width: LABEL_WIDTH,
+    fontSize: Typography.sm,
     fontWeight: '600',
-    color: '#334155',
+    color: Theme.textPrimary,
   },
   input: {
     flex: 1,
+    height: INPUT_H,
     backgroundColor: Theme.inputBg,
     borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    fontSize: Typography.base,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.sm,
+    fontSize: Typography.sm,
     color: Theme.inputText,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 0,
   },
   dateButton: {
     flex: 1,
+    height: INPUT_H,
     backgroundColor: Theme.inputBg,
     borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm,
     justifyContent: 'center',
   },
   dateButtonText: {
-    fontSize: Typography.base,
-    color: '#111827',
+    fontSize: Typography.sm,
+    color: Theme.inputText,
   },
   dateButtonPlaceholder: {
-    fontSize: Typography.base,
-    color: '#94a3b8',
+    fontSize: Typography.sm,
+    color: Theme.inputPlaceholder,
   },
   datePickerWrap: {
-    marginBottom: 8,
+    marginLeft: LABEL_WIDTH + 8,
   },
   datePickerSelf: {
-    alignSelf: 'flex-end',
+    alignSelf: 'flex-start',
   },
   datePickerDone: {
     alignSelf: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
     borderRadius: Radius.sm,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: Theme.background,
     marginTop: 4,
   },
   datePickerDoneText: {
-    color: '#0f172a',
+    color: Theme.textPrimary,
     fontWeight: '600',
-    fontSize: Typography.base,
+    fontSize: Typography.sm,
   },
   selectButton: {
     flex: 1,
+    height: INPUT_H,
     backgroundColor: Theme.inputBg,
     borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 4,
   },
   selectValue: {
-    color: '#0f172a',
-    fontSize: Typography.base,
+    flex: 1,
+    color: Theme.inputText,
+    fontSize: Typography.sm,
   },
-  selectIcon: {
-    color: '#475569',
-    fontSize: 10,
-  },
-  descriptionBlock: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    padding: 10,
-  },
-  descriptionLabel: {
-    fontSize: 15,
+  sectionCaption: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 6,
+    color: Theme.textMuted,
+    marginBottom: 2,
   },
   descriptionInput: {
-    minHeight: 80,
+    minHeight: 72,
     borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.sm,
     backgroundColor: Theme.inputBg,
     color: Theme.inputText,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.sm,
     paddingVertical: Spacing.sm,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  multiSection: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    padding: 10,
-    gap: 8,
+    fontSize: Typography.sm,
+    lineHeight: 18,
   },
   multiSectionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  multiSectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  circleButton: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: '#e0f2fe',
-    borderColor: '#0891b2',
-    borderWidth: 1,
+  addIconButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: Theme.accentLight,
+    borderColor: Theme.accent,
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  circleButtonText: {
-    color: '#0c4a6e',
-    fontSize: 16,
-    fontWeight: '700',
-    lineHeight: 18,
   },
   multiRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+    gap: 6,
   },
   multiInput: {
     flex: 1,
+    height: INPUT_H,
     backgroundColor: Theme.inputBg,
     borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    color: Theme.inputText,
-    fontSize: 14,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  removeButton: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#ef4444',
-    borderWidth: 1,
+    borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    color: Theme.inputText,
+    fontSize: Typography.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 0,
   },
-  removeButtonText: {
-    color: '#991b1b',
-    fontSize: 12,
-    fontWeight: '600',
+  removeIconButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#fee2e2',
+    borderColor: '#fecaca',
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    backgroundColor: Theme.overlay,
     justifyContent: 'center',
-    paddingHorizontal: 18,
+    paddingHorizontal: Spacing.lg,
   },
   modalCard: {
     backgroundColor: Theme.bgSurface,
     borderRadius: Radius.md,
-    padding: 14,
+    padding: Spacing.md,
     maxHeight: '70%',
   },
   modalTitle: {
-    fontSize: 16,
+    fontSize: Typography.base,
     fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 10,
+    color: Theme.textPrimary,
+    marginBottom: Spacing.sm,
   },
   modalOptions: {
-    marginBottom: 10,
+    marginBottom: Spacing.sm,
   },
   modalOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 8,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
     borderRadius: Radius.sm,
   },
   modalOptionSelected: {
-    backgroundColor: '#e0f2fe',
+    backgroundColor: Theme.accentLight,
   },
   modalOptionText: {
-    fontSize: 14,
-    color: '#1e293b',
+    fontSize: Typography.sm,
+    color: Theme.textPrimary,
   },
   modalClose: {
     alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
     borderRadius: Radius.sm,
-    backgroundColor: '#e2e8f0',
+    backgroundColor: Theme.background,
   },
   modalCloseText: {
-    color: '#0f172a',
+    color: Theme.textPrimary,
     fontWeight: '600',
+    fontSize: Typography.sm,
   },
 });
-

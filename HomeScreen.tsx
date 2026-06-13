@@ -15,6 +15,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { BorderWidth, Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import { AddCircleButton } from '@/components/AddCircleButton';
 
 import {
   deleteProfileById,
@@ -300,9 +301,11 @@ export default function HomeScreen() {
           ListEmptyComponent={<Text style={styles.emptyText}>人物データがありません</Text>}
         />
 
-        <Pressable style={styles.fab} onPress={() => router.push('/edit')}>
-          <Text style={styles.fabText}>＋</Text>
-        </Pressable>
+        <AddCircleButton
+          style={styles.fab}
+          onPress={() => router.push('/edit')}
+          accessibilityLabel="人物を追加"
+        />
       </View>
     </SafeAreaView>
   );
@@ -474,20 +477,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 14,
     bottom: 18,
-    width: 58,
-    height: 58,
-    borderRadius: 16,
-    backgroundColor: '#67e8f9',
-    borderColor: '#0891b2',
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fabText: {
-    fontSize: 34,
-    lineHeight: 34,
-    color: '#0f172a',
-    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,

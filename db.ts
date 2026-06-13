@@ -143,17 +143,26 @@ const fromSayingJson = (value: string): Saying[] => {
   }
 };
 
-const isEpisodeParticipant = (value: unknown): value is EpisodeParticipant => {
+const sanitizeParticipantEntry = (value: unknown): EpisodeParticipant | null => {
   if (!value || typeof value !== 'object') {
-    return false;
+    return null;
   }
   const participant = value as Partial<EpisodeParticipant>;
-  return (
-    (participant.kind === 'individual' || participant.kind === 'group') &&
-    typeof participant.value === 'string' &&
-    typeof participant.isMain === 'boolean'
-  );
+  if (
+    (participant.kind !== 'individual' && participant.kind !== 'group') ||
+    typeof participant.value !== 'string'
+  ) {
+    return null;
+  }
+  const normalized = participant.value.trim();
+  if (!normalized) {
+    return null;
+  }
+  return { kind: participant.kind, value: normalized };
 };
+
+const isEpisodeParticipant = (value: unknown): value is EpisodeParticipant =>
+  sanitizeParticipantEntry(value) !== null;
 
 const isEpisodeVisibilityEntry = (value: unknown): value is EpisodeVisibilityEntry => {
   if (!value || typeof value !== 'object') {
@@ -189,42 +198,52 @@ const sanitizeEpisode = (value: unknown): Episode | null => {
     return null;
   }
 
-  const raw = value as Partial<Episode>;
-  const candidate = raw;
-  const participantEntries = Array.isArray(candidate.participantEntries)
-    ? candidate.participantEntries.filter(isEpisodeParticipant)
-    : [];
-  const visibilityEntries = Array.isArray(candidate.visibilityEntries)
-    ? candidate.visibilityEntries.filter(isEpisodeVisibilityEntry)
+  const raw = value as Partial<Episode> & {
+    mainParticipants?: string[];
+    subParticipants?: string[];
+  };
+  const visibilityEntries = Array.isArray(raw.visibilityEntries)
+    ? raw.visibilityEntries.filter(isEpisodeVisibilityEntry)
     : [];
   if (
-    typeof candidate.id !== 'string' ||
-    typeof candidate.title !== 'string' ||
-    typeof candidate.date !== 'string' ||
-    typeof candidate.description !== 'string' ||
-    !isStringArray(candidate.mainParticipants) ||
-    !isStringArray(candidate.subParticipants)
+    typeof raw.id !== 'string' ||
+    typeof raw.title !== 'string' ||
+    typeof raw.date !== 'string' ||
+    typeof raw.description !== 'string'
   ) {
     return null;
   }
 
-  const normalizedMain = Array.from(new Set(candidate.mainParticipants));
-  const normalizedSub = Array.from(new Set(candidate.subParticipants)).filter((id) => !normalizedMain.includes(id));
-  const fallbackEntries: EpisodeParticipant[] = [
-    ...normalizedMain.map((value) => ({ kind: 'individual' as const, value, isMain: true })),
-    ...normalizedSub.map((value) => ({ kind: 'individual' as const, value, isMain: false })),
-  ];
+  const entryMap = new Map<string, EpisodeParticipant>();
+  const addEntry = (entry: EpisodeParticipant | null) => {
+    if (!entry) {
+      return;
+    }
+    entryMap.set(`${entry.kind}:${entry.value}`, entry);
+  };
+
+  if (Array.isArray(raw.participantEntries)) {
+    raw.participantEntries.forEach((item) => addEntry(sanitizeParticipantEntry(item)));
+  }
+
+  const legacyMain = Array.isArray(raw.mainParticipants)
+    ? Array.from(new Set(raw.mainParticipants.map((id) => id.trim()).filter((id) => id.length > 0)))
+    : [];
+  const legacySub = Array.isArray(raw.subParticipants)
+    ? Array.from(
+        new Set(raw.subParticipants.map((id) => id.trim()).filter((id) => id.length > 0 && !legacyMain.includes(id)))
+      )
+    : [];
+  [...legacyMain, ...legacySub].forEach((id) => addEntry({ kind: 'individual', value: id }));
 
   return {
-    id: candidate.id,
-    title: candidate.title,
-    date: candidate.date,
-    description: candidate.description,
-    authorFriendId: typeof candidate.authorFriendId === 'string' ? candidate.authorFriendId : '',
+    id: raw.id,
+    title: raw.title,
+    date: raw.date,
+    description: raw.description,
+    authorFriendId: typeof raw.authorFriendId === 'string' ? raw.authorFriendId : '',
     visibilityMode: sanitizeVisibilityMode(raw.visibilityMode),
-    mainParticipants: normalizedMain,
-    subParticipants: normalizedSub,
-    participantEntries: participantEntries.length > 0 ? participantEntries : fallbackEntries,
+    participantEntries: Array.from(entryMap.values()),
     visibilityEntries: uniqueVisibilityEntries(visibilityEntries),
   };
 };
@@ -244,8 +263,8 @@ const fromEpisodeJson = (value: string): Episode[] => {
 };
 
 const backfillEpisodeAuthorFriendIds = (myselfId: string): void => {
-  const rows = db.getAllSync<{ id: string; episodes: string }>(
-    `SELECT id, episodes FROM ${PROFILES_TABLE} WHERE isDefault = 1;`
+  const rows = db.getAllSync<{ id: string; friendId: string; episodes: string }>(
+    `SELECT id, friendId, episodes FROM ${PROFILES_TABLE} WHERE isDefault = 1;`
   );
   const timestamp = nowIso();
 
@@ -256,13 +275,12 @@ const backfillEpisodeAuthorFriendIds = (myselfId: string): void => {
       let changed = false;
       const nextEpisodes = episodes.map((episode) => {
         const author = episode.authorFriendId.trim();
-        if (author === '') {
-          changed = true;
-          return { ...episode, authorFriendId: row.friendId };
+        if (author === myselfId) {
+          return episode;
         }
-        if (author === myselfId && row.friendId !== myselfId) {
+        if (author === '' || author === row.friendId) {
           changed = true;
-          return { ...episode, authorFriendId: row.friendId };
+          return { ...episode, authorFriendId: myselfId };
         }
         return episode;
       });
@@ -996,22 +1014,18 @@ const getDefaultProfileRowsByPersonIds = (personIds: string[]): ProfileRow[] => 
   );
 };
 
-const collectEpisodeParticipantIds = (episode: Pick<EpisodeInput, 'mainParticipants' | 'subParticipants'>): string[] => {
-  const participants = [...episode.mainParticipants, ...episode.subParticipants];
-  return Array.from(new Set(participants.filter((id) => id.trim().length > 0)));
-};
-
 const uniqueParticipantEntries = (entries: EpisodeParticipant[]): EpisodeParticipant[] => {
   const seen = new Set<string>();
   const normalized: EpisodeParticipant[] = [];
   entries.forEach((entry) => {
-    if (!entry.value.trim()) {
+    const sanitized = sanitizeParticipantEntry(entry);
+    if (!sanitized) {
       return;
     }
-    const key = `${entry.kind}:${entry.value}:${entry.isMain ? 'main' : 'sub'}`;
+    const key = `${sanitized.kind}:${sanitized.value}`;
     if (!seen.has(key)) {
       seen.add(key);
-      normalized.push(entry);
+      normalized.push(sanitized);
     }
   });
   return normalized;
@@ -1026,83 +1040,60 @@ const collectAffiliationMemberIds = (rows: { friendId: string; affiliations: str
     .map((row) => row.friendId);
 };
 
-const resolveParticipantsFromEntries = (
-  episodeInput: EpisodeInput
-): { mainParticipants: string[]; subParticipants: string[]; participantEntries: EpisodeParticipant[] } => {
+const expandParticipantEntriesToFriendIds = (entries: EpisodeParticipant[]): string[] => {
   const rows = db.getAllSync<{ friendId: string; affiliations: string }>(
     `SELECT friendId, affiliations FROM ${PROFILES_TABLE} WHERE isDefault = 1;`
   );
-  const mainSet = new Set(episodeInput.mainParticipants);
-  const subSet = new Set(episodeInput.subParticipants);
-  const entries = uniqueParticipantEntries(episodeInput.participantEntries ?? []);
-
+  const ids = new Set<string>();
   entries.forEach((entry) => {
     const targetIds =
       entry.kind === 'individual' ? [entry.value] : collectAffiliationMemberIds(rows, entry.value);
     targetIds.forEach((id) => {
-      mainSet.add(id);
-      subSet.delete(id);
+      if (id.trim().length > 0) {
+        ids.add(id);
+      }
     });
   });
-
-  const mainParticipants = Array.from(mainSet).filter((id) => id.trim().length > 0);
-  const subParticipants = Array.from(subSet).filter((id) => id.trim().length > 0 && !mainSet.has(id));
-  return { mainParticipants, subParticipants, participantEntries: entries };
+  return Array.from(ids);
 };
 
-const ensureRequiredIndividualParticipants = (
-  resolved: { mainParticipants: string[]; subParticipants: string[]; participantEntries: EpisodeParticipant[] },
-  ownerFriendId: string,
+export const getEpisodeParticipantFriendIds = (episode: Pick<Episode, 'participantEntries'>): string[] =>
+  expandParticipantEntriesToFriendIds(episode.participantEntries ?? []);
+
+const ensureRequiredParticipants = (
+  entries: EpisodeParticipant[],
   myselfId: string | null
-): { mainParticipants: string[]; subParticipants: string[]; participantEntries: EpisodeParticipant[] } => {
-  const requiredIds = Array.from(
-    new Set([ownerFriendId.trim(), myselfId?.trim() ?? ''].filter((id) => id.length > 0))
-  );
-
-  const mainSet = new Set(resolved.mainParticipants);
-  const subSet = new Set(resolved.subParticipants);
-  requiredIds.forEach((id) => {
-    if (!mainSet.has(id)) {
-      mainSet.add(id);
-      subSet.delete(id);
-    }
-  });
-
-  const nextEntries = [...resolved.participantEntries];
-  requiredIds.forEach((id) => {
-    const hasEntry = nextEntries.some((entry) => entry.kind === 'individual' && entry.value === id);
-    if (!hasEntry) {
-      nextEntries.push({ kind: 'individual', value: id, isMain: true });
-    }
-  });
-
-  const mainParticipants = Array.from(mainSet).filter((id) => id.trim().length > 0);
-  const subParticipants = Array.from(subSet).filter((id) => id.trim().length > 0 && !mainSet.has(id));
-  return { mainParticipants, subParticipants, participantEntries: nextEntries };
+): EpisodeParticipant[] => {
+  const next = uniqueParticipantEntries(entries);
+  const requiredId = myselfId?.trim() ?? '';
+  if (requiredId && !next.some((entry) => entry.kind === 'individual' && entry.value === requiredId)) {
+    next.push({ kind: 'individual', value: requiredId });
+  }
+  return next;
 };
 
-export const createEpisode = (ownerFriendId: string, input: EpisodeInput): Episode | null => {
-  const owner = getFriendById(ownerFriendId);
-  if (!owner) {
+export const createEpisode = (input: EpisodeInput): Episode | null => {
+  const myselfId = getMyself();
+  if (!myselfId || !getFriendById(myselfId)) {
     return null;
   }
 
-  const resolved = ensureRequiredIndividualParticipants(resolveParticipantsFromEntries(input), ownerFriendId, getMyself());
+  const participantEntries = ensureRequiredParticipants(input.participantEntries ?? [], myselfId);
   const visibilityMode = sanitizeVisibilityMode(input.visibilityMode);
   const visibilityEntries =
     visibilityMode === 'limited' ? uniqueVisibilityEntries(input.visibilityEntries ?? []) : [];
   const episode: Episode = {
-    ...input,
     id: uuidv4(),
-    authorFriendId: ownerFriendId,
+    title: input.title,
+    date: input.date,
+    description: input.description,
+    authorFriendId: myselfId,
     visibilityMode,
-    mainParticipants: resolved.mainParticipants,
-    subParticipants: resolved.subParticipants,
-    participantEntries: resolved.participantEntries,
+    participantEntries,
     visibilityEntries,
   };
 
-  const targetIds = Array.from(new Set([ownerFriendId, ...collectEpisodeParticipantIds(resolved)]));
+  const targetIds = Array.from(new Set([myselfId, ...expandParticipantEntriesToFriendIds(participantEntries)]));
   const rows = getDefaultProfileRowsByPersonIds(targetIds);
   const timestamp = nowIso();
 
@@ -1129,18 +1120,18 @@ export const getEpisodeById = (friendId: string, episodeId: string): Episode | n
   return episodes.find((episode) => episode.id === episodeId) ?? null;
 };
 
-export const updateEpisode = (ownerFriendId: string, episodeId: string, input: EpisodeInput): boolean => {
-  const owner = getFriendById(ownerFriendId);
-  if (!owner) {
+export const updateEpisode = (authorFriendId: string, episodeId: string, input: EpisodeInput): boolean => {
+  const author = getFriendById(authorFriendId);
+  if (!author) {
     return false;
   }
 
-  const previousEpisode = owner.episodes.find((episode) => episode.id === episodeId);
+  const previousEpisode = author.episodes.find((episode) => episode.id === episodeId);
   if (!previousEpisode) {
     return false;
   }
 
-  const resolved = ensureRequiredIndividualParticipants(resolveParticipantsFromEntries(input), ownerFriendId, getMyself());
+  const participantEntries = ensureRequiredParticipants(input.participantEntries ?? [], getMyself());
   const visibilityMode = sanitizeVisibilityMode(input.visibilityMode);
   const visibilityEntries =
     visibilityMode === 'limited' ? uniqueVisibilityEntries(input.visibilityEntries ?? []) : [];
@@ -1151,18 +1142,16 @@ export const updateEpisode = (ownerFriendId: string, episodeId: string, input: E
     description: input.description,
     authorFriendId: previousEpisode.authorFriendId,
     visibilityMode,
-    mainParticipants: resolved.mainParticipants,
-    subParticipants: resolved.subParticipants,
-    participantEntries: resolved.participantEntries,
+    participantEntries,
     visibilityEntries,
   };
 
+  const authorId = previousEpisode.authorFriendId.trim() || authorFriendId;
   const previousTargets = new Set([
-    ownerFriendId,
-    ...previousEpisode.mainParticipants,
-    ...previousEpisode.subParticipants,
+    authorId,
+    ...expandParticipantEntriesToFriendIds(previousEpisode.participantEntries),
   ]);
-  const nextTargets = new Set([ownerFriendId, ...updatedEpisode.mainParticipants, ...updatedEpisode.subParticipants]);
+  const nextTargets = new Set([authorId, ...expandParticipantEntriesToFriendIds(participantEntries)]);
   const unionTargetIds = Array.from(new Set([...previousTargets, ...nextTargets]));
   const rows = getDefaultProfileRowsByPersonIds(unionTargetIds);
   const timestamp = nowIso();
@@ -1182,19 +1171,20 @@ export const updateEpisode = (ownerFriendId: string, episodeId: string, input: E
   return true;
 };
 
-export const deleteEpisode = (ownerFriendId: string, episodeId: string): boolean => {
-  const owner = getFriendById(ownerFriendId);
-  if (!owner) {
+export const deleteEpisode = (authorFriendId: string, episodeId: string): boolean => {
+  const author = getFriendById(authorFriendId);
+  if (!author) {
     return false;
   }
 
-  const targetEpisode = owner.episodes.find((episode) => episode.id === episodeId);
+  const targetEpisode = author.episodes.find((episode) => episode.id === episodeId);
   if (!targetEpisode) {
     return false;
   }
 
+  const authorId = targetEpisode.authorFriendId.trim() || authorFriendId;
   const targetIds = Array.from(
-    new Set([ownerFriendId, ...targetEpisode.mainParticipants, ...targetEpisode.subParticipants])
+    new Set([authorId, ...expandParticipantEntriesToFriendIds(targetEpisode.participantEntries)])
   );
   const rows = getDefaultProfileRowsByPersonIds(targetIds);
   const timestamp = nowIso();
@@ -1380,26 +1370,21 @@ export const resyncEpisodesForFriendAffiliationChange = (friendId: string): bool
   relatedEpisodeMap.forEach((episode, episodeId) => {
     const existing = episodeById.get(episodeId);
     const source = existing ?? episode;
-    const mainSet = new Set(source.mainParticipants);
-    const subSet = new Set(source.subParticipants);
-
-    const hadMain = mainSet.has(friendId);
-    const hadSub = subSet.has(friendId);
-
-    mainSet.add(friendId);
-    subSet.delete(friendId);
+    const entries = uniqueParticipantEntries(source.participantEntries ?? []);
+    const hadFriend = entries.some((entry) => entry.kind === 'individual' && entry.value === friendId);
+    if (!hadFriend) {
+      entries.push({ kind: 'individual', value: friendId });
+    }
 
     if (!existing) {
       changed = true;
-    }
-    if (hadMain !== mainSet.has(friendId) || hadSub !== subSet.has(friendId)) {
+    } else if (!hadFriend) {
       changed = true;
     }
 
     episodeById.set(episodeId, {
       ...source,
-      mainParticipants: Array.from(mainSet),
-      subParticipants: Array.from(subSet).filter((id) => !mainSet.has(id)),
+      participantEntries: entries,
     });
   });
 
@@ -1415,7 +1400,7 @@ export const resyncEpisodesForFriendAffiliationChange = (friendId: string): bool
 };
 
 const extractDistinctFromProfilesJsonArrayColumn = (
-  columnName: 'affiliations' | 'experiences' | 'personalities'
+  columnName: 'affiliations' | 'experiences' | 'personalities' | 'likes' | 'dislikes'
 ): string[] => {
   const rows = db.getAllSync<{ value: string }>(`SELECT ${columnName} as value FROM ${PROFILES_TABLE};`);
   const uniqueValues = new Set<string>();
@@ -1467,17 +1452,19 @@ const mergeUniqueLabels = (...groups: string[][]): string[] => {
   return Array.from(set).sort((a, b) => a.localeCompare(b, 'ja'));
 };
 
-const getProfileColumnByKind = (
-  kind: CommonItemKind
-): 'affiliations' | 'experiences' | 'personalities' | null => {
+type ProfileArrayColumn = 'affiliations' | 'experiences' | 'personalities' | 'likes' | 'dislikes';
+
+const getProfileColumnByKind = (kind: CommonItemKind): ProfileArrayColumn | null => {
   if (kind === 'affiliation') return 'affiliations';
   if (kind === 'experience') return 'experiences';
   if (kind === 'personality') return 'personalities';
+  if (kind === 'like') return 'likes';
+  if (kind === 'dislike') return 'dislikes';
   return null;
 };
 
 const rewriteProfileArrayColumnValue = (
-  columnName: 'affiliations' | 'experiences' | 'personalities',
+  columnName: ProfileArrayColumn,
   fromLabel: string,
   toLabel: string | null
 ): void => {
@@ -1555,6 +1542,8 @@ const getUsedCommonItemLabels = (kind: CommonItemKind): string[] => {
   if (kind === 'affiliation') return extractDistinctFromProfilesJsonArrayColumn('affiliations');
   if (kind === 'experience') return extractDistinctFromProfilesJsonArrayColumn('experiences');
   if (kind === 'personality') return extractDistinctFromProfilesJsonArrayColumn('personalities');
+  if (kind === 'like') return extractDistinctFromProfilesJsonArrayColumn('likes');
+  if (kind === 'dislike') return extractDistinctFromProfilesJsonArrayColumn('dislikes');
   return extractDistinctVisibilityGroupsFromProfiles();
 };
 
@@ -1700,7 +1689,7 @@ export const removeCommonItemLabel = (kind: CommonItemKind, label: string): bool
 };
 
 const addLabelToProfilesByFriendIds = (
-  columnName: 'affiliations' | 'experiences' | 'personalities',
+  columnName: ProfileArrayColumn,
   label: string,
   friendIds: string[]
 ): void => {
@@ -1724,7 +1713,7 @@ const addLabelToProfilesByFriendIds = (
 };
 
 const removeLabelFromProfilesByFriendIds = (
-  columnName: 'affiliations' | 'experiences' | 'personalities',
+  columnName: ProfileArrayColumn,
   label: string,
   friendIds: string[]
 ): void => {

@@ -1,10 +1,30 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import QRCode from 'react-native-qrcode-svg';
+import * as Clipboard from 'expo-clipboard';
+import * as MediaLibrary from 'expo-media-library';
+import * as Sharing from 'expo-sharing';
+import QRCode from 'react-native-qrcode-skia';
+import Svg, { Circle, Path } from 'react-native-svg';
+import ViewShot from 'react-native-view-shot';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
 import { getAllProfiles, getMyself, initializeDatabase } from '../db';
 import { Profile } from '../types';
+
+const QR_SIZE = 280;
+const ICON_SIZE = 56;
+const QR_COLOR = '#000000';
+const CARD_BG = '#ffffff';
 
 const QR_KEYS = ['name', 'nickname', 'birthday', 'height', 'weight', 'origin', 'residence', 'mbti'] as const;
 
@@ -53,8 +73,56 @@ const buildQrData = (profile: Profile): QrPayload => {
   return data;
 };
 
+type FriendDexIconProps = {
+  size: number;
+  color: string;
+};
+
+function FriendDexIcon({ size, color }: FriendDexIconProps) {
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: CARD_BG,
+        justifyContent: 'center',
+        alignItems: 'center',
+      }}
+    >
+      <Svg width={size * 0.92} height={size * 0.92} viewBox="0 0 100 80">
+        <Circle cx="32" cy="22" r="7" fill={color} />
+        <Path d="M23 50 L23 38 Q23 34 32 34 Q41 34 41 38 L41 50 Z" fill={color} />
+
+        <Circle cx="68" cy="22" r="7" fill={color} />
+        <Path d="M59 50 L59 38 Q59 34 68 34 Q77 34 77 38 L77 50 Z" fill={color} />
+
+        <Circle cx="50" cy="30" r="10" fill={color} />
+        <Path d="M36 62 L36 46 Q36 42 50 42 Q64 42 64 46 L64 62 Z" fill={color} />
+      </Svg>
+    </View>
+  );
+}
+
+type ActionButtonProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+};
+
+function ActionButton({ icon, label, onPress }: ActionButtonProps) {
+  return (
+    <Pressable style={styles.actionButton} onPress={onPress}>
+      <View style={styles.actionIconWrap}>
+        <Ionicons name={icon} size={24} color="#0f172a" />
+      </View>
+      <Text style={styles.actionLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
 export default function MyProfileQrScreen() {
   const router = useRouter();
+  const cardShotRef = useRef<ViewShot>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isReady, setIsReady] = useState(false);
 
@@ -83,7 +151,68 @@ export default function MyProfileQrScreen() {
     return buildQrData(profile);
   }, [profile, hasPublicFields]);
 
-  const qrValue = qrData ? JSON.stringify(qrData) : '';
+  const qrValue = useMemo(() => (qrData ? JSON.stringify(qrData) : ''), [qrData]);
+
+  const displayName = profile?.nickname?.trim() || profile?.name?.trim() || '';
+
+  const captureCard = useCallback(async (): Promise<string | null> => {
+    const uri = await cardShotRef.current?.capture?.();
+    if (!uri) {
+      Alert.alert('エラー', '画像の生成に失敗しました');
+      return null;
+    }
+    return uri;
+  }, []);
+
+  const handleShare = useCallback(async () => {
+    try {
+      const uri = await captureCard();
+      if (!uri) {
+        return;
+      }
+
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('シェアできません', 'この端末ではシェア機能が使えません');
+        return;
+      }
+
+      await Sharing.shareAsync(uri, {
+        mimeType: 'image/png',
+        dialogTitle: 'QRコード名刺をシェア',
+      });
+    } catch {
+      Alert.alert('エラー', 'シェアに失敗しました');
+    }
+  }, [captureCard]);
+
+  const handleCopyLink = useCallback(async () => {
+    if (!qrValue) {
+      return;
+    }
+    await Clipboard.setStringAsync(qrValue);
+    Alert.alert('コピーしました', 'QRコードの内容をクリップボードにコピーしました');
+  }, [qrValue]);
+
+  const handleDownload = useCallback(async () => {
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('権限が必要です', '画像を保存するには写真ライブラリへのアクセスが必要です');
+        return;
+      }
+
+      const uri = await captureCard();
+      if (!uri) {
+        return;
+      }
+
+      await MediaLibrary.saveToLibraryAsync(uri);
+      Alert.alert('保存しました', 'QRコード名刺をフォトライブラリに保存しました');
+    } catch {
+      Alert.alert('エラー', '保存に失敗しました');
+    }
+  }, [captureCard]);
 
   if (!isReady) {
     return null;
@@ -92,11 +221,13 @@ export default function MyProfileQrScreen() {
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backText}>‹ 戻る</Text>
+        <Pressable style={styles.headerIconButton} onPress={() => router.back()}>
+          <Ionicons name="close" size={28} color="#0f172a" />
         </Pressable>
         <Text style={styles.headerTitle}>QRコード名刺</Text>
-        <View style={styles.headerSide} />
+        <Pressable style={styles.headerIconButton} onPress={() => router.push('/scan')}>
+          <Ionicons name="scan-outline" size={24} color="#0f172a" />
+        </Pressable>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -118,11 +249,30 @@ export default function MyProfileQrScreen() {
           </View>
         ) : (
           <>
-            <View style={styles.qrCard}>
-              <View style={styles.qrCodeWrap}>
-                <QRCode value={qrValue} size={220} backgroundColor="white" color="black" />
+            <ViewShot ref={cardShotRef} options={{ format: 'png', quality: 1 }}>
+              <View style={styles.designCard} collapsable={false}>
+                <QRCode
+                  value={qrValue}
+                  size={QR_SIZE}
+                  color={QR_COLOR}
+                  errorCorrectionLevel="H"
+                  shapeOptions={{
+                    shape: 'circle',
+                    eyePatternShape: 'rounded',
+                    gap: 0,
+                    eyePatternGap: 0,
+                  }}
+                  logoAreaSize={ICON_SIZE + 12}
+                  logo={<FriendDexIcon size={ICON_SIZE} color={QR_COLOR} />}
+                />
+                <Text style={styles.displayName}>{displayName}</Text>
               </View>
-              <Text style={styles.qrHint}>スキャンして読み取ってもらおう</Text>
+            </ViewShot>
+
+            <View style={styles.actionRow}>
+              <ActionButton icon="share-outline" label="QRをシェア" onPress={handleShare} />
+              <ActionButton icon="link-outline" label="リンクをコピー" onPress={handleCopyLink} />
+              <ActionButton icon="download-outline" label="ダウンロード" onPress={handleDownload} />
             </View>
 
             <View style={styles.chipSection}>
@@ -136,12 +286,8 @@ export default function MyProfileQrScreen() {
               </View>
             </View>
 
-            <Pressable style={styles.primaryButton} onPress={() => router.push('/myprofile')}>
-              <Text style={styles.primaryButtonText}>マイプロフィールを編集</Text>
-            </Pressable>
-
-            <Pressable style={[styles.primaryButton, styles.scanButton]} onPress={() => router.push('/scan')}>
-              <Text style={styles.primaryButtonText}>QRをスキャンして友達を登録</Text>
+            <Pressable style={styles.textLinkButton} onPress={() => router.push('/myprofile')}>
+              <Text style={styles.textLink}>マイプロフィールを編集</Text>
             </Pressable>
           </>
         )}
@@ -153,83 +299,131 @@ export default function MyProfileQrScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
+    backgroundColor: '#ffffff',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
+    paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
   },
-  backButton: {
-    minWidth: 72,
-  },
-  backText: {
-    fontSize: 17,
-    color: '#2563eb',
-    fontWeight: '600',
+  headerIconButton: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerTitle: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
     color: '#0f172a',
-  },
-  headerSide: {
-    minWidth: 72,
   },
   scrollContent: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: 32,
-  },
-  qrCard: {
-    borderRadius: Radius.md,
-    backgroundColor: Theme.bgSurface,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Theme.border,
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing.md,
     alignItems: 'center',
+  },
+  designCard: {
+    width: 320,
+    borderRadius: 24,
+    paddingTop: 28,
+    paddingBottom: 24,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    backgroundColor: CARD_BG,
     marginBottom: Spacing.lg,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.12,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 6,
+      },
+      default: {},
+    }),
   },
-  qrCodeWrap: {
-    padding: Spacing.md,
-    backgroundColor: '#ffffff',
-    borderRadius: Radius.sm,
-    marginBottom: Spacing.md,
-  },
-  qrHint: {
-    fontSize: Typography.base,
-    color: '#64748b',
+  displayName: {
+    marginTop: 20,
+    fontSize: 18,
+    fontWeight: '800',
     textAlign: 'center',
+    letterSpacing: 0.3,
+    color: QR_COLOR,
+    textTransform: 'none',
+  },
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    maxWidth: 320,
+    marginBottom: Spacing.lg,
+    gap: 8,
+  },
+  actionButton: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionIconWrap: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e2e8f0',
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0f172a',
+    textAlign: 'center',
+    lineHeight: 14,
   },
   chipSection: {
-    marginBottom: Spacing.lg,
+    marginBottom: Spacing.md,
+    width: '100%',
+    maxWidth: 320,
   },
   chipSectionTitle: {
-    fontSize: Typography.base,
+    fontSize: Typography.sm,
     fontWeight: '600',
-    color: '#64748b',
+    color: '#94a3b8',
     marginBottom: Spacing.sm,
+    textAlign: 'center',
   },
   chipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'center',
     gap: Spacing.sm,
   },
   chip: {
     borderWidth: 1,
     borderColor: Theme.border,
     borderRadius: Radius.full,
-    backgroundColor: Theme.bgSurface,
+    backgroundColor: '#f8fafc',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
   },
   chipText: {
     fontSize: Typography.sm,
     fontWeight: '600',
-    color: '#0f172a',
+    color: '#64748b',
+  },
+  textLinkButton: {
+    paddingVertical: Spacing.sm,
+  },
+  textLink: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2563eb',
   },
   primaryButton: {
     borderRadius: Radius.md,
@@ -238,9 +432,7 @@ const styles = StyleSheet.create({
     borderColor: Theme.btnPrimaryBg,
     paddingVertical: 14,
     alignItems: 'center',
-  },
-  scanButton: {
-    marginTop: Spacing.md,
+    width: '100%',
   },
   primaryButtonText: {
     color: Theme.btnPrimaryText,
@@ -251,6 +443,7 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.lg,
     gap: Spacing.lg,
     alignItems: 'center',
+    width: '100%',
   },
   emptyMessage: {
     fontSize: 16,

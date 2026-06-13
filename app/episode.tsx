@@ -1,53 +1,35 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  Dimensions,
-  FlatList,
-  Image,
-  Modal,
-  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import * as ImagePicker from 'expo-image-picker';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
-
-import { PHOTO_LIMITS } from '../constants';
+import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
+import { AddCircleButton } from '@/components/AddCircleButton';
+import type { Option } from '@/components/episode/types';
+import { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import {
   createEpisode,
   deleteEpisode,
-  deleteEpisodePhoto,
   getAllFriends,
   getDistinctAffiliations,
   getDistinctExperiences,
-  getEpisodePhotos,
   getMyself,
   initializeDatabase,
-  insertEpisodePhoto,
   updateEpisode,
 } from '../db';
-import {
-  Episode,
-  EpisodeParticipant,
-  EpisodePhoto,
-  EpisodeVisibilityEntry,
-  EpisodeVisibilityMode,
-  Friend,
-} from '../types';
+import { Episode, EpisodeVisibilityMode, Friend } from '../types';
 import {
   buildParticipantChips,
   getVisibilityModeLabel,
   resolveEpisodeRecordOwnerId,
-  visibilityDisplayLabels,
 } from '../utils/episodeHelpers';
 
 const EPISODE_VISIBILITY_MODE_TAG_STYLES: Record<
@@ -70,21 +52,6 @@ const EPISODE_VISIBILITY_MODE_TAG_STYLES: Record<
 
 const LIST_HORIZONTAL_INSET = 12;
 
-const formatDateToYMD = (d: Date): string => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
-const parseDateString = (s: string): Date => {
-  const parts = s.split('-').map(Number);
-  if (parts.length === 3 && !parts.some(isNaN)) {
-    return new Date(parts[0], parts[1] - 1, parts[2]);
-  }
-  return new Date();
-};
-
 const formatEpisodeDateForCard = (date: string): string => {
   if (!date.trim()) return '-';
   const parts = date.split('-').map(Number);
@@ -93,365 +60,7 @@ const formatEpisodeDateForCard = (date: string): string => {
   return `${month}月${day}日`;
 };
 
-type Option = { label: string; value: string };
-type EpisodeParticipantDraft = {
-  participantType: 'individual' | 'group';
-  value: string;
-};
-
-type EpisodeVisibilityDraft = {
-  kind: 'individual' | 'group';
-  value: string;
-};
-
 type EpisodeRow = { episode: Episode; recordOwnerId: string };
-
-function SelectInput({
-  value,
-  placeholder,
-  options,
-  onChange,
-  style,
-  includeEmptyOption = true,
-}: {
-  value: string;
-  placeholder: string;
-  options: Option[];
-  onChange: (value: string) => void;
-  style?: object;
-  includeEmptyOption?: boolean;
-}) {
-  const [visible, setVisible] = useState(false);
-  const selectedLabel = useMemo(() => {
-    const selected = options.find((option) => option.value === value);
-    return selected?.label ?? placeholder;
-  }, [options, placeholder, value]);
-
-  return (
-    <>
-      <Pressable style={[styles.episodeSelectButton, style]} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.episodeSelectText : styles.episodeSelectPlaceholder} numberOfLines={1}>
-          {selectedLabel}
-        </Text>
-      </Pressable>
-      <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{placeholder}</Text>
-            <ScrollView style={styles.modalOptionsScroll} keyboardShouldPersistTaps="handled">
-              {includeEmptyOption ? (
-                <Pressable
-                  style={[styles.modalOption, value === '' && styles.modalOptionSelected]}
-                  onPress={() => {
-                    onChange('');
-                    setVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalOptionText}>{placeholder}</Text>
-                </Pressable>
-              ) : null}
-              {options.map((option) => (
-                <Pressable
-                  key={option.value}
-                  style={[styles.modalOption, value === option.value && styles.modalOptionSelected]}
-                  onPress={() => {
-                    onChange(option.value);
-                    setVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalOptionText}>{option.label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable style={styles.modalCloseButton} onPress={() => setVisible(false)}>
-              <Text style={styles.modalCloseButtonText}>閉じる</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </>
-  );
-}
-
-const SELECTOR_COLUMNS = 3;
-const SELECTOR_GAP = 6;
-const SELECTOR_CARD_PADDING = 14;
-
-function SelectorFilterField({
-  label,
-  value,
-  options,
-  onValueChange,
-}: {
-  label: string;
-  value: string;
-  options: Option[];
-  onValueChange: (v: string) => void;
-}) {
-  const [visible, setVisible] = useState(false);
-  const displayLabel = useMemo(() => {
-    if (!value) return label;
-    return options.find((option) => option.value === value)?.label ?? label;
-  }, [label, options, value]);
-
-  return (
-    <View style={styles.selectorFilterSelectContainer}>
-      <Pressable style={styles.selectorFilterSelectButton} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.selectorFilterSelectValue : styles.selectorFilterSelectPlaceholder}>
-          {displayLabel}
-        </Text>
-        <Text style={styles.selectorFilterSelectChevron}>▼</Text>
-      </Pressable>
-      <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
-        <View style={styles.selectorFilterModalBackdrop}>
-          <View style={styles.selectorFilterModalCard}>
-            <Text style={styles.selectorFilterModalTitle}>{label}</Text>
-            <ScrollView style={styles.selectorFilterModalOptions} keyboardShouldPersistTaps="handled">
-              <Pressable
-                style={[styles.selectorFilterModalOption, !value && styles.selectorFilterModalOptionSelected]}
-                onPress={() => {
-                  onValueChange('');
-                  setVisible(false);
-                }}
-              >
-                <Text style={styles.selectorFilterModalOptionText}>指定なし</Text>
-              </Pressable>
-              {options.map((option) => (
-                <Pressable
-                  key={option.value}
-                  style={[
-                    styles.selectorFilterModalOption,
-                    option.value === value && styles.selectorFilterModalOptionSelected,
-                  ]}
-                  onPress={() => {
-                    onValueChange(option.value);
-                    setVisible(false);
-                  }}
-                >
-                  <Text style={styles.selectorFilterModalOptionText}>{option.label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable style={styles.selectorFilterModalCloseButton} onPress={() => setVisible(false)}>
-              <Text style={styles.selectorFilterModalCloseButtonText}>閉じる</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-}
-
-type EntrySelectorModalProps = {
-  visible: boolean;
-  selectorTab: 'individual' | 'group';
-  onTabChange: (tab: 'individual' | 'group') => void;
-  nameFilter: string;
-  onNameFilterChange: (value: string) => void;
-  affiliationFilter: string;
-  onAffiliationFilterChange: (value: string) => void;
-  experienceFilter: string;
-  onExperienceFilterChange: (value: string) => void;
-  friends: Friend[];
-  affiliationOptions: Option[];
-  experienceOptions: Option[];
-  groupOptions: Option[];
-  selectedIndividualIds: Set<string>;
-  selectedGroupValues: Set<string>;
-  onToggleIndividual: (friendId: string) => void;
-  onToggleGroup: (groupValue: string) => void;
-  onCancel: () => void;
-  onConfirm: () => void;
-};
-
-function EntrySelectorModal({
-  visible,
-  selectorTab,
-  onTabChange,
-  nameFilter,
-  onNameFilterChange,
-  affiliationFilter,
-  onAffiliationFilterChange,
-  experienceFilter,
-  onExperienceFilterChange,
-  friends,
-  affiliationOptions,
-  experienceOptions,
-  groupOptions,
-  selectedIndividualIds,
-  selectedGroupValues,
-  onToggleIndividual,
-  onToggleGroup,
-  onCancel,
-  onConfirm,
-}: EntrySelectorModalProps) {
-  const itemWidth = useMemo(() => {
-    const screenWidth = Dimensions.get('window').width;
-    const totalGap = SELECTOR_GAP * (SELECTOR_COLUMNS - 1);
-    return (screenWidth - SELECTOR_CARD_PADDING * 2 - totalGap) / SELECTOR_COLUMNS;
-  }, []);
-
-  const normalizedNameFilter = nameFilter.trim().toLowerCase();
-  const filteredFriends = useMemo(
-    () =>
-      friends.filter((friend) => {
-        if (normalizedNameFilter && !friend.name.toLowerCase().includes(normalizedNameFilter)) {
-          return false;
-        }
-        if (affiliationFilter && !(friend.affiliations ?? []).includes(affiliationFilter)) {
-          return false;
-        }
-        if (experienceFilter && !(friend.experiences ?? []).includes(experienceFilter)) {
-          return false;
-        }
-        return true;
-      }),
-    [friends, normalizedNameFilter, affiliationFilter, experienceFilter]
-  );
-  const filteredGroups = useMemo(
-    () =>
-      groupOptions.filter((option) =>
-        normalizedNameFilter ? option.label.toLowerCase().includes(normalizedNameFilter) : true
-      ),
-    [groupOptions, normalizedNameFilter]
-  );
-
-  const renderFriendItem = ({ item }: { item: Friend }) => {
-    const checked = selectedIndividualIds.has(item.id);
-    return (
-      <Pressable
-        style={[styles.selectorPersonRow, { width: itemWidth }]}
-        onPress={() => onToggleIndividual(item.id)}
-      >
-        <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-          {checked ? <Text style={styles.checkmark}>✓</Text> : null}
-        </View>
-        <Text style={styles.selectorPersonName} numberOfLines={1}>
-          {item.name}
-        </Text>
-      </Pressable>
-    );
-  };
-
-  const renderGroupItem = ({ item }: { item: Option }) => {
-    const checked = selectedGroupValues.has(item.value);
-    return (
-      <Pressable
-        style={[styles.selectorPersonRow, { width: itemWidth }]}
-        onPress={() => onToggleGroup(item.value)}
-      >
-        <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-          {checked ? <Text style={styles.checkmark}>✓</Text> : null}
-        </View>
-        <Text style={styles.selectorPersonName} numberOfLines={1}>
-          {item.label}
-        </Text>
-      </Pressable>
-    );
-  };
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
-      <View style={styles.selectorOverlay}>
-        <View style={styles.selectorCard}>
-          <View style={styles.selectorTabRow}>
-            <Pressable
-              style={[styles.selectorTabButton, selectorTab === 'individual' && styles.selectorTabButtonActive]}
-              onPress={() => onTabChange('individual')}
-            >
-              <Text
-                style={[
-                  styles.selectorTabButtonText,
-                  selectorTab === 'individual' && styles.selectorTabButtonTextActive,
-                ]}
-              >
-                個人
-              </Text>
-            </Pressable>
-            <Pressable
-              style={[styles.selectorTabButton, selectorTab === 'group' && styles.selectorTabButtonActive]}
-              onPress={() => onTabChange('group')}
-            >
-              <Text
-                style={[styles.selectorTabButtonText, selectorTab === 'group' && styles.selectorTabButtonTextActive]}
-              >
-                所属
-              </Text>
-            </Pressable>
-          </View>
-          <View style={styles.selectorDivider} />
-          {selectorTab === 'individual' ? (
-            <View style={styles.selectorFilterRow}>
-              <View style={styles.selectorFilterNameContainer}>
-                <TextInput
-                  style={styles.selectorFilterNameInput}
-                  value={nameFilter}
-                  onChangeText={onNameFilterChange}
-                  placeholder="名前"
-                  placeholderTextColor={Theme.inputPlaceholder}
-                  autoCapitalize="none"
-                />
-              </View>
-              <SelectorFilterField
-                label="所属"
-                value={affiliationFilter}
-                options={affiliationOptions}
-                onValueChange={onAffiliationFilterChange}
-              />
-              <SelectorFilterField
-                label="経験"
-                value={experienceFilter}
-                options={experienceOptions}
-                onValueChange={onExperienceFilterChange}
-              />
-            </View>
-          ) : (
-            <TextInput
-              style={styles.selectorNameInput}
-              value={nameFilter}
-              onChangeText={onNameFilterChange}
-              placeholder="名前"
-              placeholderTextColor={Theme.inputPlaceholder}
-              autoCapitalize="none"
-            />
-          )}
-          <View style={styles.selectorDivider} />
-          {selectorTab === 'individual' ? (
-            <FlatList
-              data={filteredFriends}
-              keyExtractor={(item) => item.id}
-              renderItem={renderFriendItem}
-              numColumns={SELECTOR_COLUMNS}
-              columnWrapperStyle={styles.selectorColumnWrapper}
-              style={styles.selectorListScroll}
-              contentContainerStyle={styles.selectorListContent}
-              keyboardShouldPersistTaps="handled"
-            />
-          ) : (
-            <FlatList
-              data={filteredGroups}
-              keyExtractor={(item) => item.value}
-              renderItem={renderGroupItem}
-              numColumns={SELECTOR_COLUMNS}
-              columnWrapperStyle={styles.selectorColumnWrapper}
-              style={styles.selectorListScroll}
-              contentContainerStyle={styles.selectorListContent}
-              keyboardShouldPersistTaps="handled"
-            />
-          )}
-          <View style={styles.selectorActions}>
-            <Pressable style={styles.selectorCancelButton} onPress={onCancel}>
-              <Text style={styles.selectorCancelButtonText}>キャンセル</Text>
-            </Pressable>
-            <Pressable style={styles.selectorOkButton} onPress={onConfirm}>
-              <Text style={styles.selectorOkButtonText}>OK</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
-  );
-}
 
 function collectUniqueEpisodes(friends: Friend[]): EpisodeRow[] {
   const sortedFriends = [...friends].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
@@ -476,13 +85,7 @@ function buildFriendNameById(friends: Friend[]): Map<string, string> {
   return new Map(friends.map((f) => [f.id, f.name]));
 }
 
-type ParticipantChip = { id: string; label: string; isMain: boolean };
-
-const VISIBILITY_MODE_OPTIONS: Option[] = [
-  { label: '公開', value: 'public' },
-  { label: '限定公開', value: 'limited' },
-  { label: '非公開', value: 'private' },
-];
+type ParticipantChip = { id: string; label: string };
 
 type EpisodeListCardProps = {
   title: string;
@@ -518,7 +121,7 @@ function EpisodeListCard({
           {title || '-'}
         </Text>
         <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
-        {visibilityMode != null && modeStyles ? (
+        {visibilityMode != null && !isSharedPost && modeStyles ? (
           <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
             <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
               {getVisibilityModeLabel(visibilityMode)}
@@ -591,28 +194,16 @@ export default function EpisodeScreen() {
   const [myselfId, setMyselfId] = useState<string | null>(null);
 
   const [isFormVisible, setIsFormVisible] = useState(false);
-  const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
-  const [editingOwnerId, setEditingOwnerId] = useState<string | null>(null);
-  const [newEpisodeTitle, setNewEpisodeTitle] = useState('');
-  const [newEpisodeDate, setNewEpisodeDate] = useState('');
-  const [showEpisodeDatePicker, setShowEpisodeDatePicker] = useState(false);
-  const [newEpisodeDescription, setNewEpisodeDescription] = useState('');
-  const [episodeParticipants, setEpisodeParticipants] = useState<EpisodeParticipantDraft[]>([]);
-  const [episodeVisibilityMode, setEpisodeVisibilityMode] = useState<EpisodeVisibilityMode>('private');
-  const [episodeVisibility, setEpisodeVisibility] = useState<EpisodeVisibilityDraft[]>([]);
-  const [episodeFormError, setEpisodeFormError] = useState('');
-  const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
-  const [newPhotoUris, setNewPhotoUris] = useState<string[]>([]);
-  const [deletedPhotoIds, setDeletedPhotoIds] = useState<number[]>([]);
 
-  const [selectorVisible, setSelectorVisible] = useState(false);
-  const [selectorTarget, setSelectorTarget] = useState<'participant' | 'visibility'>('participant');
-  const [selectorTab, setSelectorTab] = useState<'individual' | 'group'>('individual');
-  const [selectedIndividualIds, setSelectedIndividualIds] = useState<Set<string>>(new Set());
-  const [selectedGroupValues, setSelectedGroupValues] = useState<Set<string>>(new Set());
-  const [selectorNameFilter, setSelectorNameFilter] = useState('');
-  const [selectorAffiliationFilter, setSelectorAffiliationFilter] = useState('');
-  const [selectorExperienceFilter, setSelectorExperienceFilter] = useState('');
+  const hiddenParticipantIds = useMemo(
+    () => (myselfId ? [myselfId] : []),
+    [myselfId]
+  );
+
+  const episodeForm = useEpisodeForm({
+    friends,
+    hiddenParticipantIds,
+  });
 
   const loadData = useCallback(() => {
     initializeDatabase();
@@ -644,186 +235,17 @@ export default function EpisodeScreen() {
   const friendNameById = useMemo(() => buildFriendNameById(friends), [friends]);
   const episodeRows = useMemo(() => collectUniqueEpisodes(friends), [friends]);
 
-  const visibleExistingPhotos = useMemo(
-    () => photos.filter((photo) => !deletedPhotoIds.includes(photo.id)),
-    [photos, deletedPhotoIds]
-  );
-
-  const isPhotoLimitReached = photos.length + newPhotoUris.length >= PHOTO_LIMITS.free;
-
-  const restoreSelectorFromParticipants = (participants: EpisodeParticipantDraft[]) => {
-    const individuals = new Set<string>();
-    const groups = new Set<string>();
-    participants.forEach((participant) => {
-      if (!participant.value.trim()) {
-        return;
-      }
-      if (participant.participantType === 'individual') {
-        individuals.add(participant.value);
-      } else {
-        groups.add(participant.value);
-      }
-    });
-    setSelectedIndividualIds(individuals);
-    setSelectedGroupValues(groups);
-  };
-
-  const restoreSelectorFromVisibility = (entries: EpisodeVisibilityDraft[]) => {
-    const individuals = new Set<string>();
-    const groups = new Set<string>();
-    entries.forEach((entry) => {
-      if (!entry.value.trim()) {
-        return;
-      }
-      if (entry.kind === 'individual') {
-        individuals.add(entry.value);
-      } else {
-        groups.add(entry.value);
-      }
-    });
-    setSelectedIndividualIds(individuals);
-    setSelectedGroupValues(groups);
-  };
-
-  const openParticipantSelector = () => {
-    restoreSelectorFromParticipants(episodeParticipants);
-    setSelectorTarget('participant');
-    setSelectorTab('individual');
-    setSelectorNameFilter('');
-    setSelectorAffiliationFilter('');
-    setSelectorExperienceFilter('');
-    setSelectorVisible(true);
-  };
-
-  const openVisibilitySelector = () => {
-    restoreSelectorFromVisibility(episodeVisibility);
-    setSelectorTarget('visibility');
-    setSelectorTab('individual');
-    setSelectorNameFilter('');
-    setSelectorAffiliationFilter('');
-    setSelectorExperienceFilter('');
-    setSelectorVisible(true);
-  };
-
-  const handleSelectorCancel = () => {
-    setSelectorVisible(false);
-    setSelectorNameFilter('');
-    setSelectorAffiliationFilter('');
-    setSelectorExperienceFilter('');
-  };
-
-  const handleSelectorConfirm = () => {
-    if (selectorTarget === 'participant') {
-      const nextParticipants: EpisodeParticipantDraft[] = [];
-      selectedIndividualIds.forEach((friendId) => {
-        nextParticipants.push({
-          participantType: 'individual',
-          value: friendId,
-        });
-      });
-      selectedGroupValues.forEach((groupValue) => {
-        nextParticipants.push({
-          participantType: 'group',
-          value: groupValue,
-        });
-      });
-      setEpisodeParticipants(nextParticipants);
-    } else {
-      const nextVisibility: EpisodeVisibilityDraft[] = [];
-      selectedIndividualIds.forEach((friendId) => {
-        nextVisibility.push({ kind: 'individual', value: friendId });
-      });
-      selectedGroupValues.forEach((groupValue) => {
-        nextVisibility.push({ kind: 'group', value: groupValue });
-      });
-      setEpisodeVisibility(nextVisibility);
-    }
-    setSelectorVisible(false);
-    setSelectorNameFilter('');
-  };
-
-  const toggleSelectorIndividual = (friendId: string) => {
-    setSelectedIndividualIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(friendId)) {
-        next.delete(friendId);
-      } else {
-        next.add(friendId);
-      }
-      return next;
-    });
-  };
-
-  const toggleSelectorGroup = (groupValue: string) => {
-    setSelectedGroupValues((prev) => {
-      const next = new Set(prev);
-      if (next.has(groupValue)) {
-        next.delete(groupValue);
-      } else {
-        next.add(groupValue);
-      }
-      return next;
-    });
-  };
-
-  const resetEpisodeForm = () => {
-    setEpisodeFormError('');
-    setEditingEpisodeId(null);
-    setEditingOwnerId(null);
-    setNewEpisodeTitle('');
-    setNewEpisodeDate(formatDateToYMD(new Date()));
-    setShowEpisodeDatePicker(false);
-    setNewEpisodeDescription('');
-    setEpisodeParticipants([]);
-    setEpisodeVisibilityMode('private');
-    setEpisodeVisibility([]);
-    setPhotos([]);
-    setNewPhotoUris([]);
-    setDeletedPhotoIds([]);
-  };
-
   const openCreateForm = () => {
     if (!myselfId) {
       Alert.alert('案内', '本人が設定されていません。');
       return;
     }
-    resetEpisodeForm();
-    setEditingOwnerId(myselfId);
+    episodeForm.reset();
     setIsFormVisible(true);
   };
 
   const startEditEpisode = (row: EpisodeRow) => {
-    const { episode, recordOwnerId } = row;
-    const entries: EpisodeParticipant[] =
-      episode.participantEntries && episode.participantEntries.length > 0
-        ? episode.participantEntries
-        : [
-            ...episode.mainParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: true })),
-            ...episode.subParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: false })),
-          ];
-    const participantDrafts: EpisodeParticipantDraft[] = entries
-      .filter((entry) => !(entry.kind === 'individual' && entry.value === recordOwnerId))
-      .map((entry) => ({
-        participantType: entry.kind,
-        value: entry.value,
-      }));
-    setEditingEpisodeId(episode.id);
-    setEditingOwnerId(recordOwnerId);
-    setNewEpisodeTitle(episode.title);
-    setNewEpisodeDate(episode.date);
-    setNewEpisodeDescription(episode.description);
-    setEpisodeParticipants(participantDrafts);
-    setEpisodeVisibilityMode(episode.visibilityMode);
-    setEpisodeVisibility(
-      (episode.visibilityEntries ?? []).map((entry) => ({
-        kind: entry.kind,
-        value: entry.value,
-      }))
-    );
-    setPhotos(getEpisodePhotos(episode.id));
-    setNewPhotoUris([]);
-    setDeletedPhotoIds([]);
-    setEpisodeFormError('');
+    episodeForm.loadFromEpisode(row.episode);
     setIsFormVisible(true);
   };
 
@@ -845,43 +267,6 @@ export default function EpisodeScreen() {
     startEditEpisode(row);
   }, [episodeRows, pendingEditEpisodeId, pendingEditOwnerId]);
 
-  const onPickEpisodePhoto = async () => {
-    if (isPhotoLimitReached) {
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 0.7,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setNewPhotoUris((prev) => [...prev, result.assets[0].uri]);
-    }
-  };
-
-  const handleRemoveExistingPhoto = (photoId: number) => {
-    setDeletedPhotoIds((prev) => (prev.includes(photoId) ? prev : [...prev, photoId]));
-  };
-
-  const handleRemoveNewPhoto = (index: number) => {
-    setNewPhotoUris((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const persistEpisodePhotos = (episodeId: string, isEdit: boolean) => {
-    if (isEdit) {
-      deletedPhotoIds.forEach((id) => {
-        deleteEpisodePhoto(id);
-      });
-      const existingCount = photos.filter((photo) => !deletedPhotoIds.includes(photo.id)).length;
-      newPhotoUris.forEach((uri, index) => {
-        insertEpisodePhoto(episodeId, uri, existingCount + index);
-      });
-      return;
-    }
-    newPhotoUris.forEach((uri, index) => {
-      insertEpisodePhoto(episodeId, uri, index);
-    });
-  };
-
   const handleDeleteEpisode = (row: EpisodeRow) => {
     Alert.alert('確認', '本当に削除しますか？', [
       { text: 'キャンセル', style: 'cancel' },
@@ -895,8 +280,8 @@ export default function EpisodeScreen() {
             Alert.alert('エラー', 'エピソードの削除に失敗しました。');
             return;
           }
-          if (editingEpisodeId === row.episode.id) {
-            resetEpisodeForm();
+          if (episodeForm.editingEpisodeId === row.episode.id) {
+            episodeForm.reset();
             setIsFormVisible(false);
           }
           loadData();
@@ -906,82 +291,33 @@ export default function EpisodeScreen() {
   };
 
   const handleSaveEpisode = () => {
-    const ownerId = editingOwnerId ?? myselfId;
-    if (!ownerId) {
-      setEpisodeFormError('本人が設定されていません。');
+    if (!myselfId) {
+      episodeForm.setFormError('本人が設定されていません。');
       return;
     }
-    const title = newEpisodeTitle.trim();
-    const date = newEpisodeDate.trim();
-    const description = newEpisodeDescription.trim();
-    if (!title) {
-      setEpisodeFormError('タイトルを入力してください。');
+    const payload = episodeForm.buildSavePayload();
+    if (!payload) {
       return;
     }
-    if (!date) {
-      setEpisodeFormError('日付を選択してください。');
-      return;
-    }
-
-    const participantEntries: EpisodeParticipant[] = episodeParticipants
-      .filter((participant) => participant.value.trim().length > 0)
-      .map((participant) => ({
-        kind: participant.participantType,
-        value: participant.value,
-        isMain: true,
-      }));
-    const visibilityMode = episodeVisibilityMode;
-    const visibilityEntries: EpisodeVisibilityEntry[] =
-      visibilityMode === 'limited'
-        ? episodeVisibility
-            .filter((entry) => entry.value.trim().length > 0)
-            .map((entry) => ({
-              kind: entry.kind,
-              value: entry.value.trim(),
-            }))
-        : [];
-    const mainParticipants = [ownerId];
-    const subParticipants: string[] = [];
-
-    if (editingEpisodeId) {
-      const updated = updateEpisode(ownerId, editingEpisodeId, {
-        title,
-        date,
-        description,
-        visibilityMode,
-        mainParticipants,
-        subParticipants,
-        participantEntries,
-        visibilityEntries,
-      });
+    if (episodeForm.editingEpisodeId) {
+      const updated = updateEpisode(myselfId, episodeForm.editingEpisodeId, payload);
       if (!updated) {
-        setEpisodeFormError('エピソードの更新に失敗しました。');
+        episodeForm.setFormError('エピソードの更新に失敗しました。');
         return;
       }
-      persistEpisodePhotos(editingEpisodeId, true);
+      episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
     } else {
-      const created = createEpisode(ownerId, {
-        title,
-        date,
-        description,
-        visibilityMode,
-        mainParticipants,
-        subParticipants,
-        participantEntries,
-        visibilityEntries,
-      });
+      const created = createEpisode(payload);
       if (!created) {
-        setEpisodeFormError('エピソードの追加に失敗しました。');
+        episodeForm.setFormError('エピソードの追加に失敗しました。');
         return;
       }
-      persistEpisodePhotos(created.id, false);
+      episodeForm.persistPhotos(created.id, false);
     }
-    resetEpisodeForm();
+    episodeForm.reset();
     setIsFormVisible(false);
     loadData();
   };
-
-  const ownerIdForForm = editingOwnerId ?? myselfId;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -1003,23 +339,28 @@ export default function EpisodeScreen() {
             ) : (
               episodeRows.map((row) => {
                 const chips = buildParticipantChips(row.episode, friendNameById);
-                const ownerId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
+                const authorId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
+                const isSharedPost = myselfId != null && row.episode.authorFriendId.trim() !== myselfId;
+                const posterName = isSharedPost
+                  ? friendNameById.get(row.episode.authorFriendId) ?? row.episode.authorFriendId
+                  : undefined;
                 return (
                   <Pressable
                     key={row.episode.id}
                     onPress={() =>
                       router.push({
                         pathname: '/episode-detail',
-                        params: { episodeId: row.episode.id, ownerId },
+                        params: { episodeId: row.episode.id, ownerId: authorId },
                       })
                     }
                   >
                     <EpisodeListCard
                       title={row.episode.title}
                       date={row.episode.date}
-                      isSharedPost={false}
+                      isSharedPost={isSharedPost}
+                      posterName={posterName}
                       chips={chips}
-                      visibilityMode={row.episode.visibilityMode}
+                      visibilityMode={isSharedPost ? undefined : row.episode.visibilityMode}
                     />
                   </Pressable>
                 );
@@ -1028,238 +369,25 @@ export default function EpisodeScreen() {
           </View>
         </ScrollView>
 
-        <Pressable style={[styles.fab, !myselfId && styles.fabDisabled]} onPress={openCreateForm} disabled={!myselfId}>
-          <Text style={styles.fabText}>＋</Text>
-        </Pressable>
+        <AddCircleButton
+          style={styles.fab}
+          onPress={openCreateForm}
+          disabled={!myselfId}
+          accessibilityLabel="エピソードを追加"
+        />
       </View>
 
-      {isFormVisible && (
-        <View style={styles.formOverlay}>
-          <KeyboardAwareScrollView
-            style={styles.formOverlayScroll}
-            contentContainerStyle={styles.formOverlayScrollContent}
-            keyboardShouldPersistTaps="handled"
-            enableOnAndroid
-            extraScrollHeight={24}
-          >
-            <Text style={styles.formOverlayTitle}>{editingEpisodeId ? 'エピソードを編集' : 'エピソードを追加'}</Text>
-            <View style={styles.episodeFormCard}>
-              <View style={styles.episodeTitleDateRow}>
-                <TextInput
-                  style={[styles.episodeInput, styles.episodeTitleInput]}
-                  placeholder="タイトル"
-                  placeholderTextColor={Theme.inputPlaceholder}
-                  value={newEpisodeTitle}
-                  onChangeText={setNewEpisodeTitle}
-                />
-                <Pressable
-                  style={[styles.episodeInput, styles.episodeDateInput]}
-                  onPress={() => setShowEpisodeDatePicker(true)}
-                >
-                  <Text style={newEpisodeDate ? styles.episodeDateText : styles.episodeDatePlaceholder}>
-                    {newEpisodeDate || 'YYYY-MM-DD'}
-                  </Text>
-                </Pressable>
-              </View>
-              {showEpisodeDatePicker && (
-                <View style={styles.datePickerWrap}>
-                  <DateTimePicker
-                    value={parseDateString(newEpisodeDate)}
-                    mode="date"
-                    display="spinner"
-                    locale="ja-JP"
-                    style={styles.datePickerSelf}
-                    onChange={(_event: DateTimePickerEvent, selected?: Date) => {
-                      if (Platform.OS !== 'ios') setShowEpisodeDatePicker(false);
-                      if (selected) setNewEpisodeDate(formatDateToYMD(selected));
-                    }}
-                  />
-                  <Pressable style={styles.datePickerDone} onPress={() => setShowEpisodeDatePicker(false)}>
-                    <Text style={styles.datePickerDoneText}>完了</Text>
-                  </Pressable>
-                </View>
-              )}
-              <View style={styles.episodeParticipantRow}>
-                <Text style={styles.episodeParticipantLabel}>参加者</Text>
-                <Pressable style={styles.addParticipantButton} onPress={openParticipantSelector}>
-                  <Text style={styles.addParticipantButtonText}>参加者を選ぶ</Text>
-                </Pressable>
-              </View>
-              <Pressable style={styles.selectedEntryTagArea} onPress={openParticipantSelector}>
-                {episodeParticipants.filter((participant) => participant.value.trim().length > 0).length > 0 ? (
-                  <View style={styles.selectedEntryTagWrap}>
-                    {episodeParticipants
-                      .filter((participant) => participant.value.trim().length > 0)
-                      .map((participant, index) => {
-                        const label =
-                          participant.participantType === 'individual'
-                            ? friendNameById.get(participant.value) ?? participant.value
-                            : participant.value;
-                        return (
-                          <View
-                            key={`participant-tag-${participant.participantType}-${participant.value}-${index}`}
-                            style={styles.episodeParticipantTag}
-                          >
-                            <Text style={styles.episodeParticipantTagName}>{label}</Text>
-                          </View>
-                        );
-                      })}
-                  </View>
-                ) : (
-                  <Text style={styles.selectedEntryEmptyText}>参加者が選択されていません</Text>
-                )}
-              </Pressable>
-              <View style={styles.episodeParticipantRow}>
-                <Text style={styles.episodeParticipantLabel}>公開設定</Text>
-                <SelectInput
-                  value={episodeVisibilityMode}
-                  placeholder="公開設定"
-                  options={VISIBILITY_MODE_OPTIONS}
-                  onChange={(value) => setEpisodeVisibilityMode(value as EpisodeVisibilityMode)}
-                  style={styles.visibilityModeSelect}
-                  includeEmptyOption={false}
-                />
-              </View>
-              {episodeVisibilityMode === 'limited' ? (
-                <>
-                  <View style={styles.episodeParticipantRow}>
-                    <Text style={styles.episodeParticipantLabel}>公開先</Text>
-                    <Pressable style={styles.addParticipantButton} onPress={openVisibilitySelector}>
-                      <Text style={styles.addParticipantButtonText}>公開先を選ぶ</Text>
-                    </Pressable>
-                  </View>
-                  <Pressable style={styles.selectedEntryTagArea} onPress={openVisibilitySelector}>
-                    {episodeVisibility.filter((entry) => entry.value.trim().length > 0).length > 0 ? (
-                      <View style={styles.selectedEntryTagWrap}>
-                        {episodeVisibility
-                          .filter((entry) => entry.value.trim().length > 0)
-                          .map((entry, index) => {
-                            const label =
-                              entry.kind === 'individual'
-                                ? friendNameById.get(entry.value) ?? entry.value
-                                : entry.value;
-                            return (
-                              <View
-                                key={`visibility-tag-${entry.kind}-${entry.value}-${index}`}
-                                style={styles.episodeParticipantTag}
-                              >
-                                <Text style={styles.episodeParticipantTagName}>{label}</Text>
-                              </View>
-                            );
-                          })}
-                      </View>
-                    ) : (
-                      <Text style={styles.selectedEntryEmptyText}>公開先が選択されていません</Text>
-                    )}
-                  </Pressable>
-                </>
-              ) : null}
-              <View style={styles.episodePhotoSection}>
-                <Text style={styles.episodeParticipantLabel}>写真</Text>
-                {(visibleExistingPhotos.length > 0 || newPhotoUris.length > 0) && (
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.episodePhotoThumbScroll}
-                    contentContainerStyle={styles.episodePhotoThumbRow}
-                  >
-                    {visibleExistingPhotos.map((photo) => (
-                      <View key={`existing-photo-${photo.id}`} style={styles.episodePhotoThumbWrap}>
-                        <Image source={{ uri: photo.photoUri }} style={styles.episodePhotoThumb} />
-                        <Pressable
-                          style={styles.episodePhotoRemoveButton}
-                          onPress={() => handleRemoveExistingPhoto(photo.id)}
-                        >
-                          <Text style={styles.episodePhotoRemoveButtonText}>×</Text>
-                        </Pressable>
-                      </View>
-                    ))}
-                    {newPhotoUris.map((uri, index) => (
-                      <View key={`new-photo-${index}-${uri}`} style={styles.episodePhotoThumbWrap}>
-                        <Image source={{ uri }} style={styles.episodePhotoThumb} />
-                        <Pressable
-                          style={styles.episodePhotoRemoveButton}
-                          onPress={() => handleRemoveNewPhoto(index)}
-                        >
-                          <Text style={styles.episodePhotoRemoveButtonText}>×</Text>
-                        </Pressable>
-                      </View>
-                    ))}
-                  </ScrollView>
-                )}
-                <Pressable
-                  style={[styles.episodePhotoAddButton, isPhotoLimitReached && styles.episodePhotoAddButtonDisabled]}
-                  onPress={onPickEpisodePhoto}
-                  disabled={isPhotoLimitReached}
-                >
-                  <Text
-                    style={[
-                      styles.episodePhotoAddButtonText,
-                      isPhotoLimitReached && styles.episodePhotoAddButtonTextDisabled,
-                    ]}
-                  >
-                    写真を追加
-                  </Text>
-                </Pressable>
-                {isPhotoLimitReached ? (
-                  <Text style={styles.episodePhotoUpgradeHint}>
-                    プランをアップグレードするとさらに追加できます
-                  </Text>
-                ) : null}
-              </View>
-              <TextInput
-                style={styles.episodeDescriptionInput}
-                placeholder="説明文の記入（記入式）"
-                placeholderTextColor={Theme.inputPlaceholder}
-                multiline
-                value={newEpisodeDescription}
-                onChangeText={setNewEpisodeDescription}
-              />
-              {ownerIdForForm ? (
-                <Text style={styles.ownerHint}>
-                  登録主体: {friends.find((f) => f.id === ownerIdForForm)?.name ?? ownerIdForForm}
-                </Text>
-              ) : null}
-              {episodeFormError ? <Text style={styles.episodeErrorText}>{episodeFormError}</Text> : null}
-              <View style={styles.episodeFormActions}>
-                <Pressable
-                  style={styles.episodeCancelButton}
-                  onPress={() => {
-                    resetEpisodeForm();
-                    setIsFormVisible(false);
-                  }}
-                >
-                  <Text style={styles.episodeCancelButtonText}>キャンセル</Text>
-                </Pressable>
-                <Pressable style={styles.episodeCreateButton} onPress={handleSaveEpisode}>
-                  <Text style={styles.episodeCreateButtonText}>{editingEpisodeId ? '更新' : '保存'}</Text>
-                </Pressable>
-              </View>
-            </View>
-          </KeyboardAwareScrollView>
-        </View>
-      )}
-
-      <EntrySelectorModal
-        visible={selectorVisible}
-        selectorTab={selectorTab}
-        onTabChange={setSelectorTab}
-        nameFilter={selectorNameFilter}
-        onNameFilterChange={setSelectorNameFilter}
-        affiliationFilter={selectorAffiliationFilter}
-        onAffiliationFilterChange={setSelectorAffiliationFilter}
-        experienceFilter={selectorExperienceFilter}
-        onExperienceFilterChange={setSelectorExperienceFilter}
+      <EpisodeFormOverlay
+        visible={isFormVisible}
+        form={episodeForm}
         friends={friends}
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
-        groupOptions={affiliationOptions}
-        selectedIndividualIds={selectedIndividualIds}
-        selectedGroupValues={selectedGroupValues}
-        onToggleIndividual={toggleSelectorIndividual}
-        onToggleGroup={toggleSelectorGroup}
-        onCancel={handleSelectorCancel}
-        onConfirm={handleSelectorConfirm}
+        onClose={() => {
+          episodeForm.reset();
+          setIsFormVisible(false);
+        }}
+        onSave={handleSaveEpisode}
       />
 
     </SafeAreaView>
@@ -1274,13 +402,15 @@ function DummyEpisodeCard() {
       isSharedPost
       posterName="投稿者"
       chips={[
-        { id: 'dummy-name', label: '名前', isMain: true },
-        { id: 'dummy-group', label: 'グループ', isMain: true },
+        { id: 'dummy-name', label: '名前' },
+        { id: 'dummy-group', label: 'グループ' },
       ]}
       visibility={['グループ']}
     />
   );
 }
+
+const SELECTOR_GAP = 6;
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -1457,23 +587,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 18,
     bottom: 22,
-    width: 56,
-    height: 56,
-    borderRadius: 14,
-    backgroundColor: '#67e8f9',
-    borderColor: '#0891b2',
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  fabDisabled: {
-    opacity: 0.5,
-  },
-  fabText: {
-    fontSize: 32,
-    lineHeight: 32,
-    color: '#082f49',
-    fontWeight: '700',
   },
   formOverlay: {
     position: 'absolute',
@@ -1971,11 +1084,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     marginBottom: 8,
-  },
-  ownerHint: {
-    fontSize: 12,
-    color: '#64748b',
-    marginBottom: 6,
   },
   episodeErrorText: {
     color: '#b91c1c',

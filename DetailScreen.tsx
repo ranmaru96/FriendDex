@@ -29,6 +29,8 @@ import {
   deleteEpisode,
   getAllFriends,
   getDistinctAffiliations,
+  getDistinctExperiences,
+  getEpisodeParticipantFriendIds,
   getFriendById,
   getMyself,
   getProfilesByFriendId,
@@ -40,8 +42,6 @@ import {
 } from './db';
 import {
   Episode,
-  EpisodeParticipant,
-  EpisodeVisibilityEntry,
   EpisodeVisibilityMode,
   Friend,
   Profile,
@@ -53,6 +53,8 @@ import {
   getVisibilityModeLabel,
   resolveEpisodeRecordOwnerId,
 } from './utils/episodeHelpers';
+import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
+import { useEpisodeForm } from '@/hooks/useEpisodeForm';
 
 const EPISODE_PICKER_COLUMNS = 3;
 const EPISODE_PICKER_GAP = 6;
@@ -136,80 +138,6 @@ type Option = {
   label: string;
   value: string;
 };
-type EpisodeParticipantDraft = {
-  participantType: 'individual' | 'group';
-  value: string;
-};
-
-type EpisodeVisibilityDraft = {
-  kind: 'individual' | 'group';
-  value: string;
-};
-
-function SelectInput({
-  value,
-  placeholder,
-  options,
-  onChange,
-  style,
-}: {
-  value: string;
-  placeholder: string;
-  options: Option[];
-  onChange: (value: string) => void;
-  style?: object;
-}) {
-  const { bundle } = useDetailDesign();
-  const styles = useMemo(() => createDetailStyles(bundle.colors), [bundle.colors]);
-  const [visible, setVisible] = useState(false);
-  const selectedLabel = useMemo(() => {
-    const selected = options.find((option) => option.value === value);
-    return selected?.label ?? placeholder;
-  }, [options, placeholder, value]);
-
-  return (
-    <>
-      <Pressable style={[styles.episodeSelectButton, style]} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.episodeSelectText : styles.episodeSelectPlaceholder} numberOfLines={1}>
-          {selectedLabel}
-        </Text>
-      </Pressable>
-      <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{placeholder}</Text>
-            <View style={styles.modalOptions}>
-              <Pressable
-                style={[styles.modalOption, value === '' && styles.modalOptionSelected]}
-                onPress={() => {
-                  onChange('');
-                  setVisible(false);
-                }}
-              >
-                <Text style={styles.modalOptionText}>{placeholder}</Text>
-              </Pressable>
-              {options.map((option) => (
-                <Pressable
-                  key={option.value}
-                  style={[styles.modalOption, value === option.value && styles.modalOptionSelected]}
-                  onPress={() => {
-                    onChange(option.value);
-                    setVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalOptionText}>{option.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-            <Pressable style={styles.modalCloseButton} onPress={() => setVisible(false)}>
-              <Text style={styles.modalCloseButtonText}>閉じる</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </>
-  );
-}
 
 function MultiValueSummarySection({ rows, withCard = true }: { rows: MultiValueRow[]; withCard?: boolean }) {
   const { bundle } = useDetailDesign();
@@ -287,15 +215,9 @@ export default function DetailScreen() {
   const [episodeTitleDraft, setEpisodeTitleDraft] = useState('');
   const [episodeTitleFilter, setEpisodeTitleFilter] = useState('');
   const [isEpisodeFormVisible, setIsEpisodeFormVisible] = useState(false);
-  const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
-  const [newEpisodeTitle, setNewEpisodeTitle] = useState('');
-  const [newEpisodeDate, setNewEpisodeDate] = useState('');
-  const [showEpisodeDatePicker, setShowEpisodeDatePicker] = useState(false);
+  const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
+  const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [showSayingDatePicker, setShowSayingDatePicker] = useState(false);
-  const [newEpisodeDescription, setNewEpisodeDescription] = useState('');
-  const [episodeParticipants, setEpisodeParticipants] = useState<EpisodeParticipantDraft[]>([]);
-  const [episodeVisibility, setEpisodeVisibility] = useState<EpisodeVisibilityDraft[]>([]);
-  const [episodeFormError, setEpisodeFormError] = useState('');
   const [isSayingFormVisible, setIsSayingFormVisible] = useState(false);
   const [editingSayingId, setEditingSayingId] = useState<string | null>(null);
   const [sayingText, setSayingText] = useState('');
@@ -344,6 +266,8 @@ export default function DetailScreen() {
     const loadedTraits = loaded?.traits ?? [];
     setHabitNotes(loadedTraits);
     setAllFriends(getAllFriends());
+    setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
+    setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
   }, [friendId]);
 
   useFocusEffect(
@@ -351,6 +275,24 @@ export default function DetailScreen() {
       loadFriend();
     }, [loadFriend])
   );
+
+  const hiddenParticipantIds = useMemo(() => {
+    const ids: string[] = [];
+    if (friendId) ids.push(friendId);
+    if (myselfId) ids.push(myselfId);
+    return ids;
+  }, [friendId, myselfId]);
+
+  const implicitParticipantEntries = useMemo(
+    () => (friendId ? [{ kind: 'individual' as const, value: friendId }] : []),
+    [friendId]
+  );
+
+  const episodeForm = useEpisodeForm({
+    friends: allFriends,
+    hiddenParticipantIds,
+    implicitParticipantEntries,
+  });
 
   useEffect(() => {
     setActiveTab('情報');
@@ -365,13 +307,7 @@ export default function DetailScreen() {
     setEpisodeTitleDraft('');
     setEpisodeTitleFilter('');
     setIsEpisodeFormVisible(false);
-    setEditingEpisodeId(null);
-    setNewEpisodeTitle('');
-    setNewEpisodeDate('');
-    setNewEpisodeDescription('');
-    setEpisodeParticipants([]);
-    setEpisodeVisibility([]);
-    setEpisodeFormError('');
+    episodeForm.reset();
     setIsSayingFormVisible(false);
     setEditingSayingId(null);
     setSayingText('');
@@ -379,7 +315,7 @@ export default function DetailScreen() {
     setSayingInputHeight(48);
     setSayingFormError('');
     setShowSayingDatePicker(false);
-  }, [friendId]);
+  }, [friendId, episodeForm.reset]);
 
   const friendNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -418,23 +354,6 @@ export default function DetailScreen() {
     }
     return selectedProfile.authorUserId ? friendNameById.get(selectedProfile.authorUserId) ?? selectedProfile.authorUserId : 'shared';
   }, [selectedProfile, myselfId, friendNameById]);
-  const participantOptions = useMemo(
-    () =>
-      allFriends
-        .filter((item) => item.id !== friendId)
-        .map((item) => ({
-          label: item.name,
-          value: item.id,
-        })),
-    [allFriends, friendId]
-  );
-  const affiliationOptions = useMemo(
-    () =>
-      getDistinctAffiliations()
-        .sort((a, b) => a.localeCompare(b, 'ja'))
-        .map((value) => ({ label: value, value })),
-    [allFriends]
-  );
   const episodePickerCardWidth = useMemo(() => {
     if (episodePickerGridWidth <= 0) {
       return undefined;
@@ -468,11 +387,6 @@ export default function DetailScreen() {
     });
   }, []);
 
-  const visibilityIndividualOptions = useMemo(
-    () => allFriends.map((item) => ({ label: item.name, value: item.id })),
-    [allFriends]
-  );
-
   const sortedEpisodes = useMemo(() => {
     if (!friend) return [];
     return [...friend.episodes].sort((a, b) => b.date.localeCompare(a.date));
@@ -481,7 +395,7 @@ export default function DetailScreen() {
   const filteredEpisodes = useMemo(() => {
     return sortedEpisodes.filter((episode) => {
       if (episodeFilterSelectedIds.size > 0) {
-        const participantIds = [...episode.mainParticipants, ...episode.subParticipants];
+        const participantIds = getEpisodeParticipantFriendIds(episode);
         const matchesSelected = Array.from(episodeFilterSelectedIds).some((id) =>
           participantIds.includes(id)
         );
@@ -732,47 +646,20 @@ export default function DetailScreen() {
   };
 
   const resetEpisodeForm = () => {
-    setEpisodeFormError('');
-    setEditingEpisodeId(null);
-    setNewEpisodeTitle('');
-    setNewEpisodeDate(formatDateToYMD(new Date()));
-    setShowEpisodeDatePicker(false);
-    setNewEpisodeDescription('');
-    setEpisodeParticipants([]);
-    setEpisodeVisibility([]);
+    episodeForm.reset();
   };
 
   const startCreateEpisode = () => {
-    resetEpisodeForm();
+    if (!myselfId) {
+      Alert.alert('案内', '本人が設定されていません。');
+      return;
+    }
+    episodeForm.reset();
     setIsEpisodeFormVisible(true);
   };
 
   const startEditEpisode = (episode: Episode) => {
-    const entries: EpisodeParticipant[] =
-      episode.participantEntries && episode.participantEntries.length > 0
-        ? episode.participantEntries
-        : [
-            ...episode.mainParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: true })),
-            ...episode.subParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: false })),
-          ];
-    const participantDrafts: EpisodeParticipantDraft[] = entries
-      .filter((entry) => !(entry.kind === 'individual' && entry.value === friendId))
-      .map((entry) => ({
-        participantType: entry.kind,
-        value: entry.value,
-      }));
-    setEditingEpisodeId(episode.id);
-    setNewEpisodeTitle(episode.title);
-    setNewEpisodeDate(episode.date);
-    setNewEpisodeDescription(episode.description);
-    setEpisodeParticipants(participantDrafts);
-    setEpisodeVisibility(
-      (episode.visibilityEntries ?? []).map((entry) => ({
-        kind: entry.kind,
-        value: entry.value,
-      }))
-    );
-    setEpisodeFormError('');
+    episodeForm.loadFromEpisode(episode);
     setIsEpisodeFormVisible(true);
   };
 
@@ -784,14 +671,18 @@ export default function DetailScreen() {
         style: 'destructive',
         onPress: () => {
           const target = friend?.episodes.find((item) => item.id === episodeId);
-          const ownerId = target ? resolveEpisodeRecordOwnerId(target, friendId) : friendId;
-          const deleted = deleteEpisode(ownerId, episodeId);
-          if (!deleted) {
-            setEpisodeFormError('エピソードの削除に失敗しました。');
+          if (!target || !myselfId) {
+            Alert.alert('エラー', 'エピソードの削除に失敗しました。');
             return;
           }
-          if (editingEpisodeId === episodeId) {
-            resetEpisodeForm();
+          const authorId = resolveEpisodeRecordOwnerId(target, myselfId);
+          const deleted = deleteEpisode(authorId, episodeId);
+          if (!deleted) {
+            Alert.alert('エラー', 'エピソードの削除に失敗しました。');
+            return;
+          }
+          if (episodeForm.editingEpisodeId === episodeId) {
+            episodeForm.reset();
             setIsEpisodeFormVisible(false);
           }
           loadFriend();
@@ -802,76 +693,33 @@ export default function DetailScreen() {
 
   const handleSaveEpisode = () => {
     if (!friend) {
-      setEpisodeFormError('人物データが見つかりません。');
+      episodeForm.setFormError('人物データが見つかりません。');
       return;
     }
-    const title = newEpisodeTitle.trim();
-    const date = newEpisodeDate.trim();
-    const description = newEpisodeDescription.trim();
-    if (!title) {
-      setEpisodeFormError('タイトルを入力してください。');
+    if (!myselfId) {
+      episodeForm.setFormError('本人が設定されていません。');
       return;
     }
-    if (!date) {
-      setEpisodeFormError('日付を選択してください。');
+    const payload = episodeForm.buildSavePayload();
+    if (!payload) {
       return;
     }
-
-    const participantEntries: EpisodeParticipant[] = episodeParticipants
-      .filter((participant) => participant.value.trim().length > 0)
-      .map((participant) => ({
-        kind: participant.participantType,
-        value: participant.value,
-        isMain: true,
-      }));
-    const visibilityEntries: EpisodeVisibilityEntry[] = episodeVisibility
-      .filter((entry) => entry.value.trim().length > 0)
-      .map((entry) => ({
-        kind: entry.kind,
-        value: entry.value.trim(),
-      }));
-    const previousEpisode = editingEpisodeId
-      ? friend.episodes.find((item) => item.id === editingEpisodeId)
-      : null;
-    const visibilityMode =
-      visibilityEntries.length > 0 ? 'limited' : (previousEpisode?.visibilityMode ?? 'private');
-    const mainParticipants = [friend.id];
-    const subParticipants: string[] = [];
-    if (editingEpisodeId) {
-      const episodeOwnerId = previousEpisode
-        ? resolveEpisodeRecordOwnerId(previousEpisode, friend.id)
-        : friend.id;
-      const updated = updateEpisode(episodeOwnerId, editingEpisodeId, {
-        title,
-        date,
-        description,
-        visibilityMode,
-        mainParticipants,
-        subParticipants,
-        participantEntries,
-        visibilityEntries,
-      });
+    if (episodeForm.editingEpisodeId) {
+      const updated = updateEpisode(myselfId, episodeForm.editingEpisodeId, payload);
       if (!updated) {
-        setEpisodeFormError('エピソードの更新に失敗しました。');
+        episodeForm.setFormError('エピソードの更新に失敗しました。');
         return;
       }
+      episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
     } else {
-      const created = createEpisode(friend.id, {
-        title,
-        date,
-        description,
-        visibilityMode,
-        mainParticipants,
-        subParticipants,
-        participantEntries,
-        visibilityEntries,
-      });
+      const created = createEpisode(payload);
       if (!created) {
-        setEpisodeFormError('エピソードの追加に失敗しました。');
+        episodeForm.setFormError('エピソードの追加に失敗しました。');
         return;
       }
+      episodeForm.persistPhotos(created.id, false);
     }
-    resetEpisodeForm();
+    episodeForm.reset();
     setIsEpisodeFormVisible(false);
     loadFriend();
   };
@@ -1222,7 +1070,8 @@ export default function DetailScreen() {
               <Pressable
                 style={styles.episodeToolbarAddButton}
                 onPress={() => {
-                  if (isEpisodeFormVisible && !editingEpisodeId) {
+                  if (isEpisodeFormVisible && !episodeForm.editingEpisodeId) {
+                    episodeForm.reset();
                     setIsEpisodeFormVisible(false);
                   } else {
                     startCreateEpisode();
@@ -1230,7 +1079,7 @@ export default function DetailScreen() {
                 }}
               >
                 <Text style={styles.episodeAddButtonText}>
-                  {isEpisodeFormVisible && !editingEpisodeId ? '閉じる' : '+ 追加'}
+                  {isEpisodeFormVisible && !episodeForm.editingEpisodeId ? '閉じる' : '+ 追加'}
                 </Text>
               </Pressable>
             </View>
@@ -1269,229 +1118,6 @@ export default function DetailScreen() {
                 <Pressable style={styles.episodePickerSearchButton} onPress={handleParticipantPickerSearch}>
                   <Text style={styles.episodeSearchButtonText}>検索</Text>
                 </Pressable>
-              </View>
-            )}
-
-            {isEpisodeFormVisible && (
-              <View style={styles.episodeFormCard}>
-                <View style={styles.episodeTitleDateRow}>
-                  <TextInput
-                    style={[styles.episodeInput, styles.episodeTitleInput]}
-                    placeholder="タイトル"
-                    placeholderTextColor={c.inputPlaceholder}
-                    value={newEpisodeTitle}
-                    onChangeText={setNewEpisodeTitle}
-                  />
-                  <Pressable
-                    style={[styles.episodeInput, styles.episodeDateInput]}
-                    onPress={() => setShowEpisodeDatePicker(true)}
-                  >
-                    <Text style={newEpisodeDate ? styles.episodeDateText : styles.episodeDatePlaceholder}>
-                      {newEpisodeDate || 'YYYY-MM-DD'}
-                    </Text>
-                  </Pressable>
-                </View>
-                {showEpisodeDatePicker && (
-                  <View style={styles.datePickerWrap}>
-                    <DateTimePicker
-                      value={parseDateString(newEpisodeDate)}
-                      mode="date"
-                      display="spinner"
-                      locale="ja-JP"
-                      themeVariant="dark"
-                      textColor="#ffffff"
-                      style={styles.datePickerSelf}
-                      onChange={(_event: DateTimePickerEvent, selected?: Date) => {
-                        if (Platform.OS !== 'ios') setShowEpisodeDatePicker(false);
-                        if (selected) setNewEpisodeDate(formatDateToYMD(selected));
-                      }}
-                    />
-                    <Pressable style={styles.datePickerDone} onPress={() => setShowEpisodeDatePicker(false)}>
-                      <Text style={styles.datePickerDoneText}>完了</Text>
-                    </Pressable>
-                  </View>
-                )}
-                <View style={styles.episodeParticipantRow}>
-                  <Text style={styles.episodeParticipantLabel}>参加者</Text>
-                  <Pressable
-                    style={styles.addParticipantButton}
-                    onPress={() =>
-                      setEpisodeParticipants((prev) => [
-                        ...prev,
-                        { participantType: 'individual', value: '' },
-                      ])
-                    }
-                  >
-                    <Text style={styles.addParticipantButtonText}>+ 追加</Text>
-                  </Pressable>
-                </View>
-                {episodeParticipants.map((participant, index) => (
-                  <View key={`participant-${index}`} style={styles.participantItemCard}>
-                    <View style={styles.participantTypeRow}>
-                      <Text style={styles.participantTypeLabel}>登録種別</Text>
-                      <Pressable
-                        style={[
-                          styles.roleToggleButton,
-                          participant.participantType === 'individual' && styles.roleToggleButtonActive,
-                        ]}
-                        onPress={() =>
-                          setEpisodeParticipants((prev) => {
-                            const next = [...prev];
-                            next[index] = { ...next[index], participantType: 'individual', value: '' };
-                            return next;
-                          })
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.roleToggleButtonText,
-                            participant.participantType === 'individual' && styles.roleToggleButtonTextActive,
-                          ]}
-                        >
-                          個人
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        style={[
-                          styles.roleToggleButton,
-                          participant.participantType === 'group' && styles.roleToggleButtonActive,
-                        ]}
-                        onPress={() =>
-                          setEpisodeParticipants((prev) => {
-                            const next = [...prev];
-                            next[index] = { ...next[index], participantType: 'group', value: '' };
-                            return next;
-                          })
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.roleToggleButtonText,
-                            participant.participantType === 'group' && styles.roleToggleButtonTextActive,
-                          ]}
-                        >
-                          所属
-                        </Text>
-                      </Pressable>
-                    </View>
-                    <View style={styles.participantItemTopRow}>
-                      <SelectInput
-                        value={participant.value}
-                        placeholder={
-                          participant.participantType === 'individual' ? '名前（選択式）' : '所属グループ（選択式）'
-                        }
-                        options={participant.participantType === 'individual' ? participantOptions : affiliationOptions}
-                        onChange={(value) =>
-                          setEpisodeParticipants((prev) => {
-                            const next = [...prev];
-                            next[index] = { ...next[index], value };
-                            return next;
-                          })
-                        }
-                        style={styles.participantNameSelect}
-                      />
-                    </View>
-                  </View>
-                ))}
-                <View style={styles.episodeParticipantRow}>
-                  <Text style={styles.episodeParticipantLabel}>公開範囲</Text>
-                  <Pressable
-                    style={styles.addParticipantButton}
-                    onPress={() =>
-                      setEpisodeVisibility((prev) => [...prev, { kind: 'individual', value: '' }])
-                    }
-                  >
-                    <Text style={styles.addParticipantButtonText}>+ 追加</Text>
-                  </Pressable>
-                </View>
-                {episodeVisibility.map((entry, index) => (
-                  <View key={`episode-vis-${index}`} style={styles.participantItemCard}>
-                    <View style={styles.participantTypeRow}>
-                      <Text style={styles.participantTypeLabel}>登録種別</Text>
-                      <Pressable
-                        style={[
-                          styles.roleToggleButton,
-                          entry.kind === 'individual' && styles.roleToggleButtonActive,
-                        ]}
-                        onPress={() =>
-                          setEpisodeVisibility((prev) => {
-                            const next = [...prev];
-                            next[index] = { ...next[index], kind: 'individual', value: '' };
-                            return next;
-                          })
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.roleToggleButtonText,
-                            entry.kind === 'individual' && styles.roleToggleButtonTextActive,
-                          ]}
-                        >
-                          個人
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        style={[styles.roleToggleButton, entry.kind === 'group' && styles.roleToggleButtonActive]}
-                        onPress={() =>
-                          setEpisodeVisibility((prev) => {
-                            const next = [...prev];
-                            next[index] = { ...next[index], kind: 'group', value: '' };
-                            return next;
-                          })
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.roleToggleButtonText,
-                            entry.kind === 'group' && styles.roleToggleButtonTextActive,
-                          ]}
-                        >
-                          所属
-                        </Text>
-                      </Pressable>
-                    </View>
-                    <View style={styles.participantItemTopRow}>
-                      <SelectInput
-                        value={entry.value}
-                        placeholder={
-                          entry.kind === 'individual' ? '名前（選択式）' : '所属グループ（選択式）'
-                        }
-                        options={entry.kind === 'individual' ? visibilityIndividualOptions : affiliationOptions}
-                        onChange={(value) =>
-                          setEpisodeVisibility((prev) => {
-                            const next = [...prev];
-                            next[index] = { ...next[index], value };
-                            return next;
-                          })
-                        }
-                        style={styles.participantNameSelect}
-                      />
-                    </View>
-                  </View>
-                ))}
-                <TextInput
-                  style={styles.episodeDescriptionInput}
-                  placeholder="説明文の記入（記入式）"
-                  placeholderTextColor={c.inputPlaceholder}
-                  multiline
-                  value={newEpisodeDescription}
-                  onChangeText={setNewEpisodeDescription}
-                />
-                {episodeFormError ? <Text style={styles.episodeErrorText}>{episodeFormError}</Text> : null}
-                <View style={styles.episodeFormActions}>
-                  <Pressable
-                    style={styles.episodeCancelButton}
-                    onPress={() => {
-                      resetEpisodeForm();
-                      setIsEpisodeFormVisible(false);
-                    }}
-                  >
-                    <Text style={styles.episodeCancelButtonText}>キャンセル</Text>
-                  </Pressable>
-                  <Pressable style={styles.episodeCreateButton} onPress={handleSaveEpisode}>
-                    <Text style={styles.episodeCreateButtonText}>{editingEpisodeId ? '更新' : '保存'}</Text>
-                  </Pressable>
-                </View>
               </View>
             )}
 
@@ -1691,6 +1317,18 @@ export default function DetailScreen() {
         </View>
         </View>
       </KeyboardAwareScrollView>
+      <EpisodeFormOverlay
+        visible={isEpisodeFormVisible}
+        form={episodeForm}
+        friends={allFriends}
+        affiliationOptions={affiliationOptions}
+        experienceOptions={experienceOptions}
+        onClose={() => {
+          episodeForm.reset();
+          setIsEpisodeFormVisible(false);
+        }}
+        onSave={handleSaveEpisode}
+      />
     </SafeAreaView>
   );
 }

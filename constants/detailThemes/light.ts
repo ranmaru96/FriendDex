@@ -19,6 +19,13 @@ const unifiedChip: InfoChipStyle = {
   borderWidth: 1,
 };
 
+const grayChip: InfoChipStyle = {
+  backgroundColor: c.tagChipBg,
+  borderColor: '#b8b8c4',
+  color: '#888888',
+  borderWidth: 1,
+};
+
 export const lightDetailDesign: DetailDesignBundle = {
   variant: 'light',
   label: 'ライト ver',
@@ -108,5 +115,6 @@ export const lightDetailDesign: DetailDesignBundle = {
     性格: unifiedChip,
     好物: unifiedChip,
     苦手: unifiedChip,
+    公開先: grayChip,
   },
 };

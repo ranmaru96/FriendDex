@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import {
   Alert,
   Dimensions,
@@ -12,7 +12,9 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { useDetailDesign } from '../contexts/DetailDesignContext';
+import { createDetailStyles } from '../utils/detailStyles';
 import {
   addCommonItemOption,
   createGroupOption,
@@ -28,20 +30,46 @@ import {
 } from '../db';
 import { CommonItemKind, Friend } from '../types';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { AddCircleButton } from '@/components/AddCircleButton';
 
-type CommonItemTabKey = '所属' | '経験' | '性格' | '公開先';
+type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先';
 type Option = { label: string; value: string };
 
-const TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '公開先'];
+const TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '好物', '苦手', '公開先'];
+
+const TAB_ICONS: Record<CommonItemTabKey, ComponentProps<typeof Ionicons>['name']> = {
+  所属: 'people-outline',
+  経験: 'school-outline',
+  性格: 'happy-outline',
+  好物: 'heart-outline',
+  苦手: 'thumbs-down-outline',
+  公開先: 'eye-outline',
+};
+
+const DEFAULT_CHIP_STYLE = {
+  backgroundColor: 'transparent' as const,
+  borderColor: '#b8b8c4',
+  color: '#888888',
+  borderWidth: 1.5,
+};
 
 const TAB_KIND_MAP: Record<CommonItemTabKey, CommonItemKind> = {
   所属: 'affiliation',
   経験: 'experience',
   性格: 'personality',
+  好物: 'like',
+  苦手: 'dislike',
   公開先: 'visibility_group',
 };
 
-const GROUP_KINDS: CommonItemKind[] = ['affiliation', 'experience', 'personality', 'visibility_group'];
+const GROUP_KINDS: CommonItemKind[] = [
+  'affiliation',
+  'experience',
+  'personality',
+  'like',
+  'dislike',
+  'visibility_group',
+];
 const PERSON_COLUMNS = 3;
 const PERSON_GAP = 6;
 const GROUP_EDITOR_PADDING = 14;
@@ -98,7 +126,9 @@ function SelectField({ label, value, options, onValueChange }: {
 }
 
 export default function CommonItemsScreen() {
-  const router = useRouter();
+  const { bundle } = useDetailDesign();
+  const detailStyles = useMemo(() => createDetailStyles(bundle.colors), [bundle.colors]);
+  const themeColors = bundle.colors;
   const [activeTab, setActiveTab] = useState<CommonItemTabKey>('所属');
   const [mergedLabels, setMergedLabels] = useState<string[]>([]);
 
@@ -297,6 +327,11 @@ export default function CommonItemsScreen() {
     ]);
   };
 
+  const activeChipStyle = bundle.infoChipStyles[activeTab] ?? DEFAULT_CHIP_STYLE;
+
+  const getTabAccentColor = (tab: CommonItemTabKey) =>
+    bundle.infoChipStyles[tab]?.borderColor ?? themeColors.accent;
+
   const renderPersonRow = ({ item }: { item: Friend }) => {
     const checked = selectedMemberIds.has(item.id);
     return (
@@ -310,48 +345,96 @@ export default function CommonItemsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: themeColors.background }]}>
       <View style={styles.container}>
         <View style={styles.body}>
-          <View style={styles.tabSection}>
-            <View style={styles.tabRowContainer}>
-              <View style={styles.tabButtonRow}>
-                {TAB_ORDER.map((tab) => (
-                  <Pressable
-                    key={tab}
-                    onPress={() => setActiveTab(tab)}
-                    style={[styles.tabButton, activeTab === tab ? styles.tabButtonActive : styles.tabButtonInactive]}
-                  >
-                    <Text
+          <View style={[detailStyles.tabSection, styles.tabSectionFill]}>
+            <View style={[detailStyles.tabTrack, styles.tabTrackAligned]}>
+              <View style={detailStyles.tabInner}>
+                {TAB_ORDER.map((tab) => {
+                  const isActive = activeTab === tab;
+                  const tabColor = getTabAccentColor(tab);
+                  return (
+                    <Pressable
+                      key={tab}
+                      onPress={() => setActiveTab(tab)}
                       style={[
-                        styles.tabButtonText,
-                        activeTab === tab ? styles.tabButtonTextActive : styles.tabButtonTextInactive,
+                        detailStyles.tabPill,
+                        isActive && {
+                          borderColor: tabColor,
+                          backgroundColor: tabColor,
+                        },
                       ]}
+                      accessibilityRole="tab"
+                      accessibilityState={{ selected: isActive }}
+                      accessibilityLabel={tab}
                     >
-                      {tab}
-                    </Text>
-                  </Pressable>
-                ))}
+                      <View style={detailStyles.tabPillContent}>
+                        <View
+                          style={[
+                            detailStyles.tabPillIconCircle,
+                            isActive
+                              ? detailStyles.tabPillIconCircleActive
+                              : { backgroundColor: tabColor },
+                          ]}
+                        >
+                          <Ionicons name={TAB_ICONS[tab]} size={16} color={themeColors.onAccent} />
+                        </View>
+                        <Text
+                          style={[
+                            detailStyles.tabPillCaption,
+                            isActive ? detailStyles.tabPillCaptionActive : detailStyles.tabPillCaptionInactive,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {tab}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  );
+                })}
               </View>
             </View>
 
-            <View style={styles.tabContentArea}>
-              <ScrollView contentContainerStyle={[styles.tagsContainer, { paddingBottom: 80 }]}>
-                {mergedLabels.map((label) => (
-                  <Pressable
-                    key={label}
-                    style={styles.valueTag}
-                    onLongPress={() => handleLongPressTag(label)}
-                    delayLongPress={300}
-                  >
-                    <Text style={styles.valueTagText}>{label}</Text>
-                  </Pressable>
-                ))}
-              </ScrollView>
-              <View style={styles.addButtonRow}>
-                <Pressable style={styles.addButton} onPress={openAddEditor}>
-                  <Text style={styles.addButtonText}>+</Text>
-                </Pressable>
+            <View style={[detailStyles.tabContentArea, styles.tabContentInner]}>
+              <View
+                style={[
+                  styles.tagsPanel,
+                  {
+                    borderColor: themeColors.border,
+                    backgroundColor: themeColors.tabPaneBackground,
+                  },
+                ]}
+              >
+                <ScrollView
+                  style={styles.tagsScroll}
+                  contentContainerStyle={styles.tagsContainer}
+                  showsVerticalScrollIndicator={false}
+                >
+                  {mergedLabels.map((label) => (
+                    <Pressable
+                      key={label}
+                      style={[
+                        styles.valueChip,
+                        {
+                          backgroundColor: activeChipStyle.backgroundColor,
+                          borderColor: activeChipStyle.borderColor,
+                          borderWidth: activeChipStyle.borderWidth,
+                        },
+                      ]}
+                      onLongPress={() => handleLongPressTag(label)}
+                      delayLongPress={300}
+                    >
+                      <Text style={[styles.valueChipText, { color: activeChipStyle.color }]}>{label}</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+                <View style={styles.addButtonRow}>
+                  <AddCircleButton
+                    onPress={openAddEditor}
+                    accessibilityLabel={`${activeTab}を追加`}
+                  />
+                </View>
               </View>
             </View>
           </View>
@@ -463,119 +546,60 @@ export default function CommonItemsScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: '#f2f5f8',
   },
   container: {
     flex: 1,
-    paddingTop: 8,
+    paddingTop: Spacing.sm,
   },
   body: {
     flex: 1,
-    marginHorizontal: 12,
-    marginBottom: 12,
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
   },
-  tabSection: {
+  tabSectionFill: {
+    flex: 1,
+  },
+  tabTrackAligned: {
+    marginHorizontal: Spacing.sm,
+  },
+  tabContentInner: {
+    flex: 1,
+    flexDirection: 'column',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    minHeight: 0,
+  },
+  tagsPanel: {
     flex: 1,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
-    backgroundColor: '#e9e9e9',
-    padding: 10,
+    padding: Spacing.sm,
+    minHeight: 0,
   },
-  tabRowContainer: {
-    backgroundColor: 'transparent',
-    paddingTop: 0,
-    paddingBottom: 0,
-    paddingHorizontal: 0,
-    margin: 0,
-  },
-  tabButtonRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 6,
-  },
-  tabButton: {
+  tagsScroll: {
     flex: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderColor: '#888',
-    borderWidth: 2,
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-    marginBottom: 0,
-  },
-  tabButtonInactive: {
-    backgroundColor: '#cfcfcf',
-    borderBottomWidth: 2,
-  },
-  tabButtonActive: {
-    backgroundColor: '#efefef',
-    borderBottomWidth: 0,
-  },
-  tabButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  tabButtonTextInactive: {
-    color: '#5a5a5a',
-  },
-  tabButtonTextActive: {
-    color: '#4a4a4a',
-  },
-  tabContentArea: {
-    flex: 1,
-    borderColor: '#888',
-    borderWidth: 2,
-    borderTopWidth: 0,
-    borderRadius: Radius.sm,
-    borderTopLeftRadius: 0,
-    borderTopRightRadius: 0,
-    backgroundColor: '#efefef',
-    paddingHorizontal: 10,
-    paddingVertical: 10,
   },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'flex-start',
-    gap: 10,
-    paddingBottom: 12,
+    gap: 8,
+    paddingBottom: Spacing.sm,
+    flexGrow: 1,
   },
-  valueTag: {
-    borderWidth: 2,
-    borderColor: '#d0d0d0',
-    borderRadius: 16,
-    backgroundColor: '#f5f5f5',
-    paddingHorizontal: 16,
-    paddingVertical: 7,
+  valueChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 5,
+    borderRadius: Radius.full,
   },
-  valueTagText: {
-    color: Theme.textSecondary,
-    fontSize: 16,
-    fontWeight: '700',
+  valueChipText: {
+    fontSize: 15,
+    fontWeight: '500',
   },
   addButtonRow: {
     marginTop: 'auto',
     alignItems: 'flex-end',
-    paddingTop: 10,
-  },
-  addButton: {
-    minWidth: 84,
-    borderWidth: 2,
-    borderColor: '#039be5',
-    borderRadius: 10,
-    backgroundColor: '#b3e5fc',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 4,
-  },
-  addButtonText: {
-    color: '#4b4b4b',
-    fontSize: 34,
-    fontWeight: '900',
-    lineHeight: 36,
+    paddingTop: Spacing.sm,
   },
   /* Simple editor (経験/性格) */
   editorOverlay: {

@@ -45,6 +45,13 @@
         {
           "cameraPermission": "QRコードをスキャンして友達を登録するために、カメラへのアクセスが必要です。"
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "QRコード名刺をフォトライブラリに保存するために、写真へのアクセスが必要です。",
+          "savePhotosPermission": "QRコード名刺をフォトライブラリに保存するために、写真の保存権限が必要です。"
+        }
       ]
     ],
     "extra": {

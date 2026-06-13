@@ -1,22 +1,40 @@
 import { Episode, EpisodeParticipant, EpisodeVisibilityMode } from '../types';
 
-/** update/delete に渡すプロフィール所有者 ID */
+/** update/delete に渡す author（公開者）の friend ID */
 export function resolveEpisodeRecordOwnerId(episode: Episode, profileFriendId: string): string {
   const author = episode.authorFriendId.trim();
   return author || profileFriendId;
 }
 
-/**
- * 編集・削除可能か。
- * 現状は共有エピソードがないため、本人設定済みならすべて操作可能。
- * TODO: 他ユーザーから共有されたエピソード（author !== myself かつ shared）では false にする。
- */
+/** 編集・削除可能か（自分が公開したエピソードのみ） */
 export function canManageEpisode(
-  _episode: Episode,
+  episode: Episode,
   _profileFriendId: string,
   myselfId: string | null
 ): boolean {
-  return myselfId !== null;
+  if (myselfId === null) {
+    return false;
+  }
+  return episode.authorFriendId.trim() === myselfId;
+}
+
+export function mergeParticipantEntries(...lists: EpisodeParticipant[][]): EpisodeParticipant[] {
+  const seen = new Set<string>();
+  const merged: EpisodeParticipant[] = [];
+  lists.forEach((list) => {
+    list.forEach((entry) => {
+      const value = entry.value.trim();
+      if (!value) {
+        return;
+      }
+      const key = `${entry.kind}:${value}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        merged.push({ kind: entry.kind, value });
+      }
+    });
+  });
+  return merged;
 }
 
 export function getVisibilityModeLabel(mode: EpisodeVisibilityMode): string {
@@ -33,23 +51,15 @@ export function getVisibilityModeLabel(mode: EpisodeVisibilityMode): string {
 export function buildParticipantChips(
   episode: Episode,
   friendNameById: Map<string, string>
-): { id: string; label: string; isMain: boolean }[] {
-  const entries: EpisodeParticipant[] =
-    episode.participantEntries && episode.participantEntries.length > 0
-      ? episode.participantEntries
-      : [
-          ...episode.mainParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: true })),
-          ...episode.subParticipants.map((id) => ({ kind: 'individual' as const, value: id, isMain: false })),
-        ];
-  const unique = new Map<string, { id: string; label: string; isMain: boolean }>();
-  entries.forEach((entry) => {
+): { id: string; label: string }[] {
+  const unique = new Map<string, { id: string; label: string }>();
+  (episode.participantEntries ?? []).forEach((entry) => {
     if (!entry.value.trim()) return;
     const key = `${entry.kind}:${entry.value}`;
     if (!unique.has(key)) {
       unique.set(key, {
         id: key,
         label: entry.kind === 'group' ? entry.value : friendNameById.get(entry.value) ?? entry.value,
-        isMain: true,
       });
     }
   });
