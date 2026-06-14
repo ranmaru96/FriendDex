@@ -44,7 +44,7 @@ export default function BottomNav({ active }: BottomNavProps) {
             <Ionicons
               name={tab.icon}
               size={22}
-              color={isActive ? '#ffffff' : '#888888'}
+              color={isActive ? '#ffffff' : Theme.tabBarInactiveIcon}
             />
             <Text style={[styles.label, isActive && styles.labelActive]}>{tab.label}</Text>
           </TouchableOpacity>
@@ -73,12 +73,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   tabPillActive: {
-    backgroundColor: Theme.screenBase,
+    backgroundColor: Theme.tabBarActivePill,
   },
   label: {
     fontSize: 9,
     fontWeight: '500',
-    color: '#888888',
+    color: Theme.tabBarInactiveLabel,
   },
   labelActive: {
     color: '#ffffff',

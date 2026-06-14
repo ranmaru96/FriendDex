@@ -395,13 +395,13 @@ const styles = StyleSheet.create({
   },
   cardPhotoPlaceholderText: {
     fontSize: 12,
-    color: '#6a7090',
+    color: Theme.homeCardPhotoPlaceholderText,
   },
   cardMainName: {
     width: '100%',
     fontSize: 13,
     fontWeight: '800',
-    color: '#e8eaf6',
+    color: Theme.homeCardName,
     textAlign: 'center',
     letterSpacing: 0.5,
   },

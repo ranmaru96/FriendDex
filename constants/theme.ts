@@ -3,7 +3,7 @@
 /** プリミティブ（色の定義はここだけ） */
 export const Palette = {
   background: '#F8F9FA',
-  surface: '#FFFFFF',
+  surface: '#d8d8de',
   card: '#FFFFFF',
 
   border: '#E2E8F0',
@@ -24,21 +24,24 @@ export const Palette = {
   overlay: 'rgba(43, 45, 66, 0.45)',
 
   /** Home 人物カード一覧（カード外枠・写真外枠で共通） */
-  homeCardBorder: '#d8d8de',
-  homeCardBackground: '#333333',
-  homeCardPhotoInnerBorder: '#333333',
-  homeCardPhotoPlaceholder: '#333333',
-  homeCardName: '#2B2D42',
+  homeCardBorder: '#eeeeee',
+  homeCardBackground: '#d8d8de',
+  homeCardPhotoInnerBorder: '#d8d8de',
+  homeCardPhotoPlaceholder: '#d8d8de',
+  homeCardPhotoPlaceholderText: '#444444',
+  homeCardName: '#444444',
 
   /** 各画面 SafeArea のベース背景（カード・サーフェスには使わない） */
-  screenBase: '#9E9E9E',
+  screenBase: '#444444',
 
-  /** ボトムタブバーのベース背景（アクティブピルは screenBase） */
+  /** ボトムタブバーのベース背景 */
   tabBarBase: '#d8d8de',
   tabBarBorder: '#b8b8c4',
+  /** 非アクティブアイコン・非アクティブラベル & アクティブタブピル（常に同値） */
+  tabBarEmphasis: '#444444',
 
   /** 一覧・エピソードなど上部検索エリアのベース背景 */
-  searchAreaBase: '#403D39',
+  searchAreaBase: '#d8d8de',
 } as const;
 
 /** セマンティック（画面・コンポーネントが参照） */
@@ -130,6 +133,9 @@ export const LightTheme = {
   navPillActive: Palette.accentLight,
   navInactive: Palette.textSecondary,
   navActive: Palette.textPrimary,
+  tabBarInactiveIcon: Palette.tabBarEmphasis,
+  tabBarInactiveLabel: Palette.tabBarEmphasis,
+  tabBarActivePill: Palette.tabBarEmphasis,
 } as const;
 
 export const RPGTheme = {
