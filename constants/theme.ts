@@ -24,15 +24,24 @@ export const Palette = {
   overlay: 'rgba(43, 45, 66, 0.45)',
 
   /** Home 人物カード一覧（カード外枠・写真外枠で共通） */
-  homeCardBorder: '#eeeeee',
   homeCardBackground: '#d8d8de',
-  homeCardPhotoInnerBorder: '#d8d8de',
-  homeCardPhotoPlaceholder: '#d8d8de',
+  homeCardPhotoInnerBorder: '#FFFFFF',
+  homeCardPhotoPlaceholder: '#FFFFFF',
   homeCardPhotoPlaceholderText: '#444444',
   homeCardName: '#444444',
+  /** ProfileCompleteness 段階別の homeCardBorder（グレー統一） */
+  homeCardBorderLow: '#dddddd',
+  homeCardBorderMid: '#bbbbbb',
+  homeCardBorderHigh: '#888888',
+  homeCardBorderComplete: '#666666',
+  homeCardBorderWidth: 2,
 
   /** 各画面 SafeArea のベース背景（カード・サーフェスには使わない） */
   screenBase: '#444444',
+  /** hideNav 系サブ画面トップバーの文字色 */
+  topBarText: '#FFFFFF',
+  /** hideNav 系サブ画面トップバーの下線 */
+  topBarBorder: 'rgba(255, 255, 255, 0.15)',
 
   /** ボトムタブバーのベース背景 */
   tabBarBase: '#d8d8de',
@@ -41,7 +50,9 @@ export const Palette = {
   tabBarEmphasis: '#444444',
 
   /** 一覧・エピソードなど上部検索エリアのベース背景 */
-  searchAreaBase: '#d8d8de',
+  searchAreaBase: '#FFFFFF',
+  /** 検索エリア内の入力・セレクト枠（tabBarBorder と同系） */
+  searchFieldBorder: '#b8b8c4',
 } as const;
 
 /** セマンティック（画面・コンポーネントが参照） */
@@ -65,6 +76,7 @@ export const LightTheme = {
   // --- 入力 ---
   inputBg: Palette.card,
   inputBorder: Palette.border,
+  searchFieldBorder: Palette.searchFieldBorder,
   inputText: Palette.textPrimary,
   inputPlaceholder: Palette.textSecondary,
 
@@ -232,6 +244,16 @@ export const BorderWidth = {
 } as const;
 
 export const Radius = { sm: 8, md: 12, lg: 14, photo: 10, full: 999 } as const;
+
+/** 一覧・Detail の人物カード共通シャドウ */
+export const HomeCardElevation = {
+  shadowColor: '#000000',
+  shadowOffset: { width: 0, height: 8 },
+  shadowOpacity: 0.65,
+  shadowRadius: 12,
+  elevation: 16,
+} as const;
+
 export const Spacing = { xs: 4, sm: 8, md: 12, lg: 16 } as const;
 /** ボトムタブ画面の左右余白（一覧・共通項目・カレンダー・エピソード・ツール・友達） */
 export const ScreenHorizontalInset = Spacing.lg;

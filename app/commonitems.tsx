@@ -32,13 +32,13 @@ import { CommonItemKind, Friend } from '../types';
 import { Theme, Radius, Typography, Spacing, ScreenHorizontalInset } from '@/constants/theme';
 import { AddCircleButton } from '@/components/AddCircleButton';
 
-type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先';
+type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先' | 'エピソードタグ';
 type Option = { label: string; value: string };
 
 const TAGS_SCROLL_MAX_HEIGHT = Math.max(120, Dimensions.get('window').height - 280);
 const TAB_TAG_DIVIDER_INSET = Spacing.md;
 
-const TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '好物', '苦手', '公開先'];
+const TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '好物', '苦手', '公開先', 'エピソードタグ'];
 
 const TAB_ICONS: Record<CommonItemTabKey, ComponentProps<typeof Ionicons>['name']> = {
   所属: 'people-outline',
@@ -47,6 +47,7 @@ const TAB_ICONS: Record<CommonItemTabKey, ComponentProps<typeof Ionicons>['name'
   好物: 'heart-outline',
   苦手: 'thumbs-down-outline',
   公開先: 'eye-outline',
+  エピソードタグ: 'pricetags-outline',
 };
 
 const DEFAULT_CHIP_STYLE = {
@@ -63,6 +64,7 @@ const TAB_KIND_MAP: Record<CommonItemTabKey, CommonItemKind> = {
   好物: 'like',
   苦手: 'dislike',
   公開先: 'visibility_group',
+  エピソードタグ: 'episode_tag',
 };
 
 const GROUP_KINDS: CommonItemKind[] = [
@@ -567,6 +569,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 0,
     marginTop: 0,
     marginBottom: 0,
+    backgroundColor: Theme.card,
   },
   itemsPanel: {
     alignSelf: 'stretch',

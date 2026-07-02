@@ -20,6 +20,7 @@
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "プロフィール写真の選択・保存などのために、写真ライブラリへのアクセスが必要になる場合があります。",
         "NSCameraUsageDescription": "QRコードをスキャンして友達を登録するために、カメラへのアクセスが必要です。",
+        "NSUserNotificationsUsageDescription": "予定のリマインダーをお知らせするために、通知の許可が必要です。",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -51,6 +52,13 @@
         {
           "photosPermission": "QRコード名刺をフォトライブラリに保存するために、写真へのアクセスが必要です。",
           "savePhotosPermission": "QRコード名刺をフォトライブラリに保存するために、写真の保存権限が必要です。"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#4E9A87"
         }
       ]
     ],

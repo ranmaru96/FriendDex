@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import { HomeCardElevation, Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import type { DetailThemeColors } from '@/constants/detailThemes';
 
 const EPISODE_PICKER_GAP = 6;
@@ -16,11 +16,14 @@ export function createDetailStyles(c: DetailThemeColors) {
     paddingBottom: 24,
     gap: 10,
   },
-  profileCardOuter: {
-    borderWidth: c.profileCardBorderWidth,
-    borderColor: c.profileCardBorderColor,
+  profileCardShadow: {
     borderRadius: 12,
     marginHorizontal: 6,
+    backgroundColor: 'transparent',
+    ...HomeCardElevation,
+  },
+  profileCardOuter: {
+    borderRadius: 12,
     overflow: 'hidden',
     backgroundColor: c.card,
   },
@@ -38,25 +41,31 @@ export function createDetailStyles(c: DetailThemeColors) {
     flexDirection: 'row',
     gap: 12,
   },
+  heroPhotoOuterFrame: {
+    borderWidth: 2,
+    borderRadius: Radius.md,
+    overflow: 'hidden',
+  },
+  heroPhotoInnerFrame: {
+    borderWidth: 2,
+    borderColor: Theme.homeCardPhotoInnerBorder,
+    borderRadius: Radius.md - 2,
+    overflow: 'hidden',
+  },
   heroPhoto: {
     width: 132,
     height: 132,
-    borderRadius: Radius.md,
   },
-  heroPhotoInitial: {
+  heroPhotoPlaceholder: {
     width: 132,
     height: 132,
-    borderRadius: Radius.md,
-    backgroundColor: c.heroPhotoInitialBg,
-    borderWidth: 1.5,
-    borderColor: c.heroPhotoInitialBorder,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  heroPhotoInitialText: {
-    fontSize: 48,
-    fontWeight: '500',
-    color: c.heroPhotoInitialText,
+  heroPhotoPlaceholderText: {
+    fontSize: 12,
+    color: Theme.homeCardPhotoPlaceholderText,
   },
   heroIdentityCol: {
     flex: 1,
@@ -84,7 +93,7 @@ export function createDetailStyles(c: DetailThemeColors) {
     width: 30,
     height: 30,
     borderRadius: Radius.sm,
-    backgroundColor: c.card,
+    backgroundColor: '#F8F8F8',
     borderWidth: 1,
     borderColor: c.border,
     alignItems: 'center',
@@ -94,7 +103,7 @@ export function createDetailStyles(c: DetailThemeColors) {
     width: 30,
     height: 30,
     borderRadius: Radius.sm,
-    backgroundColor: c.card,
+    backgroundColor: '#F8F8F8',
     borderWidth: 1,
     borderColor: c.border,
     alignItems: 'center',
@@ -142,7 +151,7 @@ export function createDetailStyles(c: DetailThemeColors) {
     color: c.heroTagText,
   },
   heroTagCategory: {
-    backgroundColor: c.bgElevated,
+    backgroundColor: '#FFFFFF',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 20,
@@ -164,7 +173,7 @@ export function createDetailStyles(c: DetailThemeColors) {
   },
   heroStatCell: {
     flex: 1,
-    backgroundColor: c.statBg,
+    backgroundColor: '#F8F8F8',
     borderWidth: 0.5,
     borderColor: c.statBorder,
     borderRadius: 10,
@@ -222,7 +231,7 @@ export function createDetailStyles(c: DetailThemeColors) {
   },
   tabSection: {
     gap: 0,
-    backgroundColor: c.bgBase,
+    backgroundColor: c.heroBackground,
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
     borderBottomLeftRadius: 12,
@@ -306,7 +315,7 @@ export function createDetailStyles(c: DetailThemeColors) {
     textAlign: 'right',
   },
   tabContentArea: {
-    backgroundColor: c.bgBase,
+    backgroundColor: c.heroBackground,
     margin: 0,
     paddingTop: 0,
   },
@@ -321,7 +330,7 @@ export function createDetailStyles(c: DetailThemeColors) {
     backgroundColor: c.bgBase,
   },
   multiValueCard: {
-    backgroundColor: c.multiValueCardBackground,
+    backgroundColor: c.heroBackground,
     paddingHorizontal: 14,
     paddingTop: 14,
     paddingBottom: 0,
@@ -742,6 +751,10 @@ export function createDetailStyles(c: DetailThemeColors) {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 6,
+  },
+  episodeParticipantChipList: {
+    flex: 1,
+    minWidth: 0,
   },
   episodeParticipantTagScroll: {
     flex: 1,

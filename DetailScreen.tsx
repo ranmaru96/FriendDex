@@ -18,9 +18,10 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import type { DetailTabKey } from '@/constants/detailThemes';
-import { Radius, Typography, Spacing } from '@/constants/theme';
+import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
 import { useDetailDesign } from './contexts/DetailDesignContext';
 import { createDetailStyles } from './utils/detailStyles';
+import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
 import type { DetailThemeColors } from '@/constants/detailThemes';
 import {
   createEpisode,
@@ -30,6 +31,8 @@ import {
   getAllFriends,
   getDistinctAffiliations,
   getDistinctExperiences,
+  getMergedEpisodeTagLabels,
+  getEpisodeById,
   getEpisodeParticipantFriendIds,
   getFriendById,
   getMyself,
@@ -54,7 +57,20 @@ import {
   resolveEpisodeRecordOwnerId,
 } from './utils/episodeHelpers';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
-import { useEpisodeForm } from '@/hooks/useEpisodeForm';
+import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModal';
+import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
+import { useEpisodeForm, type EpisodeSavePayload } from '@/hooks/useEpisodeForm';
+import {
+  applyEventIdToEpisode,
+  buildEpisodeEventLinkInput,
+  buildEpisodeEventLinkInputFromSavePayload,
+  createEventAndLinkEpisode,
+  createEventIdForEpisodeInput,
+  EVENT_CREATE_FAILED_MESSAGE,
+  runEpisodeEventLinkFlow,
+  runNewEpisodeEventLinkFlow,
+} from './utils/episodeEventLinking';
+import type { EpisodeEventMatch } from './utils/eventEpisodeSync';
 
 const EPISODE_PICKER_COLUMNS = 3;
 const EPISODE_PICKER_GAP = 6;
@@ -113,25 +129,6 @@ const formatProfileSinceYear = (createdAt: string | undefined): string => {
   }
   const year = new Date(createdAt).getFullYear();
   return Number.isNaN(year) ? '—' : String(year);
-};
-
-const computeProfileCompleteness = (friend: Friend, hasPhoto: boolean): number => {
-  const completenessFields = [
-    hasPhoto ? friend.photoUri : null,
-    friend.mbti?.trim() || null,
-    friend.birthday?.trim() || null,
-    friend.origin?.trim() || null,
-    friend.residence?.trim() || null,
-    friend.height,
-    friend.weight,
-    friend.description?.trim() || null,
-    friend.category?.trim() || null,
-    friend.affiliations.some((value) => value.trim()) ? 'ok' : null,
-    friend.personalities.some((value) => value.trim()) ? 'ok' : null,
-    friend.likes.some((value) => value.trim()) ? 'ok' : null,
-    friend.dislikes.some((value) => value.trim()) ? 'ok' : null,
-  ];
-  return Math.round((completenessFields.filter(Boolean).length / completenessFields.length) * 100);
 };
 
 type Option = {
@@ -215,8 +212,17 @@ export default function DetailScreen() {
   const [episodeTitleDraft, setEpisodeTitleDraft] = useState('');
   const [episodeTitleFilter, setEpisodeTitleFilter] = useState('');
   const [isEpisodeFormVisible, setIsEpisodeFormVisible] = useState(false);
+  const [editLinkModalVisible, setEditLinkModalVisible] = useState(false);
+  const [editLinkCandidates, setEditLinkCandidates] = useState<EpisodeEventMatch[]>([]);
+  const [editLinkTarget, setEditLinkTarget] = useState<{ episode: Episode; authorId: string } | null>(
+    null
+  );
+  const [createLinkModalVisible, setCreateLinkModalVisible] = useState(false);
+  const [createLinkCandidates, setCreateLinkCandidates] = useState<EpisodeEventMatch[]>([]);
+  const [pendingCreatePayload, setPendingCreatePayload] = useState<EpisodeSavePayload | null>(null);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
+  const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
   const [showSayingDatePicker, setShowSayingDatePicker] = useState(false);
   const [isSayingFormVisible, setIsSayingFormVisible] = useState(false);
   const [editingSayingId, setEditingSayingId] = useState<string | null>(null);
@@ -268,6 +274,7 @@ export default function DetailScreen() {
     setAllFriends(getAllFriends());
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
+    setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
   }, [friendId]);
 
   useFocusEffect(
@@ -320,6 +327,11 @@ export default function DetailScreen() {
   const friendNameById = useMemo(() => {
     const map = new Map<string, string>();
     allFriends.forEach((item) => map.set(item.id, item.name));
+    return map;
+  }, [allFriends]);
+  const friendPhotoById = useMemo(() => {
+    const map = new Map<string, string | null>();
+    allFriends.forEach((item) => map.set(item.id, item.photoUri ?? null));
     return map;
   }, [allFriends]);
   const selectedProfile = useMemo(() => {
@@ -423,13 +435,6 @@ export default function DetailScreen() {
     });
   }, [friend]);
 
-  const heroInitial = useMemo(() => {
-    if (!friend?.name.trim()) {
-      return '?';
-    }
-    return friend.name.trim().slice(0, 1);
-  }, [friend]);
-
   const heroBirthdayLabel = useMemo(() => {
     if (!friend?.birthday.trim()) {
       return '';
@@ -445,6 +450,11 @@ export default function DetailScreen() {
     const hasPhoto = Boolean(friend.photoUri?.trim()) && !profileImageLoadError;
     return computeProfileCompleteness(friend, hasPhoto);
   }, [friend, profileImageLoadError]);
+
+  const profileCardBorder = useMemo(
+    () => getHomeCardBorderStyle(profileCompleteness),
+    [profileCompleteness]
+  );
 
   const sinceYear = useMemo(
     () => formatProfileSinceYear(selectedProfile?.createdAt),
@@ -694,6 +704,149 @@ export default function DetailScreen() {
     ]);
   };
 
+  const finishEditEpisodeLink = useCallback(
+    (eventId: string) => {
+      if (!editLinkTarget) {
+        return;
+      }
+      const ok = applyEventIdToEpisode(editLinkTarget.episode, editLinkTarget.authorId, eventId);
+      if (!ok) {
+        Alert.alert('エラー', '予定への紐づけに失敗しました。');
+        return;
+      }
+      episodeForm.linkToEvent(eventId);
+      setEditLinkModalVisible(false);
+      setEditLinkCandidates([]);
+      setEditLinkTarget(null);
+      loadFriend();
+    },
+    [editLinkTarget, episodeForm, loadFriend]
+  );
+
+  const handleEditLinkCancel = useCallback(() => {
+    setEditLinkModalVisible(false);
+    setEditLinkCandidates([]);
+    setEditLinkTarget(null);
+  }, []);
+
+  const handleEditLinkCreateNew = useCallback(() => {
+    if (!editLinkTarget) {
+      return;
+    }
+    createEventAndLinkEpisode(
+      buildEpisodeEventLinkInput(editLinkTarget.episode),
+      finishEditEpisodeLink,
+      () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE)
+    );
+  }, [editLinkTarget, finishEditEpisodeLink]);
+
+  const finishCreateEpisode = useCallback(
+    (payload: EpisodeSavePayload, eventId: string) => {
+      const normalizedEventId = eventId.trim();
+      if (!normalizedEventId) {
+        episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
+        return;
+      }
+      const created = createEpisode({
+        ...payload,
+        eventId: normalizedEventId,
+      });
+      if (!created) {
+        episodeForm.setFormError('エピソードの追加に失敗しました。');
+        return;
+      }
+      episodeForm.persistPhotos(created.id, false);
+      episodeForm.reset();
+      setIsEpisodeFormVisible(false);
+      setCreateLinkModalVisible(false);
+      setCreateLinkCandidates([]);
+      setPendingCreatePayload(null);
+      loadFriend();
+    },
+    [episodeForm, loadFriend]
+  );
+
+  const handleEventCreateFailed = useCallback(() => {
+    Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE);
+    episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
+  }, [episodeForm]);
+
+  const proceedNewEpisodeSave = useCallback(
+    (payload: EpisodeSavePayload) => {
+      const linkInput = buildEpisodeEventLinkInputFromSavePayload(payload);
+      runNewEpisodeEventLinkFlow(linkInput, {
+        onResolved: (eventId) => finishCreateEpisode(payload, eventId),
+        onMultipleMatches: (matches) => {
+          setPendingCreatePayload(payload);
+          setCreateLinkCandidates(matches);
+          setCreateLinkModalVisible(true);
+        },
+        onEventCreateFailed: handleEventCreateFailed,
+      });
+    },
+    [finishCreateEpisode, handleEventCreateFailed]
+  );
+
+  const handleCreateLinkCancel = useCallback(() => {
+    setCreateLinkModalVisible(false);
+    setCreateLinkCandidates([]);
+    setPendingCreatePayload(null);
+  }, []);
+
+  const handleCreateLinkCreateNew = useCallback(() => {
+    if (!pendingCreatePayload) {
+      return;
+    }
+    const eventId = createEventIdForEpisodeInput(
+      buildEpisodeEventLinkInputFromSavePayload(pendingCreatePayload)
+    );
+    if (!eventId) {
+      handleEventCreateFailed();
+      return;
+    }
+    finishCreateEpisode(pendingCreatePayload, eventId);
+  }, [finishCreateEpisode, handleEventCreateFailed, pendingCreatePayload]);
+
+  const handleCreateLinkSelect = useCallback(
+    (eventId: string) => {
+      if (!pendingCreatePayload) {
+        return;
+      }
+      finishCreateEpisode(pendingCreatePayload, eventId);
+    },
+    [finishCreateEpisode, pendingCreatePayload]
+  );
+
+  const handleLinkExistingEpisodeToEvent = () => {
+    const episodeId = episodeForm.editingEpisodeId;
+    if (!episodeId || !myselfId) {
+      return;
+    }
+    const episode = getEpisodeById(myselfId, episodeId);
+    if (!episode) {
+      Alert.alert('エラー', 'エピソードが見つかりません。');
+      return;
+    }
+    const authorId = resolveEpisodeRecordOwnerId(episode, myselfId);
+    runEpisodeEventLinkFlow(buildEpisodeEventLinkInput(episode), {
+      onLinked: (eventId) => {
+        const ok = applyEventIdToEpisode(episode, authorId, eventId);
+        if (!ok) {
+          Alert.alert('エラー', '予定への紐づけに失敗しました。');
+          return;
+        }
+        episodeForm.linkToEvent(eventId);
+        loadFriend();
+      },
+      onMultipleMatches: (matches) => {
+        setEditLinkTarget({ episode, authorId });
+        setEditLinkCandidates(matches);
+        setEditLinkModalVisible(true);
+      },
+      onEventCreateFailed: () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE),
+    });
+  };
+
   const handleSaveEpisode = () => {
     if (!friend) {
       episodeForm.setFormError('人物データが見つかりません。');
@@ -715,12 +868,8 @@ export default function DetailScreen() {
       }
       episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
     } else {
-      const created = createEpisode(payload);
-      if (!created) {
-        episodeForm.setFormError('エピソードの追加に失敗しました。');
-        return;
-      }
-      episodeForm.persistPhotos(created.id, false);
+      proceedNewEpisodeSave(payload);
+      return;
     }
     episodeForm.reset();
     setIsEpisodeFormVisible(false);
@@ -733,7 +882,7 @@ export default function DetailScreen() {
         <View style={styles.missingContainer}>
           <Text style={styles.missingText}>人物データが見つかりませんでした。</Text>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backButtonText}>戻る</Text>
+            <Text style={styles.backButtonText}>‹ 戻る</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -775,20 +924,39 @@ export default function DetailScreen() {
         extraScrollHeight={18}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.profileCardOuter}>
+        <View style={styles.profileCardShadow}>
+        <View
+          style={[
+            styles.profileCardOuter,
+            {
+              borderColor: profileCardBorder.borderColor,
+              borderWidth: Theme.homeCardBorderWidth,
+            },
+          ]}
+        >
         <View style={styles.hero}>
           <View style={styles.heroIdentityRow}>
-            {friend.photoUri && !profileImageLoadError ? (
-              <Image
-                source={{ uri: friend.photoUri }}
-                style={styles.heroPhoto}
-                onError={() => setProfileImageLoadError(true)}
-              />
-            ) : (
-              <View style={styles.heroPhotoInitial}>
-                <Text style={styles.heroPhotoInitialText}>{heroInitial}</Text>
+            <View
+              style={[
+                styles.heroPhotoOuterFrame,
+                { borderColor: profileCardBorder.borderColor },
+              ]}
+            >
+              <View style={styles.heroPhotoInnerFrame}>
+                {friend.photoUri && !profileImageLoadError ? (
+                  <Image
+                    source={{ uri: friend.photoUri }}
+                    style={styles.heroPhoto}
+                    resizeMode="cover"
+                    onError={() => setProfileImageLoadError(true)}
+                  />
+                ) : (
+                  <View style={styles.heroPhotoPlaceholder}>
+                    <Text style={styles.heroPhotoPlaceholderText}>No Image</Text>
+                  </View>
+                )}
               </View>
-            )}
+            </View>
             <View style={styles.heroIdentityCol}>
               <View style={styles.heroNameRow}>
                 <Text style={styles.heroName} numberOfLines={2}>
@@ -1141,7 +1309,10 @@ export default function DetailScreen() {
               filteredEpisodes.map((episode) => {
                 const canManage = canManageEpisode(episode, friend.id, myselfId);
                 const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
-                const chips = buildParticipantChips(episode, friendNameById);
+                const chips = buildParticipantChips(episode, friendNameById, {
+                  excludeFriendIds: myselfId ? [myselfId] : [],
+                  friendPhotoById,
+                });
                 const modeStyles = canManage ? episodeVisibilityTagStyles[episode.visibilityMode] : null;
                 const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
 
@@ -1196,18 +1367,9 @@ export default function DetailScreen() {
                       </View>
                       {chips.length > 0 ? (
                         <View style={styles.episodeCardRow2}>
-                          <ScrollView
-                            horizontal
-                            showsHorizontalScrollIndicator={false}
-                            style={styles.episodeParticipantTagScroll}
-                            contentContainerStyle={styles.episodeParticipantTagWrap}
-                          >
-                            {chips.map((participant) => (
-                              <View key={participant.id} style={styles.episodeParticipantTag}>
-                                <Text style={styles.episodeParticipantTagName}>{participant.label}</Text>
-                              </View>
-                            ))}
-                          </ScrollView>
+                          <View style={styles.episodeParticipantChipList}>
+                            <ParticipantChipList chips={chips} />
+                          </View>
                         </View>
                       ) : null}
                     </View>
@@ -1330,6 +1492,7 @@ export default function DetailScreen() {
           </View>
         </View>
         </View>
+        </View>
       </KeyboardAwareScrollView>
       <EpisodeFormOverlay
         visible={isEpisodeFormVisible}
@@ -1337,11 +1500,29 @@ export default function DetailScreen() {
         friends={allFriends}
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
+        episodeTagOptions={episodeTagOptions}
         onClose={() => {
           episodeForm.reset();
           setIsEpisodeFormVisible(false);
         }}
         onSave={handleSaveEpisode}
+        onLinkToEvent={handleLinkExistingEpisodeToEvent}
+      />
+      <EpisodeEventLinkModal
+        visible={createLinkModalVisible}
+        dateKey={pendingCreatePayload?.date ?? ''}
+        candidates={createLinkCandidates}
+        onSelect={handleCreateLinkSelect}
+        onCreateNew={handleCreateLinkCreateNew}
+        onCancel={handleCreateLinkCancel}
+      />
+      <EpisodeEventLinkModal
+        visible={editLinkModalVisible}
+        dateKey={editLinkTarget?.episode.date ?? ''}
+        candidates={editLinkCandidates}
+        onSelect={finishEditEpisodeLink}
+        onCreateNew={handleEditLinkCreateNew}
+        onCancel={handleEditLinkCancel}
       />
     </SafeAreaView>
   );

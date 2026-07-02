@@ -453,7 +453,7 @@ export default function FriendsScreen() {
                 </ScrollView>
                 <View style={styles.confirmActions}>
                   <Pressable style={styles.confirmCancelButton} onPress={() => setConfirmModalVisible(false)}>
-                    <Text style={styles.confirmCancelText}>戻る</Text>
+                    <Text style={styles.confirmCancelText}>‹ 戻る</Text>
                   </Pressable>
                   <Pressable style={styles.confirmShareButton} onPress={handleConfirmShare}>
                     <Text style={styles.confirmShareText}>共有</Text>
@@ -601,7 +601,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
   searchArea: {
-    backgroundColor: '#dfe9ef',
+    backgroundColor: Theme.searchAreaBase,
     borderColor: '#7e8b94',
     borderWidth: 1,
     borderRadius: 12,

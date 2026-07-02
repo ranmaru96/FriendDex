@@ -18,6 +18,7 @@ import QRCode from 'react-native-qrcode-skia';
 import Svg, { Circle, Path } from 'react-native-svg';
 import ViewShot from 'react-native-view-shot';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
+import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { getAllProfiles, ensureProfileUserId, getMyself, initializeDatabase } from '../db';
 import { Profile } from '../types';
 
@@ -224,13 +225,13 @@ export default function MyProfileQrScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
+      <View style={subScreenHeaderStyles.bar}>
         <Pressable style={styles.headerIconButton} onPress={() => router.back()}>
-          <Ionicons name="close" size={28} color="#0f172a" />
+          <Ionicons name="close" size={28} color={Theme.topBarText} />
         </Pressable>
-        <Text style={styles.headerTitle}>QRコード名刺</Text>
+        <Text style={subScreenHeaderStyles.title}>QRコード名刺</Text>
         <Pressable style={styles.headerIconButton} onPress={() => router.push('/scan')}>
-          <Ionicons name="scan-outline" size={24} color="#0f172a" />
+          <Ionicons name="scan-outline" size={24} color={Theme.topBarText} />
         </Pressable>
       </View>
 
@@ -305,24 +306,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Theme.screenBase,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
   headerIconButton: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#0f172a',
   },
   scrollContent: {
     paddingHorizontal: Spacing.lg,

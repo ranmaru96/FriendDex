@@ -1,5 +1,18 @@
 import { Episode, EpisodeParticipant, EpisodeVisibilityMode } from '../types';
 
+export type ParticipantChipDisplay = {
+  id: string;
+  kind: 'individual' | 'group';
+  label: string;
+  friendId?: string;
+  photoUri?: string | null;
+};
+
+export const normalizeEpisodeTag = (value: string | null | undefined): string | null => {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  return normalized.length > 0 ? normalized : null;
+};
+
 /** update/delete に渡す author（公開者）の friend ID */
 export function resolveEpisodeRecordOwnerId(episode: Episode, profileFriendId: string): string {
   const author = episode.authorFriendId.trim();
@@ -48,22 +61,54 @@ export function getVisibilityModeLabel(mode: EpisodeVisibilityMode): string {
   }
 }
 
-export function buildParticipantChips(
-  episode: Episode,
-  friendNameById: Map<string, string>
-): { id: string; label: string }[] {
-  const unique = new Map<string, { id: string; label: string }>();
-  (episode.participantEntries ?? []).forEach((entry) => {
-    if (!entry.value.trim()) return;
-    const key = `${entry.kind}:${entry.value}`;
-    if (!unique.has(key)) {
-      unique.set(key, {
-        id: key,
-        label: entry.kind === 'group' ? entry.value : friendNameById.get(entry.value) ?? entry.value,
-      });
+export function buildParticipantChipDisplays(
+  entries: Array<{ kind: 'individual' | 'group'; value: string }>,
+  friendNameById: Map<string, string>,
+  options?: {
+    excludeFriendIds?: string[];
+    friendPhotoById?: Map<string, string | null>;
+  }
+): ParticipantChipDisplay[] {
+  const excluded = new Set(
+    (options?.excludeFriendIds ?? []).map((id) => id.trim()).filter((id) => id.length > 0)
+  );
+  const unique = new Map<string, ParticipantChipDisplay>();
+  entries.forEach((entry) => {
+    const value = entry.value.trim();
+    if (!value) {
+      return;
     }
+    if (entry.kind === 'individual' && excluded.has(value)) {
+      return;
+    }
+    const key = `${entry.kind}:${value}`;
+    if (unique.has(key)) {
+      return;
+    }
+    if (entry.kind === 'group') {
+      unique.set(key, { id: key, kind: 'group', label: value });
+      return;
+    }
+    unique.set(key, {
+      id: key,
+      kind: 'individual',
+      label: friendNameById.get(value) ?? value,
+      friendId: value,
+      photoUri: options?.friendPhotoById?.get(value) ?? null,
+    });
   });
   return Array.from(unique.values());
+}
+
+export function buildParticipantChips(
+  episode: Episode,
+  friendNameById: Map<string, string>,
+  options?: {
+    excludeFriendIds?: string[];
+    friendPhotoById?: Map<string, string | null>;
+  }
+): ParticipantChipDisplay[] {
+  return buildParticipantChipDisplays(episode.participantEntries ?? [], friendNameById, options);
 }
 
 export function visibilityDisplayLabels(episode: Episode, friendNameById: Map<string, string>): string[] {

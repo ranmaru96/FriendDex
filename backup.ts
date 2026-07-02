@@ -31,7 +31,7 @@ export const isFriendDexBackup = (value: unknown): value is FriendDexBackup => {
     return false;
   }
   const candidate = value as Partial<FriendDexBackup>;
-  if (candidate.version !== 1 && candidate.version !== 2) {
+  if (candidate.version !== 1 && candidate.version !== 2 && candidate.version !== 3 && candidate.version !== 4) {
     return false;
   }
   if (typeof candidate.exportedAt !== 'string') {
@@ -41,7 +41,11 @@ export const isFriendDexBackup = (value: unknown): value is FriendDexBackup => {
     return false;
   }
   const requiredTables =
-    candidate.version === 2 ? FRIENDDEX_BACKUP_TABLE_NAMES : FRIENDDEX_BACKUP_V1_TABLE_NAMES;
+    candidate.version === 4 || candidate.version === 3
+      ? FRIENDDEX_BACKUP_TABLE_NAMES
+      : candidate.version === 2
+        ? ([...FRIENDDEX_BACKUP_V1_TABLE_NAMES, 'episode_photos'] as const)
+        : FRIENDDEX_BACKUP_V1_TABLE_NAMES;
   return requiredTables.every((tableName) => {
     const rows = candidate.tables?.[tableName as FriendDexBackupTableName];
     return Array.isArray(rows) && rows.every(isBackupRow);

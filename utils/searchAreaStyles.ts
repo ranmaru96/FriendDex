@@ -13,6 +13,12 @@ export const searchAreaStyles = StyleSheet.create({
     borderRadius: Radius.md,
     padding: SEARCH_AREA_INSET,
     gap: 8,
+    marginBottom: 0,
+  },
+  areaDivider: {
+    height: 1,
+    backgroundColor: Theme.card,
+    marginTop: 10,
     marginBottom: 10,
   },
   row: {
@@ -25,7 +31,7 @@ export const searchAreaStyles = StyleSheet.create({
   },
   textInput: {
     backgroundColor: Theme.card,
-    borderColor: Theme.border,
+    borderColor: Theme.searchFieldBorder,
     borderWidth: BorderWidth.input,
     borderRadius: Radius.md,
     color: Theme.textPrimary,
@@ -37,7 +43,7 @@ export const searchAreaStyles = StyleSheet.create({
   selectButton: {
     flex: 1,
     backgroundColor: Theme.card,
-    borderColor: Theme.border,
+    borderColor: Theme.searchFieldBorder,
     borderWidth: BorderWidth.input,
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
@@ -66,7 +72,7 @@ export const searchAreaStyles = StyleSheet.create({
     opacity: 0.72,
   },
   tagPlaceholder: {
-    borderColor: Theme.border,
+    borderColor: Theme.searchFieldBorder,
     borderWidth: BorderWidth.input,
     borderRadius: Radius.md,
     backgroundColor: Theme.card,

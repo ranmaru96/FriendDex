@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
+import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { getAllProfiles, getMyself, initializeDatabase, updateProfile } from '../db';
 import { MBTIType, Profile } from '../types';
 
@@ -180,12 +181,12 @@ export default function MyProfileScreen() {
   if (!hasProfile) {
     return (
       <SafeAreaView style={styles.safe}>
-        <View style={styles.header}>
-          <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backText}>‹ 戻る</Text>
+        <View style={subScreenHeaderStyles.bar}>
+          <Pressable style={subScreenHeaderStyles.sideBack} onPress={() => router.back()}>
+            <Text style={subScreenHeaderStyles.backText}>‹ 戻る</Text>
           </Pressable>
-          <Text style={styles.headerTitle}>自分のプロフィール</Text>
-          <View style={styles.headerSide} />
+          <Text style={subScreenHeaderStyles.title}>自分のプロフィール</Text>
+          <View style={subScreenHeaderStyles.side} />
         </View>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyMessage}>本人設定が完了していません</Text>
@@ -199,12 +200,12 @@ export default function MyProfileScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backText}>‹ 戻る</Text>
+      <View style={subScreenHeaderStyles.bar}>
+        <Pressable style={subScreenHeaderStyles.sideBack} onPress={() => router.back()}>
+          <Text style={subScreenHeaderStyles.backText}>‹ 戻る</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>自分のプロフィール</Text>
-        <View style={styles.headerSide} />
+        <Text style={subScreenHeaderStyles.title}>自分のプロフィール</Text>
+        <View style={subScreenHeaderStyles.side} />
       </View>
 
       <ScrollView
@@ -255,30 +256,6 @@ const styles = StyleSheet.create({
   safe: {
     flex: 1,
     backgroundColor: Theme.screenBase,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-  },
-  backButton: {
-    minWidth: 72,
-  },
-  backText: {
-    fontSize: 17,
-    color: '#2563eb',
-    fontWeight: '600',
-  },
-  headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#0f172a',
-  },
-  headerSide: {
-    minWidth: 72,
   },
   scrollContent: {
     paddingHorizontal: Spacing.lg,

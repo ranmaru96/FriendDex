@@ -1,0 +1,223 @@
+import { StyleSheet } from 'react-native';
+import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
+
+export const MONEY_LOAN_FORM_LABEL_WIDTH = 72;
+
+export const moneyLoanFormStyles = StyleSheet.create({
+  formCard: {
+    backgroundColor: Theme.bgSurface,
+    borderWidth: 1,
+    borderColor: Theme.border,
+    borderRadius: Radius.md,
+    padding: Spacing.md,
+    gap: 6,
+  },
+  sectionTitleOnCard: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Theme.textPrimary,
+    marginBottom: 2,
+  },
+  sectionTitleOnBase: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Theme.topBarText,
+  },
+  formRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  formLabel: {
+    width: MONEY_LOAN_FORM_LABEL_WIDTH,
+    fontSize: Typography.sm,
+    fontWeight: '600',
+    color: Theme.textPrimary,
+  },
+  fieldSectionLabel: {
+    fontSize: Typography.sm,
+    fontWeight: '700',
+    color: Theme.textPrimary,
+    marginTop: 4,
+  },
+  textInput: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: Theme.card,
+    borderColor: Theme.searchFieldBorder,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    color: Theme.textPrimary,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
+    fontSize: 13,
+    minHeight: 34,
+  },
+  modeRow: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
+    minWidth: 0,
+  },
+  modeButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: Theme.searchFieldBorder,
+    borderRadius: Radius.md,
+    backgroundColor: Theme.card,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  modeButtonSelected: {
+    borderColor: Theme.accent,
+    backgroundColor: Theme.accentLight,
+  },
+  modeButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: Theme.textPrimary,
+  },
+  modeButtonTextSelected: {
+    color: Theme.accent,
+  },
+  splitPreview: {
+    fontSize: 12,
+    color: Theme.accent,
+    fontWeight: '600',
+  },
+  splitPreviewIndented: {
+    fontSize: 12,
+    color: Theme.accent,
+    fontWeight: '600',
+    marginLeft: MONEY_LOAN_FORM_LABEL_WIDTH + 8,
+  },
+  participantRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  addParticipantButton: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: Theme.card,
+    borderColor: Theme.searchFieldBorder,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    alignItems: 'center',
+  },
+  addParticipantButtonText: {
+    color: Theme.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  selectedEntryTagArea: {
+    borderColor: Theme.searchFieldBorder,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    backgroundColor: Theme.card,
+    padding: 8,
+  },
+  selectedEntryEmptyText: {
+    fontSize: 13,
+    color: Theme.textSecondary,
+  },
+  selectedEntryHint: {
+    fontSize: 11,
+    color: Theme.textSecondary,
+    marginTop: 4,
+  },
+  individualSection: {
+    gap: 8,
+  },
+  individualRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: Theme.border,
+    borderRadius: Radius.md,
+    backgroundColor: Theme.card,
+    padding: 8,
+  },
+  individualName: {
+    width: 72,
+    fontSize: 13,
+    fontWeight: '600',
+    color: Theme.textPrimary,
+  },
+  individualAmountInput: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: Theme.bgSurface,
+    borderColor: Theme.searchFieldBorder,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    color: Theme.textPrimary,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    fontSize: 13,
+    minHeight: 34,
+  },
+  individualDirectionRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  individualDirectionButton: {
+    borderWidth: 1,
+    borderColor: Theme.searchFieldBorder,
+    borderRadius: Radius.sm,
+    backgroundColor: Theme.bgSurface,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  individualDirectionButtonSelected: {
+    borderColor: Theme.accent,
+    backgroundColor: Theme.accentLight,
+  },
+  individualDirectionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Theme.textSecondary,
+  },
+  individualDirectionTextSelected: {
+    color: Theme.accent,
+  },
+  formError: {
+    fontSize: 12,
+    color: '#b91c1c',
+  },
+  primaryButton: {
+    marginTop: 4,
+    backgroundColor: Theme.btnPrimaryBg,
+    borderRadius: Radius.md,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  primaryButtonText: {
+    color: Theme.btnPrimaryText,
+    fontWeight: '700',
+    fontSize: 14,
+  },
+  emptyTextOnBase: {
+    fontSize: 13,
+    color: Theme.topBarText,
+    textAlign: 'center',
+    paddingVertical: 12,
+  },
+  recentCounterpartySection: {
+    gap: 6,
+    marginTop: 2,
+  },
+  recentCounterpartyLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Theme.textSecondary,
+  },
+  recentCounterpartyScroll: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+});

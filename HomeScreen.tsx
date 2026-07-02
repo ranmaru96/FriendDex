@@ -3,7 +3,6 @@ import {
   Alert,
   useWindowDimensions,
   FlatList,
-  Image,
   Modal,
   Pressable,
   SafeAreaView,
@@ -14,9 +13,11 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { BorderWidth, Radius, ScreenHorizontalInset, Theme } from '@/constants/theme';
+import { Radius, ScreenHorizontalInset, Theme } from '@/constants/theme';
+import { FRIEND_HOME_CARD_GAP, FriendHomeCard } from '@/components/friend/FriendHomeCard';
 import { searchAreaStyles } from '@/utils/searchAreaStyles';
 import { AddCircleButton } from '@/components/AddCircleButton';
+import { PendingEpisodeReviewModal } from '@/components/episode/PendingEpisodeReviewModal';
 
 import {
   deleteProfileById,
@@ -24,10 +25,11 @@ import {
   getDistinctAffiliations,
   getDistinctExperiences,
   getMyself,
+  getPendingReviewEpisodes,
   initializeDatabase,
   searchFriends,
 } from './db';
-import { Friend, FriendSearchFilters, MBTI_TYPES, MBTIType } from './types';
+import { Friend, FriendSearchFilters, MBTI_TYPES, MBTIType, PendingReviewEpisodeRef } from './types';
 
 type Option = {
   label: string;
@@ -48,10 +50,7 @@ const birthMonthOptions: Option[] = Array.from({ length: 12 }, (_, index) => ({
 
 const toOptions = (values: string[]): Option[] => values.map((value) => ({ label: value, value }));
 
-const CARD_GAP = 10;
-/** 検索エリアとカード一覧の左右余白 */
-/** 人物カードの borderWidth（通常・本人とも 2px、本人は枠色のみ accent） */
-const CARD_BORDER_WIDTH = BorderWidth.cardEmphasis;
+const CARD_GAP = FRIEND_HOME_CARD_GAP;
 
 function SelectField({ label, value, options, onValueChange }: SelectFieldProps) {
   const [visible, setVisible] = useState(false);
@@ -123,15 +122,23 @@ export default function HomeScreen() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
-  const [imageErrorById, setImageErrorById] = useState<Record<string, boolean>>({});
   const [myselfId, setMyselfId] = useState<string | null>(null);
+  const [pendingReviewItems, setPendingReviewItems] = useState<PendingReviewEpisodeRef[]>([]);
+  const [reviewModalVisible, setReviewModalVisible] = useState(false);
+
+  const reloadPendingReviews = useCallback(() => {
+    const pending = getPendingReviewEpisodes();
+    setPendingReviewItems(pending);
+    setReviewModalVisible(pending.length > 0);
+  }, []);
 
   const loadInitialData = useCallback(() => {
     initializeDatabase();
     setAffiliationOptions(toOptions(getDistinctAffiliations()));
     setExperienceOptions(toOptions(getDistinctExperiences()));
     setMyselfId(getMyself());
-  }, []);
+    reloadPendingReviews();
+  }, [reloadPendingReviews]);
 
   const filters = useMemo((): FriendSearchFilters => {
     const next: FriendSearchFilters = {};
@@ -155,7 +162,6 @@ export default function HomeScreen() {
   useFocusEffect(
     useCallback(() => {
       loadInitialData();
-      setImageErrorById({});
       setFriends(searchFriends(filtersRef.current));
     }, [loadInitialData])
   );
@@ -205,7 +211,8 @@ export default function HomeScreen() {
           keyExtractor={(item) => item.id}
           contentContainerStyle={[styles.listContent, { paddingBottom: 80 }]}
           ListHeaderComponent={
-            <View style={searchAreaStyles.area}>
+            <>
+              <View style={searchAreaStyles.area}>
               <View style={searchAreaStyles.row}>
                 <View style={searchAreaStyles.fieldContainer}>
                   <TextInput
@@ -252,48 +259,20 @@ export default function HomeScreen() {
                 />
               </View>
             </View>
+              <View style={searchAreaStyles.areaDivider} />
+            </>
           }
           renderItem={({ item }) => {
             const isMyself = myselfId === item.id;
             return (
-              <View style={[styles.cardShadow, { width: cardWidth }]}>
-                <Pressable
-                  style={styles.cardOuter}
-                  onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
-                  onLongPress={() => handleLongPressDeleteProfile(item)}
-                  delayLongPress={400}
-                >
-                  {isMyself ? (
-                    <View style={styles.myselfBadge} pointerEvents="none">
-                      <Text style={styles.myselfBadgeText}>本人</Text>
-                    </View>
-                  ) : null}
-                  <View style={styles.photoOuterFrame}>
-                    <View style={styles.photoInnerFrame}>
-                      {item.photoUri && !imageErrorById[item.id] ? (
-                        <Image
-                          source={{ uri: item.photoUri }}
-                          style={styles.cardPhoto}
-                          resizeMode="cover"
-                          onError={() =>
-                            setImageErrorById((prev) => ({
-                              ...prev,
-                              [item.id]: true,
-                            }))
-                          }
-                        />
-                      ) : (
-                        <View style={[styles.cardPhoto, styles.cardPhotoPlaceholder]}>
-                          <Text style={styles.cardPhotoPlaceholderText}>No Image</Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                  <View style={styles.cardTextBlock}>
-                    <Text style={styles.cardMainName}>{item.name}</Text>
-                  </View>
-                </Pressable>
-              </View>
+              <FriendHomeCard
+                friend={item}
+                width={cardWidth}
+                isMyself={isMyself}
+                onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
+                onLongPress={() => handleLongPressDeleteProfile(item)}
+                delayLongPress={400}
+              />
             );
           }}
           numColumns={3}
@@ -307,6 +286,13 @@ export default function HomeScreen() {
           accessibilityLabel="人物を追加"
         />
       </View>
+
+      <PendingEpisodeReviewModal
+        visible={reviewModalVisible}
+        items={pendingReviewItems}
+        onClose={() => setReviewModalVisible(false)}
+        onChanged={reloadPendingReviews}
+      />
     </SafeAreaView>
   );
 }
@@ -328,82 +314,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     marginBottom: CARD_GAP,
     gap: CARD_GAP,
-  },
-  cardShadow: {
-    borderRadius: Radius.md,
-    backgroundColor: 'transparent',
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.65,
-    shadowRadius: 12,
-    elevation: 16,
-  },
-  cardOuter: {
-    borderRadius: Radius.md,
-    borderWidth: 2,
-    borderColor: Theme.homeCardBorder,
-    backgroundColor: Theme.homeCardBackground,
-    overflow: 'hidden',
-    paddingBottom: 4,
-  },
-  photoOuterFrame: {
-    marginTop: -2,
-    marginLeft: -2,
-    marginRight: -2,
-    borderWidth: 3,
-    borderColor: Theme.homeCardBorder,
-    borderRadius: Radius.md,
-    overflow: 'hidden',
-  },
-  photoInnerFrame: {
-    borderWidth: 2,
-    borderColor: Theme.homeCardPhotoInnerBorder,
-    borderRadius: Radius.md - 3,
-    overflow: 'hidden',
-  },
-  myselfBadge: {
-    position: 'absolute',
-    top: 6,
-    right: 6,
-    zIndex: 3,
-    backgroundColor: Theme.accent,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: Theme.accent,
-  },
-  myselfBadgeText: {
-    color: Theme.onAccent,
-    fontSize: 11,
-    fontWeight: '800',
-  },
-  cardTextBlock: {
-    paddingVertical: 6,
-    paddingHorizontal: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardPhoto: {
-    width: '100%',
-    aspectRatio: 1,
-  },
-  cardPhotoPlaceholder: {
-    backgroundColor: Theme.homeCardPhotoPlaceholder,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardPhotoPlaceholderText: {
-    fontSize: 12,
-    color: Theme.homeCardPhotoPlaceholderText,
-  },
-  cardMainName: {
-    width: '100%',
-    fontSize: 13,
-    fontWeight: '800',
-    color: Theme.homeCardName,
-    textAlign: 'center',
-    letterSpacing: 0.5,
   },
   emptyText: {
     textAlign: 'center',

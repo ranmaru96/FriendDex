@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
@@ -15,6 +14,8 @@ import {
 } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
+import { ScreenShell } from '@/components/screen/ScreenShell';
+import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { parseQrScanPayload, qrPayloadToRouteParams } from '@/utils/qrScanHelpers';
 import { Theme } from '@/constants/theme';
 
@@ -144,10 +145,8 @@ export default function ScanScreen() {
 
   if (!permission.granted) {
     return (
-      <SafeAreaView style={styles.permissionContainer}>
-        <Pressable style={styles.backButtonDark} onPress={() => router.back()}>
-          <Text style={styles.backTextDark}>‹ 戻る</Text>
-        </Pressable>
+      <ScreenShell backgroundColor={Theme.screenBase}>
+        <ScreenTopBar onBack={() => router.back()} title="QRスキャン" />
         <View style={styles.permissionContent}>
           {permission.canAskAgain ? (
             <>
@@ -169,57 +168,56 @@ export default function ScanScreen() {
             </Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </ScreenShell>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <CameraView
-        style={StyleSheet.absoluteFillObject}
-        facing="back"
-        onBarcodeScanned={scanned ? undefined : handleScan}
-        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+    <ScreenShell backgroundColor="#000">
+      <ScreenTopBar
+        variant="plain"
+        onBack={() => router.back()}
+        title="QRスキャン"
       />
+      <View style={styles.cameraArea}>
+        <CameraView
+          style={StyleSheet.absoluteFillObject}
+          facing="back"
+          onBarcodeScanned={scanned ? undefined : handleScan}
+          barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+        />
 
-      <View style={styles.overlay} pointerEvents="box-none">
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backText}>‹ 戻る</Text>
-        </Pressable>
-
-        <View style={styles.overlayTop} />
-        <View style={styles.overlayMiddle}>
-          <View style={styles.overlaySide} />
-          <View style={styles.frame}>
-            {scanComplete && <Text style={styles.frameSuccessText}>読み取りました</Text>}
+        <View style={styles.overlay} pointerEvents="box-none">
+          <View style={styles.overlayTop} />
+          <View style={styles.overlayMiddle}>
+            <View style={styles.overlaySide} />
+            <View style={styles.frame}>
+              {scanComplete && <Text style={styles.frameSuccessText}>読み取りました</Text>}
+            </View>
+            <View style={styles.overlaySide} />
           </View>
-          <View style={styles.overlaySide} />
-        </View>
-        <View style={styles.overlayBottom}>
-          <Text style={styles.hintText}>QRコードをかざしてください</Text>
-          <Pressable
-            style={[styles.libraryButton, (scanned || isPickingFromLibrary) && styles.libraryButtonDisabled]}
-            onPress={pickFromLibrary}
-            disabled={scanned || isPickingFromLibrary}
-          >
-            <Text style={styles.libraryButtonText}>
-              {isPickingFromLibrary ? '読み取り中…' : 'ライブラリから選択'}
-            </Text>
-          </Pressable>
+          <View style={styles.overlayBottom}>
+            <Text style={styles.hintText}>QRコードをかざしてください</Text>
+            <Pressable
+              style={[styles.libraryButton, (scanned || isPickingFromLibrary) && styles.libraryButtonDisabled]}
+              onPress={pickFromLibrary}
+              disabled={scanned || isPickingFromLibrary}
+            >
+              <Text style={styles.libraryButtonText}>
+                {isPickingFromLibrary ? '読み取り中…' : 'ライブラリから選択'}
+              </Text>
+            </Pressable>
+          </View>
         </View>
       </View>
-    </SafeAreaView>
+    </ScreenShell>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  cameraArea: {
     flex: 1,
     backgroundColor: '#000',
-  },
-  permissionContainer: {
-    flex: 1,
-    backgroundColor: Theme.screenBase,
   },
   permissionContent: {
     flex: 1,
@@ -275,30 +273,6 @@ const styles = StyleSheet.create({
   },
   overlay: {
     ...StyleSheet.absoluteFillObject,
-  },
-  backButton: {
-    marginTop: 8,
-    marginLeft: 12,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  backButtonDark: {
-    marginTop: 8,
-    marginLeft: 12,
-    alignSelf: 'flex-start',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  backText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  backTextDark: {
-    color: '#0f172a',
-    fontSize: 16,
-    fontWeight: '600',
   },
   overlayTop: {
     flex: 1,

@@ -23,8 +23,10 @@ import {
   type Option,
 } from '@/components/episode/types';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
+import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import type { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import type { Friend } from '@/types';
+import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
 
 type EpisodeFormState = ReturnType<typeof useEpisodeForm>;
 
@@ -34,8 +36,10 @@ type EpisodeFormOverlayProps = {
   friends: Friend[];
   affiliationOptions: Option[];
   experienceOptions: Option[];
+  episodeTagOptions: Option[];
   onClose: () => void;
   onSave: () => void;
+  onLinkToEvent?: () => void;
 };
 
 function SelectInput({
@@ -111,9 +115,30 @@ export function EpisodeFormOverlay({
   friends,
   affiliationOptions,
   experienceOptions,
+  episodeTagOptions,
   onClose,
   onSave,
+  onLinkToEvent,
 }: EpisodeFormOverlayProps) {
+  const friendPhotoById = useMemo(
+    () => new Map(friends.map((friend) => [friend.id, friend.photoUri ?? null])),
+    [friends]
+  );
+  const participantChips = useMemo(
+    () =>
+      buildParticipantChipDisplays(
+        form.participants
+          .filter((participant) => participant.value.trim().length > 0)
+          .map((participant) => ({
+            kind: participant.participantType === 'individual' ? ('individual' as const) : ('group' as const),
+            value: participant.value,
+          })),
+        form.friendNameById,
+        { friendPhotoById }
+      ),
+    [form.participants, form.friendNameById, friendPhotoById]
+  );
+
   if (!visible) {
     return null;
   }
@@ -157,6 +182,8 @@ export function EpisodeFormOverlay({
                   display="spinner"
                   locale="ja-JP"
                   style={styles.datePickerSelf}
+                  minimumDate={form.allowedEventDateRange?.minimumDate}
+                  maximumDate={form.allowedEventDateRange?.maximumDate}
                   onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                     if (Platform.OS !== 'ios') form.setShowDatePicker(false);
                     if (selected) form.setDate(formatEpisodeDateToYMD(selected));
@@ -169,31 +196,25 @@ export function EpisodeFormOverlay({
             ) : null}
 
             <View style={styles.episodeParticipantRow}>
+              <Text style={styles.episodeParticipantLabel}>エピソードタグ</Text>
+              <SelectInput
+                value={form.tag}
+                placeholder="未設定"
+                options={episodeTagOptions}
+                onChange={form.setTag}
+                style={styles.episodeTagSelect}
+              />
+            </View>
+
+            <View style={styles.episodeParticipantRow}>
               <Text style={styles.episodeParticipantLabel}>参加者</Text>
               <Pressable style={styles.addParticipantButton} onPress={form.openParticipantSelector}>
                 <Text style={styles.addParticipantButtonText}>参加者を選ぶ</Text>
               </Pressable>
             </View>
             <Pressable style={styles.selectedEntryTagArea} onPress={form.openParticipantSelector}>
-              {form.participants.filter((participant) => participant.value.trim().length > 0).length > 0 ? (
-                <View style={styles.selectedEntryTagWrap}>
-                  {form.participants
-                    .filter((participant) => participant.value.trim().length > 0)
-                    .map((participant, index) => {
-                      const label =
-                        participant.participantType === 'individual'
-                          ? form.friendNameById.get(participant.value) ?? participant.value
-                          : participant.value;
-                      return (
-                        <View
-                          key={`participant-tag-${participant.participantType}-${participant.value}-${index}`}
-                          style={styles.episodeParticipantTag}
-                        >
-                          <Text style={styles.episodeParticipantTagName}>{label}</Text>
-                        </View>
-                      );
-                    })}
-                </View>
+              {participantChips.length > 0 ? (
+                <ParticipantChipList chips={participantChips} layout="wrap" />
               ) : (
                 <Text style={styles.selectedEntryEmptyText}>参加者が選択されていません</Text>
               )}
@@ -312,6 +333,11 @@ export function EpisodeFormOverlay({
               onChangeText={form.setDescription}
             />
             {form.formError ? <Text style={styles.episodeErrorText}>{form.formError}</Text> : null}
+            {form.editingEpisodeId && !form.linkedEventId && onLinkToEvent ? (
+              <Pressable style={styles.linkToEventButton} onPress={onLinkToEvent}>
+                <Text style={styles.linkToEventButtonText}>予定に紐づける</Text>
+              </Pressable>
+            ) : null}
             <View style={styles.episodeFormActions}>
               <Pressable style={styles.episodeCancelButton} onPress={onClose}>
                 <Text style={styles.episodeCancelButtonText}>キャンセル</Text>
@@ -415,6 +441,21 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   datePickerDoneText: { color: '#0f172a', fontWeight: '600', fontSize: Typography.base },
+  linkToEventButton: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Theme.inputBorder,
+    backgroundColor: Theme.bgSurface,
+  },
+  linkToEventButtonText: {
+    fontSize: Typography.sm,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
   episodeParticipantRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -451,6 +492,7 @@ const styles = StyleSheet.create({
   },
   episodeParticipantTagName: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
   visibilityModeSelect: { minWidth: 120 },
+  episodeTagSelect: { flex: 1, minWidth: 0 },
   episodePhotoSection: { marginBottom: 8 },
   episodePhotoThumbScroll: { marginBottom: 8 },
   episodePhotoThumbRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },

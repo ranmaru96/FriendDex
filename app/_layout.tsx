@@ -6,9 +6,17 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppHeader from '../AppHeader';
 import { runAutoBackup } from '../backup';
 import BottomNav from '../components/BottomNav';
+import { EventNotificationHandler } from '../components/EventNotificationHandler';
 import { Theme } from '@/constants/theme';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
+import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
 import { initializeDatabase } from '../db';
+import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
+
+function PastEventConversionScheduler() {
+  usePastEventConversionSchedule();
+  return null;
+}
 
 type TabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'friends';
 
@@ -23,12 +31,14 @@ function getActiveTab(pathname: string): TabKey {
 
 function AppShell() {
   const pathname = usePathname();
-  const hideNav = ['detail', 'edit', 'episode-detail', 'myprofile', 'myprofile-qr', 'scan', 'qr-import'].some((p) => pathname.includes(p));
+  const hideNav = ['detail', 'edit', 'episode-detail', '/event', 'myprofile', 'myprofile-qr', 'scan', 'qr-import', 'money-loan', 'shuffle'].some((p) =>
+    pathname.includes(p)
+  );
   const activeTab = getActiveTab(pathname);
 
   return (
     <View style={styles.shell}>
-      <AppHeader />
+      {!hideNav && <AppHeader />}
       <View style={styles.content}>
         <Stack screenOptions={{ headerShown: false }} />
       </View>
@@ -40,6 +50,7 @@ function AppShell() {
 export default function RootLayout() {
   useEffect(() => {
     initializeDatabase();
+    convertPastEventsToAutoEpisodes();
     void runAutoBackup();
   }, []);
 
@@ -47,6 +58,8 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <DetailDesignProvider>
+          <EventNotificationHandler />
+          <PastEventConversionScheduler />
           <AppShell />
         </DetailDesignProvider>
       </SafeAreaProvider>

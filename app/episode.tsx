@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -14,18 +15,22 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Theme, Radius, Typography, Spacing, ScreenHorizontalInset } from '@/constants/theme';
 import { searchAreaStyles } from '@/utils/searchAreaStyles';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
+import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModal';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
+import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import type { Option } from '@/components/episode/types';
-import { useEpisodeForm } from '@/hooks/useEpisodeForm';
+import { useEpisodeForm, type EpisodeSavePayload } from '@/hooks/useEpisodeForm';
 import {
   createEpisode,
   deleteEpisode,
   getAllFriends,
   getDistinctAffiliations,
   getDistinctExperiences,
+  getEpisodeById,
   getEpisodeParticipantFriendIds,
+  getMergedEpisodeTagLabels,
   getMyself,
   initializeDatabase,
   updateEpisode,
@@ -34,8 +39,21 @@ import { Episode, EpisodeParticipant, EpisodeVisibilityMode, Friend } from '../t
 import {
   buildParticipantChips,
   getVisibilityModeLabel,
+  normalizeEpisodeTag,
   resolveEpisodeRecordOwnerId,
+  type ParticipantChipDisplay,
 } from '../utils/episodeHelpers';
+import {
+  applyEventIdToEpisode,
+  buildEpisodeEventLinkInput,
+  buildEpisodeEventLinkInputFromSavePayload,
+  createEventAndLinkEpisode,
+  createEventIdForEpisodeInput,
+  EVENT_CREATE_FAILED_MESSAGE,
+  runEpisodeEventLinkFlow,
+  runNewEpisodeEventLinkFlow,
+} from '../utils/episodeEventLinking';
+import type { EpisodeEventMatch } from '../utils/eventEpisodeSync';
 
 const EPISODE_VISIBILITY_MODE_TAG_STYLES: Record<
   EpisodeVisibilityMode,
@@ -89,12 +107,15 @@ function buildFriendNameById(friends: Friend[]): Map<string, string> {
   return new Map(friends.map((f) => [f.id, f.name]));
 }
 
-type ParticipantChip = { id: string; label: string };
+function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
+  return new Map(friends.map((f) => [f.id, f.photoUri ?? null]));
+}
 
 type EpisodeListCardProps = {
   title: string;
   date: string;
-  chips: ParticipantChip[];
+  episodeTag?: string | null;
+  chips: ParticipantChipDisplay[];
   visibility?: string[];
   visibilityMode?: EpisodeVisibilityMode;
   onEdit?: () => void;
@@ -104,6 +125,7 @@ type EpisodeListCardProps = {
 function EpisodeListCard({
   title,
   date,
+  episodeTag,
   chips,
   visibility = [],
   visibilityMode,
@@ -111,14 +133,19 @@ function EpisodeListCard({
   onDelete,
 }: EpisodeListCardProps) {
   const modeStyles = visibilityMode ? EPISODE_VISIBILITY_MODE_TAG_STYLES[visibilityMode] : null;
-  const showRow2 = chips.length > 0 || visibility.length > 0;
+  const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
+  const showRow2 = chips.length > 0 || visibility.length > 0 || normalizedEpisodeTag != null;
 
   return (
     <View style={styles.episodeCard}>
       <View style={styles.episodeCardRow1}>
-        <Text style={styles.episodeCardTitle} numberOfLines={1}>
-          {title || '-'}
-        </Text>
+        <View style={styles.episodeCardTitleWrap}>
+          <View style={styles.episodeCardTitleUnderline}>
+            <Text style={styles.episodeCardTitle} numberOfLines={1}>
+              {title || '-'}
+            </Text>
+          </View>
+        </View>
         <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
         {visibilityMode != null && modeStyles ? (
           <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
@@ -140,19 +167,15 @@ function EpisodeListCard({
       </View>
       {showRow2 ? (
         <View style={styles.episodeCardRow2}>
+          {normalizedEpisodeTag ? (
+            <View style={styles.episodeCategoryTag}>
+              <Text style={styles.episodeCategoryTagText}>{normalizedEpisodeTag}</Text>
+            </View>
+          ) : null}
           {chips.length > 0 ? (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              style={styles.episodeParticipantTagScroll}
-              contentContainerStyle={styles.episodeParticipantTagWrap}
-            >
-              {chips.map((p) => (
-                <View key={p.id} style={styles.episodeParticipantTag}>
-                  <Text style={styles.episodeParticipantTagName}>{p.label}</Text>
-                </View>
-              ))}
-            </ScrollView>
+            <View style={styles.episodeParticipantChipList}>
+              <ParticipantChipList chips={chips} />
+            </View>
           ) : null}
           {visibilityMode == null && visibility.length > 0 ? (
             <View style={styles.visibilityCol}>
@@ -179,11 +202,14 @@ export default function EpisodeScreen() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
+  const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
 
   const [isFormVisible, setIsFormVisible] = useState(false);
 
   const [filterTitle, setFilterTitle] = useState('');
+  const [filterTag, setFilterTag] = useState('');
+  const [tagFilterModalVisible, setTagFilterModalVisible] = useState(false);
   const [filterParticipants, setFilterParticipants] = useState<EpisodeParticipantDraft[]>([]);
   const [filterSelectorVisible, setFilterSelectorVisible] = useState(false);
   const [filterSelectorTab, setFilterSelectorTab] = useState<'individual' | 'group'>('individual');
@@ -192,6 +218,15 @@ export default function EpisodeScreen() {
   const [filterSelectorNameFilter, setFilterSelectorNameFilter] = useState('');
   const [filterSelectorAffiliationFilter, setFilterSelectorAffiliationFilter] = useState('');
   const [filterSelectorExperienceFilter, setFilterSelectorExperienceFilter] = useState('');
+
+  const [createLinkModalVisible, setCreateLinkModalVisible] = useState(false);
+  const [createLinkCandidates, setCreateLinkCandidates] = useState<EpisodeEventMatch[]>([]);
+  const [editLinkModalVisible, setEditLinkModalVisible] = useState(false);
+  const [editLinkCandidates, setEditLinkCandidates] = useState<EpisodeEventMatch[]>([]);
+  const [editLinkTarget, setEditLinkTarget] = useState<{ episode: Episode; authorId: string } | null>(
+    null
+  );
+  const [pendingCreatePayload, setPendingCreatePayload] = useState<EpisodeSavePayload | null>(null);
 
   const hiddenParticipantIds = useMemo(
     () => (myselfId ? [myselfId] : []),
@@ -208,6 +243,7 @@ export default function EpisodeScreen() {
     setFriends(getAllFriends());
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
+    setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
     setMyselfId(getMyself());
   }, []);
 
@@ -231,6 +267,7 @@ export default function EpisodeScreen() {
   );
 
   const friendNameById = useMemo(() => buildFriendNameById(friends), [friends]);
+  const friendPhotoById = useMemo(() => buildFriendPhotoById(friends), [friends]);
   const episodeRows = useMemo(() => collectUniqueEpisodes(friends), [friends]);
 
   const restoreFilterSelectorFromParticipants = useCallback((drafts: EpisodeParticipantDraft[]) => {
@@ -308,8 +345,12 @@ export default function EpisodeScreen() {
 
   const filteredEpisodeRows = useMemo(() => {
     const normalizedTitle = filterTitle.trim().toLowerCase();
+    const normalizedFilterTag = normalizeEpisodeTag(filterTag);
     return episodeRows.filter((row) => {
       if (normalizedTitle && !row.episode.title.toLowerCase().includes(normalizedTitle)) {
+        return false;
+      }
+      if (normalizedFilterTag && normalizeEpisodeTag(row.episode.tag) !== normalizedFilterTag) {
         return false;
       }
       if (filterParticipantEntries.length > 0) {
@@ -321,7 +362,7 @@ export default function EpisodeScreen() {
       }
       return true;
     });
-  }, [episodeRows, filterParticipantEntries, filterTitle]);
+  }, [episodeRows, filterParticipantEntries, filterTag, filterTitle]);
 
   const filterParticipantSummary = useMemo(() => {
     const labels = filterParticipants
@@ -395,6 +436,149 @@ export default function EpisodeScreen() {
     ]);
   };
 
+  const finishCreateEpisode = useCallback(
+    (payload: EpisodeSavePayload, eventId: string) => {
+      const normalizedEventId = eventId.trim();
+      if (!normalizedEventId) {
+        episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
+        return;
+      }
+      const created = createEpisode({
+        ...payload,
+        eventId: normalizedEventId,
+      });
+      if (!created) {
+        episodeForm.setFormError('エピソードの追加に失敗しました。');
+        return;
+      }
+      episodeForm.persistPhotos(created.id, false);
+      episodeForm.reset();
+      setIsFormVisible(false);
+      setCreateLinkModalVisible(false);
+      setCreateLinkCandidates([]);
+      setPendingCreatePayload(null);
+      loadData();
+    },
+    [episodeForm, loadData]
+  );
+
+  const handleEventCreateFailed = useCallback(() => {
+    Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE);
+    episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
+  }, [episodeForm]);
+
+  const proceedNewEpisodeSave = useCallback(
+    (payload: EpisodeSavePayload) => {
+      const linkInput = buildEpisodeEventLinkInputFromSavePayload(payload);
+      runNewEpisodeEventLinkFlow(linkInput, {
+        onResolved: (eventId) => finishCreateEpisode(payload, eventId),
+        onMultipleMatches: (matches) => {
+          setPendingCreatePayload(payload);
+          setCreateLinkCandidates(matches);
+          setCreateLinkModalVisible(true);
+        },
+        onEventCreateFailed: handleEventCreateFailed,
+      });
+    },
+    [finishCreateEpisode, handleEventCreateFailed]
+  );
+
+  const handleCreateLinkCancel = useCallback(() => {
+    setCreateLinkModalVisible(false);
+    setCreateLinkCandidates([]);
+    setPendingCreatePayload(null);
+  }, []);
+
+  const handleCreateLinkCreateNew = useCallback(() => {
+    if (!pendingCreatePayload) {
+      return;
+    }
+    const eventId = createEventIdForEpisodeInput(
+      buildEpisodeEventLinkInputFromSavePayload(pendingCreatePayload)
+    );
+    if (!eventId) {
+      handleEventCreateFailed();
+      return;
+    }
+    finishCreateEpisode(pendingCreatePayload, eventId);
+  }, [finishCreateEpisode, handleEventCreateFailed, pendingCreatePayload]);
+
+  const handleCreateLinkSelect = useCallback(
+    (eventId: string) => {
+      if (!pendingCreatePayload) {
+        return;
+      }
+      finishCreateEpisode(pendingCreatePayload, eventId);
+    },
+    [finishCreateEpisode, pendingCreatePayload]
+  );
+
+  const finishEditEpisodeLink = useCallback(
+    (eventId: string) => {
+      if (!editLinkTarget) {
+        return;
+      }
+      const ok = applyEventIdToEpisode(editLinkTarget.episode, editLinkTarget.authorId, eventId);
+      if (!ok) {
+        Alert.alert('エラー', '予定への紐づけに失敗しました。');
+        return;
+      }
+      episodeForm.linkToEvent(eventId);
+      setEditLinkModalVisible(false);
+      setEditLinkCandidates([]);
+      setEditLinkTarget(null);
+      loadData();
+    },
+    [editLinkTarget, episodeForm, loadData]
+  );
+
+  const handleEditLinkCancel = useCallback(() => {
+    setEditLinkModalVisible(false);
+    setEditLinkCandidates([]);
+    setEditLinkTarget(null);
+  }, []);
+
+  const handleEditLinkCreateNew = useCallback(() => {
+    if (!editLinkTarget) {
+      return;
+    }
+    createEventAndLinkEpisode(
+      buildEpisodeEventLinkInput(editLinkTarget.episode),
+      finishEditEpisodeLink,
+      () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE)
+    );
+  }, [editLinkTarget, finishEditEpisodeLink]);
+
+  const handleLinkExistingEpisodeToEvent = useCallback(() => {
+    const episodeId = episodeForm.editingEpisodeId;
+    if (!episodeId || !myselfId) {
+      return;
+    }
+    const episode = getEpisodeById(myselfId, episodeId);
+    if (!episode) {
+      Alert.alert('エラー', 'エピソードが見つかりません。');
+      return;
+    }
+    const authorId = resolveEpisodeRecordOwnerId(episode, myselfId);
+    runEpisodeEventLinkFlow(buildEpisodeEventLinkInput(episode), {
+      onLinked: (eventId) => {
+        const ok = applyEventIdToEpisode(episode, authorId, eventId);
+        if (!ok) {
+          Alert.alert('エラー', '予定への紐づけに失敗しました。');
+          return;
+        }
+        episodeForm.linkToEvent(eventId);
+        loadData();
+      },
+      onMultipleMatches: (matches) => {
+        setEditLinkTarget({ episode, authorId });
+        setEditLinkCandidates(matches);
+        setEditLinkModalVisible(true);
+      },
+      onEventCreateFailed: () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE),
+    });
+  }, [episodeForm, loadData, myselfId]);
+
   const handleSaveEpisode = () => {
     if (!myselfId) {
       episodeForm.setFormError('本人が設定されていません。');
@@ -411,17 +595,12 @@ export default function EpisodeScreen() {
         return;
       }
       episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
-    } else {
-      const created = createEpisode(payload);
-      if (!created) {
-        episodeForm.setFormError('エピソードの追加に失敗しました。');
-        return;
-      }
-      episodeForm.persistPhotos(created.id, false);
+      episodeForm.reset();
+      setIsFormVisible(false);
+      loadData();
+      return;
     }
-    episodeForm.reset();
-    setIsFormVisible(false);
-    loadData();
+    proceedNewEpisodeSave(payload);
   };
 
   return (
@@ -453,13 +632,18 @@ export default function EpisodeScreen() {
                 </Text>
                 <Text style={searchAreaStyles.selectChevron}>▼</Text>
               </Pressable>
-              <View style={[searchAreaStyles.fieldContainer, searchAreaStyles.tagField]}>
-                <View style={searchAreaStyles.tagPlaceholder} pointerEvents="none">
-                  <Text style={searchAreaStyles.tagPlaceholderText}>タグ</Text>
-                </View>
-              </View>
+              <Pressable style={searchAreaStyles.selectButton} onPress={() => setTagFilterModalVisible(true)}>
+                <Text
+                  style={filterTag ? searchAreaStyles.selectValue : searchAreaStyles.selectPlaceholder}
+                  numberOfLines={1}
+                >
+                  {filterTag || 'タグ'}
+                </Text>
+                <Text style={searchAreaStyles.selectChevron}>▼</Text>
+              </Pressable>
             </View>
           </View>
+          <View style={searchAreaStyles.areaDivider} />
 
           <>
             {!myselfId ? <Text style={styles.emptyText}>本人が設定されていません</Text> : null}
@@ -471,7 +655,10 @@ export default function EpisodeScreen() {
               </Text>
             ) : (
               filteredEpisodeRows.map((row) => {
-                const chips = buildParticipantChips(row.episode, friendNameById);
+                const chips = buildParticipantChips(row.episode, friendNameById, {
+                  excludeFriendIds: myselfId ? [myselfId] : [],
+                  friendPhotoById,
+                });
                 const authorId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
                 return (
                   <Pressable
@@ -486,6 +673,7 @@ export default function EpisodeScreen() {
                     <EpisodeListCard
                       title={row.episode.title}
                       date={row.episode.date}
+                      episodeTag={row.episode.tag}
                       chips={chips}
                       visibilityMode={row.episode.visibilityMode}
                     />
@@ -510,11 +698,31 @@ export default function EpisodeScreen() {
         friends={friends}
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
+        episodeTagOptions={episodeTagOptions}
         onClose={() => {
           episodeForm.reset();
           setIsFormVisible(false);
         }}
         onSave={handleSaveEpisode}
+        onLinkToEvent={handleLinkExistingEpisodeToEvent}
+      />
+
+      <EpisodeEventLinkModal
+        visible={createLinkModalVisible}
+        dateKey={pendingCreatePayload?.date ?? ''}
+        candidates={createLinkCandidates}
+        onSelect={handleCreateLinkSelect}
+        onCreateNew={handleCreateLinkCreateNew}
+        onCancel={handleCreateLinkCancel}
+      />
+
+      <EpisodeEventLinkModal
+        visible={editLinkModalVisible}
+        dateKey={editLinkTarget?.episode.date ?? ''}
+        candidates={editLinkCandidates}
+        onSelect={finishEditEpisodeLink}
+        onCreateNew={handleEditLinkCreateNew}
+        onCancel={handleEditLinkCancel}
       />
 
       <EntrySelectorModal
@@ -538,6 +746,48 @@ export default function EpisodeScreen() {
         onCancel={handleFilterSelectorCancel}
         onConfirm={handleFilterSelectorConfirm}
       />
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={tagFilterModalVisible}
+        onRequestClose={() => setTagFilterModalVisible(false)}
+      >
+        <View style={styles.selectorFilterModalBackdrop}>
+          <View style={styles.selectorFilterModalCard}>
+            <Text style={styles.selectorFilterModalTitle}>タグで絞り込み</Text>
+            <ScrollView style={styles.selectorFilterModalOptions}>
+              <Pressable
+                style={[styles.selectorFilterModalOption, !filterTag ? styles.selectorFilterModalOptionSelected : null]}
+                onPress={() => {
+                  setFilterTag('');
+                  setTagFilterModalVisible(false);
+                }}
+              >
+                <Text style={styles.selectorFilterModalOptionText}>すべて</Text>
+              </Pressable>
+              {episodeTagOptions.map((option) => {
+                const selected = option.value === filterTag;
+                return (
+                  <Pressable
+                    key={option.value}
+                    style={[styles.selectorFilterModalOption, selected ? styles.selectorFilterModalOptionSelected : null]}
+                    onPress={() => {
+                      setFilterTag(option.value);
+                      setTagFilterModalVisible(false);
+                    }}
+                  >
+                    <Text style={styles.selectorFilterModalOptionText}>{option.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable style={styles.eventLinkSecondaryButton} onPress={() => setTagFilterModalVisible(false)}>
+              <Text style={styles.eventLinkSecondaryButtonText}>閉じる</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -587,10 +837,33 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 6,
+    flexWrap: 'wrap',
   },
-  episodeCardTitle: {
+  episodeCategoryTag: {
+    borderColor: Theme.inputBorder,
+    borderWidth: 1,
+    borderRadius: 999,
+    backgroundColor: Theme.inputBg,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  episodeCategoryTagText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0f172a',
+  },
+  episodeCardTitleWrap: {
     flex: 1,
     minWidth: 0,
+  },
+  episodeCardTitleUnderline: {
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    paddingBottom: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#cbd5e1',
+  },
+  episodeCardTitle: {
     fontSize: 15,
     fontWeight: '700',
     color: '#1e293b',
@@ -605,14 +878,9 @@ const styles = StyleSheet.create({
     gap: 8,
     flexShrink: 0,
   },
-  episodeParticipantTagScroll: {
+  episodeParticipantChipList: {
     flex: 1,
     minWidth: 0,
-  },
-  episodeParticipantTagWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
   },
   episodeParticipantTag: {
     flexDirection: 'row',
@@ -981,6 +1249,32 @@ const styles = StyleSheet.create({
     backgroundColor: '#e2e8f0',
   },
   selectorFilterModalCloseButtonText: {
+    color: '#0f172a',
+    fontWeight: '600',
+  },
+  eventLinkModalDescription: {
+    fontSize: 13,
+    color: '#475569',
+    marginBottom: 10,
+    lineHeight: 18,
+  },
+  eventLinkOverlapText: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 4,
+  },
+  eventLinkModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  eventLinkSecondaryButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: Radius.sm,
+    backgroundColor: '#e2e8f0',
+  },
+  eventLinkSecondaryButtonText: {
     color: '#0f172a',
     fontWeight: '600',
   },

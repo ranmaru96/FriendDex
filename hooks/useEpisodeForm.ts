@@ -4,6 +4,7 @@ import { PHOTO_LIMITS } from '@/constants';
 import {
   deleteEpisodePhoto,
   getEpisodePhotos,
+  getEvent,
   insertEpisodePhoto,
 } from '@/db';
 import type {
@@ -14,7 +15,9 @@ import type {
   EpisodeVisibilityMode,
   Friend,
 } from '@/types';
-import { mergeParticipantEntries } from '@/utils/episodeHelpers';
+import { mergeParticipantEntries, normalizeEpisodeTag } from '@/utils/episodeHelpers';
+import { getLinkedEventDateBounds } from '@/utils/eventEpisodeBidirectionalSync';
+import { getLocalDateKeysForEvent } from '@/utils/eventHelpers';
 import {
   EpisodeParticipantDraft,
   EpisodeVisibilityDraft,
@@ -28,6 +31,7 @@ export type EpisodeSavePayload = {
   visibilityMode: EpisodeVisibilityMode;
   participantEntries: EpisodeParticipant[];
   visibilityEntries: EpisodeVisibilityEntry[];
+  tag?: string | null;
 };
 
 type UseEpisodeFormOptions = {
@@ -56,6 +60,8 @@ export function useEpisodeForm({
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
   const [newPhotoUris, setNewPhotoUris] = useState<string[]>([]);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<number[]>([]);
+  const [linkedEventId, setLinkedEventId] = useState<string | null>(null);
+  const [tag, setTag] = useState('');
 
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [selectorTarget, setSelectorTarget] = useState<'participant' | 'visibility'>('participant');
@@ -78,6 +84,11 @@ export function useEpisodeForm({
 
   const isPhotoLimitReached = photos.length + newPhotoUris.length >= PHOTO_LIMITS.free;
 
+  const allowedEventDateRange = useMemo(
+    () => getLinkedEventDateBounds(linkedEventId),
+    [linkedEventId]
+  );
+
   const reset = useCallback(() => {
     setFormError('');
     setEditingEpisodeId(null);
@@ -91,6 +102,8 @@ export function useEpisodeForm({
     setPhotos([]);
     setNewPhotoUris([]);
     setDeletedPhotoIds([]);
+    setLinkedEventId(null);
+    setTag('');
     setSelectorVisible(false);
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
@@ -207,7 +220,19 @@ export function useEpisodeForm({
         }));
       setEditingEpisodeId(episode.id);
       setTitle(episode.title);
-      setDate(episode.date);
+      const eventId = episode.eventId?.trim() || null;
+      setLinkedEventId(eventId);
+      let nextDate = episode.date;
+      if (eventId) {
+        const event = getEvent(eventId);
+        if (event) {
+          const allowedDateKeys = getLocalDateKeysForEvent(event);
+          if (allowedDateKeys.length > 0 && !allowedDateKeys.includes(nextDate)) {
+            nextDate = allowedDateKeys[0];
+          }
+        }
+      }
+      setDate(nextDate);
       setDescription(episode.description);
       setParticipants(participantDrafts);
       setVisibilityMode(episode.visibilityMode);
@@ -222,6 +247,12 @@ export function useEpisodeForm({
       setDeletedPhotoIds([]);
       setFormError('');
       setShowDatePicker(false);
+      if (eventId) {
+        const event = getEvent(eventId);
+        setTag(event?.episodeTag ?? '');
+      } else {
+        setTag(episode.tag ?? '');
+      }
     },
     [hiddenParticipantIds]
   );
@@ -265,8 +296,17 @@ export function useEpisodeForm({
       visibilityMode,
       participantEntries,
       visibilityEntries,
+      tag: normalizeEpisodeTag(tag),
     };
-  }, [date, description, implicitParticipantEntries, participants, title, visibility, visibilityMode]);
+  }, [date, description, implicitParticipantEntries, participants, tag, title, visibility, visibilityMode]);
+
+  const linkToEvent = useCallback((eventId: string) => {
+    const normalized = eventId.trim();
+    setLinkedEventId(normalized.length > 0 ? normalized : null);
+    if (normalized.length > 0) {
+      setTag(getEvent(normalized)?.episodeTag ?? '');
+    }
+  }, []);
 
   const pickPhoto = useCallback(async () => {
     if (isPhotoLimitReached) return;
@@ -309,6 +349,12 @@ export function useEpisodeForm({
   return {
     editingEpisodeId,
     setEditingEpisodeId,
+    linkedEventId,
+    setLinkedEventId,
+    linkToEvent,
+    tag,
+    setTag,
+    allowedEventDateRange,
     title,
     setTitle,
     date,

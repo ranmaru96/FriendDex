@@ -18,6 +18,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 
 import {
   createFriend,
@@ -437,8 +438,8 @@ export default function EditScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.topBar}>
-        <Text style={styles.screenTitle} numberOfLines={1}>
+      <View style={subScreenHeaderStyles.bar}>
+        <Text style={subScreenHeaderStyles.titleLeft} numberOfLines={1}>
           {isEditMode ? '人物編集' : '新規登録'}
         </Text>
         <View style={styles.topBarActions}>
@@ -655,22 +656,6 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: Theme.screenBase,
-  },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    gap: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Theme.border,
-    backgroundColor: Theme.bgSurface,
-  },
-  screenTitle: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '700',
-    color: Theme.textPrimary,
   },
   topBarActions: {
     flexDirection: 'row',

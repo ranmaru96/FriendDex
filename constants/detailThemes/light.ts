@@ -57,7 +57,7 @@ export const lightDetailDesign: DetailDesignBundle = {
     barTrack: c.barTrack,
     barFill: c.barFill,
     barPct: c.barPct,
-    tabTrackBg: c.tabTrackBg,
+    tabTrackBg: '#F8F8F8',
     tabTrackBorder: c.tabTrackBorder,
     tabInactive: c.tabInactive,
     tabActiveText: c.tabActiveText,
