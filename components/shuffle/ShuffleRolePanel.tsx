@@ -31,7 +31,7 @@ export function ShuffleRolePanel({
   myselfId = null,
   onShuffleComplete,
 }: ShuffleRolePanelProps) {
-  const [roleDrafts, setRoleDrafts] = useState<ShuffleRoleDraft[]>([createEmptyRoleDraft()]);
+  const [roleDrafts, setRoleDrafts] = useState<ShuffleRoleDraft[]>([createEmptyRoleDraft(1)]);
   const [assignments, setAssignments] = useState<ShuffleRoleAssignment[] | null>(null);
   const [error, setError] = useState('');
 
@@ -67,14 +67,14 @@ export function ShuffleRolePanel({
   }, []);
 
   const addRole = useCallback(() => {
-    setRoleDrafts((current) => [...current, createEmptyRoleDraft()]);
+    setRoleDrafts((current) => [...current, createEmptyRoleDraft(current.length + 1)]);
     setError('');
   }, []);
 
   const removeRole = useCallback((roleId: string) => {
     setRoleDrafts((current) => {
       if (current.length <= 1) {
-        return [createEmptyRoleDraft()];
+        return [createEmptyRoleDraft(1)];
       }
       return current.filter((role) => role.id !== roleId);
     });
@@ -173,16 +173,14 @@ export function ShuffleRolePanel({
               </Pressable>
             </View>
 
-            <TextInput
-              style={styles.textInput}
-              value={role.name}
-              onChangeText={(name) => updateRole(role.id, { name })}
-              placeholder="役名（例: 運転手）"
-              placeholderTextColor={Theme.inputPlaceholder}
-            />
-
-            <View style={styles.pickCountRow}>
-              <Text style={styles.pickCountLabel}>人数</Text>
+            <View style={styles.roleNameCountRow}>
+              <TextInput
+                style={styles.roleNameInput}
+                value={role.name}
+                onChangeText={(name) => updateRole(role.id, { name })}
+                placeholder="役名（例: 運転手）"
+                placeholderTextColor={Theme.inputPlaceholder}
+              />
               <View style={styles.stepper}>
                 <Pressable
                   style={[styles.stepperButton, role.count <= 1 && styles.stepperButtonDisabled]}
@@ -282,7 +280,7 @@ const styles = StyleSheet.create({
     borderColor: Theme.searchFieldBorder,
     borderRadius: Radius.md,
     padding: 10,
-    gap: 10,
+    gap: 8,
   },
   roleCardHeader: {
     flexDirection: 'row',
@@ -299,35 +297,33 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#b91c1c',
   },
-  textInput: {
+  roleNameCountRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  roleNameInput: {
+    flex: 1,
+    minWidth: 0,
     backgroundColor: Theme.bgSurface,
     borderColor: Theme.searchFieldBorder,
     borderWidth: 1,
     borderRadius: Radius.md,
     color: Theme.textPrimary,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
     fontSize: 13,
-    minHeight: 38,
-  },
-  pickCountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  pickCountLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Theme.textPrimary,
+    minHeight: 34,
   },
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 4,
+    flexShrink: 0,
   },
   stepperButton: {
-    width: 32,
-    height: 32,
+    width: 28,
+    height: 28,
     borderRadius: Radius.sm,
     borderWidth: 1,
     borderColor: Theme.searchFieldBorder,
@@ -339,20 +335,20 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   stepperButtonText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: Theme.textPrimary,
-    lineHeight: 20,
+    lineHeight: 18,
   },
   pickCountValue: {
-    minWidth: 24,
+    minWidth: 20,
     textAlign: 'center',
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '800',
     color: Theme.textPrimary,
   },
   excludeSection: {
-    gap: 6,
+    gap: 4,
   },
   excludeLabel: {
     fontSize: 12,

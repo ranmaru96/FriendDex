@@ -13,9 +13,11 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Theme, Radius, Spacing, ScreenHorizontalInset } from '@/constants/theme';
 import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
+import { MoneyLoanSessionCard } from '@/components/money-loan/MoneyLoanSessionCard';
 import { MoneyLoanSessionEditModal } from '@/components/money-loan/MoneyLoanSessionEditModal';
 import { moneyLoanFormStyles as formStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { MoneyLoanRecentCounterpartyChips } from '@/components/money-loan/MoneyLoanRecentCounterpartyChips';
@@ -42,6 +44,7 @@ import {
   buildMoneyLoanParticipantsFromSelectorPicks,
   buildMoneyLoanPersonAggregates,
   buildSessionTitleById,
+  buildSettledMoneyLoanSessionSummaries,
   formatMoneyLoanDateLabel,
   formatYen,
   getMoneyLoanSplitCount,
@@ -68,6 +71,12 @@ const TAB_LABELS: Record<MoneyLoanTab, string> = {
   lent: '貸',
   borrowed: '借',
 };
+
+const MONEY_LOAN_TABS: PillTabItem<MoneyLoanTab>[] = [
+  { key: 'register', caption: TAB_LABELS.register, icon: 'create-outline', color: Theme.accent },
+  { key: 'lent', caption: TAB_LABELS.lent, icon: 'arrow-up-circle-outline', color: '#4a7fd4' },
+  { key: 'borrowed', caption: TAB_LABELS.borrowed, icon: 'arrow-down-circle-outline', color: '#e07a2a' },
+];
 
 function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
   return new Map(friends.map((friend) => [friend.id, friend.photoUri ?? null]));
@@ -177,6 +186,11 @@ export default function MoneyLoanScreen() {
 
   const activeSessionSummaries = useMemo(
     () => buildActiveMoneyLoanSessionSummaries(sessions, loans),
+    [loans, sessions]
+  );
+
+  const settledSessionSummaries = useMemo(
+    () => buildSettledMoneyLoanSessionSummaries(sessions, loans),
     [loans, sessions]
   );
 
@@ -609,31 +623,40 @@ export default function MoneyLoanScreen() {
             </Pressable>
           </View>
 
-          <Text style={formStyles.sectionTitleOnBase}>登録済みタイトル</Text>
+          <Text style={formStyles.sectionTitleOnBase}>未返済</Text>
           {activeSessionSummaries.length === 0 ? (
-            <Text style={formStyles.emptyTextOnBase}>未返済のタイトルはありません。</Text>
+            <Text style={formStyles.emptyTextOnBase}>未返済はありません。</Text>
           ) : (
             activeSessionSummaries.map((summary) => (
-              <Pressable
+              <MoneyLoanSessionCard
                 key={summary.session.id}
-                style={styles.sessionCard}
+                summary={summary}
+                friendNameById={friendNameById}
+                friendPhotoById={friendPhotoById}
+                showBatchDates={summary.batchCount > 1}
                 onPress={() => openEditSession(summary.session)}
                 onLongPress={() => handleDeleteSession(summary.session.id, summary.session.title)}
-                delayLongPress={300}
-              >
-                <View style={styles.sessionCardHeader}>
-                  <Text style={styles.sessionTitle} numberOfLines={1}>
-                    {summary.session.title}
-                  </Text>
-                  <Text style={styles.sessionEditHint}>編集</Text>
-                </View>
-                <Text style={styles.sessionMeta}>
-                  登録 {summary.batchCount}件 · 未返済 {summary.unpaidLoanCount}人
-                </Text>
-                <Text style={styles.sessionUnpaid}>{formatYen(summary.unpaidAmount)}</Text>
-              </Pressable>
+              />
             ))
           )}
+
+          {settledSessionSummaries.length > 0 ? (
+            <>
+              <Text style={formStyles.sectionTitleOnBase}>完済</Text>
+              {settledSessionSummaries.map((summary) => (
+                <MoneyLoanSessionCard
+                  key={summary.session.id}
+                  summary={summary}
+                  friendNameById={friendNameById}
+                  friendPhotoById={friendPhotoById}
+                  settled
+                  showBatchDates={summary.batchCount > 1}
+                  onPress={() => openEditSession(summary.session)}
+                  onLongPress={() => handleDeleteSession(summary.session.id, summary.session.title)}
+                />
+              ))}
+            </>
+          ) : null}
         </>
       ) : null}
 
@@ -654,24 +677,12 @@ export default function MoneyLoanScreen() {
         <View style={subScreenHeaderStyles.side} />
       </View>
 
-      <View style={styles.tabRow}>
-        {(Object.keys(TAB_LABELS) as MoneyLoanTab[]).map((tab) => {
-          const selected = activeTab === tab;
-          return (
-            <Pressable
-              key={tab}
-              style={[styles.tabButton, selected && styles.tabButtonSelected]}
-              onPress={() => setActiveTab(tab)}
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-            >
-              <Text style={[styles.tabButtonText, selected && styles.tabButtonTextSelected]}>
-                {TAB_LABELS[tab]}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+      <PillTabBar
+        tabs={MONEY_LOAN_TABS}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        perTabColors
+      />
 
       {activeTab === 'register' ? (
         <KeyboardAwareScrollView
@@ -732,74 +743,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Theme.screenBase,
   },
-  tabRow: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: ScreenHorizontalInset,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.sm,
-    backgroundColor: Theme.screenBase,
-  },
-  tabButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
-    borderRadius: Radius.md,
-    backgroundColor: Theme.card,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  tabButtonSelected: {
-    borderColor: Theme.accent,
-    backgroundColor: Theme.accentLight,
-  },
-  tabButtonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: Theme.textPrimary,
-  },
-  tabButtonTextSelected: {
-    color: Theme.accent,
-  },
   scrollContent: {
     paddingHorizontal: ScreenHorizontalInset,
     paddingBottom: 40,
     gap: Spacing.md,
-  },
-  sessionCard: {
-    backgroundColor: Theme.bgSurface,
-    borderWidth: 1,
-    borderColor: Theme.border,
-    borderRadius: Radius.md,
-    padding: Spacing.md,
-    gap: 4,
-  },
-  sessionCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  sessionTitle: {
-    flex: 1,
-    fontSize: 16,
-    fontWeight: '700',
-    color: Theme.textPrimary,
-  },
-  sessionEditHint: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Theme.accent,
-    flexShrink: 0,
-  },
-  sessionMeta: {
-    fontSize: 12,
-    color: Theme.textSecondary,
-  },
-  sessionUnpaid: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: Theme.accent,
   },
   personCard: {
     backgroundColor: Theme.bgSurface,

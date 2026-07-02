@@ -1,8 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Radius, Theme } from '@/constants/theme';
 import { ParticipantChip } from '@/components/participant/ParticipantChip';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
+
+const COLUMN_GAP = 6;
 
 type ShuffleOrderResultsProps = {
   memberIds: string[];
@@ -15,6 +17,8 @@ export function ShuffleOrderResults({
   friendNameById,
   friendPhotoById,
 }: ShuffleOrderResultsProps) {
+  const [gridWidth, setGridWidth] = useState(0);
+
   const chips = useMemo(
     () =>
       buildParticipantChipDisplays(
@@ -25,42 +29,64 @@ export function ShuffleOrderResults({
     [friendNameById, friendPhotoById, memberIds]
   );
 
+  const columnWidth = gridWidth > 0 ? (gridWidth - COLUMN_GAP) / 2 : 0;
+
   if (chips.length === 0) {
     return null;
   }
 
   return (
-    <View style={styles.list}>
-      {chips.map((chip, index) => (
-        <View key={chip.id} style={styles.row}>
-          <Text style={styles.rank}>{index + 1}</Text>
-          <ParticipantChip chip={chip} compact />
-        </View>
-      ))}
+    <View
+      style={styles.grid}
+      onLayout={(event) => {
+        const nextWidth = event.nativeEvent.layout.width;
+        if (nextWidth > 0 && nextWidth !== gridWidth) {
+          setGridWidth(nextWidth);
+        }
+      }}
+    >
+      {columnWidth > 0
+        ? chips.map((chip, index) => (
+            <View key={chip.id} style={[styles.cell, { width: columnWidth }]}>
+              <Text style={styles.rank}>{index + 1}</Text>
+              <View style={styles.chipWrap}>
+                <ParticipantChip chip={chip} compact />
+              </View>
+            </View>
+          ))
+        : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  list: {
-    gap: 6,
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: COLUMN_GAP,
   },
-  row: {
+  cell: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 6,
     backgroundColor: Theme.card,
     borderWidth: 1,
     borderColor: Theme.border,
     borderRadius: Radius.sm,
     paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
+    minWidth: 0,
   },
   rank: {
-    width: 22,
+    width: 18,
     textAlign: 'center',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '800',
     color: Theme.accent,
+    flexShrink: 0,
+  },
+  chipWrap: {
+    flex: 1,
+    minWidth: 0,
   },
 });

@@ -14,6 +14,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Spacing, ScreenHorizontalInset } from '@/constants/theme';
 import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { ShuffleLibraryPickerModal } from '@/components/shuffle/ShuffleLibraryPickerModal';
 import { ShuffleOrderResults } from '@/components/shuffle/ShuffleOrderResults';
@@ -54,7 +55,6 @@ type ShufflePoolDraft = {
   labelIsCustom: boolean;
 };
 
-const SHUFFLE_MODE_ORDER: ShuffleMode[] = ['random', 'order', 'role', 'team'];
 
 const SHUFFLE_MODE_LABELS: Record<ShuffleMode, string> = {
   random: 'ランダム選択',
@@ -62,6 +62,13 @@ const SHUFFLE_MODE_LABELS: Record<ShuffleMode, string> = {
   role: '役割分担',
   team: 'チーム分け',
 };
+
+const SHUFFLE_TABS: PillTabItem<ShuffleMode>[] = [
+  { key: 'random', caption: SHUFFLE_MODE_LABELS.random, icon: 'shuffle-outline', color: '#8b5fd4' },
+  { key: 'order', caption: SHUFFLE_MODE_LABELS.order, icon: 'list-outline', color: '#4a7fd4' },
+  { key: 'role', caption: SHUFFLE_MODE_LABELS.role, icon: 'ribbon-outline', color: '#e07a2a' },
+  { key: 'team', caption: SHUFFLE_MODE_LABELS.team, icon: 'people-outline', color: '#3a9d5a' },
+];
 
 function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
   return new Map(friends.map((friend) => [friend.id, friend.photoUri ?? null]));
@@ -422,29 +429,12 @@ export default function ShuffleScreen() {
         <View style={subScreenHeaderStyles.side} />
       </View>
 
-      <View style={styles.modeHeader}>
-        <View style={styles.tabRow}>
-          {SHUFFLE_MODE_ORDER.map((mode) => {
-            const selected = shuffleMode === mode;
-            return (
-              <Pressable
-                key={mode}
-                style={[styles.tabButton, selected && styles.tabButtonSelected]}
-                onPress={() => setShuffleMode(mode)}
-              >
-                <Text
-                  style={[styles.tabButtonText, selected && styles.tabButtonTextSelected]}
-                  numberOfLines={1}
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.8}
-                >
-                  {SHUFFLE_MODE_LABELS[mode]}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      </View>
+      <PillTabBar
+        tabs={SHUFFLE_TABS}
+        activeTab={shuffleMode}
+        onTabChange={setShuffleMode}
+        perTabColors
+      />
 
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         <View style={styles.sectionCard}>
@@ -668,14 +658,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Theme.screenBase,
   },
-  modeHeader: {
-    paddingHorizontal: ScreenHorizontalInset,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.sm,
-    backgroundColor: Theme.screenBase,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Theme.border,
-  },
   scrollContent: {
     paddingHorizontal: ScreenHorizontalInset,
     paddingTop: Spacing.md,
@@ -748,32 +730,6 @@ const styles = StyleSheet.create({
   },
   shuffleSection: {
     gap: 10,
-  },
-  tabRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  tabButton: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
-    borderRadius: Radius.md,
-    backgroundColor: Theme.card,
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    alignItems: 'center',
-  },
-  tabButtonSelected: {
-    borderColor: Theme.accent,
-    backgroundColor: Theme.accentLight,
-  },
-  tabButtonText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: Theme.textSecondary,
-  },
-  tabButtonTextSelected: {
-    color: Theme.accent,
   },
   shuffleCard: {
     backgroundColor: Theme.bgSurface,

@@ -91,13 +91,120 @@ export function groupMoneyLoansByBatch(loans: MoneyLoan[]): MoneyLoanBatch[] {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
+export type MoneyLoanBatchCardSummary = {
+  groupId: string;
+  createdAt: string;
+  registerMode: 'split' | 'individual';
+  friendCount: number;
+  unpaidCount: number;
+  repaidCount: number;
+  /** 友人への貸借記録の合計（DBに保存されている金額） */
+  totalAmount: number;
+  /** 割り勘の場合は本人分を含む登録時の合計金額。個別の場合は totalAmount と同じ */
+  registrationTotalAmount: number;
+  unpaidAmount: number;
+  unpaidFriendIds: string[];
+  repaidFriendIds: string[];
+};
+
 export type MoneyLoanSessionSummary = {
   session: MoneyLoanSession;
   batchCount: number;
   loanCount: number;
   unpaidLoanCount: number;
+  repaidLoanCount: number;
+  /** 友人への貸借記録の合計 */
+  totalAmount: number;
+  /** 登録時の合計（割り勘分は本人込み） */
+  registrationTotalAmount: number;
   unpaidAmount: number;
+  batches: MoneyLoanBatchCardSummary[];
 };
+
+/** 割り勘登録の本人込み合計金額を、保存済みの友人分から推定 */
+export function estimateSplitRegistrationTotal(friendLoans: MoneyLoan[]): number | null {
+  const friends = friendLoans.filter((loan) => loan.counterpartyKind === 'friend');
+  if (friends.length === 0) {
+    return null;
+  }
+  if (inferBatchRegisterModeFromAll(friends) !== 'split') {
+    return null;
+  }
+
+  const friendCount = friends.length;
+  const amounts = friends.map((loan) => loan.amount);
+  const allSameAmount = amounts.every((amount) => amount === amounts[0]);
+  if (allSameAmount) {
+    return estimateSplitTotalAmount(friendCount, amounts[0]);
+  }
+
+  const splitCount = getMoneyLoanSplitCount(friendCount);
+  const sortedFriendAmounts = [...amounts].sort((a, b) => a - b);
+  const friendSum = amounts.reduce((sum, amount) => sum + amount, 0);
+  const maxFriendAmount = Math.max(...amounts);
+
+  for (let total = friendSum; total <= friendSum + maxFriendAmount + 1; total++) {
+    const splitAmounts = splitAmountEvenly(total, splitCount);
+    const splitFriendAmounts = splitAmounts.slice(0, friendCount).sort((a, b) => a - b);
+    if (
+      splitFriendAmounts.length === sortedFriendAmounts.length &&
+      splitFriendAmounts.every((amount, index) => amount === sortedFriendAmounts[index])
+    ) {
+      return total;
+    }
+  }
+
+  return friendSum + Math.min(...amounts);
+}
+
+/** 返済済みを含む全 loan から登録方法を推定（一覧表示用） */
+export function inferBatchRegisterModeFromAll(loans: MoneyLoan[]): 'split' | 'individual' {
+  const friends = loans.filter((loan) => loan.counterpartyKind === 'friend');
+  if (friends.length === 0) {
+    return 'individual';
+  }
+  const firstAmount = friends[0].amount;
+  const allLent = friends.every((loan) => loan.direction === 'lent');
+  const allSameAmount = friends.every((loan) => loan.amount === firstAmount);
+  return allLent && allSameAmount ? 'split' : 'individual';
+}
+
+export function buildMoneyLoanBatchCardSummary(batch: MoneyLoanBatch): MoneyLoanBatchCardSummary {
+  const friendLoans = batch.loans.filter((loan) => loan.counterpartyKind === 'friend');
+  const unpaidFriends = friendLoans.filter((loan) => !loan.isRepaid);
+  const repaidFriends = friendLoans.filter((loan) => loan.isRepaid);
+  const registerMode = inferBatchRegisterModeFromAll(friendLoans);
+  const totalAmount = friendLoans.reduce((sum, loan) => sum + loan.amount, 0);
+  const splitRegistrationTotal =
+    registerMode === 'split' ? estimateSplitRegistrationTotal(friendLoans) : null;
+  return {
+    groupId: batch.groupId,
+    createdAt: batch.createdAt,
+    registerMode,
+    friendCount: friendLoans.length,
+    unpaidCount: unpaidFriends.length,
+    repaidCount: repaidFriends.length,
+    totalAmount,
+    registrationTotalAmount: splitRegistrationTotal ?? totalAmount,
+    unpaidAmount: unpaidFriends.reduce((sum, loan) => sum + loan.amount, 0),
+    unpaidFriendIds: unpaidFriends.map((loan) => loan.counterpartyValue),
+    repaidFriendIds: repaidFriends.map((loan) => loan.counterpartyValue),
+  };
+}
+
+export function formatBatchCardCountLabel(batch: MoneyLoanBatchCardSummary): string {
+  const modeLabel = batch.registerMode === 'split' ? '割り勘' : '個別';
+  if (batch.friendCount === 0) {
+    return `${modeLabel} 0人`;
+  }
+  if (batch.unpaidCount === 0) {
+    return `${modeLabel} ${batch.friendCount}人 · 完済`;
+  }
+  if (batch.repaidCount === 0) {
+    return `${modeLabel} ${batch.friendCount}人 · 未返済${batch.unpaidCount}`;
+  }
+  return `${modeLabel} ${batch.friendCount}人 · 未返済${batch.unpaidCount} · 返済${batch.repaidCount}`;
+}
 
 export function buildMoneyLoanSessionSummaries(
   sessions: MoneyLoanSession[],
@@ -113,24 +220,44 @@ export function buildMoneyLoanSessionSummaries(
   return sessions.map((session) => {
     const sessionLoans = loansBySession.get(session.id) ?? [];
     const batches = groupMoneyLoansByBatch(sessionLoans);
+    const batchSummaries = batches.map(buildMoneyLoanBatchCardSummary);
     const unpaidLoans = sessionLoans.filter((loan) => !loan.isRepaid);
+    const repaidLoans = sessionLoans.filter((loan) => loan.isRepaid);
     return {
       session,
       batchCount: batches.length,
       loanCount: sessionLoans.length,
       unpaidLoanCount: unpaidLoans.length,
+      repaidLoanCount: repaidLoans.length,
+      totalAmount: sessionLoans.reduce((sum, loan) => sum + loan.amount, 0),
+      registrationTotalAmount: batchSummaries.reduce((sum, batch) => sum + batch.registrationTotalAmount, 0),
       unpaidAmount: unpaidLoans.reduce((sum, loan) => sum + loan.amount, 0),
+      batches: batchSummaries,
     };
   });
 }
+
+const sortSessionSummaries = (summaries: MoneyLoanSessionSummary[]): MoneyLoanSessionSummary[] =>
+  [...summaries].sort((a, b) => b.session.createdAt.localeCompare(a.session.createdAt));
 
 export function buildActiveMoneyLoanSessionSummaries(
   sessions: MoneyLoanSession[],
   loans: MoneyLoan[]
 ): MoneyLoanSessionSummary[] {
-  return buildMoneyLoanSessionSummaries(sessions, loans)
-    .filter((summary) => summary.unpaidLoanCount > 0)
-    .sort((a, b) => b.session.createdAt.localeCompare(a.session.createdAt));
+  return sortSessionSummaries(
+    buildMoneyLoanSessionSummaries(sessions, loans).filter((summary) => summary.unpaidLoanCount > 0)
+  );
+}
+
+export function buildSettledMoneyLoanSessionSummaries(
+  sessions: MoneyLoanSession[],
+  loans: MoneyLoan[]
+): MoneyLoanSessionSummary[] {
+  return sortSessionSummaries(
+    buildMoneyLoanSessionSummaries(sessions, loans).filter(
+      (summary) => summary.loanCount > 0 && summary.unpaidLoanCount === 0
+    )
+  );
 }
 
 export type MoneyLoanPersonAggregateItem = {

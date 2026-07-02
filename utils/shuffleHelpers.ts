@@ -86,10 +86,19 @@ export function createRoleDraftId(): string {
   return `role-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export function createEmptyRoleDraft(): ShuffleRoleDraft {
+export function defaultRoleName(roleIndex: number): string {
+  return `役${Math.max(1, roleIndex)}`;
+}
+
+export function resolveRoleName(name: string, roleIndex: number): string {
+  const trimmed = name.trim();
+  return trimmed.length > 0 ? trimmed : defaultRoleName(roleIndex);
+}
+
+export function createEmptyRoleDraft(roleIndex = 1): ShuffleRoleDraft {
   return {
     id: createRoleDraftId(),
-    name: '',
+    name: defaultRoleName(roleIndex),
     count: 1,
     excludedMemberIds: [],
   };
@@ -125,11 +134,8 @@ export function assignRolesToMembers(
   const assigned = new Set<string>();
   const assignments: ShuffleRoleAssignment[] = [];
 
-  for (const role of roles) {
-    const roleName = role.name.trim();
-    if (!roleName) {
-      return { ok: false, error: '役名を入力してください。' };
-    }
+  for (const [index, role] of roles.entries()) {
+    const roleName = resolveRoleName(role.name, index + 1);
     if (!Number.isFinite(role.count) || role.count < 1) {
       return { ok: false, error: `「${roleName}」の人数は1以上にしてください。` };
     }
