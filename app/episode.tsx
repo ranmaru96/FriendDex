@@ -22,6 +22,11 @@ import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import type { Option } from '@/components/episode/types';
 import { useEpisodeForm, type EpisodeSavePayload } from '@/hooks/useEpisodeForm';
+import { usePersistedFilter, FILTER_KEYS } from '@/hooks/usePersistedFilter';
+import {
+  DEFAULT_EPISODE_LIST_FILTER,
+  isEpisodeListFilterState,
+} from '@/utils/persistedFilterTypes';
 import {
   createEpisode,
   deleteEpisode,
@@ -207,10 +212,29 @@ export default function EpisodeScreen() {
 
   const [isFormVisible, setIsFormVisible] = useState(false);
 
-  const [filterTitle, setFilterTitle] = useState('');
-  const [filterTag, setFilterTag] = useState('');
+  const [episodeListFilter, setEpisodeListFilter] = usePersistedFilter(
+    FILTER_KEYS.episodeList,
+    DEFAULT_EPISODE_LIST_FILTER,
+    { validate: isEpisodeListFilterState }
+  );
+  const filterTitle = episodeListFilter.title;
+  const filterTag = episodeListFilter.tag;
+  const filterParticipants = episodeListFilter.participants;
+  const setFilterTitle = useCallback(
+    (title: string) => setEpisodeListFilter((prev) => ({ ...prev, title })),
+    [setEpisodeListFilter]
+  );
+  const setFilterTag = useCallback(
+    (tag: string) => setEpisodeListFilter((prev) => ({ ...prev, tag })),
+    [setEpisodeListFilter]
+  );
+  const setFilterParticipants = useCallback(
+    (participants: EpisodeParticipantDraft[]) =>
+      setEpisodeListFilter((prev) => ({ ...prev, participants })),
+    [setEpisodeListFilter]
+  );
+
   const [tagFilterModalVisible, setTagFilterModalVisible] = useState(false);
-  const [filterParticipants, setFilterParticipants] = useState<EpisodeParticipantDraft[]>([]);
   const [filterSelectorVisible, setFilterSelectorVisible] = useState(false);
   const [filterSelectorTab, setFilterSelectorTab] = useState<'individual' | 'group'>('individual');
   const [filterSelectedIndividualIds, setFilterSelectedIndividualIds] = useState<Set<string>>(new Set());

@@ -29,7 +29,13 @@ import {
   initializeDatabase,
   searchFriends,
 } from './db';
-import { Friend, FriendSearchFilters, MBTI_TYPES, MBTIType, PendingReviewEpisodeRef } from './types';
+import { usePersistedFilter, FILTER_KEYS } from '@/hooks/usePersistedFilter';
+import {
+  DEFAULT_HOME_FILTER,
+  homeFilterToSearchFilters,
+  isHomeFilterState,
+} from '@/utils/persistedFilterTypes';
+import { Friend, MBTI_TYPES, PendingReviewEpisodeRef } from './types';
 
 type Option = {
   label: string;
@@ -112,12 +118,9 @@ export default function HomeScreen() {
     return (rowInnerWidth - CARD_GAP * 2) / 3;
   }, [screenWidth]);
 
-  const [name, setName] = useState('');
-  const [affiliation1, setAffiliation1] = useState('');
-  const [affiliation2, setAffiliation2] = useState('');
-  const [birthMonth, setBirthMonth] = useState('');
-  const [mbti, setMbti] = useState('');
-  const [experience, setExperience] = useState('');
+  const [homeFilter, setHomeFilter] = usePersistedFilter(FILTER_KEYS.home, DEFAULT_HOME_FILTER, {
+    validate: isHomeFilterState,
+  });
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
@@ -140,16 +143,7 @@ export default function HomeScreen() {
     reloadPendingReviews();
   }, [reloadPendingReviews]);
 
-  const filters = useMemo((): FriendSearchFilters => {
-    const next: FriendSearchFilters = {};
-    if (name.trim()) next.name = name.trim();
-    if (affiliation1) next.affiliation1 = affiliation1;
-    if (affiliation2) next.affiliation2 = affiliation2;
-    if (birthMonth) next.birthMonth = Number(birthMonth);
-    if (mbti) next.mbti = mbti as MBTIType;
-    if (experience) next.experience = experience;
-    return next;
-  }, [name, affiliation1, affiliation2, birthMonth, mbti, experience]);
+  const filters = useMemo(() => homeFilterToSearchFilters(homeFilter), [homeFilter]);
 
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
@@ -216,8 +210,8 @@ export default function HomeScreen() {
               <View style={searchAreaStyles.row}>
                 <View style={searchAreaStyles.fieldContainer}>
                   <TextInput
-                    value={name}
-                    onChangeText={setName}
+                    value={homeFilter.name}
+                    onChangeText={(text) => setHomeFilter((prev) => ({ ...prev, name: text }))}
                     placeholder="名前"
                     placeholderTextColor={Theme.textSecondary}
                     style={searchAreaStyles.textInput}
@@ -226,36 +220,36 @@ export default function HomeScreen() {
                 </View>
                 <SelectField
                   label="所属1"
-                  value={affiliation1}
+                  value={homeFilter.affiliation1}
                   options={affiliationOptions}
-                  onValueChange={setAffiliation1}
+                  onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, affiliation1: value }))}
                 />
                 <SelectField
                   label="所属2"
-                  value={affiliation2}
+                  value={homeFilter.affiliation2}
                   options={affiliationOptions}
-                  onValueChange={setAffiliation2}
+                  onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, affiliation2: value }))}
                 />
               </View>
 
               <View style={searchAreaStyles.row}>
                 <SelectField
                   label="経験"
-                  value={experience}
+                  value={homeFilter.experience}
                   options={experienceOptions}
-                  onValueChange={setExperience}
+                  onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, experience: value }))}
                 />
                 <SelectField
                   label="MBTI"
-                  value={mbti}
+                  value={homeFilter.mbti}
                   options={mbtiOptions}
-                  onValueChange={setMbti}
+                  onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, mbti: value }))}
                 />
                 <SelectField
                   label="誕生月"
-                  value={birthMonth}
+                  value={homeFilter.birthMonth}
                   options={birthMonthOptions}
-                  onValueChange={setBirthMonth}
+                  onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, birthMonth: value }))}
                 />
               </View>
             </View>

@@ -80,7 +80,7 @@ export const mainDetailDesign: DetailDesignBundle = {
     heroPhotoInitialBorder: 'rgba(167,139,250,0.2)',
     heroPhotoInitialText: '#c4b5fd',
     heroByTagText: '#c4b5fd',
-    tabPaneBackground: '#f0f0f2',
+    tabPaneBackground: '#ffffff',
     multiValueCardBackground: '#ffffff',
     primaryButtonBg: '#2d1f50',
     primaryButtonText: '#c4b5fd',

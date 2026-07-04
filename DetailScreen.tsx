@@ -60,6 +60,11 @@ import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
 import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModal';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { useEpisodeForm, type EpisodeSavePayload } from '@/hooks/useEpisodeForm';
+import { usePersistedFilter, FILTER_KEYS } from '@/hooks/usePersistedFilter';
+import {
+  DEFAULT_DETAIL_EPISODE_FILTER,
+  isDetailEpisodeFilterState,
+} from '@/utils/persistedFilterTypes';
 import {
   applyEventIdToEpisode,
   buildEpisodeEventLinkInput,
@@ -206,11 +211,9 @@ export default function DetailScreen() {
   const [episodeFilterSelectedIdsDraft, setEpisodeFilterSelectedIdsDraft] = useState<Set<string>>(
     () => new Set()
   );
-  const [episodeFilterSelectedIds, setEpisodeFilterSelectedIds] = useState<Set<string>>(() => new Set());
   const [isEpisodeParticipantPickerOpen, setIsEpisodeParticipantPickerOpen] = useState(false);
   const [episodePickerGridWidth, setEpisodePickerGridWidth] = useState(0);
   const [episodeTitleDraft, setEpisodeTitleDraft] = useState('');
-  const [episodeTitleFilter, setEpisodeTitleFilter] = useState('');
   const [isEpisodeFormVisible, setIsEpisodeFormVisible] = useState(false);
   const [editLinkModalVisible, setEditLinkModalVisible] = useState(false);
   const [editLinkCandidates, setEditLinkCandidates] = useState<EpisodeEventMatch[]>([]);
@@ -237,6 +240,26 @@ export default function DetailScreen() {
     }
     return params.id ?? '';
   }, [params.id]);
+
+  const detailEpisodeFilterKey = useMemo(
+    () => (friendId ? FILTER_KEYS.detailEpisode(friendId) : FILTER_KEYS.detailEpisodeInactive),
+    [friendId]
+  );
+  const [detailEpisodeFilter, setDetailEpisodeFilter] = usePersistedFilter(
+    detailEpisodeFilterKey,
+    DEFAULT_DETAIL_EPISODE_FILTER,
+    { validate: isDetailEpisodeFilterState }
+  );
+  const episodeFilterSelectedIds = useMemo(
+    () => new Set(detailEpisodeFilter.participantIds),
+    [detailEpisodeFilter.participantIds]
+  );
+  const episodeTitleFilter = detailEpisodeFilter.title;
+
+  useEffect(() => {
+    setEpisodeTitleDraft(detailEpisodeFilter.title);
+    setEpisodeFilterSelectedIdsDraft(new Set(detailEpisodeFilter.participantIds));
+  }, [detailEpisodeFilter.title, detailEpisodeFilter.participantIds]);
 
   useFocusEffect(
     useCallback(() => {
@@ -308,11 +331,7 @@ export default function DetailScreen() {
     setHabitText('');
     setHabitInputHeight(48);
     setHabitFormError('');
-    setEpisodeFilterSelectedIdsDraft(new Set());
-    setEpisodeFilterSelectedIds(new Set());
     setIsEpisodeParticipantPickerOpen(false);
-    setEpisodeTitleDraft('');
-    setEpisodeTitleFilter('');
     setIsEpisodeFormVisible(false);
     episodeForm.reset();
     setIsSayingFormVisible(false);
@@ -467,13 +486,16 @@ export default function DetailScreen() {
   }, [episodeFilterSelectedIds]);
 
   const handleParticipantPickerSearch = useCallback(() => {
-    setEpisodeFilterSelectedIds(new Set(episodeFilterSelectedIdsDraft));
+    setDetailEpisodeFilter((prev) => ({
+      ...prev,
+      participantIds: Array.from(episodeFilterSelectedIdsDraft),
+    }));
     setIsEpisodeParticipantPickerOpen(false);
-  }, [episodeFilterSelectedIdsDraft]);
+  }, [episodeFilterSelectedIdsDraft, setDetailEpisodeFilter]);
 
   const handleEpisodeTitleSubmit = useCallback(() => {
-    setEpisodeTitleFilter(episodeTitleDraft);
-  }, [episodeTitleDraft]);
+    setDetailEpisodeFilter((prev) => ({ ...prev, title: episodeTitleDraft }));
+  }, [episodeTitleDraft, setDetailEpisodeFilter]);
 
   const handleSaveSayings = () => {
     const text = sayingText.trim();
