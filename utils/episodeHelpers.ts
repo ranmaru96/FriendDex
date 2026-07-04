@@ -13,6 +13,14 @@ export const normalizeEpisodeTag = (value: string | null | undefined): string | 
   return normalized.length > 0 ? normalized : null;
 };
 
+export const formatEpisodeDateForCard = (date: string): string => {
+  if (!date.trim()) return '-';
+  const parts = date.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return '-';
+  const [, month, day] = parts;
+  return `${month}月${day}日`;
+};
+
 /** update/delete に渡す author（公開者）の friend ID */
 export function resolveEpisodeRecordOwnerId(episode: Episode, profileFriendId: string): string {
   const author = episode.authorFriendId.trim();

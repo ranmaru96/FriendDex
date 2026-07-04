@@ -982,7 +982,7 @@ export function createDetailStyles(c: DetailThemeColors) {
   },
   missingText: {
     fontSize: 15,
-    color: c.textPrimary,
+    color: Theme.topBarText,
   },
   backButton: {
     backgroundColor: c.modalCloseButtonBg,

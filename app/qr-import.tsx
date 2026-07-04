@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { PersonSelectPanel } from '@/components/PersonSelectPanel';
+import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { Radius, Theme } from '@/constants/theme';
 import {
   applyQrLinkToFriend,
@@ -261,20 +262,16 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: 8,
   },
-  backText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
+  backText: subScreenHeaderStyles.backText,
   title: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#0f172a',
+    color: Theme.topBarText,
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: '#475569',
+    color: Theme.textSecondary,
     marginBottom: 14,
     lineHeight: 20,
   },
@@ -314,7 +311,7 @@ const styles = StyleSheet.create({
   },
   helpText: {
     fontSize: 13,
-    color: '#64748b',
+    color: Theme.textSecondary,
     lineHeight: 18,
   },
   primaryButton: {

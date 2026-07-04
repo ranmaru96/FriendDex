@@ -10,14 +10,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Theme, Radius, Typography, Spacing, ScreenHorizontalInset } from '@/constants/theme';
 import { searchAreaStyles } from '@/utils/searchAreaStyles';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
 import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModal';
+import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
-import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import type { Option } from '@/components/episode/types';
@@ -40,13 +39,11 @@ import {
   initializeDatabase,
   updateEpisode,
 } from '../db';
-import { Episode, EpisodeParticipant, EpisodeVisibilityMode, Friend } from '../types';
+import { Episode, EpisodeParticipant, Friend } from '../types';
 import {
   buildParticipantChips,
-  getVisibilityModeLabel,
   normalizeEpisodeTag,
   resolveEpisodeRecordOwnerId,
-  type ParticipantChipDisplay,
 } from '../utils/episodeHelpers';
 import {
   applyEventIdToEpisode,
@@ -59,33 +56,6 @@ import {
   runNewEpisodeEventLinkFlow,
 } from '../utils/episodeEventLinking';
 import type { EpisodeEventMatch } from '../utils/eventEpisodeSync';
-
-const EPISODE_VISIBILITY_MODE_TAG_STYLES: Record<
-  EpisodeVisibilityMode,
-  { tag: object; text: object }
-> = {
-  private: {
-    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#aaaaaa' },
-    text: { color: '#666666' },
-  },
-  public: {
-    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#2a9d5a' },
-    text: { color: '#1a6b38' },
-  },
-  limited: {
-    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#7c5cbf' },
-    text: { color: '#5c3a9f' },
-  },
-};
-
-
-const formatEpisodeDateForCard = (date: string): string => {
-  if (!date.trim()) return '-';
-  const parts = date.split('-').map(Number);
-  if (parts.length !== 3 || parts.some(isNaN)) return '-';
-  const [, month, day] = parts;
-  return `${month}月${day}日`;
-};
 
 type EpisodeRow = { episode: Episode; recordOwnerId: string };
 
@@ -114,90 +84,6 @@ function buildFriendNameById(friends: Friend[]): Map<string, string> {
 
 function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
   return new Map(friends.map((f) => [f.id, f.photoUri ?? null]));
-}
-
-type EpisodeListCardProps = {
-  title: string;
-  date: string;
-  episodeTag?: string | null;
-  chips: ParticipantChipDisplay[];
-  visibility?: string[];
-  visibilityMode?: EpisodeVisibilityMode;
-  onEdit?: () => void;
-  onDelete?: () => void;
-};
-
-function EpisodeListCard({
-  title,
-  date,
-  episodeTag,
-  chips,
-  visibility = [],
-  visibilityMode,
-  onEdit,
-  onDelete,
-}: EpisodeListCardProps) {
-  const modeStyles = visibilityMode ? EPISODE_VISIBILITY_MODE_TAG_STYLES[visibilityMode] : null;
-  const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
-  const showRow2 = chips.length > 0 || visibility.length > 0 || normalizedEpisodeTag != null;
-
-  return (
-    <View style={styles.episodeCard}>
-      <View style={styles.episodeCardRow1}>
-        <View style={styles.episodeCardTitleWrap}>
-          <View style={styles.episodeCardTitleUnderline}>
-            <Text style={styles.episodeCardTitle} numberOfLines={1}>
-              {title || '-'}
-            </Text>
-          </View>
-        </View>
-        <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
-        {visibilityMode != null && modeStyles ? (
-          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
-            <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
-              {getVisibilityModeLabel(visibilityMode)}
-            </Text>
-          </View>
-        ) : null}
-        {onEdit && onDelete ? (
-          <View style={styles.episodeCardActions}>
-            <Pressable style={styles.episodeCardEditButton} onPress={onEdit} accessibilityLabel="編集">
-              <Ionicons name="pencil-outline" size={18} color="#0f172a" />
-            </Pressable>
-            <Pressable style={styles.episodeCardDeleteButton} onPress={onDelete} accessibilityLabel="削除">
-              <Ionicons name="trash-outline" size={18} color="#b91c1c" />
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
-      {showRow2 ? (
-        <View style={styles.episodeCardRow2}>
-          {normalizedEpisodeTag ? (
-            <View style={styles.episodeCategoryTag}>
-              <Text style={styles.episodeCategoryTagText}>{normalizedEpisodeTag}</Text>
-            </View>
-          ) : null}
-          {chips.length > 0 ? (
-            <View style={styles.episodeParticipantChipList}>
-              <ParticipantChipList chips={chips} />
-            </View>
-          ) : null}
-          {visibilityMode == null && visibility.length > 0 ? (
-            <View style={styles.visibilityCol}>
-              <Text style={styles.visibilityLabelFixed}>公開先：</Text>
-              <View style={styles.visibilityPills}>
-                {visibility.map((label, vi) => (
-                  <View key={`vis-${vi}-${label}`} style={styles.episodeParticipantTag}>
-                    <Text style={styles.episodeParticipantTagName}>{label}</Text>
-                  </View>
-                ))}
-              </View>
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-    </View>
-  );
 }
 
 export default function EpisodeScreen() {
@@ -837,140 +723,9 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    color: '#64748b',
+    color: Theme.textSecondary,
     textAlign: 'center',
     paddingVertical: 12,
-  },
-  episodeCard: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 6,
-  },
-  episodeCardRow1: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 4,
-  },
-  episodeCardRow2: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 6,
-    flexWrap: 'wrap',
-  },
-  episodeCategoryTag: {
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: 999,
-    backgroundColor: Theme.inputBg,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeCategoryTagText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  episodeCardTitleWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  episodeCardTitleUnderline: {
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#cbd5e1',
-  },
-  episodeCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
-  episodeCardDateText: {
-    fontSize: 12,
-    color: '#64748b',
-    flexShrink: 0,
-  },
-  episodeCardActions: {
-    flexDirection: 'row',
-    gap: 8,
-    flexShrink: 0,
-  },
-  episodeParticipantChipList: {
-    flex: 1,
-    minWidth: 0,
-  },
-  episodeParticipantTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderColor: '#aaaaaa',
-    borderWidth: 1,
-    borderRadius: 999,
-    backgroundColor: 'transparent',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeParticipantTagMain: {
-    backgroundColor: 'transparent',
-    borderColor: '#aaaaaa',
-  },
-  episodeParticipantTagName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#555555',
-  },
-  visibilityCol: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-    justifyContent: 'flex-end',
-    maxWidth: '48%',
-    flexShrink: 0,
-  },
-  visibilityLabelFixed: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '600',
-  },
-  visibilityPills: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    justifyContent: 'flex-end',
-  },
-  visibilityModeTag: {
-    flexShrink: 0,
-  },
-  visibilityModeSelect: {
-    flex: 1,
-    maxWidth: 200,
-  },
-  episodeCardEditButton: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#ffffff',
-    borderColor: Theme.border,
-    borderWidth: 2,
-    borderRadius: Radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  episodeCardDeleteButton: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#ffffff',
-    borderColor: Theme.border,
-    borderWidth: 2,
-    borderRadius: Radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   fab: {
     position: 'absolute',

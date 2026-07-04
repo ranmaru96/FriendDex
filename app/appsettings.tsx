@@ -188,7 +188,7 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 17,
-    color: '#2563eb',
+    color: Theme.topBarText,
     fontWeight: '600',
   },
   sectionHeader: {
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     fontSize: Typography.base,
     fontWeight: '600',
-    color: '#64748b',
+    color: Theme.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
@@ -244,7 +244,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     marginHorizontal: 16,
     fontSize: Typography.base,
-    color: '#64748b',
+    color: Theme.textSecondary,
     lineHeight: 18,
   },
   selectButton: {

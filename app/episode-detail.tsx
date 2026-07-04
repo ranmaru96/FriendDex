@@ -14,6 +14,8 @@ import {
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
+import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 
 import {
   deleteEpisode,
@@ -27,14 +29,13 @@ import { Episode, EpisodePhoto } from '../types';
 import {
   buildParticipantChips,
   canManageEpisode,
-  getVisibilityModeLabel,
   resolveEpisodeRecordOwnerId,
   visibilityDisplayLabels,
-  visibilityModeTagStyles,
 } from '../utils/episodeHelpers';
 
 const LIST_HORIZONTAL_INSET = 12;
 const PHOTO_GAP = 6;
+const DETAIL_SECTION_INSET = 12;
 
 type PhotoDimensions = {
   width: number;
@@ -67,14 +68,6 @@ const getWidthForFixedHeight = (targetHeight: number, size?: PhotoDimensions): n
   return targetHeight * (width / height);
 };
 
-const formatEpisodeDateForCard = (date: string): string => {
-  if (!date.trim()) return '-';
-  const parts = date.split('-').map(Number);
-  if (parts.length !== 3 || parts.some(isNaN)) return '-';
-  const [, month, day] = parts;
-  return `${month}月${day}日`;
-};
-
 export default function EpisodeDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string }>();
@@ -83,6 +76,7 @@ export default function EpisodeDetailScreen() {
   const [photoSizes, setPhotoSizes] = useState<Record<string, PhotoDimensions>>({});
   const [myselfId, setMyselfId] = useState<string | null>(null);
   const [friendNameById, setFriendNameById] = useState<Map<string, string>>(new Map());
+  const [friendPhotoById, setFriendPhotoById] = useState<Map<string, string | null>>(new Map());
   const [lightboxPhoto, setLightboxPhoto] = useState<string | null>(null);
 
   const episodeId = useMemo(() => {
@@ -102,6 +96,7 @@ export default function EpisodeDetailScreen() {
     setMyselfId(getMyself());
     const friends = getAllFriends();
     setFriendNameById(new Map(friends.map((f) => [f.id, f.name])));
+    setFriendPhotoById(new Map(friends.map((f) => [f.id, f.photoUri ?? null])));
 
     if (!episodeId || !ownerId) {
       setEpisode(null);
@@ -151,21 +146,25 @@ export default function EpisodeDetailScreen() {
   }, [photoSizes, photos]);
 
   const chips = useMemo(
-    () => (episode ? buildParticipantChips(episode, friendNameById) : []),
-    [episode, friendNameById]
+    () =>
+      episode
+        ? buildParticipantChips(episode, friendNameById, {
+            excludeFriendIds: myselfId ? [myselfId] : [],
+            friendPhotoById,
+          })
+        : [],
+    [episode, friendNameById, friendPhotoById, myselfId]
   );
   const visibility = useMemo(
     () => (episode ? visibilityDisplayLabels(episode, friendNameById) : []),
     [episode, friendNameById]
   );
-  const modeStyles = episode ? visibilityModeTagStyles(episode.visibilityMode) : null;
-  const showParticipantRow = chips.length > 0;
-  const showVisibilityTargets =
-    episode?.visibilityMode === 'limited' && visibility.length > 0;
   const canManage =
     episode && ownerId ? canManageEpisode(episode, ownerId, myselfId) : false;
   const recordOwnerId = episode ? resolveEpisodeRecordOwnerId(episode, ownerId) : ownerId;
   const basePhotoHeight = useMemo(() => (photoAreaWidth * 3) / 4, [photoAreaWidth]);
+  const hasDescription = Boolean(episode?.description.trim());
+  const hasPhotos = photos.length > 0;
 
   const renderPhotoFrame = (photo: EpisodePhoto, index: number) => (
     <Pressable
@@ -212,10 +211,8 @@ export default function EpisodeDetailScreen() {
   if (!episode) {
     return (
       <SafeAreaView style={styles.safeArea}>
+        <ScreenTopBar onBack={() => router.back()} />
         <View style={styles.missingContainer}>
-          <Pressable style={styles.backRow} onPress={() => router.back()}>
-            <Text style={styles.backText}>←</Text>
-          </Pressable>
           <Text style={styles.missingText}>エピソードが見つかりませんでした。</Text>
         </View>
       </SafeAreaView>
@@ -224,93 +221,78 @@ export default function EpisodeDetailScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+      <ScreenTopBar
+        onBack={() => router.back()}
+        right={
+          canManage ? (
+            <View style={episodeDetailTopBarButtonStyles.actions}>
+              <Pressable
+                style={episodeDetailTopBarButtonStyles.button}
+                onPress={handleEdit}
+                accessibilityLabel="編集"
+                hitSlop={8}
+              >
+                <Ionicons name="pencil-outline" size={18} color={Theme.topBarText} />
+              </Pressable>
+              <Pressable
+                style={[episodeDetailTopBarButtonStyles.button, episodeDetailTopBarButtonStyles.buttonDanger]}
+                onPress={handleDelete}
+                accessibilityLabel="削除"
+                hitSlop={8}
+              >
+                <Ionicons name="trash-outline" size={18} color="#fca5a5" />
+              </Pressable>
+            </View>
+          ) : null
+        }
+      />
       <ScrollView
         style={styles.mainScroll}
         contentContainerStyle={styles.mainScrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <Pressable style={styles.backRow} onPress={() => router.back()}>
-          <Text style={styles.backText}>←</Text>
-        </Pressable>
+        <View style={styles.detailPanel}>
+          <EpisodeListCard
+            embedded
+            title={episode.title}
+            date={episode.date}
+            episodeTag={episode.tag}
+            chips={chips}
+            visibility={visibility}
+            visibilityMode={episode.visibilityMode}
+          />
 
-        <View style={styles.headerCard}>
-          <View style={styles.episodeCardRow1}>
-            <View style={styles.titlePill}>
-              <Text style={styles.titlePillText} numberOfLines={1}>
-                {episode.title || '-'}
-              </Text>
-            </View>
-            <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(episode.date)}</Text>
-            <View style={styles.headerRightCol}>
-              {modeStyles ? (
-                <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
-                  <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
-                    {getVisibilityModeLabel(episode.visibilityMode)}
-                  </Text>
-                </View>
-              ) : null}
-              {canManage ? (
-                <View style={styles.episodeCardActions}>
-                  <Pressable
-                    style={styles.episodeCardEditButton}
-                    onPress={handleEdit}
-                    accessibilityLabel="編集"
-                  >
-                    <Ionicons name="pencil-outline" size={18} color="#0f172a" />
-                  </Pressable>
-                  <Pressable
-                    style={styles.episodeCardDeleteButton}
-                    onPress={handleDelete}
-                    accessibilityLabel="削除"
-                  >
-                    <Ionicons name="trash-outline" size={18} color="#b91c1c" />
-                  </Pressable>
-                </View>
-              ) : null}
-            </View>
-          </View>
-          {showParticipantRow ? (
-            <View style={styles.episodeCardRow2}>
-              <View style={styles.episodeParticipantTagWrap}>
-                {chips.map((p) => (
-                  <View key={p.id} style={styles.episodeParticipantTag}>
-                    <Text style={styles.episodeParticipantTagName}>{p.label}</Text>
-                  </View>
-                ))}
+          {hasDescription ? (
+            <>
+              <View style={styles.sectionDivider} />
+              <View style={styles.detailSection}>
+                <Text style={styles.descriptionText}>{episode.description}</Text>
               </View>
-            </View>
+            </>
           ) : null}
-          {showVisibilityTargets ? (
-            <View style={styles.visibilityTargetsRow}>
-              <Text style={styles.visibilityLabelFixed}>公開先：</Text>
-              <Text style={styles.visibilityTargetsText}>{visibility.join('、')}</Text>
-            </View>
+
+          {hasPhotos ? (
+            <>
+              <View style={styles.sectionDivider} />
+              <View style={styles.detailSection}>
+                <View style={[styles.photoViewport, { height: basePhotoHeight }]}>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.photoScrollContent}
+                  >
+                    {photos.map((photo, index) => renderPhotoFrame(photo, index))}
+                  </ScrollView>
+                </View>
+              </View>
+            </>
           ) : null}
-        </View>
 
-        {episode.description.trim().length > 0 ? (
-          <View style={styles.descriptionSection}>
-            <Text style={styles.descriptionText}>{episode.description}</Text>
+          <View style={styles.sectionDivider} />
+          <View style={styles.detailSection}>
+            <Text style={styles.privateMemoLabel}>非公開メモ</Text>
+            <Text style={styles.privateMemoPlaceholder}>非公開メモ（近日実装予定）</Text>
           </View>
-        ) : null}
-
-        {photos.length > 0 ? (
-          <View style={styles.photoSection}>
-            <View style={[styles.photoViewport, { height: basePhotoHeight }]}>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.photoScrollContent}
-              >
-                {photos.map((photo, index) => renderPhotoFrame(photo, index))}
-              </ScrollView>
-            </View>
-          </View>
-        ) : null}
-
-        <View style={styles.privateMemoSection}>
-          <Text style={styles.privateMemoLabel}>非公開メモ</Text>
-          <Text style={styles.privateMemoPlaceholder}>非公開メモ（近日実装予定）</Text>
         </View>
       </ScrollView>
 
@@ -344,160 +326,40 @@ const styles = StyleSheet.create({
   },
   mainScrollContent: {
     paddingHorizontal: LIST_HORIZONTAL_INSET,
+    paddingTop: 8,
     paddingBottom: 32,
-  },
-  backRow: {
-    alignSelf: 'flex-start',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    marginBottom: 8,
-  },
-  backText: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#334155',
-    lineHeight: 26,
   },
   missingContainer: {
     flex: 1,
     paddingHorizontal: LIST_HORIZONTAL_INSET,
-    paddingTop: 8,
-    gap: 12,
+    paddingTop: 24,
+    justifyContent: 'center',
   },
   missingText: {
     fontSize: 15,
-    color: '#334155',
+    color: Theme.textSecondary,
+    textAlign: 'center',
   },
-  headerCard: {
+  detailPanel: {
     backgroundColor: Theme.bgSurface,
     borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
-    padding: 10,
-    marginBottom: 12,
+    overflow: 'hidden',
   },
-  episodeCardRow1: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: Theme.inputBorder,
+    marginHorizontal: DETAIL_SECTION_INSET,
   },
-  episodeCardRow2: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  titlePill: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  titlePillText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1e293b',
-  },
-  episodeCardDateText: {
-    fontSize: 12,
-    color: '#64748b',
-    flexShrink: 0,
-  },
-  headerRightCol: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flexShrink: 0,
-  },
-  episodeCardActions: {
-    flexDirection: 'row',
-    gap: 8,
-    flexShrink: 0,
-  },
-  visibilityModeTag: {
-    borderWidth: 1,
-  },
-  episodeCardEditButton: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#ffffff',
-    borderColor: Theme.border,
-    borderWidth: 2,
-    borderRadius: Radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  episodeCardDeleteButton: {
-    width: 32,
-    height: 32,
-    backgroundColor: '#ffffff',
-    borderColor: Theme.border,
-    borderWidth: 2,
-    borderRadius: Radius.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  episodeParticipantTagWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    flex: 1,
-    gap: 6,
-  },
-  episodeParticipantTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: 999,
-    backgroundColor: Theme.inputBg,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeParticipantTagMain: {
-    backgroundColor: '#e0f2fe',
-    borderColor: '#7dd3fc',
-  },
-  episodeParticipantTagName: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  visibilityTargetsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 8,
-  },
-  visibilityLabelFixed: {
-    fontSize: 12,
-    color: '#64748b',
-    fontWeight: '600',
-  },
-  visibilityTargetsText: {
-    flex: 1,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0f172a',
-  },
-  descriptionSection: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 12,
+  detailSection: {
+    paddingHorizontal: DETAIL_SECTION_INSET,
+    paddingVertical: 10,
   },
   descriptionText: {
     fontSize: 14,
     color: '#1e293b',
     lineHeight: 22,
-  },
-  photoSection: {
-    marginBottom: 12,
   },
   photoViewport: {
     width: '100%',
@@ -524,13 +386,6 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     backgroundColor: Theme.textPrimary,
-  },
-  privateMemoSection: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: 12,
   },
   privateMemoLabel: {
     fontSize: Typography.base,
