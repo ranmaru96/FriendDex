@@ -10,18 +10,15 @@ type CalendarDayCellProps = DayProps & {
   children?: React.ReactNode;
 };
 
-function PeriodBar({
-  period,
-}: {
-  period: CalendarDayMarking['periods'][number];
-}) {
+function PeriodBar({ period }: { period: CalendarDayMarking['periods'][number] }) {
   const isSingle = period.startingDay && period.endingDay;
   const isStart = period.startingDay && !period.endingDay;
   const isEnd = period.endingDay && !period.startingDay;
 
   const barStyles: ViewStyle[] = [styles.periodBar, { backgroundColor: period.color }];
+
   if (isSingle) {
-    barStyles.push(styles.periodSingle);
+    barStyles.push(styles.periodMiddle);
   } else if (isStart) {
     barStyles.push(styles.periodStart);
   } else if (isEnd) {
@@ -29,13 +26,23 @@ function PeriodBar({
   } else {
     barStyles.push(styles.periodMiddle);
   }
+
   if (period.startingDay) {
     barStyles.push(styles.periodStarting);
   }
   if (period.endingDay) {
     barStyles.push(styles.periodEnding);
   }
-  return <View style={barStyles} />;
+
+  return (
+    <View style={barStyles}>
+      {period.showTitle ? (
+        <Text style={styles.periodTitle} numberOfLines={1} allowFontScaling={false}>
+          {period.title}
+        </Text>
+      ) : null}
+    </View>
+  );
 }
 
 function toDayMarking(marking: DayProps['marking']): CalendarDayMarking | undefined {
@@ -122,14 +129,7 @@ export const CalendarDayCell = React.memo(function CalendarDayCell({
       {periods.length > 0 ? (
         <View style={styles.periods}>
           {periods.map((period, index) => (
-            <PeriodBar
-              key={index}
-              period={{
-                color: period.color,
-                startingDay: period.startingDay === true,
-                endingDay: period.endingDay === true,
-              }}
-            />
+            <PeriodBar key={`${period.title}-${index}`} period={period} />
           ))}
         </View>
       ) : (
@@ -158,7 +158,7 @@ const styles = StyleSheet.create({
   container: {
     alignSelf: 'stretch',
     alignItems: 'center',
-    minHeight: 52,
+    minHeight: 92,
     paddingBottom: 2,
   },
   dayCircle: {
@@ -175,19 +175,23 @@ const styles = StyleSheet.create({
   periods: {
     alignSelf: 'stretch',
     marginTop: 2,
-    minHeight: 15,
+    minHeight: 54,
   },
   periodsPlaceholder: {
-    minHeight: 15,
+    minHeight: 54,
     marginTop: 2,
   },
   periodBar: {
-    height: 5,
+    height: 16,
     marginBottom: 2,
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
-  periodSingle: {
-    width: '50%',
-    marginLeft: '25%',
+  periodTitle: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#ffffff',
+    paddingHorizontal: 4,
   },
   periodStart: {
     width: '75%',
@@ -202,12 +206,12 @@ const styles = StyleSheet.create({
     marginLeft: 0,
   },
   periodStarting: {
-    borderTopLeftRadius: 3,
-    borderBottomLeftRadius: 3,
+    borderTopLeftRadius: 4,
+    borderBottomLeftRadius: 4,
   },
   periodEnding: {
-    borderTopRightRadius: 3,
-    borderBottomRightRadius: 3,
+    borderTopRightRadius: 4,
+    borderBottomRightRadius: 4,
   },
   footer: {
     flexDirection: 'row',

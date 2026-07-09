@@ -2,14 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Pressable,
-  SafeAreaView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { PersonSelectPanel } from '@/components/PersonSelectPanel';
-import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { Radius, Theme } from '@/constants/theme';
 import {
   applyQrLinkToFriend,
@@ -172,11 +171,10 @@ export default function QrImportScreen() {
   const displayName = payload.name?.trim() || '（名前なし）';
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <Text style={styles.backText}>‹ 戻る</Text>
-        </Pressable>
+    <SubToolScreenTemplate useTopBar={false} scrollable={false} contentStyle={styles.container}>
+      <Pressable style={styles.backButton} onPress={() => router.back()}>
+        <Text style={styles.backText}>‹ 戻る</Text>
+      </Pressable>
 
         <Text style={styles.title}>QR読み取り結果</Text>
         <Text style={styles.subtitle}>
@@ -240,20 +238,13 @@ export default function QrImportScreen() {
             </Pressable>
           </View>
         )}
-      </View>
-    </SafeAreaView>
+    </SubToolScreenTemplate>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Theme.screenBase,
-  },
   container: {
     flex: 1,
-    paddingHorizontal: 14,
-    paddingTop: 8,
     paddingBottom: 16,
   },
   backButton: {
@@ -262,7 +253,11 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginBottom: 8,
   },
-  backText: subScreenHeaderStyles.backText,
+  backText: {
+    fontSize: 17,
+    color: Theme.topBarText,
+    fontWeight: '600',
+  },
   title: {
     fontSize: 20,
     fontWeight: '800',

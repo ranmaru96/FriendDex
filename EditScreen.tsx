@@ -5,7 +5,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,10 +14,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
-import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { FormRow } from '@/components/ui/FormRow';
+import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 
 import {
   createFriend,
@@ -31,7 +31,6 @@ import {
 import { FriendInput, MBTIType, MBTI_TYPES } from './types';
 
 const PHOTO_SIZE = 80;
-const LABEL_WIDTH = 56;
 const INPUT_H = 36;
 const ICON_BTN = 36;
 
@@ -128,14 +127,15 @@ function SelectField({ label, value, options, placeholder = '選択', onChange }
   }, [options, placeholder, value]);
 
   return (
-    <View style={styles.formRow}>
-      <Text style={styles.formLabel}>{label}</Text>
-      <Pressable style={styles.selectButton} onPress={() => setVisible(true)}>
-        <Text style={styles.selectValue} numberOfLines={1}>
-          {selectedLabel}
-        </Text>
-        <Ionicons name="chevron-down" size={14} color={Theme.textMuted} />
-      </Pressable>
+    <>
+      <FormRow label={label}>
+        <Pressable style={styles.selectButton} onPress={() => setVisible(true)}>
+          <Text style={styles.selectValue} numberOfLines={1}>
+            {selectedLabel}
+          </Text>
+          <Ionicons name="chevron-down" size={14} color={Theme.textMuted} />
+        </Pressable>
+      </FormRow>
 
       <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -161,7 +161,7 @@ function SelectField({ label, value, options, placeholder = '選択', onChange }
           </View>
         </View>
       </Modal>
-    </View>
+    </>
   );
 }
 
@@ -176,7 +176,7 @@ function DynamicInputList({ title, values, onChange, placeholder }: DynamicInput
   const removeItem = (index: number) => onChange(values.filter((_, itemIndex) => itemIndex !== index));
 
   return (
-    <View style={styles.card}>
+    <FormScreenSection>
       <View style={styles.multiSectionHeader}>
         <Text style={styles.sectionCaption}>{title}</Text>
         <Pressable style={styles.addIconButton} onPress={addItem} accessibilityLabel={`${title}を追加`}>
@@ -204,7 +204,7 @@ function DynamicInputList({ title, values, onChange, placeholder }: DynamicInput
           )}
         </View>
       ))}
-    </View>
+    </FormScreenSection>
   );
 }
 
@@ -220,6 +220,8 @@ const parseOptionalNumber = (value: string): number | null => {
 };
 
 export default function EditScreen() {
+  const kit = useUiKit();
+  const fieldIndent = kit.formLayout === 'horizontal' ? kit.formLabelWidth + kit.formRowGap : 0;
   const router = useRouter();
   const params = useLocalSearchParams<{
     id?: string;
@@ -436,42 +438,38 @@ export default function EditScreen() {
     ]);
   };
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={subScreenHeaderStyles.bar}>
-        <Text style={subScreenHeaderStyles.titleLeft} numberOfLines={1}>
-          {isEditMode ? '人物編集' : '新規登録'}
-        </Text>
-        <View style={styles.topBarActions}>
-          {isEditMode && (
-            <IconButton
-              icon="sync-outline"
-              onPress={handleResyncAffiliationEpisodes}
-              accessibilityLabel="所属グループのエピソードを同期"
-              backgroundColor={Theme.accentLight}
-              borderColor={Theme.accent}
-              color={Theme.accent}
-            />
-          )}
-          <IconButton
-            icon="home-outline"
-            onPress={() => router.replace('/')}
-            accessibilityLabel="ホームへ戻る"
-          />
-          <Pressable style={styles.saveButton} onPress={handleSave} accessibilityLabel="保存">
-            <Ionicons name="save-outline" size={18} color={Theme.btnPrimaryText} />
-            <Text style={styles.saveButtonText}>保存</Text>
-          </Pressable>
-        </View>
-      </View>
+  const topBarActions = (
+    <View style={styles.topBarActions}>
+      {isEditMode && (
+        <IconButton
+          icon="sync-outline"
+          onPress={handleResyncAffiliationEpisodes}
+          accessibilityLabel="所属グループのエピソードを同期"
+          backgroundColor={Theme.accentLight}
+          borderColor={Theme.accent}
+          color={Theme.accent}
+        />
+      )}
+      <IconButton
+        icon="home-outline"
+        onPress={() => router.replace('/')}
+        accessibilityLabel="ホームへ戻る"
+      />
+      <Pressable style={styles.saveButton} onPress={handleSave} accessibilityLabel="保存">
+        <Ionicons name="save-outline" size={18} color={Theme.btnPrimaryText} />
+        <Text style={styles.saveButtonText}>保存</Text>
+      </Pressable>
+    </View>
+  );
 
-      <KeyboardAwareScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
-        enableOnAndroid
-        extraScrollHeight={20}
-      >
-        <View style={styles.card}>
+  return (
+    <FormScreenTemplate
+      title={isEditMode ? '人物編集' : '新規登録'}
+      titleAlign="left"
+      right={topBarActions}
+    >
+      <FormScreenBody>
+        <FormScreenSection>
           <View style={styles.profileTopRow}>
             <View style={styles.photoColumn}>
               <Pressable onPress={onPickImage} style={styles.photoBox} accessibilityLabel="写真を選択">
@@ -494,8 +492,7 @@ export default function EditScreen() {
 
             <View style={styles.profileNameFields}>
               <View style={styles.nameFieldBlock}>
-                <View style={styles.formRow}>
-                  <Text style={styles.formLabel}>名前</Text>
+                <FormRow label="名前">
                   <TextInput
                     value={form.name}
                     onChangeText={(text) => updateText('name', text)}
@@ -503,11 +500,12 @@ export default function EditScreen() {
                     placeholder="苗字 名前"
                     placeholderTextColor={Theme.inputPlaceholder}
                   />
-                </View>
-                {showNameError ? <Text style={styles.nameErrorText}>名前は必須項目です</Text> : null}
+                </FormRow>
+                {showNameError ? (
+                  <Text style={[styles.nameErrorText, { marginLeft: fieldIndent }]}>名前は必須項目です</Text>
+                ) : null}
               </View>
-              <View style={styles.formRow}>
-                <Text style={styles.formLabel}>通称</Text>
+              <FormRow label="通称">
                 <TextInput
                   value={form.nickname}
                   onChangeText={(text) => updateText('nickname', text)}
@@ -515,13 +513,12 @@ export default function EditScreen() {
                   placeholder="記入式"
                   placeholderTextColor={Theme.inputPlaceholder}
                 />
-              </View>
+              </FormRow>
             </View>
           </View>
 
           <View style={styles.profileRestFields}>
-            <View style={styles.formRow}>
-              <Text style={styles.formLabel}>出身</Text>
+            <FormRow label="出身">
               <TextInput
                 value={form.origin}
                 onChangeText={(text) => updateText('origin', text)}
@@ -529,9 +526,8 @@ export default function EditScreen() {
                 placeholder="記入式"
                 placeholderTextColor={Theme.inputPlaceholder}
               />
-            </View>
-            <View style={styles.formRow}>
-              <Text style={styles.formLabel}>居住地</Text>
+            </FormRow>
+            <FormRow label="居住地">
               <TextInput
                 value={form.residence}
                 onChangeText={(text) => updateText('residence', text)}
@@ -539,18 +535,17 @@ export default function EditScreen() {
                 placeholder="記入式"
                 placeholderTextColor={Theme.inputPlaceholder}
               />
-            </View>
+            </FormRow>
             <SelectField label="MBTI" value={form.mbti} options={mbtiOptions} onChange={(value) => updateText('mbti', value)} />
-            <View style={styles.formRow}>
-              <Text style={styles.formLabel}>誕生日</Text>
+            <FormRow label="誕生日">
               <Pressable style={styles.dateButton} onPress={() => setShowBirthdayPicker(true)}>
                 <Text style={form.birthday ? styles.dateButtonText : styles.dateButtonPlaceholder}>
                   {form.birthday || 'YYYY-MM-DD'}
                 </Text>
               </Pressable>
-            </View>
-            {showBirthdayPicker && (
-              <View style={styles.datePickerWrap}>
+            </FormRow>
+            {showBirthdayPicker ? (
+              <View style={[styles.datePickerWrap, { marginLeft: fieldIndent }]}>
                 <DateTimePicker
                   value={form.birthday ? parseDateString(form.birthday) : new Date()}
                   mode="date"
@@ -566,10 +561,9 @@ export default function EditScreen() {
                   <Text style={styles.datePickerDoneText}>完了</Text>
                 </Pressable>
               </View>
-            )}
+            ) : null}
             <View style={styles.twinRow}>
-              <View style={[styles.formRow, styles.twinField]}>
-                <Text style={styles.formLabel}>身長</Text>
+              <FormRow label="身長" style={styles.twinField}>
                 <TextInput
                   value={form.height === null ? '' : String(form.height)}
                   onChangeText={(text) => updateNumber('height', text)}
@@ -578,9 +572,8 @@ export default function EditScreen() {
                   placeholder="cm"
                   placeholderTextColor={Theme.inputPlaceholder}
                 />
-              </View>
-              <View style={[styles.formRow, styles.twinField]}>
-                <Text style={styles.formLabel}>体重</Text>
+              </FormRow>
+              <FormRow label="体重" style={styles.twinField}>
                 <TextInput
                   value={form.weight === null ? '' : String(form.weight)}
                   onChangeText={(text) => updateNumber('weight', text)}
@@ -589,10 +582,9 @@ export default function EditScreen() {
                   placeholder="kg"
                   placeholderTextColor={Theme.inputPlaceholder}
                 />
-              </View>
+              </FormRow>
             </View>
-            <View style={styles.formRow}>
-              <Text style={styles.formLabel}>分類</Text>
+            <FormRow label="分類">
               <TextInput
                 value={form.category}
                 onChangeText={(text) => updateText('category', text)}
@@ -600,11 +592,11 @@ export default function EditScreen() {
                 placeholder="記入式"
                 placeholderTextColor={Theme.inputPlaceholder}
               />
-            </View>
+            </FormRow>
           </View>
-        </View>
+        </FormScreenSection>
 
-        <View style={styles.card}>
+        <FormScreenSection>
           <Text style={styles.sectionCaption}>説明</Text>
           <TextInput
             value={form.description}
@@ -615,7 +607,7 @@ export default function EditScreen() {
             multiline
             textAlignVertical="top"
           />
-        </View>
+        </FormScreenSection>
 
         <DynamicInputList
           title="所属"
@@ -647,16 +639,12 @@ export default function EditScreen() {
           onChange={(values) => setForm((prev) => ({ ...prev, dislikes: values }))}
           placeholder="記入式"
         />
-      </KeyboardAwareScrollView>
-    </SafeAreaView>
+      </FormScreenBody>
+    </FormScreenTemplate>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Theme.screenBase,
-  },
   topBarActions: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -685,20 +673,6 @@ const styles = StyleSheet.create({
     color: Theme.btnPrimaryText,
     fontWeight: '700',
     fontSize: 13,
-  },
-  container: {
-    paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.lg,
-    gap: 6,
-  },
-  card: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.border,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: Radius.md,
-    padding: 10,
-    gap: 6,
   },
   profileTopRow: {
     flexDirection: 'row',
@@ -742,11 +716,6 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 2,
   },
-  formRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
   twinRow: {
     flexDirection: 'row',
     gap: 8,
@@ -758,7 +727,6 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   nameErrorText: {
-    marginLeft: LABEL_WIDTH + 8,
     fontSize: 11,
     color: '#dc2626',
     fontWeight: '600',
@@ -766,12 +734,6 @@ const styles = StyleSheet.create({
   inputNameError: {
     borderColor: '#dc2626',
     borderWidth: 1.5,
-  },
-  formLabel: {
-    width: LABEL_WIDTH,
-    fontSize: Typography.sm,
-    fontWeight: '600',
-    color: Theme.textPrimary,
   },
   input: {
     flex: 1,
@@ -803,9 +765,7 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Theme.inputPlaceholder,
   },
-  datePickerWrap: {
-    marginLeft: LABEL_WIDTH + 8,
-  },
+  datePickerWrap: {},
   datePickerSelf: {
     alignSelf: 'flex-start',
   },

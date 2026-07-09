@@ -2,17 +2,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Pressable,
-  SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { Theme, Radius, Spacing, ScreenHorizontalInset } from '@/constants/theme';
-import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { Theme, Radius, Spacing } from '@/constants/theme';
+import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
@@ -666,38 +663,24 @@ export default function MoneyLoanScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={subScreenHeaderStyles.bar}>
-        <Pressable style={subScreenHeaderStyles.sideBack} onPress={() => router.back()} hitSlop={8}>
-          <Text style={subScreenHeaderStyles.backText}>‹ 戻る</Text>
-        </Pressable>
-        <Text style={subScreenHeaderStyles.title} numberOfLines={1}>
-          お金貸し借り管理
-        </Text>
-        <View style={subScreenHeaderStyles.side} />
-      </View>
-
-      <PillTabBar
-        tabs={MONEY_LOAN_TABS}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-        perTabColors
-      />
-
-      {activeTab === 'register' ? (
-        <KeyboardAwareScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          enableOnAndroid
-          extraScrollHeight={24}
-        >
-          {scrollContent}
-        </KeyboardAwareScrollView>
-      ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-          {scrollContent}
-        </ScrollView>
-      )}
+    <>
+      <SubToolScreenTemplate
+        title="お金貸し借り管理"
+        onBack={() => router.back()}
+        header={
+          <PillTabBar
+            tabs={MONEY_LOAN_TABS}
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            perTabColors
+          />
+        }
+        keyboardAware={activeTab === 'register'}
+        extraScrollHeight={24}
+        scrollContentStyle={styles.scrollContent}
+      >
+        {scrollContent}
+      </SubToolScreenTemplate>
 
       <EntrySelectorModal
         visible={selectorVisible}
@@ -734,17 +717,12 @@ export default function MoneyLoanScreen() {
           setEditSession((current) => (current ? getMoneyLoanSession(current.id) : null));
         }}
       />
-    </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Theme.screenBase,
-  },
   scrollContent: {
-    paddingHorizontal: ScreenHorizontalInset,
     paddingBottom: 40,
     gap: Spacing.md,
   },

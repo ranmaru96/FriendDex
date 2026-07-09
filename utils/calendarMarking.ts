@@ -1,5 +1,6 @@
 import type { MarkingProps } from 'react-native-calendars/src/calendar/day/marking';
 import type { Event } from '../types';
+import { getEventCalendarColor } from './calendarEventColors';
 import { filterEventsByLocalDate, getLocalDateKeysForEvent } from './eventHelpers';
 
 export const MAX_CALENDAR_VISIBLE_BARS = 3;
@@ -8,6 +9,8 @@ export type CalendarPeriodMark = {
   startingDay: boolean;
   endingDay: boolean;
   color: string;
+  title: string;
+  showTitle: boolean;
 };
 
 export type CalendarDayMarking = MarkingProps & {
@@ -17,25 +20,23 @@ export type CalendarDayMarking = MarkingProps & {
   showCountLabel: boolean;
 };
 
-function buildPeriodForEventOnDate(
-  event: Event,
-  dateKey: string,
-  color: string
-): CalendarPeriodMark {
+function buildPeriodForEventOnDate(event: Event, dateKey: string): CalendarPeriodMark {
   const keys = getLocalDateKeysForEvent(event);
   const startKey = keys[0];
   const endKey = keys[keys.length - 1];
+  const startingDay = dateKey === startKey;
   return {
-    startingDay: dateKey === startKey,
+    startingDay,
     endingDay: dateKey === endKey,
-    color,
+    color: getEventCalendarColor(event.episodeTag),
+    title: event.title.trim() || '（無題）',
+    showTitle: startingDay,
   };
 }
 
 export function buildCalendarMarkedDates(
   events: Event[],
-  selectedDate: string,
-  accentColor: string
+  selectedDate: string
 ): Record<string, CalendarDayMarking> {
   const marked: Record<string, CalendarDayMarking> = {};
   const dateKeys = new Set<string>();
@@ -50,9 +51,7 @@ export function buildCalendarMarkedDates(
     const totalCount = dayEvents.length;
     const visibleEvents = dayEvents.slice(0, MAX_CALENDAR_VISIBLE_BARS);
     const overflowCount = Math.max(0, totalCount - MAX_CALENDAR_VISIBLE_BARS);
-    const periods = visibleEvents.map((event) =>
-      buildPeriodForEventOnDate(event, dateKey, accentColor)
-    );
+    const periods = visibleEvents.map((event) => buildPeriodForEventOnDate(event, dateKey));
 
     marked[dateKey] = {
       periods,
@@ -72,7 +71,7 @@ export function buildCalendarMarkedDates(
   marked[selectedDate] = {
     ...selectedMark,
     selected: true,
-    selectedColor: accentColor,
+    selectedColor: getEventCalendarColor(null),
   };
 
   return marked;

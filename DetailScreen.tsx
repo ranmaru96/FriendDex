@@ -5,7 +5,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,10 +14,12 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import type { DetailTabKey } from '@/constants/detailThemes';
 import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
+import { TabScreenTemplate } from '@/components/screen-templates';
+import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useDetailDesign } from './contexts/DetailDesignContext';
 import { createDetailStyles } from './utils/detailStyles';
 import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
@@ -33,6 +34,7 @@ import {
   getDistinctExperiences,
   getMergedEpisodeTagLabels,
   getEpisodeById,
+  getEpisodeCoverPhotoUriMap,
   getEpisodeParticipantFriendIds,
   getFriendById,
   getMyself,
@@ -53,6 +55,7 @@ import {
 import {
   buildParticipantChips,
   canManageEpisode,
+  formatEpisodeDateForCard,
   getVisibilityModeLabel,
   resolveEpisodeRecordOwnerId,
 } from './utils/episodeHelpers';
@@ -118,14 +121,6 @@ const parseDateString = (s: string): Date => {
     return new Date(parts[0], parts[1] - 1, parts[2]);
   }
   return new Date();
-};
-
-const formatEpisodeDateForCard = (date: string): string => {
-  if (!date.trim()) return '-';
-  const parts = date.split('-').map(Number);
-  if (parts.length !== 3 || parts.some(isNaN)) return '-';
-  const [, month, day] = parts;
-  return `${month}月${day}日`;
 };
 
 const formatProfileSinceYear = (createdAt: string | undefined): string => {
@@ -194,9 +189,14 @@ export default function DetailScreen() {
   const styles = useMemo(() => createDetailStyles(c), [c]);
   const detailTabs = bundle.detailTabs;
   const episodeVisibilityTagStyles = useMemo(() => buildEpisodeVisibilityTagStyles(c), [c]);
+  const kit = useUiKit();
+  const useSharedEpisodeCard = kit.episodeListCardLayout === 'photoRight';
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
   const [friend, setFriend] = useState<Friend | null>(null);
+  const [episodeCoverPhotoById, setEpisodeCoverPhotoById] = useState<Map<string, string>>(
+    () => new Map()
+  );
   const [profileImageLoadError, setProfileImageLoadError] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
@@ -289,6 +289,9 @@ export default function DetailScreen() {
       }
     }
     setFriend(loaded);
+    setEpisodeCoverPhotoById(
+      getEpisodeCoverPhotoUriMap((loaded?.episodes ?? []).map((episode) => episode.id))
+    );
     setProfiles(loadedProfiles);
     setMyselfId(currentMyselfId);
     setProfileImageLoadError(false);
@@ -900,14 +903,14 @@ export default function DetailScreen() {
 
   if (!friend) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <TabScreenTemplate contentContainerStyle={{ flex: 1 }}>
         <View style={styles.missingContainer}>
           <Text style={styles.missingText}>人物データが見つかりませんでした。</Text>
           <Pressable style={styles.backButton} onPress={() => router.back()}>
             <Text style={styles.backButtonText}>‹ 戻る</Text>
           </Pressable>
         </View>
-      </SafeAreaView>
+      </TabScreenTemplate>
     );
   }
 
@@ -939,12 +942,13 @@ export default function DetailScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAwareScrollView
+    <>
+      <TabScreenTemplate
+        scrollable
+        keyboardAware
+        useScreenPadding={false}
         contentContainerStyle={styles.scrollContent}
-        enableOnAndroid
         extraScrollHeight={18}
-        keyboardShouldPersistTaps="handled"
       >
         <View style={styles.profileCardShadow}>
         <View
@@ -1337,34 +1341,54 @@ export default function DetailScreen() {
                 });
                 const modeStyles = canManage ? episodeVisibilityTagStyles[episode.visibilityMode] : null;
                 const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
+                const openEpisodeDetail = () =>
+                  router.push({
+                    pathname: '/episode-detail',
+                    params: {
+                      episodeId: episode.id,
+                      ownerId: episodeOwnerId,
+                    },
+                  });
+                const onLongPressEpisode = canManage
+                  ? () => {
+                      Alert.alert('操作を選択', 'このエピソードに対する操作を選んでください。', [
+                        { text: 'キャンセル', style: 'cancel' },
+                        { text: '編集', onPress: () => startEditEpisode(episode) },
+                        {
+                          text: '削除',
+                          style: 'destructive',
+                          onPress: () => handleDeleteEpisode(episode.id),
+                        },
+                      ]);
+                    }
+                  : undefined;
+
+                if (useSharedEpisodeCard) {
+                  return (
+                    <Pressable
+                      key={episode.id}
+                      onPress={openEpisodeDetail}
+                      onLongPress={onLongPressEpisode}
+                      delayLongPress={300}
+                    >
+                      <EpisodeListCard
+                        title={episode.title}
+                        date={episode.date}
+                        episodeTag={episode.tag}
+                        chips={chips}
+                        visibilityMode={canManage ? episode.visibilityMode : undefined}
+                        posterName={canManage ? null : posterName}
+                        coverPhotoUri={episodeCoverPhotoById.get(episode.id) ?? null}
+                      />
+                    </Pressable>
+                  );
+                }
 
                 return (
                   <Pressable
                     key={episode.id}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/episode-detail',
-                        params: {
-                          episodeId: episode.id,
-                          ownerId: episodeOwnerId,
-                        },
-                      })
-                    }
-                    onLongPress={
-                      canManage
-                        ? () => {
-                            Alert.alert('操作を選択', 'このエピソードに対する操作を選んでください。', [
-                              { text: 'キャンセル', style: 'cancel' },
-                              { text: '編集', onPress: () => startEditEpisode(episode) },
-                              {
-                                text: '削除',
-                                style: 'destructive',
-                                onPress: () => handleDeleteEpisode(episode.id),
-                              },
-                            ]);
-                          }
-                        : undefined
-                    }
+                    onPress={openEpisodeDetail}
+                    onLongPress={onLongPressEpisode}
                     delayLongPress={300}
                   >
                     <View style={styles.episodeCard}>
@@ -1515,7 +1539,7 @@ export default function DetailScreen() {
         </View>
         </View>
         </View>
-      </KeyboardAwareScrollView>
+      </TabScreenTemplate>
       <EpisodeFormOverlay
         visible={isEpisodeFormVisible}
         form={episodeForm}
@@ -1546,7 +1570,7 @@ export default function DetailScreen() {
         onCreateNew={handleEditLinkCreateNew}
         onCancel={handleEditLinkCancel}
       />
-    </SafeAreaView>
+    </>
   );
 }
 

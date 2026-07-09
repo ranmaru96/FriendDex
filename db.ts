@@ -1276,6 +1276,7 @@ export const getMyself = (): string | null => {
 };
 
 export const DETAIL_DESIGN_VARIANT_KEY = 'detail_design_variant';
+export const UI_PREVIEW_VARIANT_KEY = 'ui_preview_variant';
 
 export const getAppSetting = (key: string): string | null => {
   const row = db.getFirstSync<{ value: string }>(`SELECT value FROM ${SETTINGS_TABLE} WHERE key = ?;`, [key]);
@@ -1296,6 +1297,15 @@ export const getDetailDesignVariant = (): 'main' | 'light' => {
 
 export const setDetailDesignVariant = (variant: 'main' | 'light'): void => {
   setAppSetting(DETAIL_DESIGN_VARIANT_KEY, variant);
+};
+
+export const getUiPreviewVariant = (): 'stable' | 'preview' => {
+  const value = getAppSetting(UI_PREVIEW_VARIANT_KEY);
+  return value === 'preview' ? 'preview' : 'stable';
+};
+
+export const setUiPreviewVariant = (variant: 'stable' | 'preview'): void => {
+  setAppSetting(UI_PREVIEW_VARIANT_KEY, variant);
 };
 
 export const setMyself = (friendId: string | null): boolean => {
@@ -1865,6 +1875,25 @@ export const getEpisodePhotos = (episodeId: string): EpisodePhoto[] => {
     [normalizedEpisodeId]
   );
   return rows.map(rowToEpisodePhoto);
+};
+
+export const getEpisodeCoverPhotoUriMap = (episodeIds: string[]): Map<string, string> => {
+  const normalizedIds = [...new Set(episodeIds.map((id) => id.trim()).filter(Boolean))];
+  if (normalizedIds.length === 0) {
+    return new Map();
+  }
+  const placeholders = normalizedIds.map(() => '?').join(', ');
+  const rows = db.getAllSync<{ episode_id: string; photo_uri: string }>(
+    `SELECT episode_id, photo_uri FROM ${EPISODE_PHOTOS_TABLE} WHERE episode_id IN (${placeholders}) ORDER BY sort_order ASC, id ASC;`,
+    normalizedIds
+  );
+  const map = new Map<string, string>();
+  for (const row of rows) {
+    if (!map.has(row.episode_id)) {
+      map.set(row.episode_id, row.photo_uri);
+    }
+  }
+  return map;
 };
 
 export const deleteEpisodePhoto = (id: number): boolean => {

@@ -5,7 +5,6 @@ import {
   FlatList,
   Modal,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
 import { createDetailStyles } from '../utils/detailStyles';
+import { TabScreenTemplate } from '@/components/screen-templates';
 import {
   addCommonItemOption,
   createGroupOption,
@@ -29,7 +29,7 @@ import {
   updateGroupOption,
 } from '../db';
 import { CommonItemKind, Friend } from '../types';
-import { Theme, Radius, Typography, Spacing, ScreenHorizontalInset } from '@/constants/theme';
+import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { AddCircleButton } from '@/components/AddCircleButton';
 
 type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先' | 'エピソードタグ';
@@ -350,10 +350,9 @@ export default function CommonItemsScreen() {
   };
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: Theme.screenBase }]}>
-      <View style={styles.container}>
-        <View style={styles.body}>
-          <View style={[detailStyles.tabSection, styles.tabSectionFill, styles.tabSectionNoFrame]}>
+    <>
+      <TabScreenTemplate contentContainerStyle={styles.body}>
+        <View style={[detailStyles.tabSection, styles.tabSectionFill, styles.tabSectionNoFrame]}>
             <View style={[detailStyles.tabTrack, styles.tabTrackAligned, styles.itemsPanel]}>
               <View style={detailStyles.tabInner}>
                 {TAB_ORDER.map((tab) => {
@@ -440,8 +439,7 @@ export default function CommonItemsScreen() {
               </View>
             </View>
           </View>
-        </View>
-      </View>
+      </TabScreenTemplate>
 
       {/* Simple editor for 経験/性格 */}
       <Modal visible={editorVisible} transparent animationType="fade" onRequestClose={() => setEditorVisible(false)}>
@@ -541,21 +539,13 @@ export default function CommonItemsScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-  },
-  container: {
-    flex: 1,
-    paddingTop: Spacing.sm,
-  },
   body: {
     flex: 1,
-    marginHorizontal: ScreenHorizontalInset,
     marginBottom: Spacing.md,
   },
   tabSectionFill: {

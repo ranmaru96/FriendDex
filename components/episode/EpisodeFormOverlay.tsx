@@ -11,10 +11,14 @@ import {
   Text,
   TextInput,
   View,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Theme, Radius, Typography } from '@/constants/theme';
+import { FormRow } from '@/components/ui/FormRow';
+import { useUiKit } from '@/contexts/UiPreviewContext';
+import { FormOverlayTemplate, FormScreenBody, FormScreenSection } from '@/components/screen-templates';
 import {
   formatEpisodeDateToYMD,
   isEpisodeVisibilityMode,
@@ -49,26 +53,43 @@ function SelectInput({
   onChange,
   style,
   includeEmptyOption = true,
+  variant,
 }: {
   value: string;
   placeholder: string;
   options: Option[];
   onChange: (value: string) => void;
-  style?: object;
+  style?: StyleProp<ViewStyle>;
   includeEmptyOption?: boolean;
+  variant?: 'field' | 'chip';
 }) {
+  const kit = useUiKit();
+  const resolvedVariant = variant ?? (kit.formLayout === 'horizontal' ? 'chip' : 'field');
   const [modalVisible, setModalVisible] = useState(false);
   const selectedLabel = useMemo(() => {
     const selected = options.find((option) => option.value === value);
     return selected?.label ?? placeholder;
   }, [options, placeholder, value]);
 
+  const isChip = resolvedVariant === 'chip';
+
   return (
     <>
-      <Pressable style={[styles.episodeSelectButton, style]} onPress={() => setModalVisible(true)}>
-        <Text style={value ? styles.episodeSelectText : styles.episodeSelectPlaceholder} numberOfLines={1}>
+      <Pressable
+        style={[
+          isChip ? styles.selectChipButton : styles.episodeSelectButton,
+          isChip ? styles.selectChipButtonLayout : null,
+          style,
+        ]}
+        onPress={() => setModalVisible(true)}
+      >
+        <Text
+          style={isChip ? (value ? styles.selectChipText : styles.selectChipPlaceholder) : value ? styles.episodeSelectText : styles.episodeSelectPlaceholder}
+          numberOfLines={1}
+        >
           {selectedLabel}
         </Text>
+        {isChip ? <Text style={styles.selectChipChevron}>▼</Text> : null}
       </Pressable>
       <Modal transparent animationType="fade" visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -145,18 +166,9 @@ export function EpisodeFormOverlay({
 
   return (
     <>
-      <View style={styles.formOverlay}>
-        <KeyboardAwareScrollView
-          style={styles.formOverlayScroll}
-          contentContainerStyle={styles.formOverlayScrollContent}
-          keyboardShouldPersistTaps="handled"
-          enableOnAndroid
-          extraScrollHeight={24}
-        >
-          <Text style={styles.formOverlayTitle}>
-            {form.editingEpisodeId ? 'エピソードを編集' : 'エピソードを追加'}
-          </Text>
-          <View style={styles.episodeFormCard}>
+      <FormOverlayTemplate title={form.editingEpisodeId ? 'エピソードを編集' : 'エピソードを追加'}>
+        <FormScreenBody>
+          <FormScreenSection style={styles.episodeFormSection}>
             <View style={styles.episodeTitleDateRow}>
               <TextInput
                 style={[styles.episodeInput, styles.episodeTitleInput]}
@@ -195,23 +207,11 @@ export function EpisodeFormOverlay({
               </View>
             ) : null}
 
-            <View style={styles.episodeParticipantRow}>
-              <Text style={styles.episodeParticipantLabel}>エピソードタグ</Text>
-              <SelectInput
-                value={form.tag}
-                placeholder="未設定"
-                options={episodeTagOptions}
-                onChange={form.setTag}
-                style={styles.episodeTagSelect}
-              />
-            </View>
-
-            <View style={styles.episodeParticipantRow}>
-              <Text style={styles.episodeParticipantLabel}>参加者</Text>
+            <FormRow label="参加者" contentLayout="action">
               <Pressable style={styles.addParticipantButton} onPress={form.openParticipantSelector}>
                 <Text style={styles.addParticipantButtonText}>参加者を選ぶ</Text>
               </Pressable>
-            </View>
+            </FormRow>
             <Pressable style={styles.selectedEntryTagArea} onPress={form.openParticipantSelector}>
               {participantChips.length > 0 ? (
                 <ParticipantChipList chips={participantChips} layout="wrap" />
@@ -220,8 +220,16 @@ export function EpisodeFormOverlay({
               )}
             </Pressable>
 
-            <View style={styles.episodeParticipantRow}>
-              <Text style={styles.episodeParticipantLabel}>公開設定</Text>
+            <FormRow label="タグ" contentLayout="compact">
+              <SelectInput
+                value={form.tag}
+                placeholder="未設定"
+                options={episodeTagOptions}
+                onChange={form.setTag}
+              />
+            </FormRow>
+
+            <FormRow label="公開設定" contentLayout="compact">
               <SelectInput
                 value={form.visibilityMode}
                 placeholder="公開設定"
@@ -231,18 +239,16 @@ export function EpisodeFormOverlay({
                     form.setVisibilityMode(value);
                   }
                 }}
-                style={styles.visibilityModeSelect}
                 includeEmptyOption={false}
               />
-            </View>
+            </FormRow>
             {form.visibilityMode === 'limited' ? (
               <>
-                <View style={styles.episodeParticipantRow}>
-                  <Text style={styles.episodeParticipantLabel}>公開先</Text>
+                <FormRow label="公開先" contentLayout="action">
                   <Pressable style={styles.addParticipantButton} onPress={form.openVisibilitySelector}>
                     <Text style={styles.addParticipantButtonText}>公開先を選ぶ</Text>
                   </Pressable>
-                </View>
+                </FormRow>
                 <Pressable style={styles.selectedEntryTagArea} onPress={form.openVisibilitySelector}>
                   {form.visibility.filter((entry) => entry.value.trim().length > 0).length > 0 ? (
                     <View style={styles.selectedEntryTagWrap}>
@@ -271,7 +277,7 @@ export function EpisodeFormOverlay({
             ) : null}
 
             <View style={styles.episodePhotoSection}>
-              <Text style={styles.episodeParticipantLabel}>写真</Text>
+              <Text style={styles.episodeSectionLabel}>写真</Text>
               {(form.visibleExistingPhotos.length > 0 || form.newPhotoUris.length > 0) && (
                 <ScrollView
                   horizontal
@@ -348,9 +354,9 @@ export function EpisodeFormOverlay({
                 </Text>
               </Pressable>
             </View>
-          </View>
-        </KeyboardAwareScrollView>
-      </View>
+          </FormScreenSection>
+        </FormScreenBody>
+      </FormOverlayTemplate>
 
       <EntrySelectorModal
         visible={form.selectorVisible}
@@ -378,37 +384,8 @@ export function EpisodeFormOverlay({
 }
 
 const styles = StyleSheet.create({
-  formOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#f1f5f9',
-    zIndex: 100,
-    elevation: 100,
-  },
-  formOverlayScroll: {
-    flex: 1,
-    paddingHorizontal: 14,
-    paddingTop: 12,
-  },
-  formOverlayScrollContent: {
-    paddingBottom: 28,
-  },
-  formOverlayTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 10,
-  },
-  episodeFormCard: {
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    padding: 10,
-    marginBottom: 10,
-    backgroundColor: Theme.inputBg,
+  episodeFormSection: {
+    gap: 8,
   },
   episodeTitleDateRow: {
     flexDirection: 'row',
@@ -456,13 +433,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0f172a',
   },
-  episodeParticipantRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  episodeParticipantLabel: { fontSize: 14, color: '#0f172a', fontWeight: '700' },
+  episodeSectionLabel: { fontSize: 14, color: '#0f172a', fontWeight: '700' },
   addParticipantButton: {
     backgroundColor: '#e2e8f0',
     borderColor: '#94a3b8',
@@ -491,8 +462,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   episodeParticipantTagName: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
-  visibilityModeSelect: { minWidth: 120 },
-  episodeTagSelect: { flex: 1, minWidth: 0 },
   episodePhotoSection: { marginBottom: 8 },
   episodePhotoThumbScroll: { marginBottom: 8 },
   episodePhotoThumbRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
@@ -582,6 +551,38 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.bgSurface,
     paddingHorizontal: 10,
     justifyContent: 'center',
+  },
+  selectChipButton: {
+    borderColor: Theme.accent,
+    borderWidth: 1,
+    borderRadius: Radius.full,
+    backgroundColor: Theme.accentLight,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    maxWidth: '100%',
+  },
+  selectChipButtonLayout: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+  },
+  selectChipText: {
+    fontSize: Typography.sm,
+    fontWeight: '600',
+    color: Theme.accent,
+    flexShrink: 1,
+  },
+  selectChipPlaceholder: {
+    fontSize: Typography.sm,
+    fontWeight: '600',
+    color: Theme.textSecondary,
+    flexShrink: 1,
+  },
+  selectChipChevron: {
+    fontSize: 9,
+    color: Theme.accent,
+    marginTop: 1,
   },
   episodeSelectText: { fontSize: 14, color: '#0f172a' },
   episodeSelectPlaceholder: { fontSize: 14, color: '#94a3b8' },

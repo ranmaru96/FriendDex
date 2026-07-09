@@ -7,6 +7,7 @@ import { AddCircleButton } from '@/components/AddCircleButton';
 import { CalendarDayCell } from '@/components/calendar/CalendarDayCell';
 import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
 import { HomeCardElevation, Radius, ScreenHorizontalInset, Spacing, Theme } from '@/constants/theme';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import { getEventParticipantsForEvents, getEventsByDateRange, initializeDatabase } from '../db';
 import type { Event } from '../types';
 import {
@@ -46,6 +47,7 @@ const parseMonthFromDateKey = (dateKey: string): { year: number; month: number }
 };
 
 export default function CalendarScreen() {
+  const kit = useUiKit();
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const routeDate = typeof params.date === 'string' ? params.date.trim() : '';
@@ -97,7 +99,7 @@ export default function CalendarScreen() {
   );
 
   const markedDates = useMemo(
-    () => buildCalendarMarkedDates(monthEvents, selectedDate, Theme.accent),
+    () => buildCalendarMarkedDates(monthEvents, selectedDate),
     [monthEvents, selectedDate]
   );
 
@@ -126,9 +128,6 @@ export default function CalendarScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.screenTitle}>カレンダー</Text>
-        <Text style={styles.screenSubtitle}>予定やエピソードを日付で確認できます</Text>
-
         <View style={styles.calendarShadow}>
           <View style={styles.calendarCard}>
             <Calendar
@@ -137,7 +136,6 @@ export default function CalendarScreen() {
               onMonthChange={handleMonthChange}
               markedDates={markedDates}
               dayComponent={CalendarDayCell}
-              enableSwipeMonths
               theme={{
                 backgroundColor: Theme.card,
                 calendarBackground: Theme.card,
@@ -184,7 +182,15 @@ export default function CalendarScreen() {
                 {participants.length > 0 ? (
                   <EventParticipantChipList participants={participants} compact />
                 ) : null}
-                {event.memo ? <Text style={styles.eventMemo}>{event.memo}</Text> : null}
+                {event.memo ? (
+                  <Text
+                    style={styles.eventMemo}
+                    numberOfLines={kit.calendarEventMemoDisplay === 'twoLines' ? 2 : undefined}
+                    ellipsizeMode={kit.calendarEventMemoDisplay === 'twoLines' ? 'tail' : undefined}
+                  >
+                    {event.memo}
+                  </Text>
+                ) : null}
               </Pressable>
             </View>
             );
@@ -211,16 +217,6 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.sm,
     paddingBottom: 100,
     gap: Spacing.md,
-  },
-  screenTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: Theme.card,
-  },
-  screenSubtitle: {
-    fontSize: 13,
-    color: Theme.textSecondary,
-    marginBottom: Spacing.xs,
   },
   calendarShadow: {
     borderRadius: Radius.md,

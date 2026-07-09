@@ -17,8 +17,7 @@ export const formatEpisodeDateForCard = (date: string): string => {
   if (!date.trim()) return '-';
   const parts = date.split('-').map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return '-';
-  const [, month, day] = parts;
-  return `${month}月${day}日`;
+  return date.replace(/-/g, '/');
 };
 
 /** update/delete に渡す author（公開者）の friend ID */

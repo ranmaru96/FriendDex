@@ -5,7 +5,6 @@ import {
   FlatList,
   Modal,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,7 +14,8 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Radius, ScreenHorizontalInset, Theme } from '@/constants/theme';
 import { FRIEND_HOME_CARD_GAP, FriendHomeCard } from '@/components/friend/FriendHomeCard';
-import { searchAreaStyles } from '@/utils/searchAreaStyles';
+import { SearchArea, SearchAreaDivider, SearchAreaRow, searchAreaStyles } from '@/components/ui/SearchArea';
+import { ListScreenTemplate } from '@/components/screen-templates';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { PendingEpisodeReviewModal } from '@/components/episode/PendingEpisodeReviewModal';
 
@@ -198,16 +198,23 @@ export default function HomeScreen() {
   }, []);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        <FlatList
-          data={friends}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.listContent, { paddingBottom: 80 }]}
-          ListHeaderComponent={
-            <>
-              <View style={searchAreaStyles.area}>
-              <View style={searchAreaStyles.row}>
+    <ListScreenTemplate
+      fab={
+        <AddCircleButton
+          style={styles.fab}
+          onPress={() => router.push('/edit')}
+          accessibilityLabel="人物を追加"
+        />
+      }
+    >
+      <FlatList
+        data={friends}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={[styles.listContent, { paddingBottom: 80 }]}
+        ListHeaderComponent={
+          <>
+            <SearchArea>
+              <SearchAreaRow>
                 <View style={searchAreaStyles.fieldContainer}>
                   <TextInput
                     value={homeFilter.name}
@@ -230,9 +237,9 @@ export default function HomeScreen() {
                   options={affiliationOptions}
                   onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, affiliation2: value }))}
                 />
-              </View>
+              </SearchAreaRow>
 
-              <View style={searchAreaStyles.row}>
+              <SearchAreaRow>
                 <SelectField
                   label="経験"
                   value={homeFilter.experience}
@@ -251,35 +258,28 @@ export default function HomeScreen() {
                   options={birthMonthOptions}
                   onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, birthMonth: value }))}
                 />
-              </View>
-            </View>
-              <View style={searchAreaStyles.areaDivider} />
-            </>
-          }
-          renderItem={({ item }) => {
-            const isMyself = myselfId === item.id;
-            return (
-              <FriendHomeCard
-                friend={item}
-                width={cardWidth}
-                isMyself={isMyself}
-                onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
-                onLongPress={() => handleLongPressDeleteProfile(item)}
-                delayLongPress={400}
-              />
-            );
-          }}
-          numColumns={3}
-          columnWrapperStyle={styles.column}
-          ListEmptyComponent={<Text style={styles.emptyText}>人物データがありません</Text>}
-        />
-
-        <AddCircleButton
-          style={styles.fab}
-          onPress={() => router.push('/edit')}
-          accessibilityLabel="人物を追加"
-        />
-      </View>
+              </SearchAreaRow>
+            </SearchArea>
+            <SearchAreaDivider />
+          </>
+        }
+        renderItem={({ item }) => {
+          const isMyself = myselfId === item.id;
+          return (
+            <FriendHomeCard
+              friend={item}
+              width={cardWidth}
+              isMyself={isMyself}
+              onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
+              onLongPress={() => handleLongPressDeleteProfile(item)}
+              delayLongPress={400}
+            />
+          );
+        }}
+        numColumns={3}
+        columnWrapperStyle={styles.column}
+        ListEmptyComponent={<Text style={styles.emptyText}>人物データがありません</Text>}
+      />
 
       <PendingEpisodeReviewModal
         visible={reviewModalVisible}
@@ -287,19 +287,11 @@ export default function HomeScreen() {
         onClose={() => setReviewModalVisible(false)}
         onChanged={reloadPendingReviews}
       />
-    </SafeAreaView>
+    </ListScreenTemplate>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Theme.screenBase,
-  },
-  container: {
-    flex: 1,
-    paddingTop: 8,
-  },
   listContent: {
     paddingBottom: 100,
     paddingHorizontal: ScreenHorizontalInset,

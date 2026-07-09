@@ -4,7 +4,6 @@ import {
   Modal,
   Platform,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Switch,
@@ -14,13 +13,13 @@ import {
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { Option } from '@/components/episode/types';
 import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
 import { formatEpisodeDateToYMD, parseEpisodeDateString } from '@/components/episode/types';
-import { HomeCardElevation, Radius, Spacing, Theme, Typography } from '@/constants/theme';
-import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import { FormRow } from '@/components/ui/FormRow';
+import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
   createEvent,
   deleteEvent,
@@ -540,30 +539,21 @@ export default function EventScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={subScreenHeaderStyles.bar}>
-        <Pressable style={subScreenHeaderStyles.sideBack} onPress={() => router.back()} hitSlop={8}>
-          <Text style={subScreenHeaderStyles.backText}>‹ 戻る</Text>
-        </Pressable>
-        <Text style={subScreenHeaderStyles.title} numberOfLines={1}>
-          {screenTitle}
-        </Text>
-        <View style={subScreenHeaderStyles.side}>
+    <>
+      <FormScreenTemplate
+        title={screenTitle}
+        onBack={() => router.back()}
+        right={
           <Pressable style={styles.saveButton} onPress={handleSave}>
             <Text style={styles.saveButtonText}>保存</Text>
           </Pressable>
-        </View>
-      </View>
-
-      <KeyboardAwareScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        enableOnAndroid
+        }
         extraScrollHeight={24}
+        scrollContentStyle={styles.scrollContent}
       >
-        <View style={styles.cardShadow}>
-          <View style={styles.formCard}>
-            <Text style={styles.fieldLabel}>タイトル</Text>
+        <FormScreenBody gap={Spacing.md}>
+        <FormScreenSection elevated>
+          <FormRow label="タイトル">
             <TextInput
               style={styles.textInput}
               placeholder="予定のタイトル"
@@ -571,25 +561,26 @@ export default function EventScreen() {
               value={title}
               onChangeText={setTitle}
             />
+          </FormRow>
 
-            <Text style={styles.fieldLabel}>エピソードタグ</Text>
+          <FormRow label="エピソードタグ">
             <Pressable style={styles.pickerButton} onPress={() => setTagModalVisible(true)}>
               <Text style={episodeTag ? styles.pickerButtonText : styles.pickerPlaceholder}>
                 {episodeTag || '未設定'}
               </Text>
             </Pressable>
+          </FormRow>
 
-            <View style={styles.switchRow}>
-              <Text style={styles.fieldLabel}>終日</Text>
-              <Switch
-                value={allDay}
-                onValueChange={setAllDay}
-                trackColor={{ false: Theme.border, true: Theme.accentLight }}
-                thumbColor={allDay ? Theme.accent : Theme.card}
-              />
-            </View>
+          <FormRow label="終日" contentStyle={styles.switchField}>
+            <Switch
+              value={allDay}
+              onValueChange={setAllDay}
+              trackColor={{ false: Theme.border, true: Theme.accentLight }}
+              thumbColor={allDay ? Theme.accent : Theme.card}
+            />
+          </FormRow>
 
-            <Text style={styles.fieldLabel}>開始{allDay ? '日' : '日時'}</Text>
+          <FormRow label={`開始${allDay ? '日' : '日時'}`}>
             <View style={styles.dateTimeRow}>
               <Pressable style={[styles.pickerButton, styles.dateButton]} onPress={() => setActivePicker('startDate')}>
                 <Text style={styles.pickerButtonText}>{startDateKey}</Text>
@@ -600,8 +591,9 @@ export default function EventScreen() {
                 </Pressable>
               ) : null}
             </View>
+          </FormRow>
 
-            <Text style={styles.fieldLabel}>終了{allDay ? '日' : '日時'}</Text>
+          <FormRow label={`終了${allDay ? '日' : '日時'}`}>
             <View style={styles.dateTimeRow}>
               <Pressable style={[styles.pickerButton, styles.dateButton]} onPress={() => setActivePicker('endDate')}>
                 <Text style={endDateKey ? styles.pickerButtonText : styles.pickerPlaceholder}>
@@ -616,31 +608,32 @@ export default function EventScreen() {
                 </Pressable>
               ) : null}
             </View>
+          </FormRow>
 
-            {activePicker ? (
-              <View style={styles.pickerWrap}>
-                <DateTimePicker
-                  value={activePicker.includes('Date') ? parseEpisodeDateString(
-                    activePicker === 'startDate' ? startDateKey : endDateKey
-                  ) : pickerValue}
-                  mode={activePicker.includes('Date') ? 'date' : 'time'}
-                  display="spinner"
-                  locale="ja-JP"
-                  style={styles.picker}
-                  minimumDate={
-                    allDay && activePicker === 'endDate'
-                      ? parseDateKey(startDateKey)
-                      : undefined
-                  }
-                  onChange={handlePickerChange}
-                />
-                <Pressable style={styles.pickerDoneButton} onPress={() => setActivePicker(null)}>
-                  <Text style={styles.pickerDoneText}>完了</Text>
-                </Pressable>
-              </View>
-            ) : null}
+          {activePicker ? (
+            <View style={styles.pickerWrap}>
+              <DateTimePicker
+                value={activePicker.includes('Date') ? parseEpisodeDateString(
+                  activePicker === 'startDate' ? startDateKey : endDateKey
+                ) : pickerValue}
+                mode={activePicker.includes('Date') ? 'date' : 'time'}
+                display="spinner"
+                locale="ja-JP"
+                style={styles.picker}
+                minimumDate={
+                  allDay && activePicker === 'endDate'
+                    ? parseDateKey(startDateKey)
+                    : undefined
+                }
+                onChange={handlePickerChange}
+              />
+              <Pressable style={styles.pickerDoneButton} onPress={() => setActivePicker(null)}>
+                <Text style={styles.pickerDoneText}>完了</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
-            <Text style={styles.fieldLabel}>メモ</Text>
+          <FormRow label="メモ" contentStyle={styles.memoField}>
             <TextInput
               style={[styles.textInput, styles.memoInput]}
               placeholder="メモ（任意）"
@@ -650,57 +643,52 @@ export default function EventScreen() {
               multiline
               textAlignVertical="top"
             />
-          </View>
-        </View>
+          </FormRow>
+        </FormScreenSection>
 
-        <View style={styles.cardShadow}>
-          <View style={styles.formCard}>
-            <View style={styles.switchRow}>
-              <Text style={styles.fieldLabel}>通知</Text>
-              <Switch
-                value={notifyEnabled}
-                onValueChange={setNotifyEnabled}
-                trackColor={{ false: Theme.border, true: Theme.accentLight }}
-                thumbColor={notifyEnabled ? Theme.accent : Theme.card}
-              />
-            </View>
-            {notifyEnabled ? (
-              <>
-                <Text style={styles.fieldLabel}>通知タイミング</Text>
-                <Pressable style={styles.pickerButton} onPress={() => setTimingModalVisible(true)}>
-                  <Text style={styles.pickerButtonText}>{selectedTimingLabel}</Text>
-                </Pressable>
-              </>
-            ) : null}
-          </View>
-        </View>
-
-        <View style={styles.cardShadow}>
-          <View style={styles.formCard}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.fieldLabel}>会う人</Text>
-              <Pressable style={styles.addParticipantButton} onPress={openParticipantSelector}>
-                <Text style={styles.addParticipantButtonText}>追加</Text>
+        <FormScreenSection elevated>
+          <FormRow label="通知" contentStyle={styles.switchField}>
+            <Switch
+              value={notifyEnabled}
+              onValueChange={setNotifyEnabled}
+              trackColor={{ false: Theme.border, true: Theme.accentLight }}
+              thumbColor={notifyEnabled ? Theme.accent : Theme.card}
+            />
+          </FormRow>
+          {notifyEnabled ? (
+            <FormRow label="通知タイミング">
+              <Pressable style={styles.pickerButton} onPress={() => setTimingModalVisible(true)}>
+                <Text style={styles.pickerButtonText}>{selectedTimingLabel}</Text>
               </Pressable>
-            </View>
-            {participantDisplays.length > 0 ? (
-              <EventParticipantChipList
-                participants={participantDisplays}
-                onPressProfile={handleOpenProfileDetail}
-                onRemoveProfile={handleRemoveParticipant}
-              />
-            ) : (
-              <Text style={styles.emptyParticipantText}>会う人が選択されていません</Text>
-            )}
+            </FormRow>
+          ) : null}
+        </FormScreenSection>
+
+        <FormScreenSection elevated>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.fieldLabel}>会う人</Text>
+            <Pressable style={styles.addParticipantButton} onPress={openParticipantSelector}>
+              <Text style={styles.addParticipantButtonText}>追加</Text>
+            </Pressable>
           </View>
-        </View>
+          {participantDisplays.length > 0 ? (
+            <EventParticipantChipList
+              participants={participantDisplays}
+              onPressProfile={handleOpenProfileDetail}
+              onRemoveProfile={handleRemoveParticipant}
+            />
+          ) : (
+            <Text style={styles.emptyParticipantText}>会う人が選択されていません</Text>
+          )}
+        </FormScreenSection>
 
         {isEditing ? (
           <Pressable style={styles.deleteButton} onPress={handleDelete}>
             <Text style={styles.deleteButtonText}>予定を削除</Text>
           </Pressable>
         ) : null}
-      </KeyboardAwareScrollView>
+        </FormScreenBody>
+      </FormScreenTemplate>
 
       <Modal
         visible={timingModalVisible}
@@ -808,15 +796,11 @@ export default function EventScreen() {
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
       />
-    </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Theme.screenBase,
-  },
   saveButton: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -831,29 +815,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   scrollContent: {
-    paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.lg,
-    gap: Spacing.md,
-  },
-  cardShadow: {
-    borderRadius: Radius.md,
-    backgroundColor: 'transparent',
-    ...HomeCardElevation,
-  },
-  formCard: {
-    backgroundColor: Theme.card,
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    borderColor: Theme.border,
-    padding: Spacing.md,
-    gap: Spacing.sm,
   },
   fieldLabel: {
     fontSize: Typography.base,
     fontWeight: '700',
     color: Theme.textPrimary,
-    marginTop: Spacing.xs,
+  },
+  memoField: {
+    alignSelf: 'stretch',
+  },
+  switchField: {
+    alignItems: 'flex-end',
   },
   textInput: {
     minHeight: 42,
@@ -868,12 +842,6 @@ const styles = StyleSheet.create({
   },
   memoInput: {
     minHeight: 96,
-  },
-  switchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: Spacing.xs,
   },
   dateTimeRow: {
     flexDirection: 'row',

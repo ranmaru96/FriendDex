@@ -3,8 +3,6 @@ import {
   Alert,
   Modal,
   Pressable,
-  SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,8 +10,8 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Theme, Radius, Spacing, ScreenHorizontalInset } from '@/constants/theme';
-import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { Theme, Radius, Spacing } from '@/constants/theme';
+import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { ShuffleLibraryPickerModal } from '@/components/shuffle/ShuffleLibraryPickerModal';
@@ -418,25 +416,20 @@ export default function ShuffleScreen() {
   }, [activePool, persistDraftToLibrary]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={subScreenHeaderStyles.bar}>
-        <Pressable style={subScreenHeaderStyles.sideBack} onPress={() => router.back()} hitSlop={8}>
-          <Text style={subScreenHeaderStyles.backText}>‹ 戻る</Text>
-        </Pressable>
-        <Text style={subScreenHeaderStyles.title} numberOfLines={1}>
-          人物カードシャッフル
-        </Text>
-        <View style={subScreenHeaderStyles.side} />
-      </View>
-
-      <PillTabBar
-        tabs={SHUFFLE_TABS}
-        activeTab={shuffleMode}
-        onTabChange={setShuffleMode}
-        perTabColors
-      />
-
-      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+    <>
+      <SubToolScreenTemplate
+        title="人物カードシャッフル"
+        onBack={() => router.back()}
+        header={
+          <PillTabBar
+            tabs={SHUFFLE_TABS}
+            activeTab={shuffleMode}
+            onTabChange={setShuffleMode}
+            perTabColors
+          />
+        }
+        scrollContentStyle={styles.scrollContent}
+      >
         <View style={styles.sectionCard}>
           {activePool ? (
             <>
@@ -586,7 +579,7 @@ export default function ShuffleScreen() {
             />
           )}
         </View>
-      </ScrollView>
+      </SubToolScreenTemplate>
 
       <EntrySelectorModal
         visible={selectorVisible}
@@ -649,17 +642,12 @@ export default function ShuffleScreen() {
           </View>
         </View>
       </Modal>
-    </SafeAreaView>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Theme.screenBase,
-  },
   scrollContent: {
-    paddingHorizontal: ScreenHorizontalInset,
     paddingTop: Spacing.md,
     paddingBottom: 40,
     gap: Spacing.md,

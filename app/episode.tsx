@@ -3,7 +3,6 @@ import {
   Alert,
   Modal,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -12,7 +11,10 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Theme, Radius, Typography, Spacing, ScreenHorizontalInset } from '@/constants/theme';
-import { searchAreaStyles } from '@/utils/searchAreaStyles';
+import { SearchArea, SearchAreaDivider, SearchAreaRow, searchAreaStyles } from '@/components/ui/SearchArea';
+import { ListItemGroup } from '@/components/ui/ListItemGroup';
+import { ListScreenTemplate } from '@/components/screen-templates';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
 import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModal';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
@@ -33,6 +35,7 @@ import {
   getDistinctAffiliations,
   getDistinctExperiences,
   getEpisodeById,
+  getEpisodeCoverPhotoUriMap,
   getEpisodeParticipantFriendIds,
   getMergedEpisodeTagLabels,
   getMyself,
@@ -42,6 +45,7 @@ import {
 import { Episode, EpisodeParticipant, Friend } from '../types';
 import {
   buildParticipantChips,
+  canManageEpisode,
   normalizeEpisodeTag,
   resolveEpisodeRecordOwnerId,
 } from '../utils/episodeHelpers';
@@ -87,6 +91,8 @@ function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
 }
 
 export default function EpisodeScreen() {
+  const kit = useUiKit();
+  const listItemEmbedded = kit.listItemStyle === 'panelSections';
   const router = useRouter();
   const params = useLocalSearchParams<{ editEpisodeId?: string; ownerId?: string }>();
   const pendingEditKeyRef = useRef<string | null>(null);
@@ -95,6 +101,9 @@ export default function EpisodeScreen() {
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
+  const [coverPhotoUriByEpisodeId, setCoverPhotoUriByEpisodeId] = useState<Map<string, string>>(
+    () => new Map()
+  );
 
   const [isFormVisible, setIsFormVisible] = useState(false);
 
@@ -150,11 +159,15 @@ export default function EpisodeScreen() {
 
   const loadData = useCallback(() => {
     initializeDatabase();
-    setFriends(getAllFriends());
+    const nextFriends = getAllFriends();
+    setFriends(nextFriends);
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
     setMyselfId(getMyself());
+    setCoverPhotoUriByEpisodeId(
+      getEpisodeCoverPhotoUriMap(collectUniqueEpisodes(nextFriends).map((row) => row.episode.id))
+    );
   }, []);
 
   const pendingEditEpisodeId = useMemo(() => {
@@ -514,15 +527,24 @@ export default function EpisodeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+    <>
+      <ListScreenTemplate
+        fab={
+          <AddCircleButton
+            style={styles.fab}
+            onPress={openCreateForm}
+            disabled={!myselfId}
+            accessibilityLabel="エピソードを追加"
+          />
+        }
+      >
         <ScrollView
           style={styles.mainScroll}
           contentContainerStyle={[styles.mainScrollContent, { paddingBottom: 80 }]}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={searchAreaStyles.area}>
-            <View style={searchAreaStyles.row}>
+          <SearchArea>
+            <SearchAreaRow>
               <View style={searchAreaStyles.fieldContainer}>
                 <TextInput
                   style={searchAreaStyles.textInput}
@@ -551,56 +573,53 @@ export default function EpisodeScreen() {
                 </Text>
                 <Text style={searchAreaStyles.selectChevron}>▼</Text>
               </Pressable>
-            </View>
-          </View>
-          <View style={searchAreaStyles.areaDivider} />
+            </SearchAreaRow>
+          </SearchArea>
+          <SearchAreaDivider />
 
-          <>
-            {!myselfId ? <Text style={styles.emptyText}>本人が設定されていません</Text> : null}
-            {filteredEpisodeRows.length === 0 ? (
-              <Text style={styles.emptyText}>
-                {episodeRows.length === 0
-                  ? '登録されたエピソードはありません。'
-                  : '条件に一致するエピソードはありません。'}
-              </Text>
-            ) : (
-              filteredEpisodeRows.map((row) => {
+          {!myselfId ? <Text style={styles.emptyText}>本人が設定されていません</Text> : null}
+          {filteredEpisodeRows.length === 0 ? (
+            <Text style={styles.emptyText}>
+              {episodeRows.length === 0
+                ? '登録されたエピソードはありません。'
+                : '条件に一致するエピソードはありません。'}
+            </Text>
+          ) : (
+            <ListItemGroup gap={4}>
+              {filteredEpisodeRows.map((row) => {
                 const chips = buildParticipantChips(row.episode, friendNameById, {
                   excludeFriendIds: myselfId ? [myselfId] : [],
                   friendPhotoById,
                 });
                 const authorId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
+                const canManage = canManageEpisode(row.episode, row.recordOwnerId, myselfId);
+                const posterName = canManage
+                  ? null
+                  : friendNameById.get(row.episode.authorFriendId) ?? row.episode.authorFriendId;
+                const openDetail = () =>
+                  router.push({
+                    pathname: '/episode-detail',
+                    params: { episodeId: row.episode.id, ownerId: authorId },
+                  });
                 return (
-                  <Pressable
+                  <EpisodeListCard
                     key={row.episode.id}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/episode-detail',
-                        params: { episodeId: row.episode.id, ownerId: authorId },
-                      })
-                    }
-                  >
-                    <EpisodeListCard
-                      title={row.episode.title}
-                      date={row.episode.date}
-                      episodeTag={row.episode.tag}
-                      chips={chips}
-                      visibilityMode={row.episode.visibilityMode}
-                    />
-                  </Pressable>
+                    embedded={listItemEmbedded}
+                    title={row.episode.title}
+                    date={row.episode.date}
+                    episodeTag={row.episode.tag}
+                    chips={chips}
+                    visibilityMode={canManage ? row.episode.visibilityMode : undefined}
+                    posterName={posterName}
+                    coverPhotoUri={coverPhotoUriByEpisodeId.get(row.episode.id) ?? null}
+                    onPress={openDetail}
+                  />
                 );
-              })
-            )}
-          </>
+              })}
+            </ListItemGroup>
+          )}
         </ScrollView>
-
-        <AddCircleButton
-          style={styles.fab}
-          onPress={openCreateForm}
-          disabled={!myselfId}
-          accessibilityLabel="エピソードを追加"
-        />
-      </View>
+      </ListScreenTemplate>
 
       <EpisodeFormOverlay
         visible={isFormVisible}
@@ -698,22 +717,13 @@ export default function EpisodeScreen() {
           </View>
         </View>
       </Modal>
-
-    </SafeAreaView>
+    </>
   );
 }
 
 const SELECTOR_GAP = 6;
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: Theme.screenBase,
-  },
-  container: {
-    flex: 1,
-    paddingTop: 8,
-  },
   mainScroll: {
     flex: 1,
   },

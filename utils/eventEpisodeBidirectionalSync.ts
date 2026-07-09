@@ -17,6 +17,8 @@ import {
   syncEventParticipants,
 } from './eventParticipantHelpers';
 
+const EVENT_MEMO_MAX_LENGTH = 500;
+
 let isSyncingEventEpisode = false;
 
 export const isEventEpisodeSyncInProgress = (): boolean => isSyncingEventEpisode;
@@ -38,13 +40,30 @@ const friendIdsEqual = (left: string[], right: string[]): boolean =>
 const toIndividualParticipantEntries = (friendIds: string[]): EpisodeParticipant[] =>
   friendIds.map((friendId) => ({ kind: 'individual', value: friendId }));
 
+const normalizeEventMemoForCompare = (memo: string | null | undefined): string | null => {
+  const trimmed = memo?.trim() ?? '';
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const descriptionToEventMemo = (description: string): string | null => {
+  const trimmed = description.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, EVENT_MEMO_MAX_LENGTH) : null;
+};
+
+const areDescriptionAndMemoSynced = (
+  description: string,
+  memo: string | null | undefined
+): boolean => descriptionToEventMemo(description) === normalizeEventMemoForCompare(memo);
+
+const eventMemoToDescription = (memo: string | null | undefined): string => memo?.trim() ?? '';
+
 const buildEpisodeInputFromEpisode = (
   episode: Episode,
-  overrides: Partial<Pick<EpisodeInput, 'date' | 'participantEntries' | 'eventId' | 'tag'>>
+  overrides: Partial<Pick<EpisodeInput, 'date' | 'description' | 'participantEntries' | 'eventId' | 'tag'>>
 ): EpisodeInput => ({
   title: episode.title,
   date: overrides.date ?? episode.date,
-  description: episode.description,
+  description: overrides.description ?? episode.description,
   visibilityMode: episode.visibilityMode,
   participantEntries: overrides.participantEntries ?? episode.participantEntries,
   visibilityEntries: episode.visibilityEntries,
@@ -83,8 +102,9 @@ export const syncLinkedEpisodesFromEvent = (eventId: string): void => {
   const dateChanged = nextDate !== episode.date;
   const participantsChanged = !friendIdsEqual(currentParticipantFriendIds, nextParticipantFriendIds);
   const tagChanged = nextTag !== currentTag;
+  const descriptionChanged = !areDescriptionAndMemoSynced(episode.description, event.memo);
 
-  if (!dateChanged && !participantsChanged && !tagChanged) {
+  if (!dateChanged && !participantsChanged && !tagChanged && !descriptionChanged) {
     return;
   }
 
@@ -93,42 +113,24 @@ export const syncLinkedEpisodesFromEvent = (eventId: string): void => {
     return;
   }
 
+  const overrides: Partial<Pick<EpisodeInput, 'date' | 'description' | 'participantEntries' | 'tag'>> =
+    {};
+  if (dateChanged) {
+    overrides.date = nextDate;
+  }
+  if (participantsChanged) {
+    overrides.participantEntries = toIndividualParticipantEntries(nextParticipantFriendIds);
+  }
+  if (tagChanged) {
+    overrides.tag = nextTag;
+  }
+  if (descriptionChanged) {
+    overrides.description = eventMemoToDescription(event.memo);
+  }
+
   isSyncingEventEpisode = true;
   try {
-    if (dateChanged) {
-      updateEpisode(
-        ownerId,
-        episode.id,
-        buildEpisodeInputFromEpisode(episode, { date: nextDate })
-      );
-    }
-    if (participantsChanged) {
-      const episodeForParticipants = dateChanged
-        ? { ...episode, date: nextDate }
-        : episode;
-      updateEpisode(
-        ownerId,
-        episode.id,
-        buildEpisodeInputFromEpisode(episodeForParticipants, {
-          participantEntries: toIndividualParticipantEntries(nextParticipantFriendIds),
-        })
-      );
-    }
-    if (tagChanged) {
-      const episodeForTag = dateChanged
-        ? { ...episode, date: nextDate }
-        : participantsChanged
-          ? {
-              ...episode,
-              participantEntries: toIndividualParticipantEntries(nextParticipantFriendIds),
-            }
-          : episode;
-      updateEpisode(
-        ownerId,
-        episode.id,
-        buildEpisodeInputFromEpisode(episodeForTag, { tag: nextTag })
-      );
-    }
+    updateEpisode(ownerId, episode.id, buildEpisodeInputFromEpisode(episode, overrides));
   } finally {
     isSyncingEventEpisode = false;
   }
@@ -160,8 +162,9 @@ export const syncLinkedEventFromEpisode = (episode: Episode, _authorFriendId: st
   const nextTag = normalizeEpisodeTag(episode.tag);
   const currentTag = normalizeEpisodeTag(event.episodeTag);
   const tagChanged = nextTag !== currentTag;
+  const descriptionChanged = !areDescriptionAndMemoSynced(episode.description, event.memo);
 
-  if (!participantsChanged && !tagChanged) {
+  if (!participantsChanged && !tagChanged && !descriptionChanged) {
     return;
   }
 
@@ -170,17 +173,17 @@ export const syncLinkedEventFromEpisode = (episode: Episode, _authorFriendId: st
     if (participantsChanged) {
       syncEventParticipants(eventId, nextProfileIds);
     }
-    if (tagChanged) {
+    if (tagChanged || descriptionChanged) {
       updateEvent(eventId, {
         title: event.title,
         startAt: event.startAt,
         endAt: event.endAt,
         allDay: event.allDay,
-        memo: event.memo,
+        memo: descriptionChanged ? descriptionToEventMemo(episode.description) : event.memo,
         notifyAt: event.notifyAt,
         notifyEnabled: event.notifyEnabled,
         autoEpisodeCreated: event.autoEpisodeCreated,
-        episodeTag: nextTag,
+        episodeTag: tagChanged ? nextTag : event.episodeTag,
       });
     }
   } finally {

@@ -9,6 +9,7 @@ import BottomNav from '../components/BottomNav';
 import { EventNotificationHandler } from '../components/EventNotificationHandler';
 import { Theme } from '@/constants/theme';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
+import { UiPreviewProvider } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
 import { initializeDatabase } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
@@ -58,9 +59,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
         <DetailDesignProvider>
-          <EventNotificationHandler />
-          <PastEventConversionScheduler />
-          <AppShell />
+          <UiPreviewProvider>
+            <EventNotificationHandler />
+            <PastEventConversionScheduler />
+            <AppShell />
+          </UiPreviewProvider>
         </DetailDesignProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

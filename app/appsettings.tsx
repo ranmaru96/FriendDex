@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,8 +12,11 @@ import { confirmAndExportBackup, confirmAndImportBackup } from '../backup';
 import { getAllProfiles, getMyself, initializeDatabase, setMyself } from '../db';
 import { Profile } from '../types';
 import { DETAIL_DESIGN_OPTIONS } from '@/constants/detailThemes';
+import { UI_PREVIEW_OPTIONS } from '@/constants/uiKit';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
+import { useUiPreview } from '../contexts/UiPreviewContext';
 
 type Option = { label: string; value: string };
 
@@ -83,6 +85,7 @@ const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | nu
 export default function AppSettingsScreen() {
   const router = useRouter();
   const { variant: detailDesignVariant, setVariant: setDetailDesignVariant } = useDetailDesign();
+  const { variant: uiPreviewVariant, setVariant: setUiPreviewVariant } = useUiPreview();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
 
@@ -118,11 +121,10 @@ export default function AppSettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Pressable style={styles.backRow} onPress={() => router.back()}>
-          <Text style={styles.backText}>‹ 戻る</Text>
-        </Pressable>
+    <SubToolScreenTemplate useTopBar={false} useScreenPadding={false} scrollContentStyle={styles.scrollContent}>
+      <Pressable style={styles.backRow} onPress={() => router.back()}>
+        <Text style={styles.backText}>‹ 戻る</Text>
+      </Pressable>
 
         <Text style={styles.sectionHeader}>本人設定</Text>
         <View style={styles.group}>
@@ -158,6 +160,24 @@ export default function AppSettingsScreen() {
         </View>
         <Text style={styles.hint}>Detail 画面の配色とタブ・タグのスタイルを切り替えます</Text>
 
+        <Text style={styles.sectionHeader}>UI プレビュー</Text>
+        <View style={styles.group}>
+          {UI_PREVIEW_OPTIONS.map((option, index) => (
+            <View key={option.value}>
+              {index > 0 ? <View style={styles.separator} /> : null}
+              <Pressable style={styles.row} onPress={() => setUiPreviewVariant(option.value)}>
+                <Text style={styles.rowLabel}>{option.label}</Text>
+                {uiPreviewVariant === option.value ? (
+                  <Text style={styles.selectedMark}>✓</Text>
+                ) : null}
+              </Pressable>
+            </View>
+          ))}
+        </View>
+        <Text style={styles.hint}>
+          アプリ全体のレイアウト・枠・フォームの試作版を切り替えます。Detail の配色とは別の設定です
+        </Text>
+
         <Text style={styles.sectionHeader}>バックアップ</Text>
         <View style={styles.group}>
           <Pressable style={styles.row} onPress={confirmAndExportBackup}>
@@ -169,16 +189,11 @@ export default function AppSettingsScreen() {
           </Pressable>
         </View>
         <Text style={styles.hint}>自動バックアップは起動時に自動実行されます</Text>
-      </ScrollView>
-    </SafeAreaView>
+    </SubToolScreenTemplate>
   );
 }
 
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: Theme.screenBase,
-  },
   scrollContent: {
     paddingBottom: 32,
   },
