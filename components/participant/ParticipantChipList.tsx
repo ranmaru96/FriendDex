@@ -7,6 +7,8 @@ type ParticipantChipListProps = {
   chips: ParticipantChipDisplay[];
   compact?: boolean;
   layout?: 'scroll' | 'wrap';
+  chipBackgroundColor?: string;
+  chipStyle?: 'default' | 'fitted';
   onPressProfile?: (friendId: string) => void;
   onChipPress?: (chip: ParticipantChipDisplay) => void;
   onRemoveChip?: (chipId: string) => void;
@@ -16,6 +18,8 @@ export function ParticipantChipList({
   chips,
   compact = false,
   layout = 'scroll',
+  chipBackgroundColor,
+  chipStyle = 'default',
   onPressProfile,
   onChipPress,
   onRemoveChip,
@@ -29,6 +33,8 @@ export function ParticipantChipList({
       key={chip.id}
       chip={chip}
       compact={compact}
+      chipBackgroundColor={chipBackgroundColor}
+      chipStyle={chipStyle}
       onPress={
         onChipPress
           ? () => onChipPress(chip)

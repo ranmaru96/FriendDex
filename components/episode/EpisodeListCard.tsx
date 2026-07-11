@@ -43,6 +43,8 @@ export type EpisodeListCardProps = {
   posterName?: string | null;
   coverPhotoUri?: string | null;
   onPress?: () => void;
+  onLongPress?: () => void;
+  delayLongPress?: number;
   onEdit?: () => void;
   onDelete?: () => void;
   /** 詳細画面など親パネル内に埋め込むとき（外枠・角丸なし） */
@@ -60,6 +62,8 @@ export function EpisodeListCard({
   posterName,
   coverPhotoUri,
   onPress,
+  onLongPress,
+  delayLongPress = 300,
   onEdit,
   onDelete,
   embedded = false,
@@ -81,10 +85,12 @@ export function EpisodeListCard({
         <View style={styles.photoRightTopRow}>
           <Pressable
             onPress={onPress}
-            disabled={!onPress}
+            onLongPress={onLongPress}
+            delayLongPress={delayLongPress}
+            disabled={!onPress && !onLongPress}
             style={({ pressed }) => [
               styles.photoRightTopLeft,
-              pressed && onPress ? styles.photoRightPressablePressed : null,
+              pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
             ]}
           >
             <View style={styles.episodeCardTitleWrap}>
@@ -121,10 +127,12 @@ export function EpisodeListCard({
           {hasPhoto ? (
             <Pressable
               onPress={onPress}
-              disabled={!onPress}
+              onLongPress={onLongPress}
+              delayLongPress={delayLongPress}
+              disabled={!onPress && !onLongPress}
               style={({ pressed }) => [
                 styles.photoRightPhotoPressable,
-                pressed && onPress ? styles.photoRightPressablePressed : null,
+                pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
               ]}
             >
               <View style={styles.photoRightPhotoFrame}>
@@ -212,10 +220,12 @@ export function EpisodeListCard({
     </View>
   );
 
-  if (onPress) {
+  if (onPress || onLongPress) {
     return (
       <Pressable
         onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={delayLongPress}
         style={({ pressed }) => [pressed ? styles.photoRightPressablePressed : null]}
       >
         {cardContent}

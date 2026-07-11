@@ -2,10 +2,17 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import {
   getUiKit,
   normalizeUiPreviewVariant,
+  type CalendarEventTimeDisplay,
   type UiKit,
   type UiPreviewVariant,
 } from '@/constants/uiKit';
-import { getUiPreviewVariant, initializeDatabase, setUiPreviewVariant } from '../db';
+import {
+  getCalendarEventTimeDisplayOverride,
+  getUiPreviewVariant,
+  initializeDatabase,
+  setCalendarEventTimeDisplayOverride,
+  setUiPreviewVariant,
+} from '../db';
 
 type UiPreviewContextValue = {
   variant: UiPreviewVariant;
@@ -13,6 +20,7 @@ type UiPreviewContextValue = {
   isStable: boolean;
   kit: UiKit;
   setVariant: (variant: UiPreviewVariant) => void;
+  setCalendarEventTimeDisplay: (display: CalendarEventTimeDisplay) => void;
   reload: () => void;
 };
 
@@ -20,10 +28,13 @@ const UiPreviewContext = createContext<UiPreviewContextValue | null>(null);
 
 export function UiPreviewProvider({ children }: { children: ReactNode }) {
   const [variant, setVariantState] = useState<UiPreviewVariant>('stable');
+  const [calendarEventTimeDisplay, setCalendarEventTimeDisplayState] =
+    useState<CalendarEventTimeDisplay | null>(null);
 
   const reload = useCallback(() => {
     initializeDatabase();
     setVariantState(getUiPreviewVariant());
+    setCalendarEventTimeDisplayState(getCalendarEventTimeDisplayOverride());
   }, []);
 
   useEffect(() => {
@@ -36,7 +47,23 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
     setVariantState(next);
   }, []);
 
-  const kit = useMemo(() => getUiKit(variant), [variant]);
+  const setCalendarEventTimeDisplay = useCallback((display: CalendarEventTimeDisplay) => {
+    initializeDatabase();
+    setCalendarEventTimeDisplayOverride(display);
+    setCalendarEventTimeDisplayState(display);
+  }, []);
+
+  const kit = useMemo(() => {
+    const base = getUiKit(variant);
+    if (variant !== 'preview') {
+      return base;
+    }
+    const timeDisplay = calendarEventTimeDisplay ?? base.calendarEventTimeDisplay;
+    if (timeDisplay === base.calendarEventTimeDisplay) {
+      return base;
+    }
+    return { ...base, calendarEventTimeDisplay: timeDisplay };
+  }, [variant, calendarEventTimeDisplay]);
 
   const value = useMemo(
     () => ({
@@ -45,9 +72,10 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
       isStable: variant === 'stable',
       kit,
       setVariant,
+      setCalendarEventTimeDisplay,
       reload,
     }),
-    [variant, kit, setVariant, reload]
+    [variant, kit, setVariant, setCalendarEventTimeDisplay, reload]
   );
 
   return <UiPreviewContext.Provider value={value}>{children}</UiPreviewContext.Provider>;

@@ -5,19 +5,25 @@ import type { DateData } from 'react-native-calendars';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { CalendarDayCell } from '@/components/calendar/CalendarDayCell';
+import { ScheduleGridMonthCalendar } from '@/components/calendar/ScheduleGridMonthCalendar';
 import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
-import { HomeCardElevation, Radius, ScreenHorizontalInset, Spacing, Theme } from '@/constants/theme';
+import { HomeCardElevation, Radius, Spacing, Theme } from '@/constants/theme';
+import type { CalendarEventMemoDisplay, CalendarEventTimeDisplay } from '@/constants/uiKit/types';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { getEventParticipantsForEvents, getEventsByDateRange, initializeDatabase } from '../db';
 import type { Event } from '../types';
+import { buildCalendarMarkedDates } from '../utils/calendarMarking';
 import {
   filterEventsByLocalDate,
   formatDateKey,
-  formatEventScheduleLabel,
+  formatEventScheduleLabelForCard,
   getMonthRangeIso,
 } from '../utils/eventHelpers';
-import { buildCalendarMarkedDates } from '../utils/calendarMarking';
 import { toEventParticipantDisplays } from '../utils/eventParticipantHelpers';
+import {
+  formatScheduleGridSelectedLabel,
+  getScheduleGridMonthRangeIso,
+} from '../utils/scheduleGridCalendar';
 
 LocaleConfig.locales.ja = {
   monthNames: [
@@ -46,8 +52,88 @@ const parseMonthFromDateKey = (dateKey: string): { year: number; month: number }
   return { year, month };
 };
 
+const getCalendarMemoLineLimit = (display: CalendarEventMemoDisplay): number | undefined => {
+  if (display === 'oneLine') {
+    return 1;
+  }
+  if (display === 'twoLines') {
+    return 2;
+  }
+  return undefined;
+};
+
+type EventCardScheduleRowProps = {
+  title: string;
+  scheduleLabel: string;
+  timeDisplay: CalendarEventTimeDisplay;
+  stacked?: boolean;
+};
+
+function EventCardScheduleRow({
+  title,
+  scheduleLabel,
+  timeDisplay,
+  stacked = false,
+}: EventCardScheduleRowProps) {
+  const displayTitle = title || '（無題）';
+
+  if (stacked) {
+    return (
+      <>
+        <View style={styles.eventTimeBadge}>
+          <Text style={styles.eventTimeText}>{scheduleLabel}</Text>
+        </View>
+        <Text style={styles.eventTitle}>{displayTitle}</Text>
+      </>
+    );
+  }
+
+  if (timeDisplay === 'plain') {
+    return (
+      <View style={styles.eventCardTitleRow}>
+        <Text style={styles.eventTimePlain} numberOfLines={2}>
+          {scheduleLabel}
+        </Text>
+        <Text style={styles.eventTitleInRow} numberOfLines={2}>
+          {displayTitle}
+        </Text>
+      </View>
+    );
+  }
+
+  if (timeDisplay === 'column') {
+    return (
+      <View style={[styles.eventCardTitleRow, styles.eventCardTitleRowColumn]}>
+        <Text style={styles.eventTimeColumn} numberOfLines={3}>
+          {scheduleLabel}
+        </Text>
+        <View style={styles.eventTimeColumnDivider} />
+        <Text style={styles.eventTitleInRow} numberOfLines={3}>
+          {displayTitle}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.eventCardTitleRow}>
+      <View style={styles.eventTimeBadgeInRow}>
+        <Text style={styles.eventTimeText} numberOfLines={1}>
+          {scheduleLabel}
+        </Text>
+      </View>
+      <Text style={styles.eventTitleInRow} numberOfLines={1}>
+        {displayTitle}
+      </Text>
+    </View>
+  );
+}
+
 export default function CalendarScreen() {
   const kit = useUiKit();
+  const isCompactEventCard = kit.calendarEventMemoDisplay === 'oneLine';
+  const isScheduleGrid = kit.calendarMonthLayout === 'scheduleGrid';
+  const isEdgeToEdge = kit.calendarScreenPaddingHorizontal === 0;
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const routeDate = typeof params.date === 'string' ? params.date.trim() : '';
@@ -63,21 +149,26 @@ export default function CalendarScreen() {
     Map<string, ReturnType<typeof toEventParticipantDisplays>>
   >(new Map());
 
-  const loadMonthEvents = useCallback((year: number, month: number) => {
-    initializeDatabase();
-    const { rangeStartAt, rangeEndAt } = getMonthRangeIso(year, month);
-    const events = getEventsByDateRange(rangeStartAt, rangeEndAt);
-    const participantMap = getEventParticipantsForEvents(events.map((event) => event.id));
-    const displayMap = new Map<string, ReturnType<typeof toEventParticipantDisplays>>();
-    participantMap.forEach((participants, eventId) => {
-      displayMap.set(
-        eventId,
-        toEventParticipantDisplays(participants.map((participant) => participant.profileId))
-      );
-    });
-    setMonthEvents(events);
-    setParticipantsByEventId(displayMap);
-  }, []);
+  const loadMonthEvents = useCallback(
+    (year: number, month: number) => {
+      initializeDatabase();
+      const { rangeStartAt, rangeEndAt } = isScheduleGrid
+        ? getScheduleGridMonthRangeIso(year, month)
+        : getMonthRangeIso(year, month);
+      const events = getEventsByDateRange(rangeStartAt, rangeEndAt);
+      const participantMap = getEventParticipantsForEvents(events.map((event) => event.id));
+      const displayMap = new Map<string, ReturnType<typeof toEventParticipantDisplays>>();
+      participantMap.forEach((participants, eventId) => {
+        displayMap.set(
+          eventId,
+          toEventParticipantDisplays(participants.map((participant) => participant.profileId))
+        );
+      });
+      setMonthEvents(events);
+      setParticipantsByEventId(displayMap);
+    },
+    [isScheduleGrid]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -107,9 +198,23 @@ export default function CalendarScreen() {
     setSelectedDate(day.dateString);
   };
 
+  const handleScheduleGridDayPress = (dateKey: string) => {
+    setSelectedDate(dateKey);
+    const { year, month } = parseMonthFromDateKey(dateKey);
+    if (year !== visibleMonth.year || month !== visibleMonth.month) {
+      setVisibleMonth({ year, month });
+      loadMonthEvents(year, month);
+    }
+  };
+
   const handleMonthChange = (month: DateData) => {
     setVisibleMonth({ year: month.year, month: month.month });
     loadMonthEvents(month.year, month.month);
+  };
+
+  const handleScheduleGridMonthChange = (year: number, month: number) => {
+    setVisibleMonth({ year, month });
+    loadMonthEvents(year, month);
   };
 
   const handleCreateEvent = () => {
@@ -121,80 +226,140 @@ export default function CalendarScreen() {
   };
 
   const selectedDateLabel = useMemo(() => {
+    if (isScheduleGrid) {
+      return formatScheduleGridSelectedLabel(selectedDate);
+    }
     const [year, month, day] = selectedDate.split('-').map(Number);
     return `${year}年${month}月${day}日`;
-  }, [selectedDate]);
+  }, [isScheduleGrid, selectedDate]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.calendarShadow}>
-          <View style={styles.calendarCard}>
-            <Calendar
-              current={selectedDate}
-              onDayPress={handleDayPress}
-              onMonthChange={handleMonthChange}
-              markedDates={markedDates}
-              dayComponent={CalendarDayCell}
-              theme={{
-                backgroundColor: Theme.card,
-                calendarBackground: Theme.card,
-                textSectionTitleColor: Theme.textPrimary,
-                selectedDayBackgroundColor: Theme.accent,
-                selectedDayTextColor: Theme.onAccent,
-                todayTextColor: Theme.accent,
-                dayTextColor: Theme.textPrimary,
-                textDisabledColor: Theme.textSecondary,
-                arrowColor: Theme.textPrimary,
-                monthTextColor: Theme.textPrimary,
-                textDayFontWeight: '500',
-                textMonthFontWeight: '700',
-                textDayHeaderFontWeight: '600',
-                weekVerticalMargin: 2,
-              }}
-              style={styles.calendar}
-            />
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingHorizontal: kit.calendarScreenPaddingHorizontal },
+          isEdgeToEdge ? styles.scrollContentEdgeToEdge : null,
+          isCompactEventCard ? styles.scrollContentCompact : null,
+        ]}
+      >
+        {isScheduleGrid ? (
+          <ScheduleGridMonthCalendar
+            year={visibleMonth.year}
+            month={visibleMonth.month}
+            selectedDate={selectedDate}
+            todayKey={todayKey}
+            events={monthEvents}
+            onDayPress={handleScheduleGridDayPress}
+            onMonthChange={handleScheduleGridMonthChange}
+            edgeToEdge={isEdgeToEdge}
+          />
+        ) : (
+          <View style={[styles.calendarShadow, isEdgeToEdge ? styles.calendarShadowEdgeToEdge : null]}>
+            <View style={[styles.calendarCard, isEdgeToEdge ? styles.calendarCardEdgeToEdge : null]}>
+              <Calendar
+                current={selectedDate}
+                onDayPress={handleDayPress}
+                onMonthChange={handleMonthChange}
+                markedDates={markedDates}
+                dayComponent={CalendarDayCell}
+                theme={{
+                  backgroundColor: Theme.card,
+                  calendarBackground: Theme.card,
+                  textSectionTitleColor: Theme.textPrimary,
+                  selectedDayBackgroundColor: Theme.accent,
+                  selectedDayTextColor: Theme.onAccent,
+                  todayTextColor: Theme.accent,
+                  dayTextColor: Theme.textPrimary,
+                  textDisabledColor: Theme.textSecondary,
+                  arrowColor: Theme.textPrimary,
+                  monthTextColor: Theme.textPrimary,
+                  textDayFontWeight: '500',
+                  textMonthFontWeight: '700',
+                  textDayHeaderFontWeight: '600',
+                  weekVerticalMargin: 2,
+                }}
+                style={styles.calendar}
+              />
+            </View>
           </View>
-        </View>
+        )}
 
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{selectedDateLabel}</Text>
+        <View
+          style={[
+            isScheduleGrid ? styles.compactSectionHeader : styles.sectionHeader,
+            isEdgeToEdge ? styles.sectionHeaderEdgeToEdge : null,
+          ]}
+        >
+          <Text style={isScheduleGrid ? styles.compactSectionTitle : styles.sectionTitle}>
+            {selectedDateLabel}
+          </Text>
           <Text style={styles.sectionCount}>{eventsForSelectedDate.length}件</Text>
         </View>
 
         {eventsForSelectedDate.length === 0 ? (
-          <View style={styles.eventShadow}>
-            <View style={styles.emptyCard}>
+          <View style={[styles.eventShadow, isEdgeToEdge ? styles.eventShadowEdgeToEdge : null]}>
+            <View style={[styles.emptyCard, isEdgeToEdge ? styles.eventCardEdgeToEdge : null]}>
               <Text style={styles.emptyTitle}>予定はありません</Text>
               <Text style={styles.emptyText}>この日に登録された予定はまだありません。</Text>
             </View>
           </View>
         ) : (
-          eventsForSelectedDate.map((event) => {
+          <View style={isEdgeToEdge ? styles.eventListEdgeToEdge : undefined}>
+            {eventsForSelectedDate.map((event) => {
             const participants = participantsByEventId.get(event.id) ?? [];
             return (
-            <View key={event.id} style={styles.eventShadow}>
-              <Pressable style={styles.eventCard} onPress={() => handleOpenEvent(event.id)}>
-                <View style={styles.eventTimeBadge}>
-                  <Text style={styles.eventTimeText}>{formatEventScheduleLabel(event)}</Text>
-                </View>
-                <Text style={styles.eventTitle}>{event.title}</Text>
-                {participants.length > 0 ? (
-                  <EventParticipantChipList participants={participants} compact />
-                ) : null}
-                {event.memo ? (
-                  <Text
-                    style={styles.eventMemo}
-                    numberOfLines={kit.calendarEventMemoDisplay === 'twoLines' ? 2 : undefined}
-                    ellipsizeMode={kit.calendarEventMemoDisplay === 'twoLines' ? 'tail' : undefined}
-                  >
-                    {event.memo}
-                  </Text>
-                ) : null}
-              </Pressable>
-            </View>
+              <View
+                key={event.id}
+                style={[styles.eventShadow, isEdgeToEdge ? styles.eventShadowEdgeToEdge : null]}
+              >
+                <Pressable
+                  style={[
+                    styles.eventCard,
+                    isCompactEventCard ? styles.eventCardCompact : null,
+                    isEdgeToEdge ? styles.eventCardEdgeToEdge : null,
+                  ]}
+                  onPress={() => handleOpenEvent(event.id)}
+                >
+                  {isScheduleGrid ? (
+                    <EventCardScheduleRow
+                      title={event.title}
+                      scheduleLabel={formatEventScheduleLabelForCard(event, selectedDate)}
+                      timeDisplay={kit.calendarEventTimeDisplay}
+                    />
+                  ) : (
+                    <EventCardScheduleRow
+                      title={event.title}
+                      scheduleLabel={formatEventScheduleLabelForCard(event, selectedDate)}
+                      timeDisplay="badge"
+                      stacked
+                    />
+                  )}
+                  {participants.length > 0 ? (
+                    <EventParticipantChipList
+                      participants={participants}
+                      compact
+                      chipBackgroundColor={kit.calendarParticipantChipBackground}
+                      chipStyle={kit.calendarParticipantChipStyle}
+                      layout={isScheduleGrid ? 'scroll' : undefined}
+                    />
+                  ) : null}
+                  {event.memo ? (
+                    <Text
+                      style={[styles.eventMemo, isCompactEventCard ? styles.eventMemoCompact : null]}
+                      numberOfLines={getCalendarMemoLineLimit(kit.calendarEventMemoDisplay)}
+                      ellipsizeMode={
+                        getCalendarMemoLineLimit(kit.calendarEventMemoDisplay) ? 'tail' : undefined
+                      }
+                    >
+                      {event.memo}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              </View>
             );
-          })
+          })}
+          </View>
         )}
       </ScrollView>
 
@@ -213,15 +378,26 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.screenBase,
   },
   scrollContent: {
-    paddingHorizontal: ScreenHorizontalInset,
     paddingTop: Spacing.sm,
     paddingBottom: 100,
     gap: Spacing.md,
+  },
+  scrollContentCompact: {
+    gap: Spacing.sm,
+  },
+  scrollContentEdgeToEdge: {
+    paddingTop: 0,
+    gap: Spacing.sm,
   },
   calendarShadow: {
     borderRadius: Radius.md,
     backgroundColor: 'transparent',
     ...HomeCardElevation,
+  },
+  calendarShadowEdgeToEdge: {
+    borderRadius: 0,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   calendarCard: {
     borderRadius: Radius.md,
@@ -229,6 +405,11 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.card,
     borderWidth: 1,
     borderColor: Theme.border,
+  },
+  calendarCardEdgeToEdge: {
+    borderRadius: 0,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
   },
   calendar: {
     borderRadius: Radius.md,
@@ -250,10 +431,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Theme.textSecondary,
   },
+  compactSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
+    paddingHorizontal: 2,
+    paddingTop: 2,
+  },
+  compactSectionTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  sectionHeaderEdgeToEdge: {
+    paddingHorizontal: Spacing.sm,
+  },
+  eventListEdgeToEdge: {
+    gap: 0,
+  },
   eventShadow: {
     borderRadius: Radius.md,
     backgroundColor: 'transparent',
     ...HomeCardElevation,
+  },
+  eventShadowEdgeToEdge: {
+    borderRadius: 0,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   eventCard: {
     backgroundColor: Theme.card,
@@ -262,6 +467,62 @@ const styles = StyleSheet.create({
     borderColor: Theme.border,
     padding: Spacing.md,
     gap: Spacing.sm,
+  },
+  eventCardEdgeToEdge: {
+    borderRadius: 0,
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderTopWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  eventCardCompact: {
+    padding: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  eventCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  eventCardTitleRowColumn: {
+    alignItems: 'stretch',
+  },
+  eventTimePlain: {
+    flexShrink: 0,
+    maxWidth: '46%',
+    fontSize: 12,
+    fontWeight: '600',
+    color: Theme.accent,
+    lineHeight: 16,
+  },
+  eventTimeColumn: {
+    width: 78,
+    flexShrink: 0,
+    fontSize: 11,
+    fontWeight: '600',
+    color: Theme.accent,
+    lineHeight: 15,
+  },
+  eventTimeColumnDivider: {
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
+    backgroundColor: Theme.border,
+  },
+  eventTitleInRow: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 15,
+    fontWeight: '700',
+    color: Theme.textPrimary,
+  },
+  eventTimeBadgeInRow: {
+    flexShrink: 0,
+    maxWidth: '48%',
+    alignSelf: 'center',
+    backgroundColor: Theme.accentLight,
+    borderRadius: Radius.sm,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
   },
   eventTimeBadge: {
     alignSelf: 'flex-start',
@@ -286,6 +547,9 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Theme.textSecondary,
     lineHeight: 18,
+  },
+  eventMemoCompact: {
+    lineHeight: 16,
   },
   emptyCard: {
     backgroundColor: Theme.card,

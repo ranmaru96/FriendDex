@@ -12,11 +12,11 @@ import { confirmAndExportBackup, confirmAndImportBackup } from '../backup';
 import { getAllProfiles, getMyself, initializeDatabase, setMyself } from '../db';
 import { Profile } from '../types';
 import { DETAIL_DESIGN_OPTIONS } from '@/constants/detailThemes';
-import { UI_PREVIEW_OPTIONS } from '@/constants/uiKit';
+import { CALENDAR_EVENT_TIME_DISPLAY_OPTIONS, UI_PREVIEW_OPTIONS } from '@/constants/uiKit';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
-import { useUiPreview } from '../contexts/UiPreviewContext';
+import { useUiKit, useUiPreview } from '../contexts/UiPreviewContext';
 
 type Option = { label: string; value: string };
 
@@ -85,7 +85,9 @@ const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | nu
 export default function AppSettingsScreen() {
   const router = useRouter();
   const { variant: detailDesignVariant, setVariant: setDetailDesignVariant } = useDetailDesign();
-  const { variant: uiPreviewVariant, setVariant: setUiPreviewVariant } = useUiPreview();
+  const { variant: uiPreviewVariant, setVariant: setUiPreviewVariant, setCalendarEventTimeDisplay } =
+    useUiPreview();
+  const kit = useUiKit();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
 
@@ -177,6 +179,29 @@ export default function AppSettingsScreen() {
         <Text style={styles.hint}>
           アプリ全体のレイアウト・枠・フォームの試作版を切り替えます。Detail の配色とは別の設定です
         </Text>
+
+        {uiPreviewVariant === 'preview' ? (
+          <>
+            <Text style={styles.sectionHeader}>カレンダー予定カード（試作）</Text>
+            <View style={styles.group}>
+              {CALENDAR_EVENT_TIME_DISPLAY_OPTIONS.map((option, index) => (
+                <View key={option.value}>
+                  {index > 0 ? <View style={styles.separator} /> : null}
+                  <Pressable
+                    style={styles.row}
+                    onPress={() => setCalendarEventTimeDisplay(option.value)}
+                  >
+                    <Text style={styles.rowLabel}>{option.label}</Text>
+                    {kit.calendarEventTimeDisplay === option.value ? (
+                      <Text style={styles.selectedMark}>✓</Text>
+                    ) : null}
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.hint}>Preview モード時のみ。予定カード左側の時刻表示スタイルを切り替えます</Text>
+          </>
+        ) : null}
 
         <Text style={styles.sectionHeader}>バックアップ</Text>
         <View style={styles.group}>

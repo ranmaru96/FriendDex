@@ -4,6 +4,8 @@ import { ParticipantChipList } from '@/components/participant/ParticipantChipLis
 type EventParticipantChipListProps = {
   participants: EventParticipantDisplay[];
   compact?: boolean;
+  chipBackgroundColor?: string;
+  chipStyle?: 'default' | 'fitted';
   onPressProfile?: (friendId: string) => void;
   onRemoveProfile?: (profileId: string) => void;
 };
@@ -11,6 +13,8 @@ type EventParticipantChipListProps = {
 export function EventParticipantChipList({
   participants,
   compact = false,
+  chipBackgroundColor,
+  chipStyle = 'default',
   onPressProfile,
   onRemoveProfile,
 }: EventParticipantChipListProps) {
@@ -30,6 +34,8 @@ export function EventParticipantChipList({
     <ParticipantChipList
       chips={chips}
       compact={compact}
+      chipBackgroundColor={chipBackgroundColor}
+      chipStyle={chipStyle}
       onPressProfile={onPressProfile}
       onRemoveChip={onRemoveProfile}
     />

@@ -1277,6 +1277,7 @@ export const getMyself = (): string | null => {
 
 export const DETAIL_DESIGN_VARIANT_KEY = 'detail_design_variant';
 export const UI_PREVIEW_VARIANT_KEY = 'ui_preview_variant';
+export const UI_CALENDAR_EVENT_TIME_DISPLAY_KEY = 'ui_calendar_event_time_display';
 
 export const getAppSetting = (key: string): string | null => {
   const row = db.getFirstSync<{ value: string }>(`SELECT value FROM ${SETTINGS_TABLE} WHERE key = ?;`, [key]);
@@ -1306,6 +1307,18 @@ export const getUiPreviewVariant = (): 'stable' | 'preview' => {
 
 export const setUiPreviewVariant = (variant: 'stable' | 'preview'): void => {
   setAppSetting(UI_PREVIEW_VARIANT_KEY, variant);
+};
+
+export const getCalendarEventTimeDisplayOverride = (): 'plain' | 'column' | 'badge' | null => {
+  const value = getAppSetting(UI_CALENDAR_EVENT_TIME_DISPLAY_KEY);
+  if (value === 'plain' || value === 'column' || value === 'badge') {
+    return value;
+  }
+  return null;
+};
+
+export const setCalendarEventTimeDisplayOverride = (display: 'plain' | 'column' | 'badge'): void => {
+  setAppSetting(UI_CALENDAR_EVENT_TIME_DISPLAY_KEY, display);
 };
 
 export const setMyself = (friendId: string | null): boolean => {

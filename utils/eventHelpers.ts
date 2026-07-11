@@ -86,6 +86,47 @@ export const formatEventScheduleLabel = (event: Event): string => {
   return `${formatDateTimeLabel(start, crossYear)} – ${formatDateTimeLabel(end, crossYear)}`;
 };
 
+/** カード表示用。表示中日（viewDateKey）に応じた時刻ラベルを返す */
+export const formatEventScheduleLabelForCard = (event: Event, viewDateKey: string): string => {
+  const dateKeys = getLocalDateKeysForEvent(event);
+
+  if (dateKeys.length <= 1) {
+    if (event.allDay) {
+      return '終日';
+    }
+    const start = new Date(event.startAt);
+    if (!event.endAt) {
+      return formatHm(start);
+    }
+    const end = new Date(event.endAt);
+    return `${formatHm(start)}-${formatHm(end)}`;
+  }
+
+  const dayIndex = dateKeys.indexOf(viewDateKey);
+  if (dayIndex < 0) {
+    return formatEventScheduleLabel(event);
+  }
+
+  const dayLabel = `day${dayIndex + 1}`;
+
+  if (event.allDay) {
+    return `${dayLabel} 終日`;
+  }
+
+  const isFirst = dayIndex === 0;
+  const isLast = dayIndex === dateKeys.length - 1;
+
+  if (isFirst) {
+    return `${dayLabel} ${formatHm(new Date(event.startAt))}-`;
+  }
+  if (isLast) {
+    const end = event.endAt ? new Date(event.endAt) : new Date(event.startAt);
+    return `${dayLabel} -${formatHm(end)}`;
+  }
+
+  return `${dayLabel} 終日`;
+};
+
 export const getLocalDateKeysForEvent = (event: Event): string[] => {
   const start = new Date(event.startAt);
   const end = event.endAt ? new Date(event.endAt) : start;

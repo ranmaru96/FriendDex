@@ -1,6 +1,9 @@
 import { StyleSheet } from 'react-native';
 import { Radius, Theme } from '@/constants/theme';
 
+export const PARTICIPANT_CHIP_FITTED_PHOTO_SIZE = 22;
+export const PARTICIPANT_CHIP_FITTED_BORDER_RADIUS = 6;
+
 export const participantChipStyles = StyleSheet.create({
   scroll: {
     flexGrow: 0,
@@ -27,6 +30,35 @@ export const participantChipStyles = StyleSheet.create({
   },
   chipCompact: {
     maxWidth: 140,
+  },
+  /** カレンダー予定カード用：写真左・コンパクト幅 */
+  chipFitted: {
+    paddingLeft: 2,
+    paddingRight: 4,
+    maxWidth: 88,
+  },
+  chipBodyFitted: {
+    gap: 3,
+    paddingVertical: 2,
+    paddingLeft: 2,
+    paddingRight: 2,
+  },
+  avatarFittedOuter: {
+    width: PARTICIPANT_CHIP_FITTED_PHOTO_SIZE,
+    height: PARTICIPANT_CHIP_FITTED_PHOTO_SIZE,
+    overflow: 'hidden',
+    backgroundColor: Theme.homeCardPhotoPlaceholder,
+  },
+  avatarFittedImage: {
+    width: '100%',
+    height: '100%',
+  },
+  avatarFittedPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: Theme.homeCardPhotoPlaceholder,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   chipGroup: {
     paddingLeft: 10,

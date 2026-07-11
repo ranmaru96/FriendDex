@@ -1,5 +1,5 @@
 import { StyleSheet } from 'react-native';
-import { HomeCardElevation, Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import { HomeCardElevation, Radius, ScreenHorizontalInset, Spacing, Theme, Typography } from '@/constants/theme';
 import type { DetailThemeColors } from '@/constants/detailThemes';
 
 const EPISODE_PICKER_GAP = 6;
@@ -719,6 +719,9 @@ export function createDetailStyles(c: DetailThemeColors) {
     color: '#b91c1c',
     marginBottom: 8,
     fontSize: 12,
+  },
+  episodeListInset: {
+    paddingHorizontal: ScreenHorizontalInset - Spacing.md,
   },
   episodeCard: {
     backgroundColor: c.episodeBg,

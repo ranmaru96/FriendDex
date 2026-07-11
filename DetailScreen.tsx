@@ -19,6 +19,7 @@ import type { DetailTabKey } from '@/constants/detailThemes';
 import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
 import { TabScreenTemplate } from '@/components/screen-templates';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
+import { ListItemGroup } from '@/components/ui/ListItemGroup';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useDetailDesign } from './contexts/DetailDesignContext';
 import { createDetailStyles } from './utils/detailStyles';
@@ -191,6 +192,7 @@ export default function DetailScreen() {
   const episodeVisibilityTagStyles = useMemo(() => buildEpisodeVisibilityTagStyles(c), [c]);
   const kit = useUiKit();
   const useSharedEpisodeCard = kit.episodeListCardLayout === 'photoRight';
+  const listItemEmbedded = kit.listItemStyle === 'panelSections';
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
   const [friend, setFriend] = useState<Friend | null>(null);
@@ -1331,6 +1333,58 @@ export default function DetailScreen() {
 
             {filteredEpisodes.length === 0 ? (
               <Text style={styles.emptyEpisodeText}>該当するエピソードはありません。</Text>
+            ) : useSharedEpisodeCard ? (
+              <View style={styles.episodeListInset}>
+                <ListItemGroup gap={4}>
+                  {filteredEpisodes.map((episode) => {
+                    const canManage = canManageEpisode(episode, friend.id, myselfId);
+                    const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
+                    const chips = buildParticipantChips(episode, friendNameById, {
+                      excludeFriendIds: myselfId ? [myselfId] : [],
+                      friendPhotoById,
+                    });
+                    const posterName =
+                      friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
+                    const openEpisodeDetail = () =>
+                      router.push({
+                        pathname: '/episode-detail',
+                        params: {
+                          episodeId: episode.id,
+                          ownerId: episodeOwnerId,
+                        },
+                      });
+                    const onLongPressEpisode = canManage
+                      ? () => {
+                          Alert.alert('操作を選択', 'このエピソードに対する操作を選んでください。', [
+                            { text: 'キャンセル', style: 'cancel' },
+                            { text: '編集', onPress: () => startEditEpisode(episode) },
+                            {
+                              text: '削除',
+                              style: 'destructive',
+                              onPress: () => handleDeleteEpisode(episode.id),
+                            },
+                          ]);
+                        }
+                      : undefined;
+
+                    return (
+                      <EpisodeListCard
+                        key={episode.id}
+                        embedded={listItemEmbedded}
+                        title={episode.title}
+                        date={episode.date}
+                        episodeTag={episode.tag}
+                        chips={chips}
+                        visibilityMode={canManage ? episode.visibilityMode : undefined}
+                        posterName={canManage ? null : posterName}
+                        coverPhotoUri={episodeCoverPhotoById.get(episode.id) ?? null}
+                        onPress={openEpisodeDetail}
+                        onLongPress={onLongPressEpisode}
+                      />
+                    );
+                  })}
+                </ListItemGroup>
+              </View>
             ) : (
               filteredEpisodes.map((episode) => {
                 const canManage = canManageEpisode(episode, friend.id, myselfId);
@@ -1362,27 +1416,6 @@ export default function DetailScreen() {
                       ]);
                     }
                   : undefined;
-
-                if (useSharedEpisodeCard) {
-                  return (
-                    <Pressable
-                      key={episode.id}
-                      onPress={openEpisodeDetail}
-                      onLongPress={onLongPressEpisode}
-                      delayLongPress={300}
-                    >
-                      <EpisodeListCard
-                        title={episode.title}
-                        date={episode.date}
-                        episodeTag={episode.tag}
-                        chips={chips}
-                        visibilityMode={canManage ? episode.visibilityMode : undefined}
-                        posterName={canManage ? null : posterName}
-                        coverPhotoUri={episodeCoverPhotoById.get(episode.id) ?? null}
-                      />
-                    </Pressable>
-                  );
-                }
 
                 return (
                   <Pressable
