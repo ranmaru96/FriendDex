@@ -11,6 +11,7 @@ import { Theme } from '@/constants/theme';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
 import { UiPreviewProvider } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
+import { getActiveTab, shouldHideBottomNav, shouldHideHeader } from '../utils/bottomNavVisibility';
 import { initializeDatabase } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
 
@@ -19,31 +20,19 @@ function PastEventConversionScheduler() {
   return null;
 }
 
-type TabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'friends';
-
-function getActiveTab(pathname: string): TabKey {
-  if (pathname.includes('/commonitems')) return 'commonitems';
-  if (pathname.includes('/calendar')) return 'calendar';
-  if (pathname.includes('/friends')) return 'friends';
-  if (pathname.includes('/episode')) return 'episode';
-  if (pathname.includes('/tools')) return 'tools';
-  return 'home';
-}
-
 function AppShell() {
   const pathname = usePathname();
-  const hideNav = ['detail', 'edit', 'episode-detail', '/event', 'myprofile', 'myprofile-qr', 'scan', 'qr-import', 'money-loan', 'shuffle'].some((p) =>
-    pathname.includes(p)
-  );
+  const hideHeader = shouldHideHeader(pathname);
+  const hideBottomNav = shouldHideBottomNav(pathname);
   const activeTab = getActiveTab(pathname);
 
   return (
     <View style={styles.shell}>
-      {!hideNav && <AppHeader />}
+      {!hideHeader && <AppHeader />}
       <View style={styles.content}>
         <Stack screenOptions={{ headerShown: false }} />
       </View>
-      {!hideNav && <BottomNav active={activeTab} />}
+      {!hideBottomNav && <BottomNav active={activeTab} />}
     </View>
   );
 }

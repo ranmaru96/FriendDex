@@ -64,7 +64,6 @@ export function ParticipantChip({
     <View
       style={[
         styles.chip,
-        compact && styles.chipCompact,
         isFitted && styles.chipFitted,
         isGroup && styles.chipGroup,
         chipBackgroundColor ? { backgroundColor: chipBackgroundColor } : null,
@@ -96,9 +95,7 @@ export function ParticipantChip({
             </View>
           )
         ) : null}
-        <Text style={[styles.name, compact && styles.nameCompact]} numberOfLines={1}>
-          {chip.label}
-        </Text>
+        <Text style={[styles.name, compact && styles.nameCompact]}>{chip.label}</Text>
       </Pressable>
       {onRemove ? (
         <Pressable

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { HomeCardElevation, Radius, Theme } from '@/constants/theme';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
 import type { Friend } from '../../types';
 
+/** Stable 既定値（シャッフル等・UiKit 未参照の箇所用） */
 export const FRIEND_HOME_CARD_GAP = 10;
 
 type FriendHomeCardProps = {
@@ -25,6 +27,7 @@ export function FriendHomeCard({
   delayLongPress,
   style,
 }: FriendHomeCardProps) {
+  const kit = useUiKit();
   const [imageError, setImageError] = useState(false);
   const hasPhoto = Boolean(friend.photoUri?.trim()) && !imageError;
   const completeness = computeProfileCompleteness(friend, hasPhoto);
@@ -61,7 +64,12 @@ export function FriendHomeCard({
           )}
         </View>
       </View>
-      <View style={styles.cardTextBlock}>
+      <View
+        style={[
+          styles.cardTextBlock,
+          { paddingVertical: kit.friendHomeCardNamePaddingVertical },
+        ]}
+      >
         <Text style={styles.cardMainName}>{friend.name}</Text>
       </View>
     </>
@@ -129,7 +137,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   cardTextBlock: {
-    paddingVertical: 6,
     paddingHorizontal: 4,
     alignItems: 'center',
     justifyContent: 'center',

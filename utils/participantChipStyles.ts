@@ -7,8 +7,12 @@ export const PARTICIPANT_CHIP_FITTED_BORDER_RADIUS = 6;
 export const participantChipStyles = StyleSheet.create({
   scroll: {
     flexGrow: 0,
+    flexShrink: 1,
+    width: '100%',
   },
   scrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 6,
     paddingVertical: 2,
   },
@@ -20,22 +24,19 @@ export const participantChipStyles = StyleSheet.create({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
+    flexShrink: 0,
     borderWidth: 1,
     borderColor: Theme.border,
     borderRadius: 999,
     backgroundColor: Theme.accentLight,
     paddingLeft: 4,
     paddingRight: 4,
-    maxWidth: 180,
   },
-  chipCompact: {
-    maxWidth: 140,
-  },
-  /** カレンダー予定カード用：写真左・コンパクト幅 */
+  /** カレンダー予定カード用：写真左・コンパクト */
   chipFitted: {
     paddingLeft: 2,
     paddingRight: 4,
-    maxWidth: 88,
   },
   chipBodyFitted: {
     gap: 3,
@@ -71,7 +72,6 @@ export const participantChipStyles = StyleSheet.create({
     paddingVertical: 4,
     paddingLeft: 4,
     paddingRight: 2,
-    flexShrink: 1,
   },
   chipBodyGroup: {
     paddingLeft: 0,
@@ -108,7 +108,7 @@ export const participantChipStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: Theme.textPrimary,
-    flexShrink: 1,
+    flexShrink: 0,
   },
   nameCompact: {
     fontSize: 11,

@@ -15,9 +15,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
 import { createDetailStyles } from '../utils/detailStyles';
 import { TabScreenTemplate } from '@/components/screen-templates';
+import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
 import {
   addCommonItemOption,
   createGroupOption,
+  deleteCommonItemOption,
   getAllFriends,
   getCommonItemOptionByKindAndLabel,
   getDistinctAffiliations,
@@ -81,6 +83,48 @@ const GROUP_EDITOR_PADDING = 14;
 
 const toOptions = (values: string[]): Option[] => values.map((v) => ({ label: v, value: v }));
 
+function EditorActionButtons({
+  onCancel,
+  onSave,
+  saveDisabled = false,
+  saveAccessibilityLabel = '保存',
+}: {
+  onCancel: () => void;
+  onSave: () => void;
+  saveDisabled?: boolean;
+  saveAccessibilityLabel?: string;
+}) {
+  return (
+    <View style={styles.editorActionButtons}>
+      <Pressable
+        style={styles.editorIconButton}
+        onPress={onCancel}
+        accessibilityLabel="キャンセル"
+        accessibilityRole="button"
+      >
+        <Ionicons name="close-outline" size={20} color={Theme.textPrimary} />
+      </Pressable>
+      <Pressable
+        style={[
+          styles.editorIconButton,
+          styles.editorIconButtonPrimary,
+          saveDisabled && styles.editorIconButtonDisabled,
+        ]}
+        onPress={onSave}
+        disabled={saveDisabled}
+        accessibilityLabel={saveAccessibilityLabel}
+        accessibilityRole="button"
+      >
+        <Ionicons
+          name="checkmark-outline"
+          size={20}
+          color={saveDisabled ? Theme.textSecondary : Theme.accent}
+        />
+      </Pressable>
+    </View>
+  );
+}
+
 function SelectField({ label, value, options, onValueChange }: {
   label: string;
   value: string;
@@ -131,8 +175,25 @@ function SelectField({ label, value, options, onValueChange }: {
 }
 
 export default function CommonItemsScreen() {
+  const kit = useUiKit();
+  const { isPreview } = useUiPreview();
   const { bundle } = useDetailDesign();
   const detailStyles = useMemo(() => createDetailStyles(bundle.colors), [bundle.colors]);
+  const isFlatCommonItemsPanel = kit.commonItemsPanelBorderRadius === 0;
+  const commonItemsPanelStyle = useMemo(
+    () =>
+      isFlatCommonItemsPanel
+        ? {
+            borderRadius: 0,
+            borderLeftWidth: 0,
+            borderRightWidth: 0,
+          }
+        : { borderRadius: kit.commonItemsPanelBorderRadius },
+    [isFlatCommonItemsPanel, kit.commonItemsPanelBorderRadius]
+  );
+  const contentPaddingHorizontal = isFlatCommonItemsPanel
+    ? kit.commonItemsContentPaddingHorizontal
+    : TAB_TAG_DIVIDER_INSET;
   const themeColors = bundle.colors;
   const [activeTab, setActiveTab] = useState<CommonItemTabKey>('所属');
   const [mergedLabels, setMergedLabels] = useState<string[]>([]);
@@ -307,30 +368,56 @@ export default function CommonItemsScreen() {
       {
         text: '削除',
         style: 'destructive',
-        onPress: () => {
-          Alert.alert(
-            '削除確認',
-            `「${label}」を削除します。\n関連する各Profileの同項目からも削除されます。`,
-            [
-              { text: 'キャンセル', style: 'cancel' },
-              {
-                text: '削除する',
-                style: 'destructive',
-                onPress: () => {
-                  const ok = removeCommonItemLabel(requireActiveKind(), label);
-                  if (!ok) {
-                    Alert.alert('削除失敗', '削除処理に失敗しました。');
-                    return;
-                  }
-                  refreshItems();
-                },
-              },
-            ]
-          );
-        },
+        onPress: () => confirmDeleteLabel(label),
       },
     ]);
   };
+
+  const confirmDeleteLabel = (label: string, onDeleted?: () => void) => {
+    Alert.alert(
+      '削除確認',
+      `「${label}」を削除します。\n関連する各Profileの同項目からも削除されます。`,
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '削除する',
+          style: 'destructive',
+          onPress: () => {
+            const kind = requireActiveKind();
+            const option = getCommonItemOptionByKindAndLabel(kind, label);
+            const ok = option?.id
+              ? deleteCommonItemOption(option.id)
+              : removeCommonItemLabel(kind, label);
+            if (!ok) {
+              Alert.alert('削除失敗', '削除処理に失敗しました。');
+              return;
+            }
+            onDeleted?.();
+            refreshItems();
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteSimpleEditor = () => {
+    if (!editingOriginalLabel) return;
+    confirmDeleteLabel(editingOriginalLabel, () => setEditorVisible(false));
+  };
+
+  const handleDeleteGroupEditor = () => {
+    const label = groupEditingOriginalLabel ?? groupName.trim();
+    if (!label) return;
+    confirmDeleteLabel(label, () => setGroupEditorVisible(false));
+  };
+
+  const handlePressTag = (label: string) => {
+    if (isPreview) {
+      openEditEditor(label);
+    }
+  };
+
+  const simpleEditorTitle = editingOriginalLabel ? `${activeTab}を編集` : `${activeTab}を追加`;
 
   const activeChipStyle = bundle.infoChipStyles[activeTab] ?? DEFAULT_CHIP_STYLE;
 
@@ -349,193 +436,317 @@ export default function CommonItemsScreen() {
     );
   };
 
+  const renderTabInner = () => (
+    <View
+      style={
+        isFlatCommonItemsPanel ? { paddingHorizontal: contentPaddingHorizontal } : undefined
+      }
+    >
+      <View style={detailStyles.tabInner}>
+      {TAB_ORDER.map((tab) => {
+        const isActive = activeTab === tab;
+        const tabColor = getTabAccentColor(tab);
+        return (
+          <Pressable
+            key={tab}
+            onPress={() => setActiveTab(tab)}
+            style={[
+              detailStyles.tabPill,
+              isActive && {
+                borderColor: tabColor,
+                backgroundColor: tabColor,
+              },
+            ]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: isActive }}
+            accessibilityLabel={tab}
+          >
+            <View style={detailStyles.tabPillContent}>
+              <View
+                style={[
+                  detailStyles.tabPillIconCircle,
+                  isActive
+                    ? detailStyles.tabPillIconCircleActive
+                    : { backgroundColor: tabColor },
+                ]}
+              >
+                <Ionicons name={TAB_ICONS[tab]} size={16} color={themeColors.onAccent} />
+              </View>
+              <Text
+                style={[
+                  detailStyles.tabPillCaption,
+                  isActive ? detailStyles.tabPillCaptionActive : detailStyles.tabPillCaptionInactive,
+                ]}
+                numberOfLines={1}
+              >
+                {tab}
+              </Text>
+            </View>
+          </Pressable>
+        );
+      })}
+      </View>
+    </View>
+  );
+
+  const renderTagsSection = () => (
+    <>
+      <View style={styles.tabTagSeparator}>
+        <View
+          style={[
+            styles.tabTagDivider,
+            {
+              backgroundColor: themeColors.tabTrackBorder,
+              marginHorizontal: contentPaddingHorizontal,
+            },
+          ]}
+        />
+      </View>
+      <View
+        style={[
+          styles.tagsBody,
+          isFlatCommonItemsPanel
+            ? { paddingHorizontal: contentPaddingHorizontal }
+            : null,
+        ]}
+      >
+        <ScrollView
+          style={[styles.tagsScroll, { maxHeight: TAGS_SCROLL_MAX_HEIGHT }]}
+          contentContainerStyle={styles.tagsContainer}
+          showsVerticalScrollIndicator={false}
+          nestedScrollEnabled
+        >
+          {mergedLabels.map((label) => (
+            <Pressable
+              key={label}
+              style={[
+                styles.valueChip,
+                {
+                  backgroundColor: activeChipStyle.backgroundColor,
+                  borderColor: activeChipStyle.borderColor,
+                  borderWidth: activeChipStyle.borderWidth,
+                },
+              ]}
+              onPress={() => handlePressTag(label)}
+              onLongPress={isPreview ? undefined : () => handleLongPressTag(label)}
+              delayLongPress={isPreview ? undefined : 300}
+            >
+              <Text style={[styles.valueChipText, { color: activeChipStyle.color }]}>{label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <View style={styles.addButtonRow}>
+          <AddCircleButton onPress={openAddEditor} accessibilityLabel={`${activeTab}を追加`} />
+        </View>
+      </View>
+    </>
+  );
+
   return (
     <>
       <TabScreenTemplate contentContainerStyle={styles.body}>
         <View style={[detailStyles.tabSection, styles.tabSectionFill, styles.tabSectionNoFrame]}>
-            <View style={[detailStyles.tabTrack, styles.tabTrackAligned, styles.itemsPanel]}>
-              <View style={detailStyles.tabInner}>
-                {TAB_ORDER.map((tab) => {
-                  const isActive = activeTab === tab;
-                  const tabColor = getTabAccentColor(tab);
-                  return (
-                    <Pressable
-                      key={tab}
-                      onPress={() => setActiveTab(tab)}
-                      style={[
-                        detailStyles.tabPill,
-                        isActive && {
-                          borderColor: tabColor,
-                          backgroundColor: tabColor,
-                        },
-                      ]}
-                      accessibilityRole="tab"
-                      accessibilityState={{ selected: isActive }}
-                      accessibilityLabel={tab}
-                    >
-                      <View style={detailStyles.tabPillContent}>
-                        <View
-                          style={[
-                            detailStyles.tabPillIconCircle,
-                            isActive
-                              ? detailStyles.tabPillIconCircleActive
-                              : { backgroundColor: tabColor },
-                          ]}
-                        >
-                          <Ionicons name={TAB_ICONS[tab]} size={16} color={themeColors.onAccent} />
-                        </View>
-                        <Text
-                          style={[
-                            detailStyles.tabPillCaption,
-                            isActive ? detailStyles.tabPillCaptionActive : detailStyles.tabPillCaptionInactive,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {tab}
-                        </Text>
-                      </View>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              <View style={styles.tabTagSeparator}>
-                <View
-                  style={[styles.tabTagDivider, { backgroundColor: themeColors.tabTrackBorder }]}
-                />
-              </View>
-
-              <View style={styles.tagsBody}>
-                <ScrollView
-                  style={[styles.tagsScroll, { maxHeight: TAGS_SCROLL_MAX_HEIGHT }]}
-                  contentContainerStyle={styles.tagsContainer}
-                  showsVerticalScrollIndicator={false}
-                  nestedScrollEnabled
-                >
-                  {mergedLabels.map((label) => (
-                    <Pressable
-                      key={label}
-                      style={[
-                        styles.valueChip,
-                        {
-                          backgroundColor: activeChipStyle.backgroundColor,
-                          borderColor: activeChipStyle.borderColor,
-                          borderWidth: activeChipStyle.borderWidth,
-                        },
-                      ]}
-                      onLongPress={() => handleLongPressTag(label)}
-                      delayLongPress={300}
-                    >
-                      <Text style={[styles.valueChipText, { color: activeChipStyle.color }]}>{label}</Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-                <View style={styles.addButtonRow}>
-                  <AddCircleButton
-                    onPress={openAddEditor}
-                    accessibilityLabel={`${activeTab}を追加`}
-                  />
-                </View>
-              </View>
-            </View>
+          <View
+            style={[
+              detailStyles.tabTrack,
+              styles.tabTrackAligned,
+              styles.itemsPanel,
+              commonItemsPanelStyle,
+              isFlatCommonItemsPanel ? styles.tabTrackFlatPreview : null,
+            ]}
+          >
+            {renderTabInner()}
+            {renderTagsSection()}
           </View>
+        </View>
       </TabScreenTemplate>
 
-      {/* Simple editor for 経験/性格 */}
+      {/* Simple editor（エピソードタグなど） */}
       <Modal visible={editorVisible} transparent animationType="fade" onRequestClose={() => setEditorVisible(false)}>
         <View style={styles.editorOverlay}>
-          <View style={styles.editorCard}>
-            <Text style={styles.editorTitle}>{editingOriginalLabel ? `${activeTab}を編集` : `${activeTab}を追加`}</Text>
-            <TextInput
-              value={editorText}
-              onChangeText={setEditorText}
-              style={styles.editorInput}
-              placeholder={`${activeTab}を入力`}
-              placeholderTextColor={Theme.inputPlaceholder}
-              autoCapitalize="none"
-              autoFocus
-            />
-            <View style={styles.editorActions}>
-              <Pressable style={styles.editorCancelButton} onPress={() => setEditorVisible(false)}>
-                <Text style={styles.editorCancelText}>キャンセル</Text>
-              </Pressable>
-              <Pressable style={styles.editorSaveButton} onPress={handleSaveEditor}>
-                <Text style={styles.editorSaveText}>保存</Text>
-              </Pressable>
-            </View>
+          <View style={[styles.editorCard, isPreview ? styles.editorCardPreview : null]}>
+            {isPreview ? (
+              <>
+                <View style={styles.editorHeaderPreview}>
+                  <Text style={styles.editorTitlePreview} numberOfLines={1}>
+                    {simpleEditorTitle}
+                  </Text>
+                  <EditorActionButtons
+                    onCancel={() => setEditorVisible(false)}
+                    onSave={handleSaveEditor}
+                  />
+                </View>
+                <TextInput
+                  value={editorText}
+                  onChangeText={setEditorText}
+                  style={styles.editorInput}
+                  placeholder={`${activeTab}を入力`}
+                  placeholderTextColor={Theme.inputPlaceholder}
+                  autoCapitalize="none"
+                  autoFocus
+                />
+                {editingOriginalLabel ? (
+                  <Pressable style={styles.editorDeleteButton} onPress={handleDeleteSimpleEditor}>
+                    <Text style={styles.editorDeleteText}>削除</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Text style={styles.editorTitle}>{simpleEditorTitle}</Text>
+                <TextInput
+                  value={editorText}
+                  onChangeText={setEditorText}
+                  style={styles.editorInput}
+                  placeholder={`${activeTab}を入力`}
+                  placeholderTextColor={Theme.inputPlaceholder}
+                  autoCapitalize="none"
+                  autoFocus
+                />
+                <View style={styles.editorActions}>
+                  <Pressable style={styles.editorCancelButton} onPress={() => setEditorVisible(false)}>
+                    <Text style={styles.editorCancelText}>キャンセル</Text>
+                  </Pressable>
+                  <Pressable style={styles.editorSaveButton} onPress={handleSaveEditor}>
+                    <Text style={styles.editorSaveText}>保存</Text>
+                  </Pressable>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
 
-      {/* Group editor for 所属/公開範囲 */}
+      {/* Group editor（所属/公開先など） */}
       <Modal visible={groupEditorVisible} transparent animationType="slide" onRequestClose={() => setGroupEditorVisible(false)}>
         <View style={styles.groupEditorOverlay}>
           <View style={styles.groupEditorCard}>
-            {/* Header */}
-            <View style={styles.groupHeaderRow}>
-              <TextInput
-                value={groupName}
-                onChangeText={setGroupName}
-                style={styles.groupNameInput}
-                placeholder={`${activeTab}名`}
-                placeholderTextColor={Theme.inputPlaceholder}
-                autoCapitalize="none"
-              />
-              <View style={styles.groupEditButtons}>
-                <Pressable style={styles.groupCancelButton} onPress={() => setGroupEditorVisible(false)}>
-                  <Text style={styles.groupCancelButtonText}>キャンセル</Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    groupEditingId ? styles.groupSaveButton : styles.groupCreateButton,
-                    !groupName.trim() && styles.groupButtonDisabled,
-                  ]}
-                  onPress={handleSaveGroupEditor}
-                  disabled={!groupName.trim()}
-                >
-                  <Text style={groupEditingId ? styles.groupSaveButtonText : styles.groupCreateButtonText}>
-                    {groupEditingId ? '保存' : '作成'}
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
+            {isPreview ? (
+              <>
+                <View style={styles.groupHeaderRowPreview}>
+                  <TextInput
+                    value={groupName}
+                    onChangeText={setGroupName}
+                    style={styles.groupNameInputPreview}
+                    placeholder={`${activeTab}名`}
+                    placeholderTextColor={Theme.inputPlaceholder}
+                    autoCapitalize="none"
+                  />
+                  <EditorActionButtons
+                    onCancel={() => setGroupEditorVisible(false)}
+                    onSave={handleSaveGroupEditor}
+                    saveDisabled={!groupName.trim()}
+                    saveAccessibilityLabel={groupEditingId ? '保存' : '作成'}
+                  />
+                </View>
 
-            {/* Filter row */}
-            <View style={styles.filterRow}>
-              <View style={styles.filterNameContainer}>
-                <TextInput
-                  style={styles.filterNameInput}
-                  value={personNameFilter}
-                  onChangeText={setPersonNameFilter}
-                  placeholder="名前"
-                  placeholderTextColor={Theme.inputPlaceholder}
-                  autoCapitalize="none"
+                <View style={styles.filterRow}>
+                  <View style={styles.filterNameContainer}>
+                    <TextInput
+                      style={styles.filterNameInput}
+                      value={personNameFilter}
+                      onChangeText={setPersonNameFilter}
+                      placeholder="名前"
+                      placeholderTextColor={Theme.inputPlaceholder}
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  <SelectField
+                    label="所属"
+                    value={personAffiliationFilter}
+                    options={affiliationOptions}
+                    onValueChange={setPersonAffiliationFilter}
+                  />
+                  <SelectField
+                    label="経験"
+                    value={personExperienceFilter}
+                    options={experienceOptions}
+                    onValueChange={setPersonExperienceFilter}
+                  />
+                </View>
+
+                <FlatList
+                  data={filteredPersons}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderPersonRow}
+                  style={styles.personList}
+                  contentContainerStyle={styles.personListContent}
+                  numColumns={PERSON_COLUMNS}
+                  columnWrapperStyle={styles.personColumnWrapper}
                 />
-              </View>
-              <SelectField
-                label="所属"
-                value={personAffiliationFilter}
-                options={affiliationOptions}
-                onValueChange={setPersonAffiliationFilter}
-              />
-              <SelectField
-                label="経験"
-                value={personExperienceFilter}
-                options={experienceOptions}
-                onValueChange={setPersonExperienceFilter}
-              />
-            </View>
 
-            {/* Person list */}
-            <FlatList
-              data={filteredPersons}
-              keyExtractor={(item) => item.id}
-              renderItem={renderPersonRow}
-              style={styles.personList}
-              contentContainerStyle={styles.personListContent}
-              numColumns={PERSON_COLUMNS}
-              columnWrapperStyle={styles.personColumnWrapper}
-            />
+                {groupEditingId ? (
+                  <Pressable style={styles.editorDeleteButton} onPress={handleDeleteGroupEditor}>
+                    <Text style={styles.editorDeleteText}>削除</Text>
+                  </Pressable>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <View style={styles.groupHeaderRow}>
+                  <TextInput
+                    value={groupName}
+                    onChangeText={setGroupName}
+                    style={styles.groupNameInput}
+                    placeholder={`${activeTab}名`}
+                    placeholderTextColor={Theme.inputPlaceholder}
+                    autoCapitalize="none"
+                  />
+                  <View style={styles.groupEditButtons}>
+                    <Pressable style={styles.groupCancelButton} onPress={() => setGroupEditorVisible(false)}>
+                      <Text style={styles.groupCancelButtonText}>キャンセル</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[
+                        groupEditingId ? styles.groupSaveButton : styles.groupCreateButton,
+                        !groupName.trim() && styles.groupButtonDisabled,
+                      ]}
+                      onPress={handleSaveGroupEditor}
+                      disabled={!groupName.trim()}
+                    >
+                      <Text style={groupEditingId ? styles.groupSaveButtonText : styles.groupCreateButtonText}>
+                        {groupEditingId ? '保存' : '作成'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+
+                <View style={styles.filterRow}>
+                  <View style={styles.filterNameContainer}>
+                    <TextInput
+                      style={styles.filterNameInput}
+                      value={personNameFilter}
+                      onChangeText={setPersonNameFilter}
+                      placeholder="名前"
+                      placeholderTextColor={Theme.inputPlaceholder}
+                      autoCapitalize="none"
+                    />
+                  </View>
+                  <SelectField
+                    label="所属"
+                    value={personAffiliationFilter}
+                    options={affiliationOptions}
+                    onValueChange={setPersonAffiliationFilter}
+                  />
+                  <SelectField
+                    label="経験"
+                    value={personExperienceFilter}
+                    options={experienceOptions}
+                    onValueChange={setPersonExperienceFilter}
+                  />
+                </View>
+
+                <FlatList
+                  data={filteredPersons}
+                  keyExtractor={(item) => item.id}
+                  renderItem={renderPersonRow}
+                  style={styles.personList}
+                  contentContainerStyle={styles.personListContent}
+                  numColumns={PERSON_COLUMNS}
+                  columnWrapperStyle={styles.personColumnWrapper}
+                />
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -561,6 +772,9 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     backgroundColor: Theme.card,
   },
+  tabTrackFlatPreview: {
+    paddingHorizontal: 0,
+  },
   itemsPanel: {
     alignSelf: 'stretch',
     paddingBottom: Spacing.sm,
@@ -573,7 +787,6 @@ const styles = StyleSheet.create({
   tabTagDivider: {
     height: 1,
     alignSelf: 'stretch',
-    marginHorizontal: TAB_TAG_DIVIDER_INSET,
   },
   tagsBody: {
     paddingHorizontal: Spacing.xs,
@@ -616,6 +829,61 @@ const styles = StyleSheet.create({
     borderColor: '#94a3b8',
     padding: 14,
     gap: 10,
+  },
+  editorCardPreview: {
+    paddingTop: 8,
+    paddingBottom: 14,
+  },
+  editorHeaderPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  editorTitlePreview: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  editorActionButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  editorIconButton: {
+    width: 40,
+    height: 40,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: '#cbd5e1',
+    backgroundColor: Theme.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editorIconButtonPrimary: {
+    borderColor: Theme.accent,
+    backgroundColor: Theme.accentLight,
+  },
+  editorIconButtonDisabled: {
+    opacity: 0.45,
+  },
+  editorDeleteButton: {
+    alignSelf: 'center',
+    marginTop: 12,
+    minWidth: 120,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: '#dc2626',
+    backgroundColor: '#fef2f2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  editorDeleteText: {
+    fontSize: Typography.base,
+    fontWeight: '700',
+    color: '#dc2626',
   },
   editorTitle: {
     fontSize: 16,
@@ -681,6 +949,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     marginBottom: 10,
+  },
+  groupHeaderRowPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  groupNameInputPreview: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#94a3b8',
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#111827',
+    minHeight: 40,
   },
   groupNameInput: {
     flex: 1,

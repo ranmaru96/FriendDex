@@ -3,18 +3,21 @@ import {
   Alert,
   useWindowDimensions,
   FlatList,
-  Modal,
-  Pressable,
-  ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { Radius, ScreenHorizontalInset, Theme } from '@/constants/theme';
-import { FRIEND_HOME_CARD_GAP, FriendHomeCard } from '@/components/friend/FriendHomeCard';
-import { SearchArea, SearchAreaDivider, SearchAreaRow, searchAreaStyles } from '@/components/ui/SearchArea';
+import { Theme } from '@/constants/theme';
+import { useUiKit } from '@/contexts/UiPreviewContext';
+import { FriendHomeCard } from '@/components/friend/FriendHomeCard';
+import {
+  SearchArea,
+  SearchAreaDivider,
+  SearchAreaRow,
+  SearchAreaSelectField,
+  SearchAreaTextInputField,
+} from '@/components/ui/SearchArea';
 import { ListScreenTemplate } from '@/components/screen-templates';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { PendingEpisodeReviewModal } from '@/components/episode/PendingEpisodeReviewModal';
@@ -42,13 +45,6 @@ type Option = {
   value: string;
 };
 
-type SelectFieldProps = {
-  label: string;
-  value: string;
-  options: Option[];
-  onValueChange: (value: string) => void;
-};
-
 const birthMonthOptions: Option[] = Array.from({ length: 12 }, (_, index) => ({
   label: String(index + 1),
   value: String(index + 1),
@@ -56,67 +52,16 @@ const birthMonthOptions: Option[] = Array.from({ length: 12 }, (_, index) => ({
 
 const toOptions = (values: string[]): Option[] => values.map((value) => ({ label: value, value }));
 
-const CARD_GAP = FRIEND_HOME_CARD_GAP;
-
-function SelectField({ label, value, options, onValueChange }: SelectFieldProps) {
-  const [visible, setVisible] = useState(false);
-
-  const displayLabel = useMemo(() => {
-    if (!value) return label;
-    return options.find((item) => item.value === value)?.label ?? label;
-  }, [label, options, value]);
-
-  return (
-    <View style={searchAreaStyles.fieldContainer}>
-      <Pressable style={searchAreaStyles.selectButton} onPress={() => setVisible(true)}>
-        <Text style={value ? searchAreaStyles.selectValue : searchAreaStyles.selectPlaceholder}>{displayLabel}</Text>
-        <Text style={searchAreaStyles.selectChevron}>▼</Text>
-      </Pressable>
-
-      <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{label}</Text>
-            <ScrollView style={styles.modalOptions}>
-              <Pressable
-                style={[styles.modalOption, !value && styles.modalOptionSelected]}
-                onPress={() => {
-                  onValueChange('');
-                  setVisible(false);
-                }}
-              >
-                <Text style={styles.modalOptionText}>指定なし</Text>
-              </Pressable>
-              {options.map((option) => (
-                <Pressable
-                  key={option.value}
-                  style={[styles.modalOption, option.value === value && styles.modalOptionSelected]}
-                  onPress={() => {
-                    onValueChange(option.value);
-                    setVisible(false);
-                  }}
-                >
-                  <Text style={styles.modalOptionText}>{option.label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable style={styles.modalCloseButton} onPress={() => setVisible(false)}>
-              <Text style={styles.modalCloseButtonText}>閉じる</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-}
-
 export default function HomeScreen() {
   const router = useRouter();
+  const kit = useUiKit();
   const { width: screenWidth } = useWindowDimensions();
+  const listPaddingHorizontal = kit.listScreenPaddingHorizontal;
+  const cardGap = kit.friendHomeCardGap;
   const cardWidth = useMemo(() => {
-    const rowInnerWidth = screenWidth - ScreenHorizontalInset * 2;
-    return (rowInnerWidth - CARD_GAP * 2) / 3;
-  }, [screenWidth]);
+    const rowInnerWidth = screenWidth - listPaddingHorizontal * 2;
+    return (rowInnerWidth - cardGap * 2) / 3;
+  }, [screenWidth, listPaddingHorizontal, cardGap]);
 
   const [homeFilter, setHomeFilter] = usePersistedFilter(FILTER_KEYS.home, DEFAULT_HOME_FILTER, {
     validate: isHomeFilterState,
@@ -210,28 +155,27 @@ export default function HomeScreen() {
       <FlatList
         data={friends}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={[styles.listContent, { paddingBottom: 80 }]}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingHorizontal: listPaddingHorizontal, paddingBottom: 80 },
+        ]}
         ListHeaderComponent={
           <>
             <SearchArea>
               <SearchAreaRow>
-                <View style={searchAreaStyles.fieldContainer}>
-                  <TextInput
-                    value={homeFilter.name}
-                    onChangeText={(text) => setHomeFilter((prev) => ({ ...prev, name: text }))}
-                    placeholder="名前"
-                    placeholderTextColor={Theme.textSecondary}
-                    style={searchAreaStyles.textInput}
-                    autoCapitalize="none"
-                  />
-                </View>
-                <SelectField
+                <SearchAreaTextInputField
+                  label="名前"
+                  value={homeFilter.name}
+                  onChangeText={(text) => setHomeFilter((prev) => ({ ...prev, name: text }))}
+                  autoCapitalize="none"
+                />
+                <SearchAreaSelectField
                   label="所属1"
                   value={homeFilter.affiliation1}
                   options={affiliationOptions}
                   onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, affiliation1: value }))}
                 />
-                <SelectField
+                <SearchAreaSelectField
                   label="所属2"
                   value={homeFilter.affiliation2}
                   options={affiliationOptions}
@@ -240,19 +184,19 @@ export default function HomeScreen() {
               </SearchAreaRow>
 
               <SearchAreaRow>
-                <SelectField
+                <SearchAreaSelectField
                   label="経験"
                   value={homeFilter.experience}
                   options={experienceOptions}
                   onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, experience: value }))}
                 />
-                <SelectField
+                <SearchAreaSelectField
                   label="MBTI"
                   value={homeFilter.mbti}
                   options={mbtiOptions}
                   onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, mbti: value }))}
                 />
-                <SelectField
+                <SearchAreaSelectField
                   label="誕生月"
                   value={homeFilter.birthMonth}
                   options={birthMonthOptions}
@@ -277,7 +221,7 @@ export default function HomeScreen() {
           );
         }}
         numColumns={3}
-        columnWrapperStyle={styles.column}
+        columnWrapperStyle={[styles.column, { marginBottom: cardGap, gap: cardGap }]}
         ListEmptyComponent={<Text style={styles.emptyText}>人物データがありません</Text>}
       />
 
@@ -294,12 +238,9 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   listContent: {
     paddingBottom: 100,
-    paddingHorizontal: ScreenHorizontalInset,
   },
   column: {
     justifyContent: 'flex-start',
-    marginBottom: CARD_GAP,
-    gap: CARD_GAP,
   },
   emptyText: {
     textAlign: 'center',
@@ -310,50 +251,6 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 14,
     bottom: 18,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: Theme.overlay,
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-  modalCard: {
-    backgroundColor: Theme.card,
-    borderRadius: Radius.md,
-    padding: 14,
-    maxHeight: '70%',
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Theme.heading,
-    marginBottom: 10,
-  },
-  modalOptions: {
-    marginBottom: 10,
-  },
-  modalOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: Radius.sm,
-  },
-  modalOptionSelected: {
-    backgroundColor: Theme.accentLight,
-  },
-  modalOptionText: {
-    fontSize: 14,
-    color: Theme.textPrimary,
-  },
-  modalCloseButton: {
-    alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: Radius.sm,
-    backgroundColor: Theme.borderSoft,
-  },
-  modalCloseButtonText: {
-    color: Theme.heading,
-    fontWeight: '600',
   },
 });
 

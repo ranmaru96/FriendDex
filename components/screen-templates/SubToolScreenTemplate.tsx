@@ -5,6 +5,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import { Spacing } from '@/constants/theme';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 
 type SubToolScreenTemplateProps = {
   children: ReactNode;
@@ -39,7 +40,9 @@ export function SubToolScreenTemplate({
   extraScrollHeight = 20,
 }: SubToolScreenTemplateProps) {
   const kit = useUiKit();
-  const horizontalPadding = useScreenPadding ? kit.screenPaddingHorizontal : 0;
+  const bottomNavClearance = useBottomNavScrollClearance();
+  const horizontalPadding = useScreenPadding ? kit.subToolScreenPaddingHorizontal : 0;
+  const bottomPadding = bottomNavClearance > 0 ? bottomNavClearance : Spacing.lg;
 
   const body = scrollable ? (
     keyboardAware ? (
@@ -48,6 +51,7 @@ export function SubToolScreenTemplate({
           styles.scrollContent,
           { paddingHorizontal: horizontalPadding },
           scrollContentStyle,
+          { paddingBottom: bottomPadding },
         ]}
         keyboardShouldPersistTaps="handled"
         enableOnAndroid
@@ -61,6 +65,7 @@ export function SubToolScreenTemplate({
           styles.scrollContent,
           { paddingHorizontal: horizontalPadding },
           scrollContentStyle,
+          { paddingBottom: bottomPadding },
         ]}
         keyboardShouldPersistTaps="handled"
       >
@@ -71,7 +76,7 @@ export function SubToolScreenTemplate({
     <View
       style={[
         styles.content,
-        { paddingHorizontal: horizontalPadding },
+        { paddingHorizontal: horizontalPadding, paddingBottom: bottomPadding },
         contentStyle,
       ]}
     >

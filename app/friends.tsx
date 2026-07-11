@@ -5,7 +5,8 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { getAllFriends, getQrScannedFriends, initializeDatabase } from '../db';
 import { Friend } from '../types';
 import { formatScannedAtLabel } from '@/utils/qrScanHelpers';
-import { Theme, ScreenHorizontalInset } from '@/constants/theme';
+import { Theme } from '@/constants/theme';
+import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
 
 /** 将来復活予定の友達一覧・Profile共有UI */
 const SHOW_LEGACY_FRIENDS_UI = false;
@@ -115,6 +116,10 @@ function SelectField({
 }
 
 export default function FriendsScreen() {
+  const kit = useUiKit();
+  const { isPreview } = useUiPreview();
+  const listPaddingHorizontal = kit.listScreenPaddingHorizontal;
+  const previewBorderRadius = isPreview ? kit.friendsScreenBorderRadius : undefined;
   const router = useRouter();
   const [qrFriends, setQrFriends] = useState<Friend[]>([]);
   const [name, setName] = useState('');
@@ -212,24 +217,33 @@ export default function FriendsScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
-        <View style={styles.toolbarRow}>
+        <View style={[styles.toolbarRow, { paddingHorizontal: listPaddingHorizontal }]}>
           <View style={styles.toolbarSpacer} />
           <Pressable
-            style={styles.toolbarIconButton}
+            style={[
+              styles.toolbarIconButton,
+              previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+            ]}
             onPress={() => router.push('/myprofile')}
             accessibilityLabel="QR公開項目の設定"
           >
             <Ionicons name="person-circle-outline" size={24} color="#334155" />
           </Pressable>
           <Pressable
-            style={styles.toolbarIconButton}
+            style={[
+              styles.toolbarIconButton,
+              previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+            ]}
             onPress={() => router.push('/myprofile-qr')}
             accessibilityLabel="QRコードを表示"
           >
             <Ionicons name="qr-code-outline" size={24} color="#334155" />
           </Pressable>
           <Pressable
-            style={styles.toolbarIconButton}
+            style={[
+              styles.toolbarIconButton,
+              previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+            ]}
             onPress={() => router.push('/scan')}
             accessibilityLabel="QRコードを読み取る"
           >
@@ -238,10 +252,18 @@ export default function FriendsScreen() {
         </View>
 
         <ScrollView
-          contentContainerStyle={[styles.scrollContent, { paddingBottom: 80 }]}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingHorizontal: listPaddingHorizontal, paddingBottom: 80 },
+          ]}
           keyboardShouldPersistTaps="handled"
         >
-          <View style={styles.section}>
+          <View
+            style={[
+              styles.section,
+              previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+            ]}
+          >
             <Text style={styles.sectionTitle}>QRで追加した人</Text>
             {qrFriends.length === 0 ? (
               <Text style={styles.emptyQrText}>QRコードを読み取って追加した人がここに表示されます。</Text>
@@ -249,7 +271,10 @@ export default function FriendsScreen() {
               qrFriends.map((friend) => (
                 <Pressable
                   key={friend.id}
-                  style={styles.qrFriendRow}
+                  style={[
+                    styles.qrFriendRow,
+                    previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+                  ]}
                   onPress={() => router.push({ pathname: '/detail', params: { id: friend.id } })}
                 >
                   <View style={styles.qrFriendMain}>
@@ -482,7 +507,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    paddingHorizontal: ScreenHorizontalInset,
     marginBottom: 8,
     gap: 4,
   },
@@ -554,7 +578,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   scrollContent: {
-    paddingHorizontal: ScreenHorizontalInset,
     paddingBottom: 24,
     gap: 12,
   },

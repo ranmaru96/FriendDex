@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
-import { SearchArea, SearchAreaDivider, SearchAreaRow, searchAreaStyles } from '@/components/ui/SearchArea';
+import { SearchArea, SearchAreaDivider, SearchAreaRow, SearchAreaSelectTrigger, SearchAreaTextInputField } from '@/components/ui/SearchArea';
 import { ListItemGroup } from '@/components/ui/ListItemGroup';
 import { ListScreenTemplate } from '@/components/screen-templates';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -93,7 +93,7 @@ function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
 export default function EpisodeScreen() {
   const kit = useUiKit();
   const listItemEmbedded = kit.listItemStyle === 'panelSections';
-  const isEdgeToEdge = kit.screenPaddingHorizontal === 0;
+  const isEdgeToEdge = kit.episodeListPaddingHorizontal === 0;
   const router = useRouter();
   const params = useLocalSearchParams<{ editEpisodeId?: string; ownerId?: string }>();
   const pendingEditKeyRef = useRef<string | null>(null);
@@ -543,41 +543,31 @@ export default function EpisodeScreen() {
           style={styles.mainScroll}
           contentContainerStyle={[
             styles.mainScrollContent,
-            { paddingHorizontal: kit.screenPaddingHorizontal, paddingBottom: 80 },
+            { paddingHorizontal: kit.episodeListPaddingHorizontal, paddingBottom: 80 },
             isEdgeToEdge ? styles.mainScrollContentEdgeToEdge : null,
           ]}
           keyboardShouldPersistTaps="handled"
         >
           <SearchArea style={isEdgeToEdge ? styles.searchAreaEdgeToEdge : undefined}>
             <SearchAreaRow>
-              <View style={searchAreaStyles.fieldContainer}>
-                <TextInput
-                  style={searchAreaStyles.textInput}
-                  value={filterTitle}
-                  onChangeText={setFilterTitle}
-                  placeholder="タイトル"
-                  placeholderTextColor={Theme.textSecondary}
-                  autoCapitalize="none"
-                />
-              </View>
-              <Pressable style={searchAreaStyles.selectButton} onPress={openFilterParticipantSelector}>
-                <Text
-                  style={filterParticipantSummary ? searchAreaStyles.selectValue : searchAreaStyles.selectPlaceholder}
-                  numberOfLines={1}
-                >
-                  {filterParticipantSummary || '参加者'}
-                </Text>
-                <Text style={searchAreaStyles.selectChevron}>▼</Text>
-              </Pressable>
-              <Pressable style={searchAreaStyles.selectButton} onPress={() => setTagFilterModalVisible(true)}>
-                <Text
-                  style={filterTag ? searchAreaStyles.selectValue : searchAreaStyles.selectPlaceholder}
-                  numberOfLines={1}
-                >
-                  {filterTag || 'タグ'}
-                </Text>
-                <Text style={searchAreaStyles.selectChevron}>▼</Text>
-              </Pressable>
+              <SearchAreaTextInputField
+                label="タイトル"
+                value={filterTitle}
+                onChangeText={setFilterTitle}
+                autoCapitalize="none"
+              />
+              <SearchAreaSelectTrigger
+                label="参加者"
+                value={filterParticipantSummary ? 'set' : ''}
+                displayText={filterParticipantSummary}
+                onPress={openFilterParticipantSelector}
+              />
+              <SearchAreaSelectTrigger
+                label="タグ"
+                value={filterTag}
+                displayText={filterTag}
+                onPress={() => setTagFilterModalVisible(true)}
+              />
             </SearchAreaRow>
           </SearchArea>
           <SearchAreaDivider />
@@ -590,7 +580,7 @@ export default function EpisodeScreen() {
                 : '条件に一致するエピソードはありません。'}
             </Text>
           ) : (
-            <ListItemGroup gap={4}>
+            <ListItemGroup gap={kit.episodeListCardGap}>
               {filteredEpisodeRows.map((row) => {
                 const chips = buildParticipantChips(row.episode, friendNameById, {
                   excludeFriendIds: myselfId ? [myselfId] : [],

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
-import { ScrollView, Text, View } from 'react-native';
-import { ParticipantChip } from '@/components/participant/ParticipantChip';
+import { Text, View } from 'react-native';
+import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { moneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
 
@@ -41,25 +41,16 @@ export function MoneyLoanRecentCounterpartyChips({
   return (
     <View style={moneyLoanFormStyles.recentCounterpartySection}>
       <Text style={moneyLoanFormStyles.recentCounterpartyLabel}>最近の相手</Text>
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={moneyLoanFormStyles.recentCounterpartyScroll}
-        keyboardShouldPersistTaps="handled"
-      >
-        {chips.map((chip) => (
-          <ParticipantChip
-            key={chip.id}
-            chip={chip}
-            compact
-            onPress={() => {
-              if (chip.friendId) {
-                onAdd(chip.friendId);
-              }
-            }}
-          />
-        ))}
-      </ScrollView>
+      <ParticipantChipList
+        chips={chips}
+        compact
+        layout="scroll"
+        onChipPress={(chip) => {
+          if (chip.friendId) {
+            onAdd(chip.friendId);
+          }
+        }}
+      />
     </View>
   );
 }

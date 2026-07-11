@@ -72,6 +72,8 @@ function SelectInput({
   }, [options, placeholder, value]);
 
   const isChip = resolvedVariant === 'chip';
+  const fieldRadius = kit.formFieldBorderRadius;
+  const chipRadius = fieldRadius === 0 ? 0 : Radius.full;
 
   return (
     <>
@@ -79,6 +81,7 @@ function SelectInput({
         style={[
           isChip ? styles.selectChipButton : styles.episodeSelectButton,
           isChip ? styles.selectChipButtonLayout : null,
+          { borderRadius: isChip ? chipRadius : fieldRadius },
           style,
         ]}
         onPress={() => setModalVisible(true)}
@@ -141,6 +144,10 @@ export function EpisodeFormOverlay({
   onSave,
   onLinkToEvent,
 }: EpisodeFormOverlayProps) {
+  const kit = useUiKit();
+  const fieldRadius = kit.formFieldBorderRadius;
+  const fieldCorner = { borderRadius: fieldRadius };
+  const tagChipRadius = fieldRadius === 0 ? 0 : 999;
   const friendPhotoById = useMemo(
     () => new Map(friends.map((friend) => [friend.id, friend.photoUri ?? null])),
     [friends]
@@ -167,25 +174,28 @@ export function EpisodeFormOverlay({
   return (
     <>
       <FormOverlayTemplate title={form.editingEpisodeId ? 'エピソードを編集' : 'エピソードを追加'}>
-        <FormScreenBody>
+        <FormScreenBody style={{ borderRadius: kit.formPanelBorderRadius }}>
           <FormScreenSection style={styles.episodeFormSection}>
-            <View style={styles.episodeTitleDateRow}>
+            <FormRow label="タイトル">
               <TextInput
-                style={[styles.episodeInput, styles.episodeTitleInput]}
-                placeholder="タイトル"
+                style={[styles.episodeInput, fieldCorner]}
+                placeholder="入力"
                 placeholderTextColor={Theme.inputPlaceholder}
                 value={form.title}
                 onChangeText={form.setTitle}
               />
+            </FormRow>
+
+            <FormRow label="日付">
               <Pressable
-                style={[styles.episodeInput, styles.episodeDateInput]}
+                style={[styles.episodeInput, fieldCorner, styles.episodeDateInput]}
                 onPress={() => form.setShowDatePicker(true)}
               >
                 <Text style={form.date ? styles.episodeDateText : styles.episodeDatePlaceholder}>
                   {form.date || 'YYYY-MM-DD'}
                 </Text>
               </Pressable>
-            </View>
+            </FormRow>
             {form.showDatePicker ? (
               <View style={styles.datePickerWrap}>
                 <DateTimePicker
@@ -201,18 +211,18 @@ export function EpisodeFormOverlay({
                     if (selected) form.setDate(formatEpisodeDateToYMD(selected));
                   }}
                 />
-                <Pressable style={styles.datePickerDone} onPress={() => form.setShowDatePicker(false)}>
+                <Pressable style={[styles.datePickerDone, fieldCorner]} onPress={() => form.setShowDatePicker(false)}>
                   <Text style={styles.datePickerDoneText}>完了</Text>
                 </Pressable>
               </View>
             ) : null}
 
             <FormRow label="参加者" contentLayout="action">
-              <Pressable style={styles.addParticipantButton} onPress={form.openParticipantSelector}>
+              <Pressable style={[styles.addParticipantButton, fieldCorner]} onPress={form.openParticipantSelector}>
                 <Text style={styles.addParticipantButtonText}>参加者を選ぶ</Text>
               </Pressable>
             </FormRow>
-            <Pressable style={styles.selectedEntryTagArea} onPress={form.openParticipantSelector}>
+            <Pressable style={[styles.selectedEntryTagArea, fieldCorner]} onPress={form.openParticipantSelector}>
               {participantChips.length > 0 ? (
                 <ParticipantChipList chips={participantChips} layout="wrap" />
               ) : (
@@ -245,11 +255,11 @@ export function EpisodeFormOverlay({
             {form.visibilityMode === 'limited' ? (
               <>
                 <FormRow label="公開先" contentLayout="action">
-                  <Pressable style={styles.addParticipantButton} onPress={form.openVisibilitySelector}>
+                  <Pressable style={[styles.addParticipantButton, fieldCorner]} onPress={form.openVisibilitySelector}>
                     <Text style={styles.addParticipantButtonText}>公開先を選ぶ</Text>
                   </Pressable>
                 </FormRow>
-                <Pressable style={styles.selectedEntryTagArea} onPress={form.openVisibilitySelector}>
+                <Pressable style={[styles.selectedEntryTagArea, fieldCorner]} onPress={form.openVisibilitySelector}>
                   {form.visibility.filter((entry) => entry.value.trim().length > 0).length > 0 ? (
                     <View style={styles.selectedEntryTagWrap}>
                       {form.visibility
@@ -262,7 +272,7 @@ export function EpisodeFormOverlay({
                           return (
                             <View
                               key={`visibility-tag-${entry.kind}-${entry.value}-${index}`}
-                              style={styles.episodeParticipantTag}
+                              style={[styles.episodeParticipantTag, { borderRadius: tagChipRadius }]}
                             >
                               <Text style={styles.episodeParticipantTagName}>{label}</Text>
                             </View>
@@ -276,41 +286,9 @@ export function EpisodeFormOverlay({
               </>
             ) : null}
 
-            <View style={styles.episodePhotoSection}>
-              <Text style={styles.episodeSectionLabel}>写真</Text>
-              {(form.visibleExistingPhotos.length > 0 || form.newPhotoUris.length > 0) && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.episodePhotoThumbScroll}
-                  contentContainerStyle={styles.episodePhotoThumbRow}
-                >
-                  {form.visibleExistingPhotos.map((photo) => (
-                    <View key={`existing-photo-${photo.id}`} style={styles.episodePhotoThumbWrap}>
-                      <Image source={{ uri: photo.photoUri }} style={styles.episodePhotoThumb} />
-                      <Pressable
-                        style={styles.episodePhotoRemoveButton}
-                        onPress={() => form.removeExistingPhoto(photo.id)}
-                      >
-                        <Text style={styles.episodePhotoRemoveButtonText}>×</Text>
-                      </Pressable>
-                    </View>
-                  ))}
-                  {form.newPhotoUris.map((uri, index) => (
-                    <View key={`new-photo-${index}-${uri}`} style={styles.episodePhotoThumbWrap}>
-                      <Image source={{ uri }} style={styles.episodePhotoThumb} />
-                      <Pressable
-                        style={styles.episodePhotoRemoveButton}
-                        onPress={() => form.removeNewPhoto(index)}
-                      >
-                        <Text style={styles.episodePhotoRemoveButtonText}>×</Text>
-                      </Pressable>
-                    </View>
-                  ))}
-                </ScrollView>
-              )}
+            <FormRow label="写真" contentLayout="action">
               <Pressable
-                style={[styles.episodePhotoAddButton, form.isPhotoLimitReached && styles.episodePhotoAddButtonDisabled]}
+                style={[styles.episodePhotoAddButton, fieldCorner, form.isPhotoLimitReached && styles.episodePhotoAddButtonDisabled]}
                 onPress={form.pickPhoto}
                 disabled={form.isPhotoLimitReached}
               >
@@ -323,15 +301,46 @@ export function EpisodeFormOverlay({
                   写真を追加
                 </Text>
               </Pressable>
-              {form.isPhotoLimitReached ? (
-                <Text style={styles.episodePhotoUpgradeHint}>
-                  プランをアップグレードするとさらに追加できます
-                </Text>
-              ) : null}
-            </View>
+            </FormRow>
+            {(form.visibleExistingPhotos.length > 0 || form.newPhotoUris.length > 0) && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.episodePhotoThumbScroll}
+                contentContainerStyle={styles.episodePhotoThumbRow}
+              >
+                {form.visibleExistingPhotos.map((photo) => (
+                  <View key={`existing-photo-${photo.id}`} style={styles.episodePhotoThumbWrap}>
+                    <Image source={{ uri: photo.photoUri }} style={[styles.episodePhotoThumb, fieldCorner]} />
+                    <Pressable
+                      style={styles.episodePhotoRemoveButton}
+                      onPress={() => form.removeExistingPhoto(photo.id)}
+                    >
+                      <Text style={styles.episodePhotoRemoveButtonText}>×</Text>
+                    </Pressable>
+                  </View>
+                ))}
+                {form.newPhotoUris.map((uri, index) => (
+                  <View key={`new-photo-${index}-${uri}`} style={styles.episodePhotoThumbWrap}>
+                    <Image source={{ uri }} style={[styles.episodePhotoThumb, fieldCorner]} />
+                    <Pressable
+                      style={styles.episodePhotoRemoveButton}
+                      onPress={() => form.removeNewPhoto(index)}
+                    >
+                      <Text style={styles.episodePhotoRemoveButtonText}>×</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+            {form.isPhotoLimitReached ? (
+              <Text style={styles.episodePhotoUpgradeHint}>
+                プランをアップグレードするとさらに追加できます
+              </Text>
+            ) : null}
 
             <TextInput
-              style={styles.episodeDescriptionInput}
+              style={[styles.episodeDescriptionInput, fieldCorner]}
               placeholder="説明文の記入（記入式）"
               placeholderTextColor={Theme.inputPlaceholder}
               multiline
@@ -340,15 +349,15 @@ export function EpisodeFormOverlay({
             />
             {form.formError ? <Text style={styles.episodeErrorText}>{form.formError}</Text> : null}
             {form.editingEpisodeId && !form.linkedEventId && onLinkToEvent ? (
-              <Pressable style={styles.linkToEventButton} onPress={onLinkToEvent}>
+              <Pressable style={[styles.linkToEventButton, fieldCorner]} onPress={onLinkToEvent}>
                 <Text style={styles.linkToEventButtonText}>予定に紐づける</Text>
               </Pressable>
             ) : null}
             <View style={styles.episodeFormActions}>
-              <Pressable style={styles.episodeCancelButton} onPress={onClose}>
+              <Pressable style={[styles.episodeCancelButton, fieldCorner]} onPress={onClose}>
                 <Text style={styles.episodeCancelButtonText}>キャンセル</Text>
               </Pressable>
-              <Pressable style={styles.episodeCreateButton} onPress={onSave}>
+              <Pressable style={[styles.episodeCreateButton, fieldCorner]} onPress={onSave}>
                 <Text style={styles.episodeCreateButtonText}>
                   {form.editingEpisodeId ? '更新' : '保存'}
                 </Text>
@@ -387,12 +396,6 @@ const styles = StyleSheet.create({
   episodeFormSection: {
     gap: 8,
   },
-  episodeTitleDateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
   episodeInput: {
     minHeight: 38,
     borderColor: Theme.inputBorder,
@@ -402,9 +405,9 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     paddingHorizontal: 10,
     fontSize: 14,
+    width: '100%',
   },
-  episodeTitleInput: { flex: 1 },
-  episodeDateInput: { width: 130, justifyContent: 'center' },
+  episodeDateInput: { justifyContent: 'center' },
   episodeDateText: { fontSize: Typography.base, color: '#111827' },
   episodeDatePlaceholder: { fontSize: Typography.base, color: '#94a3b8' },
   datePickerWrap: { marginBottom: 8 },
@@ -433,7 +436,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0f172a',
   },
-  episodeSectionLabel: { fontSize: 14, color: '#0f172a', fontWeight: '700' },
   addParticipantButton: {
     backgroundColor: '#e2e8f0',
     borderColor: '#94a3b8',
@@ -462,8 +464,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   episodeParticipantTagName: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
-  episodePhotoSection: { marginBottom: 8 },
-  episodePhotoThumbScroll: { marginBottom: 8 },
+  episodePhotoThumbScroll: { marginBottom: 4 },
   episodePhotoThumbRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
   episodePhotoThumbWrap: { position: 'relative', width: 72, height: 72 },
   episodePhotoThumb: {

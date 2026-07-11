@@ -2,8 +2,11 @@ import type { ReactNode } from 'react';
 import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { StyleSheet, Text, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { Theme } from '@/constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Spacing, Theme } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+
+const TOP_CONTENT_PADDING = 12;
 
 type FormOverlayTemplateProps = {
   children: ReactNode;
@@ -21,12 +24,23 @@ export function FormOverlayTemplate({
   scrollContentStyle,
 }: FormOverlayTemplateProps) {
   const kit = useUiKit();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.overlay}>
       <KeyboardAwareScrollView
-        style={[styles.scroll, { paddingHorizontal: kit.screenPaddingHorizontal }]}
-        contentContainerStyle={[styles.scrollContent, scrollContentStyle]}
+        style={[
+          styles.scroll,
+          {
+            paddingTop: insets.top + TOP_CONTENT_PADDING,
+            paddingHorizontal: kit.screenPaddingHorizontal,
+          },
+        ]}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingBottom: Math.max(Spacing.lg, insets.bottom + Spacing.md) },
+          scrollContentStyle,
+        ]}
         keyboardShouldPersistTaps="handled"
         enableOnAndroid
         extraScrollHeight={extraScrollHeight}
@@ -51,15 +65,13 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
-    paddingTop: 12,
   },
-  scrollContent: {
-    paddingBottom: 28,
-  },
+  scrollContent: {},
   title: {
     fontSize: 17,
     fontWeight: '700',
     color: Theme.textPrimary,
     marginBottom: 10,
+    textAlign: 'center',
   },
 });

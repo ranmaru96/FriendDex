@@ -316,6 +316,7 @@ function BatchEditSection({
           <>
             <ParticipantChipList
               chips={participantChips}
+              compact
               layout="wrap"
               onChipPress={(chip) => {
                 if (chip.friendId) {

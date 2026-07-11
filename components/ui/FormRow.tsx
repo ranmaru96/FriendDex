@@ -44,7 +44,7 @@ export function FormRow({
         style={[
           styles.label,
           {
-            color: kit.textSecondary,
+            color: kit.textPrimary,
             textAlign: kit.formLabelAlign,
             width: resolvedLabelWidth,
             flexShrink: isHorizontal ? 0 : undefined,

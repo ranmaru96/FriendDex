@@ -58,6 +58,7 @@ export function ParticipantChipList({
   return (
     <ScrollView
       horizontal
+      nestedScrollEnabled
       showsHorizontalScrollIndicator={false}
       style={styles.scroll}
       contentContainerStyle={styles.scrollContent}

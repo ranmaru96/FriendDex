@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { EpisodeCardTitle } from '@/components/episode/EpisodeCardTitle';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { Radius, Theme } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -49,6 +51,8 @@ export type EpisodeListCardProps = {
   onDelete?: () => void;
   /** 詳細画面など親パネル内に埋め込むとき（外枠・角丸なし） */
   embedded?: boolean;
+  /** タイトルを折り返して全文表示（エピソード詳細ページ用） */
+  titleMultiline?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -67,10 +71,12 @@ export function EpisodeListCard({
   onEdit,
   onDelete,
   embedded = false,
+  titleMultiline = false,
   style,
 }: EpisodeListCardProps) {
   const kit = useUiKit();
-  const usePhotoLayout = kit.episodeListCardLayout === 'photoRight' && !embedded;
+  const [tallPhotoLeftHeight, setTallPhotoLeftHeight] = useState(0);
+  const usePhotoLayout = kit.episodeListCardLayout === 'photoRight';
   const modeStyles = visibilityMode ? EPISODE_VISIBILITY_MODE_TAG_STYLES[visibilityMode] : null;
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
   const normalizedPosterName = posterName?.trim() ? posterName.trim() : null;
@@ -80,92 +86,154 @@ export function EpisodeListCard({
     const hasPhoto = Boolean(coverPhotoUri?.trim());
     const hasParticipants = chips.length > 0;
 
-    return (
-      <View style={[styles.episodeCard, embedded && styles.episodeCardEmbedded, style]}>
-        <View style={styles.photoRightTopRow}>
-          <Pressable
-            onPress={onPress}
-            onLongPress={onLongPress}
-            delayLongPress={delayLongPress}
-            disabled={!onPress && !onLongPress}
-            style={({ pressed }) => [
-              styles.photoRightTopLeft,
-              pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
-            ]}
-          >
-            <View style={styles.episodeCardTitleWrap}>
-              <View style={styles.episodeCardTitleUnderline}>
-                <Text style={styles.episodeCardTitle} numberOfLines={1}>
-                  {title || '-'}
-                </Text>
-              </View>
-            </View>
-            <View style={styles.photoRightMetaRow}>
-              <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
-              {normalizedEpisodeTag ? (
-                <View style={styles.episodeCategoryTag}>
-                  <Text style={styles.episodeCategoryTagText} numberOfLines={1}>
-                    {normalizedEpisodeTag}
-                  </Text>
-                </View>
-              ) : null}
-              {visibilityMode != null && modeStyles ? (
-                <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
-                  <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
-                    {getVisibilityModeLabel(visibilityMode)}
-                  </Text>
-                </View>
-              ) : showPosterName ? (
-                <View style={[styles.episodeParticipantTag, styles.visibilityModeTag]}>
-                  <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
-                    {normalizedPosterName}
-                  </Text>
-                </View>
-              ) : null}
-            </View>
-          </Pressable>
-          {hasPhoto ? (
-            <Pressable
-              onPress={onPress}
-              onLongPress={onLongPress}
-              delayLongPress={delayLongPress}
-              disabled={!onPress && !onLongPress}
-              style={({ pressed }) => [
-                styles.photoRightPhotoPressable,
-                pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
-              ]}
-            >
-              <View style={styles.photoRightPhotoFrame}>
-                <Image
-                  source={{ uri: coverPhotoUri! }}
-                  style={styles.photoRightPhotoImage}
-                  resizeMode="cover"
-                />
-              </View>
-            </Pressable>
-          ) : null}
-        </View>
-        {hasParticipants ? (
-          <View style={styles.photoRightParticipantRow}>
-            <ParticipantChipList chips={chips} layout="scroll" compact />
+    const cardRadius = embedded ? 0 : kit.episodeListCardBorderRadius;
+    const photoSpanRows = embedded ? 2 : kit.episodeListPhotoSpanRows;
+    const useTallPhoto = hasPhoto && photoSpanRows >= 3;
+    const tallPhotoHeight = tallPhotoLeftHeight > 0 ? tallPhotoLeftHeight : PHOTO_WIDTH / PHOTO_ASPECT;
+    const tallPhotoWidth = tallPhotoHeight * PHOTO_ASPECT;
+
+    const photoRightMetaRow = (
+      <View style={styles.photoRightMetaRow}>
+        <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
+        {normalizedEpisodeTag ? (
+          <View style={styles.episodeCategoryTag}>
+            <Text style={styles.episodeCategoryTagText} numberOfLines={1}>
+              {normalizedEpisodeTag}
+            </Text>
+          </View>
+        ) : null}
+        {visibilityMode != null && modeStyles ? (
+          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
+            <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
+              {getVisibilityModeLabel(visibilityMode)}
+            </Text>
+          </View>
+        ) : showPosterName ? (
+          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag]}>
+            <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
+              {normalizedPosterName}
+            </Text>
           </View>
         ) : null}
       </View>
     );
+
+    const titleMetaBlock = (
+      <Pressable
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={delayLongPress}
+        disabled={!onPress && !onLongPress}
+        style={({ pressed }) => [
+          useTallPhoto ? null : styles.photoRightTopLeft,
+          titleMultiline ? styles.photoRightTopLeftMultiline : null,
+          pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
+        ]}
+      >
+        <EpisodeCardTitle title={title} multiline={titleMultiline} />
+        {photoRightMetaRow}
+      </Pressable>
+    );
+
+    const participantBlock = hasParticipants ? (
+      <View
+        style={[
+          styles.photoRightParticipantRow,
+          useTallPhoto ? styles.photoRightParticipantRowInColumn : null,
+        ]}
+      >
+        <ParticipantChipList chips={chips} layout="scroll" compact />
+      </View>
+    ) : null;
+
+    const photoBlock = hasPhoto ? (
+      <Pressable
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={delayLongPress}
+        disabled={!onPress && !onLongPress}
+        style={({ pressed }) => [
+          useTallPhoto ? styles.photoRightPhotoPressableTall : styles.photoRightPhotoPressable,
+          pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
+        ]}
+      >
+        <View
+          style={[
+            styles.photoRightPhotoFrame,
+            useTallPhoto
+              ? { width: tallPhotoWidth, height: tallPhotoHeight }
+              : styles.photoRightPhotoFrameCompact,
+          ]}
+        >
+          <Image
+            source={{ uri: coverPhotoUri! }}
+            style={styles.photoRightPhotoImage}
+            resizeMode="cover"
+          />
+        </View>
+      </Pressable>
+    ) : null;
+
+    const photoRightContent = (
+      <View
+        style={[
+          styles.episodeCard,
+          embedded && styles.episodeCardEmbedded,
+          !embedded ? { borderRadius: cardRadius } : null,
+          style,
+        ]}
+      >
+        {useTallPhoto ? (
+          <View style={styles.photoRightBodyRow}>
+            <View
+              style={styles.photoRightLeftColumn}
+              onLayout={(event) => {
+                const nextHeight = Math.round(event.nativeEvent.layout.height);
+                setTallPhotoLeftHeight((prev) => (prev === nextHeight ? prev : nextHeight));
+              }}
+            >
+              {titleMetaBlock}
+              {participantBlock}
+            </View>
+            {photoBlock}
+          </View>
+        ) : (
+          <>
+            <View style={styles.photoRightTopRow}>
+              {titleMetaBlock}
+              {photoBlock}
+            </View>
+            {participantBlock}
+          </>
+        )}
+      </View>
+    );
+
+    return photoRightContent;
   }
 
-  const showRow2 = chips.length > 0 || visibility.length > 0 || normalizedEpisodeTag != null;
+  const showMetaRow2 = visibility.length > 0 || normalizedEpisodeTag != null;
 
   const cardContent = (
-    <View style={[styles.episodeCard, embedded && styles.episodeCardEmbedded, style]}>
-      <View style={styles.episodeCardRow1}>
-        <View style={styles.episodeCardTitleWrap}>
-          <View style={styles.episodeCardTitleUnderline}>
-            <Text style={styles.episodeCardTitle} numberOfLines={1}>
-              {title || '-'}
-            </Text>
-          </View>
-        </View>
+    <View
+      style={[
+        styles.episodeCard,
+        embedded && styles.episodeCardEmbedded,
+        !embedded ? { borderRadius: kit.episodeListCardBorderRadius } : null,
+        style,
+      ]}
+    >
+      <Pressable
+        onPress={onPress}
+        onLongPress={onLongPress}
+        delayLongPress={delayLongPress}
+        disabled={!onPress && !onLongPress}
+        style={({ pressed }) => [
+          titleMultiline ? styles.episodeCardRow1Multiline : styles.episodeCardRow1,
+          pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
+        ]}
+      >
+        <EpisodeCardTitle title={title} multiline={titleMultiline} />
         <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
         {visibilityMode != null && modeStyles ? (
           <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
@@ -190,17 +258,12 @@ export function EpisodeListCard({
             </Pressable>
           </View>
         ) : null}
-      </View>
-      {showRow2 ? (
+      </Pressable>
+      {showMetaRow2 ? (
         <View style={styles.episodeCardRow2}>
           {normalizedEpisodeTag ? (
             <View style={styles.episodeCategoryTag}>
               <Text style={styles.episodeCategoryTagText}>{normalizedEpisodeTag}</Text>
-            </View>
-          ) : null}
-          {chips.length > 0 ? (
-            <View style={styles.episodeParticipantChipList}>
-              <ParticipantChipList chips={chips} />
             </View>
           ) : null}
           {visibilityMode == null && visibility.length > 0 ? (
@@ -217,21 +280,13 @@ export function EpisodeListCard({
           ) : null}
         </View>
       ) : null}
+      {chips.length > 0 ? (
+        <View style={styles.episodeParticipantChipList}>
+          <ParticipantChipList chips={chips} layout="scroll" compact />
+        </View>
+      ) : null}
     </View>
   );
-
-  if (onPress || onLongPress) {
-    return (
-      <Pressable
-        onPress={onPress}
-        onLongPress={onLongPress}
-        delayLongPress={delayLongPress}
-        style={({ pressed }) => [pressed ? styles.photoRightPressablePressed : null]}
-      >
-        {cardContent}
-      </Pressable>
-    );
-  }
 
   return cardContent;
 }
@@ -242,9 +297,9 @@ const styles = StyleSheet.create({
     borderColor: Theme.inputBorder,
     borderWidth: 1,
     borderRadius: 10,
-    paddingHorizontal: 12,
+    paddingLeft: 12,
+    paddingRight: 6,
     paddingVertical: 8,
-    marginBottom: 3,
   },
   episodeCardEmbedded: {
     borderWidth: 0,
@@ -255,11 +310,25 @@ const styles = StyleSheet.create({
   photoRightTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
+    gap: 4,
+  },
+  photoRightBodyRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 4,
+  },
+  photoRightLeftColumn: {
+    flex: 1,
+    minWidth: 0,
   },
   photoRightTopLeft: {
     flex: 1,
     minWidth: 0,
+  },
+  photoRightTopLeftMultiline: {
+    flex: undefined,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
   },
   photoRightMetaRow: {
     flexDirection: 'row',
@@ -270,20 +339,28 @@ const styles = StyleSheet.create({
   },
   photoRightParticipantRow: {
     marginTop: 6,
-    height: 28,
-    overflow: 'hidden',
+    alignSelf: 'stretch',
+    minHeight: 28,
+  },
+  photoRightParticipantRowInColumn: {
+    width: '100%',
   },
   photoRightPhotoPressable: {
     flexShrink: 0,
   },
+  photoRightPhotoPressableTall: {
+    flexShrink: 0,
+  },
   photoRightPhotoFrame: {
-    width: PHOTO_WIDTH,
-    aspectRatio: PHOTO_ASPECT,
     borderRadius: Radius.sm,
     overflow: 'hidden',
     backgroundColor: Theme.homeCardPhotoPlaceholder,
     borderWidth: 1,
     borderColor: Theme.inputBorder,
+  },
+  photoRightPhotoFrameCompact: {
+    width: PHOTO_WIDTH,
+    aspectRatio: PHOTO_ASPECT,
   },
   photoRightPhotoImage: {
     width: '100%',
@@ -295,6 +372,12 @@ const styles = StyleSheet.create({
   episodeCardRow1: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  episodeCardRow1Multiline: {
+    flexDirection: 'column',
+    alignItems: 'stretch',
     gap: 6,
     marginBottom: 4,
   },
@@ -317,22 +400,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#0f172a',
-  },
-  episodeCardTitleWrap: {
-    flex: 1,
-    minWidth: 0,
-  },
-  episodeCardTitleUnderline: {
-    alignSelf: 'flex-start',
-    maxWidth: '100%',
-    paddingBottom: 6,
-    borderBottomWidth: 1,
-    borderBottomColor: '#cbd5e1',
-  },
-  episodeCardTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1e293b',
   },
   episodeCardDateText: {
     fontSize: 12,

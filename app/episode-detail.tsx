@@ -21,6 +21,7 @@ import type { Option } from '@/components/episode/types';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { Panel, PanelSection, SectionDivider } from '@/components/ui/Panel';
 import { useEpisodeForm } from '@/hooks/useEpisodeForm';
+import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 
 import {
   deleteEpisode,
@@ -85,6 +86,7 @@ const getWidthForFixedHeight = (targetHeight: number, size?: PhotoDimensions): n
 
 export default function EpisodeDetailScreen() {
   const router = useRouter();
+  const bottomNavClearance = useBottomNavScrollClearance();
   const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string }>();
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
@@ -348,98 +350,104 @@ export default function EpisodeDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <ScreenTopBar
-        onBack={() => router.back()}
-        right={
-          canManage ? (
-            <View style={episodeDetailTopBarButtonStyles.actions}>
-              <Pressable
-                style={episodeDetailTopBarButtonStyles.button}
-                onPress={handleEdit}
-                accessibilityLabel="編集"
-                hitSlop={8}
-              >
-                <Ionicons name="pencil-outline" size={18} color={Theme.topBarText} />
-              </Pressable>
-              <Pressable
-                style={[episodeDetailTopBarButtonStyles.button, episodeDetailTopBarButtonStyles.buttonDanger]}
-                onPress={handleDelete}
-                accessibilityLabel="削除"
-                hitSlop={8}
-              >
-                <Ionicons name="trash-outline" size={18} color="#fca5a5" />
-              </Pressable>
-            </View>
-          ) : null
-        }
-      />
-      <ScrollView
-        style={styles.mainScroll}
-        contentContainerStyle={styles.mainScrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Panel style={styles.detailPanel}>
-          <EpisodeListCard
-            embedded
-            title={episode.title}
-            date={episode.date}
-            episodeTag={episode.tag}
-            chips={chips}
-            visibility={visibility}
-            visibilityMode={episode.visibilityMode}
-          />
+    <>
+      <SafeAreaView style={styles.safeArea}>
+        <ScreenTopBar
+          onBack={() => router.back()}
+          right={
+            canManage ? (
+              <View style={episodeDetailTopBarButtonStyles.actions}>
+                <Pressable
+                  style={episodeDetailTopBarButtonStyles.button}
+                  onPress={handleEdit}
+                  accessibilityLabel="編集"
+                  hitSlop={8}
+                >
+                  <Ionicons name="pencil-outline" size={18} color={Theme.topBarText} />
+                </Pressable>
+                <Pressable
+                  style={[episodeDetailTopBarButtonStyles.button, episodeDetailTopBarButtonStyles.buttonDanger]}
+                  onPress={handleDelete}
+                  accessibilityLabel="削除"
+                  hitSlop={8}
+                >
+                  <Ionicons name="trash-outline" size={18} color="#fca5a5" />
+                </Pressable>
+              </View>
+            ) : null
+          }
+        />
+        <ScrollView
+          style={styles.mainScroll}
+          contentContainerStyle={[
+            styles.mainScrollContent,
+            bottomNavClearance > 0 ? { paddingBottom: bottomNavClearance } : null,
+          ]}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Panel style={styles.detailPanel}>
+            <EpisodeListCard
+              embedded
+              titleMultiline
+              title={episode.title}
+              date={episode.date}
+              episodeTag={episode.tag}
+              chips={chips}
+              visibility={visibility}
+              visibilityMode={episode.visibilityMode}
+            />
 
-          {hasDescription ? (
-            <>
-              <SectionDivider />
-              <PanelSection style={styles.detailSection}>
-                <Text style={styles.descriptionText}>{episode.description}</Text>
-              </PanelSection>
-            </>
-          ) : null}
+            {hasDescription ? (
+              <>
+                <SectionDivider />
+                <PanelSection style={styles.detailSection}>
+                  <Text style={styles.descriptionText}>{episode.description}</Text>
+                </PanelSection>
+              </>
+            ) : null}
 
-          {hasPhotos ? (
-            <>
-              <SectionDivider />
-              <PanelSection style={styles.detailSection}>
-                <View style={[styles.photoViewport, { height: basePhotoHeight }]}>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.photoScrollContent}
-                  >
-                    {photos.map((photo, index) => renderPhotoFrame(photo, index))}
-                  </ScrollView>
-                </View>
-              </PanelSection>
-            </>
-          ) : null}
+            {hasPhotos ? (
+              <>
+                <SectionDivider />
+                <PanelSection style={styles.detailSection}>
+                  <View style={[styles.photoViewport, { height: basePhotoHeight }]}>
+                    <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      contentContainerStyle={styles.photoScrollContent}
+                    >
+                      {photos.map((photo, index) => renderPhotoFrame(photo, index))}
+                    </ScrollView>
+                  </View>
+                </PanelSection>
+              </>
+            ) : null}
 
-          <SectionDivider />
-          <PanelSection style={styles.detailSection}>
-            <Text style={styles.privateMemoLabel}>非公開メモ</Text>
-            <Text style={styles.privateMemoPlaceholder}>非公開メモ（近日実装予定）</Text>
-          </PanelSection>
-        </Panel>
-      </ScrollView>
+            <SectionDivider />
+            <PanelSection style={styles.detailSection}>
+              <Text style={styles.privateMemoLabel}>非公開メモ</Text>
+              <Text style={styles.privateMemoPlaceholder}>非公開メモ（近日実装予定）</Text>
+            </PanelSection>
+          </Panel>
+        </ScrollView>
 
-      <Modal
-        transparent
-        animationType="fade"
-        visible={lightboxPhoto !== null}
-        onRequestClose={() => setLightboxPhoto(null)}
-      >
-        <View style={styles.lightboxBackdrop}>
-          <Pressable style={styles.lightboxBackdropPress} onPress={() => setLightboxPhoto(null)} />
-          {lightboxPhoto ? (
-            <Image source={{ uri: lightboxPhoto }} style={styles.lightboxImage} resizeMode="contain" />
-          ) : null}
-          <Pressable style={styles.lightboxCloseButton} onPress={() => setLightboxPhoto(null)}>
-            <Text style={styles.lightboxCloseButtonText}>閉じる</Text>
-          </Pressable>
-        </View>
-      </Modal>
+        <Modal
+          transparent
+          animationType="fade"
+          visible={lightboxPhoto !== null}
+          onRequestClose={() => setLightboxPhoto(null)}
+        >
+          <View style={styles.lightboxBackdrop}>
+            <Pressable style={styles.lightboxBackdropPress} onPress={() => setLightboxPhoto(null)} />
+            {lightboxPhoto ? (
+              <Image source={{ uri: lightboxPhoto }} style={styles.lightboxImage} resizeMode="contain" />
+            ) : null}
+            <Pressable style={styles.lightboxCloseButton} onPress={() => setLightboxPhoto(null)}>
+              <Text style={styles.lightboxCloseButtonText}>閉じる</Text>
+            </Pressable>
+          </View>
+        </Modal>
+      </SafeAreaView>
 
       <EpisodeFormOverlay
         visible={isEditVisible}
@@ -461,7 +469,7 @@ export default function EpisodeDetailScreen() {
         onCreateNew={handleEditLinkCreateNew}
         onCancel={handleEditLinkCancel}
       />
-    </SafeAreaView>
+    </>
   );
 }
 

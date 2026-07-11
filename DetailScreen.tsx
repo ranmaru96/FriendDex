@@ -1341,7 +1341,7 @@ export default function DetailScreen() {
                   episodeListEdgeToEdge ? styles.episodeListEdgeToEdge : styles.episodeListInset
                 }
               >
-                <ListItemGroup gap={4}>
+                <ListItemGroup gap={kit.episodeListCardGap}>
                   {filteredEpisodes.map((episode) => {
                     const canManage = canManageEpisode(episode, friend.id, myselfId);
                     const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
@@ -1453,7 +1453,7 @@ export default function DetailScreen() {
                       {chips.length > 0 ? (
                         <View style={styles.episodeCardRow2}>
                           <View style={styles.episodeParticipantChipList}>
-                            <ParticipantChipList chips={chips} />
+                            <ParticipantChipList chips={chips} layout="scroll" compact />
                           </View>
                         </View>
                       ) : null}

@@ -216,8 +216,4 @@ export const moneyLoanFormStyles = StyleSheet.create({
     fontWeight: '600',
     color: Theme.textSecondary,
   },
-  recentCounterpartyScroll: {
-    gap: 8,
-    paddingVertical: 2,
-  },
 });

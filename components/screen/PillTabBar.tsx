@@ -1,7 +1,8 @@
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Theme, ScreenHorizontalInset, Spacing } from '@/constants/theme';
+import { Theme, Spacing } from '@/constants/theme';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 
 export type PillTabItem<T extends string> = {
   key: T;
@@ -24,8 +25,10 @@ export function PillTabBar<T extends string>({
   onTabChange,
   perTabColors = false,
 }: PillTabBarProps<T>) {
+  const kit = useUiKit();
+
   return (
-    <View style={styles.tabSection}>
+    <View style={[styles.tabSection, { paddingHorizontal: kit.subToolScreenPaddingHorizontal }]}>
       <View style={styles.tabTrack}>
         <View style={styles.tabInner}>
           {tabs.map((tab) => {
@@ -81,7 +84,6 @@ export function PillTabBar<T extends string>({
 
 const styles = StyleSheet.create({
   tabSection: {
-    paddingHorizontal: ScreenHorizontalInset,
     paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
     backgroundColor: Theme.screenBase,

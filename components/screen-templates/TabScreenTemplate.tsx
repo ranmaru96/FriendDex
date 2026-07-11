@@ -4,6 +4,7 @@ import { SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Spacing } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 
 type TabScreenTemplateProps = {
   children: ReactNode;
@@ -24,7 +25,9 @@ export function TabScreenTemplate({
   extraScrollHeight = 18,
 }: TabScreenTemplateProps) {
   const kit = useUiKit();
+  const bottomNavClearance = useBottomNavScrollClearance();
   const horizontalPadding = useScreenPadding ? kit.screenPaddingHorizontal : 0;
+  const bottomPadding = bottomNavClearance > 0 ? bottomNavClearance : Spacing.lg;
 
   if (scrollable && keyboardAware) {
     return (
@@ -34,6 +37,7 @@ export function TabScreenTemplate({
             styles.scrollContent,
             { paddingHorizontal: horizontalPadding },
             contentContainerStyle,
+            { paddingBottom: bottomPadding },
           ]}
           enableOnAndroid
           extraScrollHeight={extraScrollHeight}
@@ -53,6 +57,7 @@ export function TabScreenTemplate({
             styles.scrollContent,
             { paddingHorizontal: horizontalPadding },
             contentContainerStyle,
+            { paddingBottom: bottomPadding },
           ]}
           keyboardShouldPersistTaps="handled"
         >

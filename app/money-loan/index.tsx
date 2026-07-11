@@ -547,6 +547,7 @@ export default function MoneyLoanScreen() {
                 <>
                   <ParticipantChipList
                     chips={participantChips}
+                    compact
                     layout="wrap"
                     onChipPress={(chip) => {
                       if (chip.friendId) {

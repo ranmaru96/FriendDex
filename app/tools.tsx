@@ -1,7 +1,8 @@
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Theme, Radius, ScreenHorizontalInset, Spacing } from '@/constants/theme';
+import { Theme, Spacing } from '@/constants/theme';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 
 type ToolEntry = {
   id: string;
@@ -31,17 +32,25 @@ const TOOL_ENTRIES: ToolEntry[] = [
 
 export default function ToolsScreen() {
   const router = useRouter();
+  const kit = useUiKit();
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.scrollContent}>
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingHorizontal: kit.listScreenPaddingHorizontal },
+        ]}
+      >
         <Text style={styles.screenTitle}>ツール</Text>
-        <Text style={styles.screenSubtitle}>便利ツールをここにまとめます</Text>
+        {kit.toolScreenShowSubtitle ? (
+          <Text style={styles.screenSubtitle}>便利ツールをここにまとめます</Text>
+        ) : null}
 
         {TOOL_ENTRIES.map((entry) => (
           <Pressable
             key={entry.id}
-            style={styles.toolCard}
+            style={[styles.toolCard, { borderRadius: kit.toolScreenCardBorderRadius }]}
             disabled={!entry.route}
             onPress={() => {
               if (entry.route) {
@@ -49,7 +58,7 @@ export default function ToolsScreen() {
               }
             }}
           >
-            <View style={styles.toolIconWrap}>
+            <View style={[styles.toolIconWrap, { borderRadius: kit.toolScreenIconBorderRadius }]}>
               <Ionicons name={entry.icon} size={22} color="#334155" />
             </View>
             <View style={styles.toolTextWrap}>
@@ -69,7 +78,6 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.screenBase,
   },
   scrollContent: {
-    paddingHorizontal: ScreenHorizontalInset,
     paddingTop: Spacing.sm,
     paddingBottom: 100,
     gap: Spacing.md,
@@ -91,13 +99,11 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.bgSurface,
     borderWidth: 1,
     borderColor: Theme.border,
-    borderRadius: Radius.md,
     padding: Spacing.md,
   },
   toolIconWrap: {
     width: 40,
     height: 40,
-    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#f1f5f9',
