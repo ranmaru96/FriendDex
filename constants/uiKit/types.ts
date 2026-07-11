@@ -6,6 +6,9 @@ export type FormLayout = 'vertical' | 'horizontal';
 export type FormContainer = 'multiCard' | 'singlePanel';
 export type SearchAreaStyle = 'doubleBorder' | 'singleBorder';
 export type ListItemStyle = 'separateCards' | 'panelSections';
+export type ListPanelStyle = 'roundedPanel' | 'edgeFlat';
+export type SectionDividerStyle = 'hairline' | 'bold2px';
+export type ParticipantChipStyle = 'default' | 'fitted';
 export type EpisodeListCardLayout = 'classic' | 'photoRight';
 export type CalendarEventMemoDisplay = 'full' | 'twoLines' | 'oneLine';
 export type CalendarMonthLayout = 'classic' | 'scheduleGrid';
@@ -34,6 +37,11 @@ export type UiKit = {
   formContainer: FormContainer;
   searchAreaStyle: SearchAreaStyle;
   listItemStyle: ListItemStyle;
+  /** panelSections 時のパネル形状（edgeFlat = カレンダー案5） */
+  listPanelStyle: ListPanelStyle;
+  sectionDividerStyle: SectionDividerStyle;
+  participantChipStyle: ParticipantChipStyle;
+  participantChipBackground: string;
   episodeListCardLayout: EpisodeListCardLayout;
   calendarEventMemoDisplay: CalendarEventMemoDisplay;
   calendarMonthLayout: CalendarMonthLayout;

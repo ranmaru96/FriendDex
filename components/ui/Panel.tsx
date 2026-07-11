@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { StyleSheet, View } from 'react-native';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { Spacing } from '@/constants/theme';
 
 type PanelProps = {
   children: ReactNode;
@@ -58,14 +59,15 @@ export function PanelSection({ children, style }: PanelSectionProps) {
 
 export function SectionDivider({ style }: SectionDividerProps) {
   const kit = useUiKit();
+  const isBold = kit.sectionDividerStyle === 'bold2px';
 
   return (
     <View
       style={[
-        styles.divider,
+        isBold ? styles.boldDivider : styles.hairlineDivider,
         {
-          backgroundColor: kit.inputBorder,
-          marginHorizontal: kit.sectionDividerInset,
+          backgroundColor: isBold ? kit.textSecondary : kit.inputBorder,
+          marginHorizontal: isBold ? Spacing.sm : kit.sectionDividerInset,
         },
         style,
       ]}
@@ -77,7 +79,10 @@ const styles = StyleSheet.create({
   panel: {
     overflow: 'hidden',
   },
-  divider: {
+  hairlineDivider: {
     height: StyleSheet.hairlineWidth,
+  },
+  boldDivider: {
+    height: 2,
   },
 });

@@ -1,4 +1,5 @@
 import { ScrollView, View } from 'react-native';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import { participantChipStyles as styles } from '@/utils/participantChipStyles';
 import type { ParticipantChipDisplay } from '@/utils/episodeHelpers';
 import { ParticipantChip } from './ParticipantChip';
@@ -19,11 +20,15 @@ export function ParticipantChipList({
   compact = false,
   layout = 'scroll',
   chipBackgroundColor,
-  chipStyle = 'default',
+  chipStyle,
   onPressProfile,
   onChipPress,
   onRemoveChip,
 }: ParticipantChipListProps) {
+  const kit = useUiKit();
+  const resolvedChipStyle = chipStyle ?? kit.participantChipStyle;
+  const resolvedChipBackground = chipBackgroundColor ?? kit.participantChipBackground;
+
   if (chips.length === 0) {
     return null;
   }
@@ -33,8 +38,8 @@ export function ParticipantChipList({
       key={chip.id}
       chip={chip}
       compact={compact}
-      chipBackgroundColor={chipBackgroundColor}
-      chipStyle={chipStyle}
+      chipBackgroundColor={resolvedChipBackground}
+      chipStyle={resolvedChipStyle}
       onPress={
         onChipPress
           ? () => onChipPress(chip)

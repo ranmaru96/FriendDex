@@ -10,7 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { Theme, Radius, Typography, Spacing, ScreenHorizontalInset } from '@/constants/theme';
+import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { SearchArea, SearchAreaDivider, SearchAreaRow, searchAreaStyles } from '@/components/ui/SearchArea';
 import { ListItemGroup } from '@/components/ui/ListItemGroup';
 import { ListScreenTemplate } from '@/components/screen-templates';
@@ -93,6 +93,7 @@ function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
 export default function EpisodeScreen() {
   const kit = useUiKit();
   const listItemEmbedded = kit.listItemStyle === 'panelSections';
+  const isEdgeToEdge = kit.screenPaddingHorizontal === 0;
   const router = useRouter();
   const params = useLocalSearchParams<{ editEpisodeId?: string; ownerId?: string }>();
   const pendingEditKeyRef = useRef<string | null>(null);
@@ -540,10 +541,14 @@ export default function EpisodeScreen() {
       >
         <ScrollView
           style={styles.mainScroll}
-          contentContainerStyle={[styles.mainScrollContent, { paddingBottom: 80 }]}
+          contentContainerStyle={[
+            styles.mainScrollContent,
+            { paddingHorizontal: kit.screenPaddingHorizontal, paddingBottom: 80 },
+            isEdgeToEdge ? styles.mainScrollContentEdgeToEdge : null,
+          ]}
           keyboardShouldPersistTaps="handled"
         >
-          <SearchArea>
+          <SearchArea style={isEdgeToEdge ? styles.searchAreaEdgeToEdge : undefined}>
             <SearchAreaRow>
               <View style={searchAreaStyles.fieldContainer}>
                 <TextInput
@@ -728,8 +733,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   mainScrollContent: {
-    paddingHorizontal: ScreenHorizontalInset,
     paddingBottom: 120,
+  },
+  mainScrollContentEdgeToEdge: {
+    gap: Spacing.sm,
+  },
+  searchAreaEdgeToEdge: {
+    borderLeftWidth: 0,
+    borderRightWidth: 0,
+    borderRadius: 0,
   },
   emptyText: {
     fontSize: 14,

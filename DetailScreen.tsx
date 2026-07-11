@@ -193,6 +193,8 @@ export default function DetailScreen() {
   const kit = useUiKit();
   const useSharedEpisodeCard = kit.episodeListCardLayout === 'photoRight';
   const listItemEmbedded = kit.listItemStyle === 'panelSections';
+  const episodeListEdgeToEdge =
+    kit.listItemStyle === 'panelSections' && kit.listPanelStyle === 'edgeFlat';
   const router = useRouter();
   const params = useLocalSearchParams<{ id?: string }>();
   const [friend, setFriend] = useState<Friend | null>(null);
@@ -1334,7 +1336,11 @@ export default function DetailScreen() {
             {filteredEpisodes.length === 0 ? (
               <Text style={styles.emptyEpisodeText}>該当するエピソードはありません。</Text>
             ) : useSharedEpisodeCard ? (
-              <View style={styles.episodeListInset}>
+              <View
+                style={
+                  episodeListEdgeToEdge ? styles.episodeListEdgeToEdge : styles.episodeListInset
+                }
+              >
                 <ListItemGroup gap={4}>
                   {filteredEpisodes.map((episode) => {
                     const canManage = canManageEpisode(episode, friend.id, myselfId);

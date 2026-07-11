@@ -723,6 +723,10 @@ export function createDetailStyles(c: DetailThemeColors) {
   episodeListInset: {
     paddingHorizontal: ScreenHorizontalInset - Spacing.md,
   },
+  episodeListEdgeToEdge: {
+    marginHorizontal: -12,
+    paddingHorizontal: 0,
+  },
   episodeCard: {
     backgroundColor: c.episodeBg,
     borderColor: c.episodeBorder,

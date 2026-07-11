@@ -7,6 +7,9 @@ import { AddCircleButton } from '@/components/AddCircleButton';
 import { CalendarDayCell } from '@/components/calendar/CalendarDayCell';
 import { ScheduleGridMonthCalendar } from '@/components/calendar/ScheduleGridMonthCalendar';
 import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
+import { CompactSectionHeader } from '@/components/ui/CompactSectionHeader';
+import { EdgePanelList } from '@/components/ui/EdgePanelList';
+import { MetaTitleRow, type MetaTitleRowLayout } from '@/components/ui/MetaTitleRow';
 import { HomeCardElevation, Radius, Spacing, Theme } from '@/constants/theme';
 import type { CalendarEventMemoDisplay, CalendarEventTimeDisplay } from '@/constants/uiKit/types';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -62,78 +65,23 @@ const getCalendarMemoLineLimit = (display: CalendarEventMemoDisplay): number | u
   return undefined;
 };
 
-type EventCardScheduleRowProps = {
-  title: string;
-  scheduleLabel: string;
-  timeDisplay: CalendarEventTimeDisplay;
-  stacked?: boolean;
-};
-
-function EventCardScheduleRow({
-  title,
-  scheduleLabel,
-  timeDisplay,
-  stacked = false,
-}: EventCardScheduleRowProps) {
-  const displayTitle = title || '（無題）';
-
+const toMetaTitleRowLayout = (
+  timeDisplay: CalendarEventTimeDisplay,
+  stacked: boolean
+): MetaTitleRowLayout => {
   if (stacked) {
-    return (
-      <>
-        <View style={styles.eventTimeBadge}>
-          <Text style={styles.eventTimeText}>{scheduleLabel}</Text>
-        </View>
-        <Text style={styles.eventTitle}>{displayTitle}</Text>
-      </>
-    );
+    return 'stacked';
   }
-
-  if (timeDisplay === 'plain') {
-    return (
-      <View style={styles.eventCardTitleRow}>
-        <Text style={styles.eventTimePlain} numberOfLines={2}>
-          {scheduleLabel}
-        </Text>
-        <Text style={styles.eventTitleInRow} numberOfLines={2}>
-          {displayTitle}
-        </Text>
-      </View>
-    );
-  }
-
-  if (timeDisplay === 'column') {
-    return (
-      <View style={[styles.eventCardTitleRow, styles.eventCardTitleRowColumn]}>
-        <Text style={styles.eventTimeColumn} numberOfLines={3}>
-          {scheduleLabel}
-        </Text>
-        <View style={styles.eventTimeColumnDivider} />
-        <Text style={styles.eventTitleInRow} numberOfLines={3}>
-          {displayTitle}
-        </Text>
-      </View>
-    );
-  }
-
-  return (
-    <View style={styles.eventCardTitleRow}>
-      <View style={styles.eventTimeBadgeInRow}>
-        <Text style={styles.eventTimeText} numberOfLines={1}>
-          {scheduleLabel}
-        </Text>
-      </View>
-      <Text style={styles.eventTitleInRow} numberOfLines={1}>
-        {displayTitle}
-      </Text>
-    </View>
-  );
-}
+  return timeDisplay;
+};
 
 export default function CalendarScreen() {
   const kit = useUiKit();
   const isCompactEventCard = kit.calendarEventMemoDisplay === 'oneLine';
   const isScheduleGrid = kit.calendarMonthLayout === 'scheduleGrid';
   const isEdgeToEdge = kit.calendarScreenPaddingHorizontal === 0;
+  const isColumnPanelList =
+    isEdgeToEdge && isScheduleGrid && kit.calendarEventTimeDisplay === 'column';
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const routeDate = typeof params.date === 'string' ? params.date.trim() : '';
@@ -285,17 +233,12 @@ export default function CalendarScreen() {
           </View>
         )}
 
-        <View
-          style={[
-            isScheduleGrid ? styles.compactSectionHeader : styles.sectionHeader,
-            isEdgeToEdge ? styles.sectionHeaderEdgeToEdge : null,
-          ]}
-        >
-          <Text style={isScheduleGrid ? styles.compactSectionTitle : styles.sectionTitle}>
-            {selectedDateLabel}
-          </Text>
-          <Text style={styles.sectionCount}>{eventsForSelectedDate.length}件</Text>
-        </View>
+        <CompactSectionHeader
+          title={selectedDateLabel}
+          count={eventsForSelectedDate.length}
+          variant={isScheduleGrid ? 'compact' : 'classic'}
+          edgeToEdge={isEdgeToEdge}
+        />
 
         {eventsForSelectedDate.length === 0 ? (
           <View style={[styles.eventShadow, isEdgeToEdge ? styles.eventShadowEdgeToEdge : null]}>
@@ -304,6 +247,49 @@ export default function CalendarScreen() {
               <Text style={styles.emptyText}>この日に登録された予定はまだありません。</Text>
             </View>
           </View>
+        ) : isColumnPanelList ? (
+          <EdgePanelList>
+            {eventsForSelectedDate.map((event) => {
+              const participants = participantsByEventId.get(event.id) ?? [];
+              return (
+                <Pressable
+                  key={event.id}
+                  style={[
+                    styles.eventCard,
+                    isCompactEventCard ? styles.eventCardCompact : null,
+                    styles.eventCardPanelItem,
+                  ]}
+                  onPress={() => handleOpenEvent(event.id)}
+                >
+                  <MetaTitleRow
+                    meta={formatEventScheduleLabelForCard(event, selectedDate)}
+                    title={event.title}
+                    layout={toMetaTitleRowLayout(kit.calendarEventTimeDisplay, false)}
+                  />
+                  {participants.length > 0 ? (
+                    <EventParticipantChipList
+                      participants={participants}
+                      compact
+                      chipBackgroundColor={kit.calendarParticipantChipBackground}
+                      chipStyle={kit.calendarParticipantChipStyle}
+                      layout="scroll"
+                    />
+                  ) : null}
+                  {event.memo ? (
+                    <Text
+                      style={[styles.eventMemo, isCompactEventCard ? styles.eventMemoCompact : null]}
+                      numberOfLines={getCalendarMemoLineLimit(kit.calendarEventMemoDisplay)}
+                      ellipsizeMode={
+                        getCalendarMemoLineLimit(kit.calendarEventMemoDisplay) ? 'tail' : undefined
+                      }
+                    >
+                      {event.memo}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              );
+            })}
+          </EdgePanelList>
         ) : (
           <View style={isEdgeToEdge ? styles.eventListEdgeToEdge : undefined}>
             {eventsForSelectedDate.map((event) => {
@@ -321,20 +307,14 @@ export default function CalendarScreen() {
                   ]}
                   onPress={() => handleOpenEvent(event.id)}
                 >
-                  {isScheduleGrid ? (
-                    <EventCardScheduleRow
-                      title={event.title}
-                      scheduleLabel={formatEventScheduleLabelForCard(event, selectedDate)}
-                      timeDisplay={kit.calendarEventTimeDisplay}
-                    />
-                  ) : (
-                    <EventCardScheduleRow
-                      title={event.title}
-                      scheduleLabel={formatEventScheduleLabelForCard(event, selectedDate)}
-                      timeDisplay="badge"
-                      stacked
-                    />
-                  )}
+                  <MetaTitleRow
+                    meta={formatEventScheduleLabelForCard(event, selectedDate)}
+                    title={event.title}
+                    layout={toMetaTitleRowLayout(
+                      kit.calendarEventTimeDisplay,
+                      !isScheduleGrid
+                    )}
+                  />
                   {participants.length > 0 ? (
                     <EventParticipantChipList
                       participants={participants}
@@ -414,41 +394,13 @@ const styles = StyleSheet.create({
   calendar: {
     borderRadius: Radius.md,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: Spacing.sm,
-    paddingHorizontal: 2,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Theme.card,
-  },
-  sectionCount: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Theme.textSecondary,
-  },
-  compactSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: Spacing.sm,
-    paddingHorizontal: 2,
-    paddingTop: 2,
-  },
-  compactSectionTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  sectionHeaderEdgeToEdge: {
-    paddingHorizontal: Spacing.sm,
-  },
   eventListEdgeToEdge: {
     gap: 0,
+  },
+  eventCardPanelItem: {
+    borderRadius: 0,
+    borderWidth: 0,
+    backgroundColor: Theme.card,
   },
   eventShadow: {
     borderRadius: Radius.md,
@@ -473,75 +425,12 @@ const styles = StyleSheet.create({
     borderLeftWidth: 0,
     borderRightWidth: 0,
     borderTopWidth: 0,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: Math.max(1, StyleSheet.hairlineWidth * 2),
+    borderBottomColor: Theme.textSecondary,
   },
   eventCardCompact: {
     padding: Spacing.sm,
     gap: Spacing.xs,
-  },
-  eventCardTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  eventCardTitleRowColumn: {
-    alignItems: 'stretch',
-  },
-  eventTimePlain: {
-    flexShrink: 0,
-    maxWidth: '46%',
-    fontSize: 12,
-    fontWeight: '600',
-    color: Theme.accent,
-    lineHeight: 16,
-  },
-  eventTimeColumn: {
-    width: 78,
-    flexShrink: 0,
-    fontSize: 11,
-    fontWeight: '600',
-    color: Theme.accent,
-    lineHeight: 15,
-  },
-  eventTimeColumnDivider: {
-    width: StyleSheet.hairlineWidth,
-    alignSelf: 'stretch',
-    backgroundColor: Theme.border,
-  },
-  eventTitleInRow: {
-    flex: 1,
-    minWidth: 0,
-    fontSize: 15,
-    fontWeight: '700',
-    color: Theme.textPrimary,
-  },
-  eventTimeBadgeInRow: {
-    flexShrink: 0,
-    maxWidth: '48%',
-    alignSelf: 'center',
-    backgroundColor: Theme.accentLight,
-    borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-  },
-  eventTimeBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: Theme.accentLight,
-    borderRadius: Radius.sm,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    maxWidth: '100%',
-  },
-  eventTimeText: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: Theme.accent,
-    flexShrink: 1,
-  },
-  eventTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Theme.textPrimary,
   },
   eventMemo: {
     fontSize: 13,

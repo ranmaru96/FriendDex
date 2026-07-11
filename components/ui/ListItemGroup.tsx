@@ -2,6 +2,7 @@ import { Children, Fragment, isValidElement, type ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { StyleSheet, View } from 'react-native';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { EdgePanelList } from '@/components/ui/EdgePanelList';
 import { Panel, PanelSection, SectionDivider } from '@/components/ui/Panel';
 
 type ListItemGroupProps = {
@@ -15,6 +16,10 @@ export function ListItemGroup({ children, style, gap = 8 }: ListItemGroupProps) 
   const items = Children.toArray(children).filter((child) => isValidElement(child));
 
   if (kit.listItemStyle === 'panelSections' && items.length > 0) {
+    if (kit.listPanelStyle === 'edgeFlat') {
+      return <EdgePanelList style={style}>{items}</EdgePanelList>;
+    }
+
     return (
       <Panel style={style}>
         {items.map((item, index) => (

@@ -81,7 +81,7 @@ export function EpisodeListCard({
     const hasParticipants = chips.length > 0;
 
     return (
-      <View style={[styles.episodeCard, style]}>
+      <View style={[styles.episodeCard, embedded && styles.episodeCardEmbedded, style]}>
         <View style={styles.photoRightTopRow}>
           <Pressable
             onPress={onPress}

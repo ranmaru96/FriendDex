@@ -14,7 +14,7 @@ export function EventParticipantChipList({
   participants,
   compact = false,
   chipBackgroundColor,
-  chipStyle = 'default',
+  chipStyle,
   onPressProfile,
   onRemoveProfile,
 }: EventParticipantChipListProps) {
