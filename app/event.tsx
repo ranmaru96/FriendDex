@@ -97,6 +97,7 @@ const addDaysToDateKey = (dateKey: string, days: number): string => {
 
 export default function EventScreen() {
   const router = useRouter();
+  const fieldCorner = { borderRadius: 0 };
   const params = useLocalSearchParams<{ eventId?: string; date?: string }>();
   const eventId = parseRouteParam(params.eventId);
   const initialDate = parseRouteParam(params.date);
@@ -548,14 +549,14 @@ export default function EventScreen() {
             <Text style={styles.saveButtonText}>保存</Text>
           </Pressable>
         }
-        extraScrollHeight={24}
+        extraScrollHeight={140}
         scrollContentStyle={styles.scrollContent}
       >
-        <FormScreenBody gap={Spacing.md}>
-        <FormScreenSection elevated>
+        <FormScreenBody gap={Spacing.md} style={{ borderRadius: 0 }}>
+        <FormScreenSection elevated style={styles.formSection}>
           <FormRow label="タイトル">
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, fieldCorner]}
               placeholder="予定のタイトル"
               placeholderTextColor={Theme.inputPlaceholder}
               value={title}
@@ -564,7 +565,7 @@ export default function EventScreen() {
           </FormRow>
 
           <FormRow label="エピソードタグ">
-            <Pressable style={styles.pickerButton} onPress={() => setTagModalVisible(true)}>
+            <Pressable style={[styles.pickerButton, fieldCorner]} onPress={() => setTagModalVisible(true)}>
               <Text style={episodeTag ? styles.pickerButtonText : styles.pickerPlaceholder}>
                 {episodeTag || '未設定'}
               </Text>
@@ -582,11 +583,17 @@ export default function EventScreen() {
 
           <FormRow label={`開始${allDay ? '日' : '日時'}`}>
             <View style={styles.dateTimeRow}>
-              <Pressable style={[styles.pickerButton, styles.dateButton]} onPress={() => setActivePicker('startDate')}>
+              <Pressable
+                style={[styles.pickerButton, styles.dateButton, fieldCorner]}
+                onPress={() => setActivePicker('startDate')}
+              >
                 <Text style={styles.pickerButtonText}>{startDateKey}</Text>
               </Pressable>
               {!allDay ? (
-                <Pressable style={[styles.pickerButton, styles.timeButton]} onPress={() => setActivePicker('startTime')}>
+                <Pressable
+                  style={[styles.pickerButton, styles.timeButton, fieldCorner]}
+                  onPress={() => setActivePicker('startTime')}
+                >
                   <Text style={styles.pickerButtonText}>{startTime}</Text>
                 </Pressable>
               ) : null}
@@ -595,13 +602,19 @@ export default function EventScreen() {
 
           <FormRow label={`終了${allDay ? '日' : '日時'}`}>
             <View style={styles.dateTimeRow}>
-              <Pressable style={[styles.pickerButton, styles.dateButton]} onPress={() => setActivePicker('endDate')}>
+              <Pressable
+                style={[styles.pickerButton, styles.dateButton, fieldCorner]}
+                onPress={() => setActivePicker('endDate')}
+              >
                 <Text style={endDateKey ? styles.pickerButtonText : styles.pickerPlaceholder}>
                   {endDateKey || '未設定'}
                 </Text>
               </Pressable>
               {!allDay ? (
-                <Pressable style={[styles.pickerButton, styles.timeButton]} onPress={() => setActivePicker('endTime')}>
+                <Pressable
+                  style={[styles.pickerButton, styles.timeButton, fieldCorner]}
+                  onPress={() => setActivePicker('endTime')}
+                >
                   <Text style={endTime ? styles.pickerButtonText : styles.pickerPlaceholder}>
                     {endTime || '未設定'}
                   </Text>
@@ -627,7 +640,10 @@ export default function EventScreen() {
                 }
                 onChange={handlePickerChange}
               />
-              <Pressable style={styles.pickerDoneButton} onPress={() => setActivePicker(null)}>
+              <Pressable
+                style={[styles.pickerDoneButton, fieldCorner]}
+                onPress={() => setActivePicker(null)}
+              >
                 <Text style={styles.pickerDoneText}>完了</Text>
               </Pressable>
             </View>
@@ -635,7 +651,7 @@ export default function EventScreen() {
 
           <FormRow label="メモ" contentStyle={styles.memoField}>
             <TextInput
-              style={[styles.textInput, styles.memoInput]}
+              style={[styles.textInput, styles.memoInput, fieldCorner]}
               placeholder="メモ（任意）"
               placeholderTextColor={Theme.inputPlaceholder}
               value={memo}
@@ -646,7 +662,7 @@ export default function EventScreen() {
           </FormRow>
         </FormScreenSection>
 
-        <FormScreenSection elevated>
+        <FormScreenSection elevated style={styles.formSection}>
           <FormRow label="通知" contentStyle={styles.switchField}>
             <Switch
               value={notifyEnabled}
@@ -657,17 +673,20 @@ export default function EventScreen() {
           </FormRow>
           {notifyEnabled ? (
             <FormRow label="通知タイミング">
-              <Pressable style={styles.pickerButton} onPress={() => setTimingModalVisible(true)}>
+              <Pressable style={[styles.pickerButton, fieldCorner]} onPress={() => setTimingModalVisible(true)}>
                 <Text style={styles.pickerButtonText}>{selectedTimingLabel}</Text>
               </Pressable>
             </FormRow>
           ) : null}
         </FormScreenSection>
 
-        <FormScreenSection elevated>
+        <FormScreenSection elevated style={styles.formSection}>
           <View style={styles.sectionHeaderRow}>
             <Text style={styles.fieldLabel}>会う人</Text>
-            <Pressable style={styles.addParticipantButton} onPress={openParticipantSelector}>
+            <Pressable
+              style={[styles.addParticipantButton, fieldCorner]}
+              onPress={openParticipantSelector}
+            >
               <Text style={styles.addParticipantButtonText}>追加</Text>
             </Pressable>
           </View>
@@ -681,13 +700,18 @@ export default function EventScreen() {
             <Text style={styles.emptyParticipantText}>会う人が選択されていません</Text>
           )}
         </FormScreenSection>
+        </FormScreenBody>
 
         {isEditing ? (
-          <Pressable style={styles.deleteButton} onPress={handleDelete}>
-            <Text style={styles.deleteButtonText}>予定を削除</Text>
+          <Pressable
+            style={styles.deleteLinkWrap}
+            onPress={handleDelete}
+            accessibilityLabel="予定を削除"
+            hitSlop={8}
+          >
+            <Text style={styles.deleteLinkText}>予定を削除</Text>
           </Pressable>
         ) : null}
-        </FormScreenBody>
       </FormScreenTemplate>
 
       <Modal
@@ -818,6 +842,9 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: Spacing.lg,
   },
+  formSection: {
+    gap: 8,
+  },
   fieldLabel: {
     fontSize: Typography.base,
     fontWeight: '700',
@@ -833,7 +860,7 @@ const styles = StyleSheet.create({
     minHeight: 42,
     borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: Radius.md,
+    borderRadius: 0,
     backgroundColor: Theme.inputBg,
     color: Theme.inputText,
     paddingHorizontal: Spacing.md,
@@ -851,7 +878,7 @@ const styles = StyleSheet.create({
     minHeight: 42,
     borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: Radius.md,
+    borderRadius: 0,
     backgroundColor: Theme.inputBg,
     justifyContent: 'center',
     paddingHorizontal: Spacing.md,
@@ -881,7 +908,7 @@ const styles = StyleSheet.create({
     marginTop: Spacing.sm,
     paddingHorizontal: Spacing.lg,
     paddingVertical: 6,
-    borderRadius: Radius.sm,
+    borderRadius: 0,
     backgroundColor: Theme.border,
   },
   pickerDoneText: {
@@ -889,19 +916,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: Typography.base,
   },
-  deleteButton: {
+  deleteLinkWrap: {
+    alignSelf: 'center',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    borderRadius: Radius.md,
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: '#fecaca',
-    backgroundColor: '#fee2e2',
+    borderColor: 'rgba(248, 113, 113, 0.55)',
+    backgroundColor: 'rgba(248, 113, 113, 0.12)',
   },
-  deleteButtonText: {
-    color: '#dc2626',
+  deleteLinkText: {
+    fontSize: 14,
     fontWeight: '700',
-    fontSize: Typography.base,
+    color: '#f87171',
   },
   sectionHeaderRow: {
     flexDirection: 'row',
@@ -911,7 +941,7 @@ const styles = StyleSheet.create({
   },
   addParticipantButton: {
     backgroundColor: Theme.border,
-    borderRadius: Radius.sm,
+    borderRadius: 0,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },

@@ -1,16 +1,20 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  episodeListPhotoSpanRowsForLayout,
   getUiKit,
   normalizeUiPreviewVariant,
   type CalendarEventTimeDisplay,
+  type EpisodeListPhotoLayout,
   type UiKit,
   type UiPreviewVariant,
 } from '@/constants/uiKit';
 import {
   getCalendarEventTimeDisplayOverride,
+  getEpisodeListPhotoLayoutOverride,
   getUiPreviewVariant,
   initializeDatabase,
   setCalendarEventTimeDisplayOverride,
+  setEpisodeListPhotoLayoutOverride,
   setUiPreviewVariant,
 } from '../db';
 
@@ -21,6 +25,7 @@ type UiPreviewContextValue = {
   kit: UiKit;
   setVariant: (variant: UiPreviewVariant) => void;
   setCalendarEventTimeDisplay: (display: CalendarEventTimeDisplay) => void;
+  setEpisodeListPhotoLayout: (layout: EpisodeListPhotoLayout) => void;
   reload: () => void;
 };
 
@@ -30,11 +35,14 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
   const [variant, setVariantState] = useState<UiPreviewVariant>('stable');
   const [calendarEventTimeDisplay, setCalendarEventTimeDisplayState] =
     useState<CalendarEventTimeDisplay | null>(null);
+  const [episodeListPhotoLayout, setEpisodeListPhotoLayoutState] =
+    useState<EpisodeListPhotoLayout | null>(null);
 
   const reload = useCallback(() => {
     initializeDatabase();
     setVariantState(getUiPreviewVariant());
     setCalendarEventTimeDisplayState(getCalendarEventTimeDisplayOverride());
+    setEpisodeListPhotoLayoutState(getEpisodeListPhotoLayoutOverride());
   }, []);
 
   useEffect(() => {
@@ -53,17 +61,32 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
     setCalendarEventTimeDisplayState(display);
   }, []);
 
+  const setEpisodeListPhotoLayout = useCallback((layout: EpisodeListPhotoLayout) => {
+    initializeDatabase();
+    setEpisodeListPhotoLayoutOverride(layout);
+    setEpisodeListPhotoLayoutState(layout);
+  }, []);
+
   const kit = useMemo(() => {
     const base = getUiKit(variant);
     if (variant !== 'preview') {
       return base;
     }
+    let next = base;
     const timeDisplay = calendarEventTimeDisplay ?? base.calendarEventTimeDisplay;
-    if (timeDisplay === base.calendarEventTimeDisplay) {
-      return base;
+    if (timeDisplay !== base.calendarEventTimeDisplay) {
+      next = { ...next, calendarEventTimeDisplay: timeDisplay };
     }
-    return { ...base, calendarEventTimeDisplay: timeDisplay };
-  }, [variant, calendarEventTimeDisplay]);
+    const photoLayout = episodeListPhotoLayout ?? base.episodeListPhotoLayout;
+    if (photoLayout !== base.episodeListPhotoLayout) {
+      next = {
+        ...next,
+        episodeListPhotoLayout: photoLayout,
+        episodeListPhotoSpanRows: episodeListPhotoSpanRowsForLayout(photoLayout),
+      };
+    }
+    return next;
+  }, [variant, calendarEventTimeDisplay, episodeListPhotoLayout]);
 
   const value = useMemo(
     () => ({
@@ -73,9 +96,10 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
       kit,
       setVariant,
       setCalendarEventTimeDisplay,
+      setEpisodeListPhotoLayout,
       reload,
     }),
-    [variant, kit, setVariant, setCalendarEventTimeDisplay, reload]
+    [variant, kit, setVariant, setCalendarEventTimeDisplay, setEpisodeListPhotoLayout, reload]
   );
 
   return <UiPreviewContext.Provider value={value}>{children}</UiPreviewContext.Provider>;

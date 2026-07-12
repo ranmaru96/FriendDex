@@ -1,12 +1,18 @@
 import { previewUiKit } from './preview';
 import { stableUiKit } from './stable';
-import type { CalendarEventTimeDisplay, UiKit, UiPreviewVariant } from './types';
+import type {
+  CalendarEventTimeDisplay,
+  EpisodeListPhotoLayout,
+  UiKit,
+  UiPreviewVariant,
+} from './types';
 
 export type {
   CalendarEventMemoDisplay,
   CalendarEventTimeDisplay,
   CalendarMonthLayout,
   EpisodeListCardLayout,
+  EpisodeListPhotoLayout,
   FormContainer,
   FormLayout,
   ListItemStyle,
@@ -53,4 +59,26 @@ export function normalizeCalendarEventTimeDisplay(
     return value;
   }
   return null;
+}
+
+export const EPISODE_LIST_PHOTO_LAYOUT_OPTIONS: {
+  value: EpisodeListPhotoLayout;
+  label: string;
+}[] = [
+  { value: 'compactOne', label: 'コンパクト1枚（タイトル+日付行）' },
+  { value: 'compactTwoSideBySide', label: 'コンパクト2枚横並び' },
+  { value: 'tallOne', label: '縦長1枚（参加者行まで）' },
+];
+
+export function normalizeEpisodeListPhotoLayout(
+  value: string | null | undefined
+): EpisodeListPhotoLayout | null {
+  if (value === 'compactOne' || value === 'compactTwoSideBySide' || value === 'tallOne') {
+    return value;
+  }
+  return null;
+}
+
+export function episodeListPhotoSpanRowsForLayout(layout: EpisodeListPhotoLayout): number {
+  return layout === 'tallOne' ? 3 : 2;
 }

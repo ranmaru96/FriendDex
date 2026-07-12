@@ -8,31 +8,35 @@ import { useUiKit } from '@/contexts/UiPreviewContext';
 import type { EpisodeVisibilityMode } from '@/types';
 import {
   formatEpisodeDateForCard,
+  getVisibilityModeIconColor,
+  getVisibilityModeIconName,
   getVisibilityModeLabel,
   normalizeEpisodeTag,
   type ParticipantChipDisplay,
 } from '@/utils/episodeHelpers';
 
-const PHOTO_WIDTH = 88;
 const PHOTO_ASPECT = 4 / 3;
+const PHOTO_DUAL_GAP = 3;
+/** タイトル＋日付メタ行の固定高さ（エピソードタグあり基準） */
+const TITLE_META_BLOCK_HEIGHT = 56;
+/** コンパクト写真幅（高さ × 4/3） */
+const PHOTO_WIDTH = Math.round(TITLE_META_BLOCK_HEIGHT * PHOTO_ASPECT);
 
-const EPISODE_VISIBILITY_MODE_TAG_STYLES: Record<
-  EpisodeVisibilityMode,
-  { tag: object; text: object }
-> = {
-  private: {
-    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#aaaaaa' },
-    text: { color: '#666666' },
-  },
-  public: {
-    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#2a9d5a' },
-    text: { color: '#1a6b38' },
-  },
-  limited: {
-    tag: { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: '#7c5cbf' },
-    text: { color: '#5c3a9f' },
-  },
-};
+function VisibilityModeIcon({ mode }: { mode: EpisodeVisibilityMode }) {
+  return (
+    <View
+      style={styles.visibilityModeIconWrap}
+      accessibilityRole="image"
+      accessibilityLabel={getVisibilityModeLabel(mode)}
+    >
+      <Ionicons
+        name={getVisibilityModeIconName(mode)}
+        size={16}
+        color={getVisibilityModeIconColor(mode)}
+      />
+    </View>
+  );
+}
 
 export type EpisodeListCardProps = {
   title: string;
@@ -43,7 +47,10 @@ export type EpisodeListCardProps = {
   visibilityMode?: EpisodeVisibilityMode;
   /** 他人の投稿のとき表示する公開者名（visibilityMode 未指定時のみ有効） */
   posterName?: string | null;
+  /** @deprecated photoUris を優先 */
   coverPhotoUri?: string | null;
+  /** 一覧カード用写真（最大2枚想定） */
+  photoUris?: string[];
   onPress?: () => void;
   onLongPress?: () => void;
   delayLongPress?: number;
@@ -65,6 +72,7 @@ export function EpisodeListCard({
   visibilityMode,
   posterName,
   coverPhotoUri,
+  photoUris,
   onPress,
   onLongPress,
   delayLongPress = 300,
@@ -77,18 +85,30 @@ export function EpisodeListCard({
   const kit = useUiKit();
   const [tallPhotoLeftHeight, setTallPhotoLeftHeight] = useState(0);
   const usePhotoLayout = kit.episodeListCardLayout === 'photoRight';
-  const modeStyles = visibilityMode ? EPISODE_VISIBILITY_MODE_TAG_STYLES[visibilityMode] : null;
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
   const normalizedPosterName = posterName?.trim() ? posterName.trim() : null;
   const showPosterName = visibilityMode == null && normalizedPosterName != null;
 
   if (usePhotoLayout) {
-    const hasPhoto = Boolean(coverPhotoUri?.trim());
+    const resolvedPhotoUris = (photoUris?.length
+      ? photoUris
+      : coverPhotoUri?.trim()
+        ? [coverPhotoUri.trim()]
+        : []
+    )
+      .map((uri) => uri.trim())
+      .filter(Boolean);
+    const photoLayout = embedded ? 'compactOne' : kit.episodeListPhotoLayout;
+    const displayPhotoUris =
+      photoLayout === 'compactTwoSideBySide'
+        ? resolvedPhotoUris.slice(0, 2)
+        : resolvedPhotoUris.slice(0, 1);
+    const hasPhoto = displayPhotoUris.length > 0;
     const hasParticipants = chips.length > 0;
 
     const cardRadius = embedded ? 0 : kit.episodeListCardBorderRadius;
-    const photoSpanRows = embedded ? 2 : kit.episodeListPhotoSpanRows;
-    const useTallPhoto = hasPhoto && photoSpanRows >= 3;
+    const useTallPhoto = hasPhoto && photoLayout === 'tallOne';
+    const useDualCompact = hasPhoto && photoLayout === 'compactTwoSideBySide' && displayPhotoUris.length > 1;
     const tallPhotoHeight = tallPhotoLeftHeight > 0 ? tallPhotoLeftHeight : PHOTO_WIDTH / PHOTO_ASPECT;
     const tallPhotoWidth = tallPhotoHeight * PHOTO_ASPECT;
 
@@ -102,12 +122,8 @@ export function EpisodeListCard({
             </Text>
           </View>
         ) : null}
-        {visibilityMode != null && modeStyles ? (
-          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
-            <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
-              {getVisibilityModeLabel(visibilityMode)}
-            </Text>
-          </View>
+        {visibilityMode != null ? (
+          <VisibilityModeIcon mode={visibilityMode} />
         ) : showPosterName ? (
           <View style={[styles.episodeParticipantTag, styles.visibilityModeTag]}>
             <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
@@ -130,7 +146,7 @@ export function EpisodeListCard({
           pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
         ]}
       >
-        <EpisodeCardTitle title={title} multiline={titleMultiline} />
+        <EpisodeCardTitle title={title} multiline={titleMultiline} fillRow={false} />
         {photoRightMetaRow}
       </Pressable>
     );
@@ -157,20 +173,39 @@ export function EpisodeListCard({
           pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
         ]}
       >
-        <View
-          style={[
-            styles.photoRightPhotoFrame,
-            useTallPhoto
-              ? { width: tallPhotoWidth, height: tallPhotoHeight }
-              : styles.photoRightPhotoFrameCompact,
-          ]}
-        >
-          <Image
-            source={{ uri: coverPhotoUri! }}
-            style={styles.photoRightPhotoImage}
-            resizeMode="cover"
-          />
-        </View>
+        {useTallPhoto ? (
+          <View
+            style={[
+              styles.photoRightPhotoFrame,
+              { width: tallPhotoWidth, height: tallPhotoHeight },
+            ]}
+          >
+            <Image
+              source={{ uri: displayPhotoUris[0] }}
+              style={styles.photoRightPhotoImage}
+              resizeMode="cover"
+            />
+          </View>
+        ) : useDualCompact ? (
+          <View style={styles.photoRightDualRow}>
+            {displayPhotoUris.map((uri, index) => (
+              <View
+                key={`episode-photo-${index}-${uri}`}
+                style={[styles.photoRightPhotoFrame, styles.photoRightPhotoFrameCompact]}
+              >
+                <Image source={{ uri }} style={styles.photoRightPhotoImage} resizeMode="cover" />
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View style={[styles.photoRightPhotoFrame, styles.photoRightPhotoFrameCompact]}>
+            <Image
+              source={{ uri: displayPhotoUris[0] }}
+              style={styles.photoRightPhotoImage}
+              resizeMode="cover"
+            />
+          </View>
+        )}
       </Pressable>
     ) : null;
 
@@ -235,12 +270,8 @@ export function EpisodeListCard({
       >
         <EpisodeCardTitle title={title} multiline={titleMultiline} />
         <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
-        {visibilityMode != null && modeStyles ? (
-          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
-            <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
-              {getVisibilityModeLabel(visibilityMode)}
-            </Text>
-          </View>
+        {visibilityMode != null ? (
+          <VisibilityModeIcon mode={visibilityMode} />
         ) : showPosterName ? (
           <View style={[styles.episodeParticipantTag, styles.visibilityModeTag]}>
             <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
@@ -324,11 +355,16 @@ const styles = StyleSheet.create({
   photoRightTopLeft: {
     flex: 1,
     minWidth: 0,
+    height: TITLE_META_BLOCK_HEIGHT,
+    justifyContent: 'flex-start',
+    overflow: 'hidden',
   },
   photoRightTopLeftMultiline: {
     flex: undefined,
     alignSelf: 'flex-start',
     maxWidth: '100%',
+    height: undefined,
+    overflow: undefined,
   },
   photoRightMetaRow: {
     flexDirection: 'row',
@@ -351,6 +387,11 @@ const styles = StyleSheet.create({
   photoRightPhotoPressableTall: {
     flexShrink: 0,
   },
+  photoRightDualRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: PHOTO_DUAL_GAP,
+  },
   photoRightPhotoFrame: {
     borderRadius: Radius.sm,
     overflow: 'hidden',
@@ -360,7 +401,7 @@ const styles = StyleSheet.create({
   },
   photoRightPhotoFrameCompact: {
     width: PHOTO_WIDTH,
-    aspectRatio: PHOTO_ASPECT,
+    height: TITLE_META_BLOCK_HEIGHT,
   },
   photoRightPhotoImage: {
     width: '100%',
@@ -452,6 +493,13 @@ const styles = StyleSheet.create({
   },
   visibilityModeTag: {
     flexShrink: 0,
+  },
+  visibilityModeIconWrap: {
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
   },
   episodeCardEditButton: {
     width: 32,

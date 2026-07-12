@@ -14,6 +14,8 @@ type TabScreenTemplateProps = {
   useScreenPadding?: boolean;
   contentContainerStyle?: StyleProp<ViewStyle>;
   extraScrollHeight?: number;
+  /** SafeArea 内・スクロール外に置くヘッダー（ScreenTopBar など） */
+  header?: ReactNode;
 };
 
 export function TabScreenTemplate({
@@ -23,6 +25,7 @@ export function TabScreenTemplate({
   useScreenPadding = true,
   contentContainerStyle,
   extraScrollHeight = 18,
+  header,
 }: TabScreenTemplateProps) {
   const kit = useUiKit();
   const bottomNavClearance = useBottomNavScrollClearance();
@@ -32,6 +35,7 @@ export function TabScreenTemplate({
   if (scrollable && keyboardAware) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
+        {header}
         <KeyboardAwareScrollView
           contentContainerStyle={[
             styles.scrollContent,
@@ -52,6 +56,7 @@ export function TabScreenTemplate({
   if (scrollable) {
     return (
       <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
+        {header}
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
@@ -69,6 +74,7 @@ export function TabScreenTemplate({
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
+      {header}
       <View style={[styles.body, { paddingHorizontal: horizontalPadding }, contentContainerStyle]}>
         {children}
       </View>

@@ -12,7 +12,7 @@ import { confirmAndExportBackup, confirmAndImportBackup } from '../backup';
 import { getAllProfiles, getMyself, initializeDatabase, setMyself } from '../db';
 import { Profile } from '../types';
 import { DETAIL_DESIGN_OPTIONS } from '@/constants/detailThemes';
-import { CALENDAR_EVENT_TIME_DISPLAY_OPTIONS, UI_PREVIEW_OPTIONS } from '@/constants/uiKit';
+import { CALENDAR_EVENT_TIME_DISPLAY_OPTIONS, EPISODE_LIST_PHOTO_LAYOUT_OPTIONS, UI_PREVIEW_OPTIONS } from '@/constants/uiKit';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
@@ -85,8 +85,12 @@ const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | nu
 export default function AppSettingsScreen() {
   const router = useRouter();
   const { variant: detailDesignVariant, setVariant: setDetailDesignVariant } = useDetailDesign();
-  const { variant: uiPreviewVariant, setVariant: setUiPreviewVariant, setCalendarEventTimeDisplay } =
-    useUiPreview();
+  const {
+    variant: uiPreviewVariant,
+    setVariant: setUiPreviewVariant,
+    setCalendarEventTimeDisplay,
+    setEpisodeListPhotoLayout,
+  } = useUiPreview();
   const kit = useUiKit();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
@@ -200,6 +204,27 @@ export default function AppSettingsScreen() {
               ))}
             </View>
             <Text style={styles.hint}>Preview モード時のみ。予定カード左側の時刻表示スタイルを切り替えます</Text>
+
+            <Text style={styles.sectionHeader}>エピソードカード写真（試作）</Text>
+            <View style={styles.group}>
+              {EPISODE_LIST_PHOTO_LAYOUT_OPTIONS.map((option, index) => (
+                <View key={option.value}>
+                  {index > 0 ? <View style={styles.separator} /> : null}
+                  <Pressable
+                    style={styles.row}
+                    onPress={() => setEpisodeListPhotoLayout(option.value)}
+                  >
+                    <Text style={styles.rowLabel}>{option.label}</Text>
+                    {kit.episodeListPhotoLayout === option.value ? (
+                      <Text style={styles.selectedMark}>✓</Text>
+                    ) : null}
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+            <Text style={styles.hint}>
+              Preview モード時のみ。一覧カード右側の写真の高さ・枚数レイアウトを切り替えます
+            </Text>
           </>
         ) : null}
 

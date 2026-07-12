@@ -68,6 +68,30 @@ export function getVisibilityModeLabel(mode: EpisodeVisibilityMode): string {
   }
 }
 
+export function getVisibilityModeIconName(
+  mode: EpisodeVisibilityMode
+): 'lock-closed-outline' | 'globe-outline' | 'people-outline' {
+  switch (mode) {
+    case 'public':
+      return 'globe-outline';
+    case 'limited':
+      return 'people-outline';
+    case 'private':
+      return 'lock-closed-outline';
+  }
+}
+
+export function getVisibilityModeIconColor(mode: EpisodeVisibilityMode): string {
+  switch (mode) {
+    case 'public':
+      return '#2a9d5a';
+    case 'limited':
+      return '#7c5cbf';
+    case 'private':
+      return '#94a3b8';
+  }
+}
+
 export function buildParticipantChipDisplays(
   entries: Array<{ kind: 'individual' | 'group'; value: string }>,
   friendNameById: Map<string, string>,

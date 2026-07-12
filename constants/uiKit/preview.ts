@@ -43,6 +43,7 @@ export const previewUiKit: UiKit = {
   episodeListPaddingHorizontal: Spacing.sm,
   episodeListCardGap: 4,
   episodeListCardBorderRadius: 6,
+  episodeListPhotoLayout: 'tallOne',
   episodeListPhotoSpanRows: 3,
   calendarEventMemoDisplay: 'oneLine',
   calendarMonthLayout: 'scheduleGrid',

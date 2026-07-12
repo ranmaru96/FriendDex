@@ -4,14 +4,26 @@ type EpisodeCardTitleProps = {
   title: string;
   /** 詳細画面など：折り返して全文表示 */
   multiline?: boolean;
+  /**
+   * 横並び行で残り幅を埋める（一覧クラシック行用）。
+   * 写真右レイアウトの縦積みでは false にして、固定高さ時にタイトル〜日付の隙間が開かないようにする。
+   */
+  fillRow?: boolean;
 };
 
-export function EpisodeCardTitle({ title, multiline = false }: EpisodeCardTitleProps) {
+export function EpisodeCardTitle({
+  title,
+  multiline = false,
+  fillRow = true,
+}: EpisodeCardTitleProps) {
   const displayTitle = title.trim() || '-';
 
   return (
     <View
-      style={[styles.episodeCardTitleWrap, multiline ? styles.episodeCardTitleWrapMultiline : null]}
+      style={[
+        fillRow ? styles.episodeCardTitleWrap : styles.episodeCardTitleWrapStacked,
+        multiline ? styles.episodeCardTitleWrapMultiline : null,
+      ]}
     >
       <View style={styles.episodeCardTitleUnderline}>
         <Text style={styles.episodeCardTitle} numberOfLines={multiline ? undefined : 1}>
@@ -25,6 +37,12 @@ export function EpisodeCardTitle({ title, multiline = false }: EpisodeCardTitleP
 const styles = StyleSheet.create({
   episodeCardTitleWrap: {
     flex: 1,
+    minWidth: 0,
+  },
+  episodeCardTitleWrapStacked: {
+    flexGrow: 0,
+    flexShrink: 1,
+    alignSelf: 'stretch',
     minWidth: 0,
   },
   episodeCardTitleWrapMultiline: {

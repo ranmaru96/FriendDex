@@ -18,6 +18,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
+import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 
 import {
@@ -250,6 +251,7 @@ export default function EditScreen() {
   const [form, setForm] = useState<FriendInput>(EMPTY_FORM);
   const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
   const [nameSaveAttempted, setNameSaveAttempted] = useState(false);
+  const [cropSourceUri, setCropSourceUri] = useState<string | null>(null);
   const prevFriendIdRef = useRef(friendId);
 
   useEffect(() => {
@@ -317,12 +319,11 @@ export default function EditScreen() {
   const onPickImage = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.7,
-      allowsEditing: true,
-      aspect: [1, 1],
+      quality: 1,
+      allowsEditing: false,
     });
     if (!result.canceled && result.assets[0]) {
-      setForm((prev) => ({ ...prev, photoUri: result.assets[0].uri }));
+      setCropSourceUri(result.assets[0].uri);
     }
   };
 
@@ -463,6 +464,7 @@ export default function EditScreen() {
   );
 
   return (
+    <>
     <FormScreenTemplate
       title={isEditMode ? '人物編集' : '新規登録'}
       titleAlign="left"
@@ -641,6 +643,18 @@ export default function EditScreen() {
         />
       </FormScreenBody>
     </FormScreenTemplate>
+
+    <PhotoCropModal
+      visible={cropSourceUri != null}
+      uri={cropSourceUri}
+      aspectRatio={1}
+      onCancel={() => setCropSourceUri(null)}
+      onConfirm={(croppedUri) => {
+        setForm((prev) => ({ ...prev, photoUri: croppedUri }));
+        setCropSourceUri(null);
+      }}
+    />
+    </>
   );
 }
 

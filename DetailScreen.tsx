@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import {
   Alert,
   Image,
@@ -10,21 +10,23 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import type { DetailTabKey } from '@/constants/detailThemes';
 import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
 import { TabScreenTemplate } from '@/components/screen-templates';
-import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
+import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
+import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
 import { ListItemGroup } from '@/components/ui/ListItemGroup';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useDetailDesign } from './contexts/DetailDesignContext';
 import { createDetailStyles } from './utils/detailStyles';
 import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
-import type { DetailThemeColors } from '@/constants/detailThemes';
 import {
   createEpisode,
   createSayings,
@@ -35,12 +37,13 @@ import {
   getDistinctExperiences,
   getMergedEpisodeTagLabels,
   getEpisodeById,
-  getEpisodeCoverPhotoUriMap,
+  getEpisodeListPhotoUrisMap,
   getEpisodeParticipantFriendIds,
   getFriendById,
   getMyself,
   getProfilesByFriendId,
   initializeDatabase,
+  searchFriends,
   setDefaultProfile,
   updateFriend,
   updateEpisode,
@@ -48,7 +51,6 @@ import {
 } from './db';
 import {
   Episode,
-  EpisodeVisibilityMode,
   Friend,
   Profile,
   Saying,
@@ -57,6 +59,8 @@ import {
   buildParticipantChips,
   canManageEpisode,
   formatEpisodeDateForCard,
+  getVisibilityModeIconColor,
+  getVisibilityModeIconName,
   getVisibilityModeLabel,
   resolveEpisodeRecordOwnerId,
 } from './utils/episodeHelpers';
@@ -67,7 +71,10 @@ import { useEpisodeForm, type EpisodeSavePayload } from '@/hooks/useEpisodeForm'
 import { usePersistedFilter, FILTER_KEYS } from '@/hooks/usePersistedFilter';
 import {
   DEFAULT_DETAIL_EPISODE_FILTER,
+  DEFAULT_HOME_FILTER,
+  homeFilterToSearchFilters,
   isDetailEpisodeFilterState,
+  isHomeFilterState,
 } from '@/utils/persistedFilterTypes';
 import {
   applyEventIdToEpisode,
@@ -83,27 +90,9 @@ import type { EpisodeEventMatch } from './utils/eventEpisodeSync';
 
 const EPISODE_PICKER_COLUMNS = 3;
 const EPISODE_PICKER_GAP = 6;
+const DETAIL_SLIDE_MS = 220;
 
-function buildEpisodeVisibilityTagStyles(c: DetailThemeColors): Record<
-  EpisodeVisibilityMode,
-  { tag: object; text: object }
-> {
-  return {
-    private: {
-      tag: { backgroundColor: c.badgePrivateBg, borderWidth: 1, borderColor: c.border },
-      text: { color: c.badgePrivateText },
-    },
-    public: {
-      tag: { backgroundColor: c.badgePublicBg, borderWidth: 1, borderColor: c.accent },
-      text: { color: c.badgePublicText },
-    },
-    limited: {
-      tag: { backgroundColor: c.badgeLimitedBg, borderWidth: 1, borderColor: c.border },
-      text: { color: c.badgeLimitedText },
-    },
-  };
-}
-
+type AdjacentDirection = 'prev' | 'next';
 type MultiValueRow = {
   title: string;
   values: string[];
@@ -189,16 +178,19 @@ export default function DetailScreen() {
   const c = bundle.colors;
   const styles = useMemo(() => createDetailStyles(c), [c]);
   const detailTabs = bundle.detailTabs;
-  const episodeVisibilityTagStyles = useMemo(() => buildEpisodeVisibilityTagStyles(c), [c]);
   const kit = useUiKit();
   const useSharedEpisodeCard = kit.episodeListCardLayout === 'photoRight';
   const listItemEmbedded = kit.listItemStyle === 'panelSections';
   const episodeListEdgeToEdge =
     kit.listItemStyle === 'panelSections' && kit.listPanelStyle === 'edgeFlat';
   const router = useRouter();
+  const { width: screenWidth } = useWindowDimensions();
   const params = useLocalSearchParams<{ id?: string }>();
+  const contentSlideX = useSharedValue(0);
+  const isAdjacentSlidingRef = useRef(false);
+  const pendingEnterDirectionRef = useRef<AdjacentDirection | null>(null);
   const [friend, setFriend] = useState<Friend | null>(null);
-  const [episodeCoverPhotoById, setEpisodeCoverPhotoById] = useState<Map<string, string>>(
+  const [episodePhotoUrisById, setEpisodePhotoUrisById] = useState<Map<string, string[]>>(
     () => new Map()
   );
   const [profileImageLoadError, setProfileImageLoadError] = useState(false);
@@ -244,6 +236,76 @@ export default function DetailScreen() {
     }
     return params.id ?? '';
   }, [params.id]);
+
+  const [homeFilter] = usePersistedFilter(FILTER_KEYS.home, DEFAULT_HOME_FILTER, {
+    validate: isHomeFilterState,
+  });
+
+  const homeAdjacentFriendIds = useMemo(() => {
+    initializeDatabase();
+    const orderedIds = searchFriends(homeFilterToSearchFilters(homeFilter)).map((friend) => friend.id);
+    const index = friendId ? orderedIds.indexOf(friendId) : -1;
+    return {
+      prevId: index > 0 ? orderedIds[index - 1] ?? null : null,
+      nextId: index >= 0 && index < orderedIds.length - 1 ? orderedIds[index + 1] ?? null : null,
+    };
+  }, [friendId, homeFilter]);
+
+  const finishAdjacentSlideIn = useCallback(() => {
+    isAdjacentSlidingRef.current = false;
+  }, []);
+
+  const startAdjacentEnterAnimation = useCallback(
+    (direction: AdjacentDirection) => {
+      const enterFrom = direction === 'next' ? screenWidth : -screenWidth;
+      contentSlideX.value = enterFrom;
+      contentSlideX.value = withTiming(0, { duration: DETAIL_SLIDE_MS }, (finished) => {
+        if (finished) {
+          runOnJS(finishAdjacentSlideIn)();
+        }
+      });
+    },
+    [contentSlideX, finishAdjacentSlideIn, screenWidth]
+  );
+
+  const commitAdjacentFriend = useCallback(
+    (targetId: string, direction: AdjacentDirection) => {
+      pendingEnterDirectionRef.current = direction;
+      router.replace({ pathname: '/detail', params: { id: targetId } });
+    },
+    [router]
+  );
+
+  const goToAdjacentFriend = useCallback(
+    (targetId: string | null, direction: AdjacentDirection) => {
+      if (!targetId || isAdjacentSlidingRef.current) {
+        return;
+      }
+      isAdjacentSlidingRef.current = true;
+      const exitTo = direction === 'next' ? -screenWidth : screenWidth;
+      contentSlideX.value = withTiming(exitTo, { duration: DETAIL_SLIDE_MS }, (finished) => {
+        if (finished) {
+          runOnJS(commitAdjacentFriend)(targetId, direction);
+        } else {
+          runOnJS(finishAdjacentSlideIn)();
+        }
+      });
+    },
+    [commitAdjacentFriend, contentSlideX, finishAdjacentSlideIn, screenWidth]
+  );
+
+  useEffect(() => {
+    const pendingDirection = pendingEnterDirectionRef.current;
+    if (!pendingDirection) {
+      return;
+    }
+    pendingEnterDirectionRef.current = null;
+    startAdjacentEnterAnimation(pendingDirection);
+  }, [friendId, startAdjacentEnterAnimation]);
+
+  const contentSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: contentSlideX.value }],
+  }));
 
   const detailEpisodeFilterKey = useMemo(
     () => (friendId ? FILTER_KEYS.detailEpisode(friendId) : FILTER_KEYS.detailEpisodeInactive),
@@ -293,8 +355,8 @@ export default function DetailScreen() {
       }
     }
     setFriend(loaded);
-    setEpisodeCoverPhotoById(
-      getEpisodeCoverPhotoUriMap((loaded?.episodes ?? []).map((episode) => episode.id))
+    setEpisodePhotoUrisById(
+      getEpisodeListPhotoUrisMap((loaded?.episodes ?? []).map((episode) => episode.id))
     );
     setProfiles(loadedProfiles);
     setMyselfId(currentMyselfId);
@@ -907,12 +969,12 @@ export default function DetailScreen() {
 
   if (!friend) {
     return (
-      <TabScreenTemplate contentContainerStyle={{ flex: 1 }}>
+      <TabScreenTemplate
+        contentContainerStyle={{ flex: 1 }}
+        header={<ScreenTopBar title="詳細" onBack={() => router.back()} />}
+      >
         <View style={styles.missingContainer}>
           <Text style={styles.missingText}>人物データが見つかりませんでした。</Text>
-          <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backButtonText}>‹ 戻る</Text>
-          </Pressable>
         </View>
       </TabScreenTemplate>
     );
@@ -953,7 +1015,58 @@ export default function DetailScreen() {
         useScreenPadding={false}
         contentContainerStyle={styles.scrollContent}
         extraScrollHeight={18}
+        header={
+          <ScreenTopBar
+            title={friend.name}
+            onBack={() => router.back()}
+            titleLeading={
+              <Pressable
+                onPress={() => goToAdjacentFriend(homeAdjacentFriendIds.prevId, 'prev')}
+                disabled={!homeAdjacentFriendIds.prevId}
+                accessibilityLabel="前の人物"
+                hitSlop={8}
+                style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Ionicons
+                  name="chevron-back"
+                  size={20}
+                  color={
+                    homeAdjacentFriendIds.prevId ? Theme.topBarText : 'rgba(255, 255, 255, 0.28)'
+                  }
+                />
+              </Pressable>
+            }
+            titleTrailing={
+              <Pressable
+                onPress={() => goToAdjacentFriend(homeAdjacentFriendIds.nextId, 'next')}
+                disabled={!homeAdjacentFriendIds.nextId}
+                accessibilityLabel="次の人物"
+                hitSlop={8}
+                style={{ width: 28, height: 28, alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Ionicons
+                  name="chevron-forward"
+                  size={20}
+                  color={
+                    homeAdjacentFriendIds.nextId ? Theme.topBarText : 'rgba(255, 255, 255, 0.28)'
+                  }
+                />
+              </Pressable>
+            }
+            right={
+              <Pressable
+                style={episodeDetailTopBarButtonStyles.button}
+                onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
+                accessibilityLabel="編集"
+                hitSlop={8}
+              >
+                <Ionicons name="pencil-outline" size={18} color={Theme.topBarText} />
+              </Pressable>
+            }
+          />
+        }
       >
+        <Animated.View style={contentSlideStyle}>
         <View style={styles.profileCardShadow}>
         <View
           style={[
@@ -992,17 +1105,6 @@ export default function DetailScreen() {
                 <Text style={styles.heroName} numberOfLines={2}>
                   {friend.name}
                 </Text>
-                <View style={styles.heroIconActions}>
-                  <Pressable
-                    style={styles.heroEditButton}
-                    onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
-                  >
-                    <Ionicons name="pencil-outline" size={16} color={c.accent} />
-                  </Pressable>
-                  <Pressable style={styles.heroHomeButton} onPress={() => router.replace('/')}>
-                    <Ionicons name="home" size={16} color={c.textMuted} />
-                  </Pressable>
-                </View>
               </View>
               {(friend.nickname.trim() || friend.importSource === 'qr_scan') ? (
                 <View style={styles.heroNicknameRow}>
@@ -1383,7 +1485,7 @@ export default function DetailScreen() {
                         chips={chips}
                         visibilityMode={canManage ? episode.visibilityMode : undefined}
                         posterName={canManage ? null : posterName}
-                        coverPhotoUri={episodeCoverPhotoById.get(episode.id) ?? null}
+                        photoUris={episodePhotoUrisById.get(episode.id) ?? []}
                         onPress={openEpisodeDetail}
                         onLongPress={onLongPressEpisode}
                       />
@@ -1399,7 +1501,6 @@ export default function DetailScreen() {
                   excludeFriendIds: myselfId ? [myselfId] : [],
                   friendPhotoById,
                 });
-                const modeStyles = canManage ? episodeVisibilityTagStyles[episode.visibilityMode] : null;
                 const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
                 const openEpisodeDetail = () =>
                   router.push({
@@ -1436,19 +1537,25 @@ export default function DetailScreen() {
                           {episode.title || '-'}
                         </Text>
                         <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(episode.date)}</Text>
-                        {canManage && modeStyles ? (
-                          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, modeStyles.tag]}>
-                            <Text style={[styles.episodeParticipantTagName, modeStyles.text]}>
-                              {getVisibilityModeLabel(episode.visibilityMode)}
-                            </Text>
+                        {canManage ? (
+                          <View
+                            style={styles.visibilityModeIconWrap}
+                            accessibilityRole="image"
+                            accessibilityLabel={getVisibilityModeLabel(episode.visibilityMode)}
+                          >
+                            <Ionicons
+                              name={getVisibilityModeIconName(episode.visibilityMode)}
+                              size={16}
+                              color={getVisibilityModeIconColor(episode.visibilityMode)}
+                            />
                           </View>
-                        ) : !canManage ? (
+                        ) : (
                           <View style={styles.episodeParticipantTag}>
                             <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
                               {posterName || '-'}
                             </Text>
                           </View>
-                        ) : null}
+                        )}
                       </View>
                       {chips.length > 0 ? (
                         <View style={styles.episodeCardRow2}>
@@ -1578,6 +1685,7 @@ export default function DetailScreen() {
         </View>
         </View>
         </View>
+        </Animated.View>
       </TabScreenTemplate>
       <EpisodeFormOverlay
         visible={isEpisodeFormVisible}

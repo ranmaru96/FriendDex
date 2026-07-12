@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -20,6 +20,7 @@ import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModa
 import type { Option } from '@/components/episode/types';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { Panel, PanelSection, SectionDivider } from '@/components/ui/Panel';
+import { useUiPreview } from '@/contexts/UiPreviewContext';
 import { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 
@@ -53,44 +54,16 @@ import type { EpisodeEventMatch } from '../utils/eventEpisodeSync';
 
 const LIST_HORIZONTAL_INSET = 12;
 const PHOTO_GAP = 6;
-type PhotoDimensions = {
-  width: number;
-  height: number;
-};
-
-const PHOTO_FALLBACK_SIZE: PhotoDimensions = {
-  width: 4,
-  height: 5,
-};
-
-const resolvePhotoSize = (uri: string): Promise<PhotoDimensions> =>
-  new Promise((resolve) => {
-    Image.getSize(
-      uri,
-      (width, height) => {
-        if (width > 0 && height > 0) {
-          resolve({ width, height });
-          return;
-        }
-        resolve(PHOTO_FALLBACK_SIZE);
-      },
-      () => resolve(PHOTO_FALLBACK_SIZE)
-    );
-  });
-
-const getWidthForFixedHeight = (targetHeight: number, size?: PhotoDimensions): number => {
-  const width = size?.width ?? PHOTO_FALLBACK_SIZE.width;
-  const height = size?.height ?? PHOTO_FALLBACK_SIZE.height;
-  return targetHeight * (width / height);
-};
+/** 2枚以上のとき、右端に次の写真を覗かせる幅 */
+const PHOTO_PEEK = 28;
 
 export default function EpisodeDetailScreen() {
   const router = useRouter();
+  const { isPreview } = useUiPreview();
   const bottomNavClearance = useBottomNavScrollClearance();
   const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string }>();
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
-  const [photoSizes, setPhotoSizes] = useState<Record<string, PhotoDimensions>>({});
   const [myselfId, setMyselfId] = useState<string | null>(null);
   const [friendNameById, setFriendNameById] = useState<Map<string, string>>(new Map());
   const [friendPhotoById, setFriendPhotoById] = useState<Map<string, string | null>>(new Map());
@@ -119,7 +92,12 @@ export default function EpisodeDetailScreen() {
     return params.ownerId ?? '';
   }, [params.ownerId]);
 
-  const photoAreaWidth = Dimensions.get('window').width - LIST_HORIZONTAL_INSET * 2;
+  const photoContentWidth = useMemo(() => {
+    const panelWidth = isPreview
+      ? Dimensions.get('window').width
+      : Dimensions.get('window').width - LIST_HORIZONTAL_INSET * 2;
+    return Math.max(0, panelWidth - Spacing.md * 2);
+  }, [isPreview]);
 
   const loadData = useCallback(() => {
     initializeDatabase();
@@ -148,37 +126,6 @@ export default function EpisodeDetailScreen() {
     }, [loadData])
   );
 
-  useEffect(() => {
-    if (photos.length === 0) {
-      return;
-    }
-
-    let active = true;
-    const missingPhotos = photos.filter((photo) => !photoSizes[photo.photoUri]);
-    if (missingPhotos.length === 0) {
-      return;
-    }
-
-    Promise.all(
-      missingPhotos.map(async (photo) => [photo.photoUri, await resolvePhotoSize(photo.photoUri)] as const)
-    ).then((entries) => {
-      if (!active) {
-        return;
-      }
-      setPhotoSizes((prev) => {
-        const next = { ...prev };
-        entries.forEach(([uri, size]) => {
-          next[uri] = size;
-        });
-        return next;
-      });
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [photoSizes, photos]);
-
   const chips = useMemo(
     () =>
       episode
@@ -196,7 +143,11 @@ export default function EpisodeDetailScreen() {
   const canManage =
     episode && ownerId ? canManageEpisode(episode, ownerId, myselfId) : false;
   const recordOwnerId = episode ? resolveEpisodeRecordOwnerId(episode, ownerId) : ownerId;
-  const basePhotoHeight = useMemo(() => (photoAreaWidth * 3) / 4, [photoAreaWidth]);
+  const photoFrameWidth = useMemo(
+    () => (photos.length > 1 ? Math.max(0, photoContentWidth - PHOTO_PEEK) : photoContentWidth),
+    [photoContentWidth, photos.length]
+  );
+  const photoFrameHeight = useMemo(() => (photoFrameWidth * 3) / 4, [photoFrameWidth]);
   const hasDescription = Boolean(episode?.description.trim());
   const hasPhotos = photos.length > 0;
 
@@ -207,13 +158,13 @@ export default function EpisodeDetailScreen() {
         styles.photoFrame,
         index > 0 ? styles.photoFrameSpaced : null,
         {
-          width: getWidthForFixedHeight(basePhotoHeight, photoSizes[photo.photoUri]),
-          height: basePhotoHeight,
+          width: photoFrameWidth,
+          height: photoFrameHeight,
         },
       ]}
       onPress={() => setLightboxPhoto(photo.photoUri)}
     >
-      <Image source={{ uri: photo.photoUri }} style={styles.photoImage} resizeMode="contain" />
+      <Image source={{ uri: photo.photoUri }} style={styles.photoImage} resizeMode="cover" />
     </Pressable>
   );
 
@@ -372,11 +323,25 @@ export default function EpisodeDetailScreen() {
           style={styles.mainScroll}
           contentContainerStyle={[
             styles.mainScrollContent,
-            bottomNavClearance > 0 ? { paddingBottom: bottomNavClearance } : null,
+            isPreview
+              ? styles.mainScrollContentPreview
+              : styles.mainScrollContentStable,
+            bottomNavClearance > 0
+              ? {
+                  paddingBottom: isPreview
+                    ? bottomNavClearance
+                    : Math.max(bottomNavClearance, 32),
+                }
+              : null,
           ]}
           keyboardShouldPersistTaps="handled"
         >
-          <Panel style={styles.detailPanel}>
+          <Panel
+            style={[
+              styles.detailPanel,
+              isPreview ? styles.detailPanelPreview : null,
+            ]}
+          >
             <EpisodeListCard
               embedded
               titleMultiline
@@ -386,6 +351,7 @@ export default function EpisodeDetailScreen() {
               chips={chips}
               visibility={visibility}
               visibilityMode={episode.visibilityMode}
+              style={isPreview ? styles.episodeHeaderPreview : undefined}
             />
 
             {hasDescription ? (
@@ -401,7 +367,7 @@ export default function EpisodeDetailScreen() {
               <>
                 <SectionDivider />
                 <PanelSection style={styles.detailSection}>
-                  <View style={[styles.photoViewport, { height: basePhotoHeight }]}>
+                  <View style={[styles.photoViewport, { height: photoFrameHeight }]}>
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
@@ -483,7 +449,13 @@ const styles = StyleSheet.create({
   mainScroll: {
     flex: 1,
   },
-  mainScrollContent: {
+  mainScrollContent: {},
+  mainScrollContentPreview: {
+    paddingHorizontal: 0,
+    paddingTop: 0,
+    paddingBottom: 0,
+  },
+  mainScrollContentStable: {
     paddingHorizontal: LIST_HORIZONTAL_INSET,
     paddingTop: 8,
     paddingBottom: 32,
@@ -501,6 +473,13 @@ const styles = StyleSheet.create({
   },
   detailPanel: {
     overflow: 'hidden',
+  },
+  detailPanelPreview: {
+    borderWidth: 0,
+    borderRadius: 0,
+  },
+  episodeHeaderPreview: {
+    paddingTop: 14,
   },
   detailSection: {
     paddingVertical: 10,
@@ -523,7 +502,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     alignItems: 'center',
     backgroundColor: Theme.textPrimary,
-    borderRadius: Radius.md,
+    borderRadius: 6,
     borderWidth: 1,
     borderColor: Theme.inputBorder,
     overflow: 'hidden',

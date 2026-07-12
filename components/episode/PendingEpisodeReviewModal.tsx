@@ -13,6 +13,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { PHOTO_LIMITS } from '@/constants';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import { PhotoCropModal, EPISODE_PHOTO_ASPECT } from '@/components/photo/PhotoCropModal';
 import {
   deleteEpisode,
   getEpisodePhotos,
@@ -41,6 +42,7 @@ export function PendingEpisodeReviewModal({
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
   const [newPhotoUris, setNewPhotoUris] = useState<string[]>([]);
+  const [photoCropUri, setPhotoCropUri] = useState<string | null>(null);
 
   const currentItem = items[0] ?? null;
 
@@ -50,12 +52,14 @@ export function PendingEpisodeReviewModal({
       setDescription('');
       setPhotos([]);
       setNewPhotoUris([]);
+      setPhotoCropUri(null);
       return;
     }
     setTitle(item.episode.title);
     setDescription(item.episode.description);
     setPhotos(getEpisodePhotos(item.episode.id));
     setNewPhotoUris([]);
+    setPhotoCropUri(null);
   }, []);
 
   useEffect(() => {
@@ -99,10 +103,11 @@ export function PendingEpisodeReviewModal({
     }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.7,
+      quality: 1,
+      allowsEditing: false,
     });
     if (!result.canceled && result.assets[0]) {
-      setNewPhotoUris((prev) => [...prev, result.assets[0].uri]);
+      setPhotoCropUri(result.assets[0].uri);
     }
   };
 
@@ -182,6 +187,7 @@ export function PendingEpisodeReviewModal({
   }
 
   return (
+    <>
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
@@ -255,6 +261,18 @@ export function PendingEpisodeReviewModal({
         </View>
       </View>
     </Modal>
+    <PhotoCropModal
+      visible={photoCropUri != null}
+      uri={photoCropUri}
+      aspectRatio={EPISODE_PHOTO_ASPECT}
+      hint="ピンチで拡大・ドラッグで位置調整（カード表示は横4:縦3）"
+      onCancel={() => setPhotoCropUri(null)}
+      onConfirm={(croppedUri) => {
+        setNewPhotoUris((prev) => [...prev, croppedUri]);
+        setPhotoCropUri(null);
+      }}
+    />
+    </>
   );
 }
 

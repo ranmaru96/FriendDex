@@ -795,6 +795,13 @@ export function createDetailStyles(c: DetailThemeColors) {
   visibilityModeTag: {
     flexShrink: 0,
   },
+  visibilityModeIconWrap: {
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+  },
   emptyEpisodeText: {
     fontSize: Typography.base,
     color: c.textMuted,

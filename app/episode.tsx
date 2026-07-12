@@ -35,7 +35,7 @@ import {
   getDistinctAffiliations,
   getDistinctExperiences,
   getEpisodeById,
-  getEpisodeCoverPhotoUriMap,
+  getEpisodeListPhotoUrisMap,
   getEpisodeParticipantFriendIds,
   getMergedEpisodeTagLabels,
   getMyself,
@@ -102,7 +102,7 @@ export default function EpisodeScreen() {
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
-  const [coverPhotoUriByEpisodeId, setCoverPhotoUriByEpisodeId] = useState<Map<string, string>>(
+  const [photoUrisByEpisodeId, setPhotoUrisByEpisodeId] = useState<Map<string, string[]>>(
     () => new Map()
   );
 
@@ -166,8 +166,8 @@ export default function EpisodeScreen() {
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
     setMyselfId(getMyself());
-    setCoverPhotoUriByEpisodeId(
-      getEpisodeCoverPhotoUriMap(collectUniqueEpisodes(nextFriends).map((row) => row.episode.id))
+    setPhotoUrisByEpisodeId(
+      getEpisodeListPhotoUrisMap(collectUniqueEpisodes(nextFriends).map((row) => row.episode.id))
     );
   }, []);
 
@@ -606,7 +606,7 @@ export default function EpisodeScreen() {
                     chips={chips}
                     visibilityMode={canManage ? row.episode.visibilityMode : undefined}
                     posterName={posterName}
-                    coverPhotoUri={coverPhotoUriByEpisodeId.get(row.episode.id) ?? null}
+                    photoUris={photoUrisByEpisodeId.get(row.episode.id) ?? []}
                     onPress={openDetail}
                   />
                 );

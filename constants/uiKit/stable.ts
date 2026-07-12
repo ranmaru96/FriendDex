@@ -43,6 +43,7 @@ export const stableUiKit: UiKit = {
   episodeListPaddingHorizontal: ScreenHorizontalInset,
   episodeListCardGap: 4,
   episodeListCardBorderRadius: 10,
+  episodeListPhotoLayout: 'compactOne',
   episodeListPhotoSpanRows: 2,
   calendarEventMemoDisplay: 'oneLine',
   calendarMonthLayout: 'scheduleGrid',

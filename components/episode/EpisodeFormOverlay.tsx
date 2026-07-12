@@ -28,6 +28,7 @@ import {
 } from '@/components/episode/types';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
+import { PhotoCropModal, EPISODE_PHOTO_ASPECT } from '@/components/photo/PhotoCropModal';
 import type { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import type { Friend } from '@/types';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
@@ -387,6 +388,15 @@ export function EpisodeFormOverlay({
         onToggleGroup={form.toggleSelectorGroup}
         onCancel={form.handleSelectorCancel}
         onConfirm={form.handleSelectorConfirm}
+      />
+
+      <PhotoCropModal
+        visible={form.photoCropUri != null}
+        uri={form.photoCropUri}
+        aspectRatio={EPISODE_PHOTO_ASPECT}
+        hint="ピンチで拡大・ドラッグで位置調整（カード表示は横4:縦3）"
+        onCancel={form.cancelPhotoCrop}
+        onConfirm={form.confirmPhotoCrop}
       />
     </>
   );

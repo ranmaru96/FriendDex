@@ -1278,6 +1278,7 @@ export const getMyself = (): string | null => {
 export const DETAIL_DESIGN_VARIANT_KEY = 'detail_design_variant';
 export const UI_PREVIEW_VARIANT_KEY = 'ui_preview_variant';
 export const UI_CALENDAR_EVENT_TIME_DISPLAY_KEY = 'ui_calendar_event_time_display';
+export const UI_EPISODE_LIST_PHOTO_LAYOUT_KEY = 'ui_episode_list_photo_layout';
 
 export const getAppSetting = (key: string): string | null => {
   const row = db.getFirstSync<{ value: string }>(`SELECT value FROM ${SETTINGS_TABLE} WHERE key = ?;`, [key]);
@@ -1319,6 +1320,24 @@ export const getCalendarEventTimeDisplayOverride = (): 'plain' | 'column' | 'bad
 
 export const setCalendarEventTimeDisplayOverride = (display: 'plain' | 'column' | 'badge'): void => {
   setAppSetting(UI_CALENDAR_EVENT_TIME_DISPLAY_KEY, display);
+};
+
+export const getEpisodeListPhotoLayoutOverride = ():
+  | 'compactOne'
+  | 'compactTwoSideBySide'
+  | 'tallOne'
+  | null => {
+  const value = getAppSetting(UI_EPISODE_LIST_PHOTO_LAYOUT_KEY);
+  if (value === 'compactOne' || value === 'compactTwoSideBySide' || value === 'tallOne') {
+    return value;
+  }
+  return null;
+};
+
+export const setEpisodeListPhotoLayoutOverride = (
+  layout: 'compactOne' | 'compactTwoSideBySide' | 'tallOne'
+): void => {
+  setAppSetting(UI_EPISODE_LIST_PHOTO_LAYOUT_KEY, layout);
 };
 
 export const setMyself = (friendId: string | null): boolean => {
@@ -1891,7 +1910,24 @@ export const getEpisodePhotos = (episodeId: string): EpisodePhoto[] => {
 };
 
 export const getEpisodeCoverPhotoUriMap = (episodeIds: string[]): Map<string, string> => {
+  const multi = getEpisodeListPhotoUrisMap(episodeIds, 1);
+  const map = new Map<string, string>();
+  for (const [episodeId, uris] of multi) {
+    const first = uris[0];
+    if (first) {
+      map.set(episodeId, first);
+    }
+  }
+  return map;
+};
+
+/** 一覧カード用。各エピソード最大 maxPhotos 枚（sort_order 順） */
+export const getEpisodeListPhotoUrisMap = (
+  episodeIds: string[],
+  maxPhotos = 2
+): Map<string, string[]> => {
   const normalizedIds = [...new Set(episodeIds.map((id) => id.trim()).filter(Boolean))];
+  const limit = Math.max(1, Math.floor(maxPhotos));
   if (normalizedIds.length === 0) {
     return new Map();
   }
@@ -1900,10 +1936,12 @@ export const getEpisodeCoverPhotoUriMap = (episodeIds: string[]): Map<string, st
     `SELECT episode_id, photo_uri FROM ${EPISODE_PHOTOS_TABLE} WHERE episode_id IN (${placeholders}) ORDER BY sort_order ASC, id ASC;`,
     normalizedIds
   );
-  const map = new Map<string, string>();
+  const map = new Map<string, string[]>();
   for (const row of rows) {
-    if (!map.has(row.episode_id)) {
-      map.set(row.episode_id, row.photo_uri);
+    const list = map.get(row.episode_id) ?? [];
+    if (list.length < limit) {
+      list.push(row.photo_uri);
+      map.set(row.episode_id, list);
     }
   }
   return map;

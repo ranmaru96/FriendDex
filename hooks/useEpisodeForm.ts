@@ -59,6 +59,7 @@ export function useEpisodeForm({
   const [formError, setFormError] = useState('');
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
   const [newPhotoUris, setNewPhotoUris] = useState<string[]>([]);
+  const [photoCropUri, setPhotoCropUri] = useState<string | null>(null);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<number[]>([]);
   const [linkedEventId, setLinkedEventId] = useState<string | null>(null);
   const [tag, setTag] = useState('');
@@ -82,7 +83,8 @@ export function useEpisodeForm({
     [photos, deletedPhotoIds]
   );
 
-  const isPhotoLimitReached = photos.length + newPhotoUris.length >= PHOTO_LIMITS.free;
+  const isPhotoLimitReached =
+    visibleExistingPhotos.length + newPhotoUris.length >= PHOTO_LIMITS.free;
 
   const allowedEventDateRange = useMemo(
     () => getLinkedEventDateBounds(linkedEventId),
@@ -101,6 +103,7 @@ export function useEpisodeForm({
     setVisibility([]);
     setPhotos([]);
     setNewPhotoUris([]);
+    setPhotoCropUri(null);
     setDeletedPhotoIds([]);
     setLinkedEventId(null);
     setTag('');
@@ -244,6 +247,7 @@ export function useEpisodeForm({
       );
       setPhotos(getEpisodePhotos(episode.id));
       setNewPhotoUris([]);
+      setPhotoCropUri(null);
       setDeletedPhotoIds([]);
       setFormError('');
       setShowDatePicker(false);
@@ -312,12 +316,22 @@ export function useEpisodeForm({
     if (isPhotoLimitReached) return;
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.7,
+      quality: 1,
+      allowsEditing: false,
     });
     if (!result.canceled && result.assets[0]) {
-      setNewPhotoUris((prev) => [...prev, result.assets[0].uri]);
+      setPhotoCropUri(result.assets[0].uri);
     }
   }, [isPhotoLimitReached]);
+
+  const cancelPhotoCrop = useCallback(() => {
+    setPhotoCropUri(null);
+  }, []);
+
+  const confirmPhotoCrop = useCallback((croppedUri: string) => {
+    setNewPhotoUris((prev) => [...prev, croppedUri]);
+    setPhotoCropUri(null);
+  }, []);
 
   const removeExistingPhoto = useCallback((photoId: number) => {
     setDeletedPhotoIds((prev) => (prev.includes(photoId) ? prev : [...prev, photoId]));
@@ -395,6 +409,9 @@ export function useEpisodeForm({
     toggleSelectorIndividual,
     toggleSelectorGroup,
     pickPhoto,
+    photoCropUri,
+    cancelPhotoCrop,
+    confirmPhotoCrop,
     removeExistingPhoto,
     removeNewPhoto,
     persistPhotos,
