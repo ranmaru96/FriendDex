@@ -353,27 +353,18 @@ export default function EpisodeDetailScreen() {
     <>
       <SafeAreaView style={styles.safeArea}>
         <ScreenTopBar
+          title="エピソード"
           onBack={() => router.back()}
           right={
             canManage ? (
-              <View style={episodeDetailTopBarButtonStyles.actions}>
-                <Pressable
-                  style={episodeDetailTopBarButtonStyles.button}
-                  onPress={handleEdit}
-                  accessibilityLabel="編集"
-                  hitSlop={8}
-                >
-                  <Ionicons name="pencil-outline" size={18} color={Theme.topBarText} />
-                </Pressable>
-                <Pressable
-                  style={[episodeDetailTopBarButtonStyles.button, episodeDetailTopBarButtonStyles.buttonDanger]}
-                  onPress={handleDelete}
-                  accessibilityLabel="削除"
-                  hitSlop={8}
-                >
-                  <Ionicons name="trash-outline" size={18} color="#fca5a5" />
-                </Pressable>
-              </View>
+              <Pressable
+                style={episodeDetailTopBarButtonStyles.button}
+                onPress={handleEdit}
+                accessibilityLabel="編集"
+                hitSlop={8}
+              >
+                <Ionicons name="pencil-outline" size={18} color={Theme.topBarText} />
+              </Pressable>
             ) : null
           }
         />
@@ -429,6 +420,17 @@ export default function EpisodeDetailScreen() {
               <Text style={styles.privateMemoPlaceholder}>非公開メモ（近日実装予定）</Text>
             </PanelSection>
           </Panel>
+
+          {canManage ? (
+            <Pressable
+              style={styles.deleteLinkWrap}
+              onPress={handleDelete}
+              accessibilityLabel="エピソードを削除"
+              hitSlop={8}
+            >
+              <Text style={styles.deleteLinkText}>エピソードを削除</Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
 
         <Modal
@@ -543,6 +545,23 @@ const styles = StyleSheet.create({
   privateMemoPlaceholder: {
     fontSize: 14,
     color: '#94a3b8',
+  },
+  deleteLinkWrap: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+    borderColor: 'rgba(248, 113, 113, 0.55)',
+    backgroundColor: 'rgba(248, 113, 113, 0.12)',
+  },
+  deleteLinkText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#f87171',
   },
   lightboxBackdrop: {
     flex: 1,
