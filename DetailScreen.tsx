@@ -255,25 +255,21 @@ export default function DetailScreen() {
     isAdjacentSlidingRef.current = false;
   }, []);
 
-  const startAdjacentEnterAnimation = useCallback(
-    (direction: AdjacentDirection) => {
-      const enterFrom = direction === 'next' ? screenWidth : -screenWidth;
-      contentSlideX.value = enterFrom;
-      contentSlideX.value = withTiming(0, { duration: DETAIL_SLIDE_MS }, (finished) => {
-        if (finished) {
-          runOnJS(finishAdjacentSlideIn)();
-        }
-      });
-    },
-    [contentSlideX, finishAdjacentSlideIn, screenWidth]
-  );
+  const startAdjacentEnterAnimation = useCallback(() => {
+    contentSlideX.value = withTiming(0, { duration: DETAIL_SLIDE_MS }, (finished) => {
+      runOnJS(finishAdjacentSlideIn)();
+    });
+  }, [contentSlideX, finishAdjacentSlideIn]);
 
   const commitAdjacentFriend = useCallback(
     (targetId: string, direction: AdjacentDirection) => {
+      // 次へ: 右から入る / 前へ: 左から入る（退場位置から入場位置へ先に寄せる）
+      contentSlideX.value = direction === 'next' ? screenWidth : -screenWidth;
       pendingEnterDirectionRef.current = direction;
-      router.replace({ pathname: '/detail', params: { id: targetId } });
+      // 同一画面の params 更新のみ（Stack遷移でトップバーごと動かないようにする）
+      router.setParams({ id: targetId });
     },
-    [router]
+    [contentSlideX, router, screenWidth]
   );
 
   const goToAdjacentFriend = useCallback(
@@ -282,6 +278,7 @@ export default function DetailScreen() {
         return;
       }
       isAdjacentSlidingRef.current = true;
+      // 次へ: 左へ退く / 前へ: 右へ退く
       const exitTo = direction === 'next' ? -screenWidth : screenWidth;
       contentSlideX.value = withTiming(exitTo, { duration: DETAIL_SLIDE_MS }, (finished) => {
         if (finished) {
@@ -295,12 +292,11 @@ export default function DetailScreen() {
   );
 
   useEffect(() => {
-    const pendingDirection = pendingEnterDirectionRef.current;
-    if (!pendingDirection) {
+    if (!pendingEnterDirectionRef.current) {
       return;
     }
     pendingEnterDirectionRef.current = null;
-    startAdjacentEnterAnimation(pendingDirection);
+    startAdjacentEnterAnimation();
   }, [friendId, startAdjacentEnterAnimation]);
 
   const contentSlideStyle = useAnimatedStyle(() => ({
@@ -1066,8 +1062,9 @@ export default function DetailScreen() {
           />
         }
       >
-        <Animated.View style={contentSlideStyle}>
-        <View style={styles.profileCardShadow}>
+        <View style={{ overflow: 'hidden', width: '100%' }}>
+          <Animated.View style={contentSlideStyle}>
+            <View style={styles.profileCardShadow}>
         <View
           style={[
             styles.profileCardOuter,
@@ -1686,6 +1683,7 @@ export default function DetailScreen() {
         </View>
         </View>
         </Animated.View>
+        </View>
       </TabScreenTemplate>
       <EpisodeFormOverlay
         visible={isEpisodeFormVisible}
