@@ -1,3 +1,5 @@
+import type { AppThemeContentColorFields } from './contentColors';
+
 export type AppThemeVariant = 'default' | 'white' | 'black';
 
 /** 一覧人物カードの影（iOS shadow / Android elevation） */
@@ -9,8 +11,8 @@ export type AppThemeCardElevation = {
   elevation: number;
 };
 
-/** 全画面共通の土台色（SafeArea・サブ画面トップバーなど） */
-export type AppThemeColors = {
+/** 全画面共通の土台色 + コンテンツ面色 */
+export type AppThemeColors = AppThemeContentColorFields & {
   screenBackground: string;
   topBarText: string;
   topBarBorder: string;

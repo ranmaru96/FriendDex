@@ -13,14 +13,14 @@ const DETAIL_TABS: DetailTabDef[] = [
 ];
 
 const unifiedChip: InfoChipStyle = {
-  backgroundColor: c.tagChipBg,
+  backgroundColor: 'transparent',
   borderColor: c.tagAffilBorder,
   color: c.tagAffilText,
   borderWidth: 1,
 };
 
 const grayChip: InfoChipStyle = {
-  backgroundColor: c.tagChipBg,
+  backgroundColor: 'transparent',
   borderColor: '#b8b8c4',
   color: '#888888',
   borderWidth: 1,

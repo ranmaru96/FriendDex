@@ -4,6 +4,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spacing, Theme } from '@/constants/theme';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 
 const TOP_CONTENT_PADDING = 12;
@@ -24,10 +25,13 @@ export function FormOverlayTemplate({
   scrollContentStyle,
 }: FormOverlayTemplateProps) {
   const kit = useUiKit();
+  const appTheme = useAppThemeOptional();
   const insets = useSafeAreaInsets();
+  const screenBackground = appTheme?.colors.screenBackground ?? Theme.background;
+  const titleColor = appTheme?.colors.onScreenText ?? Theme.textPrimary;
 
   return (
-    <View style={styles.overlay}>
+    <View style={[styles.overlay, { backgroundColor: screenBackground }]}>
       <KeyboardAwareScrollView
         style={[
           styles.scroll,
@@ -45,7 +49,7 @@ export function FormOverlayTemplate({
         enableOnAndroid
         extraScrollHeight={extraScrollHeight}
       >
-        <Text style={[styles.title, titleStyle]}>{title}</Text>
+        <Text style={[styles.title, { color: titleColor }, titleStyle]}>{title}</Text>
         {children}
       </KeyboardAwareScrollView>
     </View>

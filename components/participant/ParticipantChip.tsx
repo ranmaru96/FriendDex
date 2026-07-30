@@ -7,6 +7,8 @@ import {
   participantChipStyles as styles,
 } from '@/utils/participantChipStyles';
 import type { ParticipantChipDisplay } from '@/utils/episodeHelpers';
+import { useContentColors } from '@/utils/useContentColors';
+import { contentPersonTagStyle, contentTagTextStyle } from '@/utils/contentStyleHelpers';
 
 type ParticipantChipProps = {
   chip: ParticipantChipDisplay;
@@ -49,6 +51,7 @@ export function ParticipantChip({
   onPress,
   onRemove,
 }: ParticipantChipProps) {
+  const content = useContentColors();
   const { width: screenWidth } = useWindowDimensions();
   const isGroup = chip.kind === 'group';
   const isFitted = chipStyle === 'fitted';
@@ -64,6 +67,7 @@ export function ParticipantChip({
     <View
       style={[
         styles.chip,
+        contentPersonTagStyle(content),
         isFitted && styles.chipFitted,
         isGroup && styles.chipGroup,
         chipBackgroundColor ? { backgroundColor: chipBackgroundColor } : null,
@@ -78,7 +82,7 @@ export function ParticipantChip({
         {!isGroup ? (
           isFitted ? (
             <FittedChipAvatar
-              photoUri={chip.photoUri}
+              photoUri={chip.photoUri ?? undefined}
               label={chip.label}
               cornerRadius={fittedPhotoCornerRadius}
             />
@@ -88,14 +92,28 @@ export function ParticipantChip({
               style={[styles.avatar, compact && styles.avatarCompact]}
             />
           ) : (
-            <View style={[styles.avatarPlaceholder, compact && styles.avatarCompact]}>
-              <Text style={[styles.avatarInitial, compact && styles.avatarInitialCompact]}>
+            <View
+              style={[
+                styles.avatarPlaceholder,
+                compact && styles.avatarCompact,
+                { backgroundColor: content.contentPhotoPlaceholder },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.avatarInitial,
+                  compact && styles.avatarInitialCompact,
+                  { color: content.contentPhotoPlaceholderText },
+                ]}
+              >
                 {chip.label.trim().slice(0, 1) || '?'}
               </Text>
             </View>
           )
         ) : null}
-        <Text style={[styles.name, compact && styles.nameCompact]}>{chip.label}</Text>
+        <Text style={[styles.name, compact && styles.nameCompact, contentTagTextStyle(content)]}>
+          {chip.label}
+        </Text>
       </Pressable>
       {onRemove ? (
         <Pressable
@@ -104,7 +122,7 @@ export function ParticipantChip({
           accessibilityLabel={`${chip.label}を解除`}
           hitSlop={6}
         >
-          <Text style={styles.removeButtonText}>×</Text>
+          <Text style={[styles.removeButtonText, { color: content.contentTextSecondary }]}>×</Text>
         </Pressable>
       ) : null}
     </View>

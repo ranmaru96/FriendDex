@@ -19,6 +19,7 @@ import type {
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useContentColors } from '@/utils/useContentColors';
 import { getEventParticipantsForEvents, getEventsByDateRange, initializeDatabase } from '../db';
 import type { Event } from '../types';
 import { buildCalendarMarkedDates } from '../utils/calendarMarking';
@@ -107,6 +108,7 @@ function CalendarEventCardBody({
   onOpen,
   style,
 }: CalendarEventCardBodyProps) {
+  const content = useContentColors();
   const memoLineLimit = getCalendarMemoLineLimit(memoDisplay);
 
   return (
@@ -130,7 +132,11 @@ function CalendarEventCardBody({
       {event.memo ? (
         <Pressable onPress={onOpen}>
           <Text
-            style={[styles.eventMemo, isCompactEventCard ? styles.eventMemoCompact : null]}
+            style={[
+              styles.eventMemo,
+              { color: content.contentTextSecondary },
+              isCompactEventCard ? styles.eventMemoCompact : null,
+            ]}
             numberOfLines={memoLineLimit}
             ellipsizeMode={memoLineLimit ? 'tail' : undefined}
           >
@@ -146,6 +152,7 @@ export default function CalendarScreen() {
   const kit = useUiKit();
   const appTheme = useAppThemeOptional();
   const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
+  const content = useContentColors();
   const flushTop = isMonochrome;
   const whiteCalendarSeparator = appTheme?.colors.tabBarBorder ?? Theme.border;
   const roundedEventCards = isRoundedCalendarEventCardStyle(
@@ -166,6 +173,14 @@ export default function CalendarScreen() {
     shadowOpacity: 0.08,
     shadowRadius: 4,
     elevation: 2,
+  };
+  const contentCardSurface = {
+    backgroundColor: content.contentCard,
+    borderColor: content.contentBorder,
+  };
+  const contentTextStyles = {
+    title: { color: content.contentText },
+    secondary: { color: content.contentTextSecondary },
   };
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
@@ -295,6 +310,7 @@ export default function CalendarScreen() {
             <View
               style={[
                 styles.calendarCard,
+                contentCardSurface,
                 flushTop ? { borderBottomWidth: 1.5, borderBottomColor: whiteCalendarSeparator } : null,
                 isEdgeToEdge ? styles.calendarCardEdgeToEdge : null,
                 flushTop ? styles.calendarCardFlushTop : null,
@@ -307,16 +323,16 @@ export default function CalendarScreen() {
                 markedDates={markedDates}
                 dayComponent={CalendarDayCell}
                 theme={{
-                  backgroundColor: Theme.card,
-                  calendarBackground: Theme.card,
-                  textSectionTitleColor: Theme.textPrimary,
+                  backgroundColor: content.contentCard,
+                  calendarBackground: content.contentCard,
+                  textSectionTitleColor: content.contentText,
                   selectedDayBackgroundColor: Theme.accent,
                   selectedDayTextColor: Theme.onAccent,
                   todayTextColor: Theme.accent,
-                  dayTextColor: Theme.textPrimary,
-                  textDisabledColor: Theme.textSecondary,
-                  arrowColor: Theme.textPrimary,
-                  monthTextColor: Theme.textPrimary,
+                  dayTextColor: content.contentText,
+                  textDisabledColor: content.contentTextSecondary,
+                  arrowColor: content.contentText,
+                  monthTextColor: content.contentText,
                   textDayFontWeight: '500',
                   textMonthFontWeight: '700',
                   textDayHeaderFontWeight: '600',
@@ -339,11 +355,12 @@ export default function CalendarScreen() {
               <View
                 style={[
                   styles.emptyCard,
+                  contentCardSurface,
                   { borderRadius: kit.calendarEventCardBorderRadius },
                 ]}
               >
-                <Text style={styles.emptyTitle}>予定はありません</Text>
-                <Text style={styles.emptyText}>この日に登録された予定はまだありません。</Text>
+                <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
+                <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
               </View>
             ) : (
               <View style={{ gap: kit.calendarEventCardGap }}>
@@ -361,6 +378,7 @@ export default function CalendarScreen() {
                       onOpen={() => handleOpenEvent(event.id)}
                       style={[
                         styles.eventCard,
+                        contentCardSurface,
                         isCompactEventCard ? styles.eventCardCompact : null,
                         { borderRadius: kit.calendarEventCardBorderRadius },
                       ]}
@@ -381,9 +399,9 @@ export default function CalendarScreen() {
 
             {eventsForSelectedDate.length === 0 ? (
               <View style={[styles.eventShadow, isEdgeToEdge ? styles.eventShadowEdgeToEdge : null]}>
-                <View style={[styles.emptyCard, isEdgeToEdge ? styles.eventCardEdgeToEdge : null]}>
-                  <Text style={styles.emptyTitle}>予定はありません</Text>
-                  <Text style={styles.emptyText}>この日に登録された予定はまだありません。</Text>
+                <View style={[styles.emptyCard, contentCardSurface, isEdgeToEdge ? styles.eventCardEdgeToEdge : null]}>
+                  <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
+                  <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
                 </View>
               </View>
             ) : isColumnPanelList && !useRoundedCardEventList ? (
@@ -402,6 +420,7 @@ export default function CalendarScreen() {
                   onOpen={() => handleOpenEvent(event.id)}
                   style={[
                     styles.eventCard,
+                    contentCardSurface,
                     isCompactEventCard ? styles.eventCardCompact : null,
                     styles.eventCardPanelItem,
                   ]}
@@ -440,6 +459,7 @@ export default function CalendarScreen() {
                   onOpen={() => handleOpenEvent(event.id)}
                   style={[
                     styles.eventCard,
+                    contentCardSurface,
                     isCompactEventCard ? styles.eventCardCompact : null,
                     isEdgeToEdge && !useRoundedCardEventList ? styles.eventCardEdgeToEdge : null,
                     useRoundedCardEventList ? styles.roundedEventCard : null,

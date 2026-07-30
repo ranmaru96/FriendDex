@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Radius, Spacing, Theme } from '@/constants/theme';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import { ParticipantChip } from '@/components/participant/ParticipantChip';
 import type { Friend, ShufflePool } from '../../types';
 import { buildParticipantChipDisplays } from '../../utils/episodeHelpers';
@@ -33,6 +41,7 @@ export function ShuffleTeamPanel({
   myselfId = null,
   onShuffleComplete,
 }: ShuffleTeamPanelProps) {
+  const content = useContentColors();
   const [teamCount, setTeamCount] = useState(2);
   const [useRanks, setUseRanks] = useState(false);
   const [rankTiers, setRankTiers] = useState<ShuffleRankTier[]>(createDefaultRankTiers);
@@ -156,47 +165,56 @@ export function ShuffleTeamPanel({
 
   if (!activePool) {
     return (
-      <View style={styles.shuffleCard}>
-        <Text style={styles.emptyHint}>集団を選ぶと、ここからチーム分けできます。</Text>
+      <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
+        <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
+          集団を選ぶと、ここからチーム分けできます。
+        </Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.shuffleCard}>
-      <Text style={styles.hintText}>
+    <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
+      <Text style={[styles.hintText, contentMutedTextStyle(content)]}>
         チーム数を指定してシャッフルします。ランクを使うと、各チームにランクが均等に配分されます。
       </Text>
 
       <View style={styles.pickCountRow}>
-        <Text style={styles.pickCountLabel}>チーム数</Text>
+        <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>チーム数</Text>
         <View style={styles.stepper}>
-          <Pressable
-            style={[styles.stepperButton, teamCount <= 2 && styles.stepperButtonDisabled]}
-            onPress={decrementTeamCount}
-            disabled={teamCount <= 2}
-          >
-            <Text style={styles.stepperButtonText}>−</Text>
-          </Pressable>
-          <Text style={styles.pickCountValue}>{teamCount}</Text>
           <Pressable
             style={[
               styles.stepperButton,
+              contentTagStyle(content),
+              teamCount <= 2 && styles.stepperButtonDisabled,
+            ]}
+            onPress={decrementTeamCount}
+            disabled={teamCount <= 2}
+          >
+            <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
+          </Pressable>
+          <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{teamCount}</Text>
+          <Pressable
+            style={[
+              styles.stepperButton,
+              contentTagStyle(content),
               teamCount >= memberCount && styles.stepperButtonDisabled,
             ]}
             onPress={incrementTeamCount}
             disabled={teamCount >= memberCount}
           >
-            <Text style={styles.stepperButtonText}>＋</Text>
+            <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
           </Pressable>
         </View>
-        <Text style={styles.pickCountMeta}>／ 最大{memberCount}</Text>
+        <Text style={[styles.pickCountMeta, contentMutedTextStyle(content)]}>／ 最大{memberCount}</Text>
       </View>
 
-      <View style={styles.rankToggleRow}>
+      <View style={[styles.rankToggleRow, contentTagStyle(content)]}>
         <View style={styles.rankToggleTextWrap}>
-          <Text style={styles.rankToggleLabel}>ランクでバランスを取る</Text>
-          <Text style={styles.rankToggleHint}>各ランクの人数をチーム間で均等に配分</Text>
+          <Text style={[styles.rankToggleLabel, contentTextStyle(content)]}>ランクでバランスを取る</Text>
+          <Text style={[styles.rankToggleHint, contentMutedTextStyle(content)]}>
+            各ランクの人数をチーム間で均等に配分
+          </Text>
         </View>
         <Switch
           value={useRanks}
@@ -204,15 +222,15 @@ export function ShuffleTeamPanel({
             setUseRanks(value);
             setError('');
           }}
-          trackColor={{ false: Theme.searchFieldBorder, true: Theme.accentLight }}
-          thumbColor={useRanks ? Theme.accent : Theme.card}
+          trackColor={{ false: content.contentSearchFieldBorder, true: Theme.accentLight }}
+          thumbColor={useRanks ? Theme.accent : content.contentInputBg}
         />
       </View>
 
       {useRanks ? (
-        <View style={styles.rankSection}>
+        <View style={[styles.rankSection, contentTagStyle(content)]}>
           <View style={styles.rankSectionHeader}>
-            <Text style={styles.rankSectionTitle}>ランク設定</Text>
+            <Text style={[styles.rankSectionTitle, contentTextStyle(content)]}>ランク設定</Text>
             <Pressable style={styles.addRankButton} onPress={addRankTier}>
               <Text style={styles.addRankButtonText}>＋ ランク追加</Text>
             </Pressable>
@@ -220,9 +238,9 @@ export function ShuffleTeamPanel({
 
           {rankTiers.map((tier, index) => (
             <View key={tier.id} style={styles.rankTierRow}>
-              <Text style={styles.rankTierIndex}>{index + 1}</Text>
+              <Text style={[styles.rankTierIndex, contentMutedTextStyle(content)]}>{index + 1}</Text>
               <TextInput
-                style={styles.rankTierInput}
+                style={[styles.rankTierInput, contentInputStyle(content)]}
                 value={tier.label}
                 onChangeText={(label) => updateRankLabel(tier.id, label)}
                 placeholder={`ランク${index + 1}`}
@@ -245,7 +263,7 @@ export function ShuffleTeamPanel({
             </View>
           ))}
 
-          <Text style={styles.memberRankTitle}>メンバーのランク</Text>
+          <Text style={[styles.memberRankTitle, contentTextStyle(content)]}>メンバーのランク</Text>
           <View style={styles.memberRankList}>
             {poolMemberChips.map((chip) => {
               const memberId = chip.friendId;
@@ -254,18 +272,26 @@ export function ShuffleTeamPanel({
               }
               const assignedTierId = memberRankById[memberId];
               return (
-                <View key={chip.id} style={styles.memberRankRow}>
+                <View
+                  key={chip.id}
+                  style={[styles.memberRankRow, { borderTopColor: content.contentDivider }]}
+                >
                   <View style={styles.memberChipWrap}>
                     <ParticipantChip chip={chip} compact />
                   </View>
                   <View style={styles.rankPillRow}>
                     <Pressable
-                      style={[styles.rankPill, !assignedTierId && styles.rankPillSelected]}
+                      style={[
+                        styles.rankPill,
+                        contentTagStyle(content),
+                        !assignedTierId && styles.rankPillSelected,
+                      ]}
                       onPress={() => assignMemberRank(memberId, null)}
                     >
                       <Text
                         style={[
                           styles.rankPillText,
+                          contentMutedTextStyle(content),
                           !assignedTierId && styles.rankPillTextSelected,
                         ]}
                       >
@@ -277,11 +303,19 @@ export function ShuffleTeamPanel({
                       return (
                         <Pressable
                           key={`${memberId}-${tier.id}`}
-                          style={[styles.rankPill, selected && styles.rankPillSelected]}
+                          style={[
+                            styles.rankPill,
+                            contentTagStyle(content),
+                            selected && styles.rankPillSelected,
+                          ]}
                           onPress={() => assignMemberRank(memberId, tier.id)}
                         >
                           <Text
-                            style={[styles.rankPillText, selected && styles.rankPillTextSelected]}
+                            style={[
+                              styles.rankPillText,
+                              contentMutedTextStyle(content),
+                              selected && styles.rankPillTextSelected,
+                            ]}
                           >
                             {tier.label.trim() || '?'}
                           </Text>
@@ -303,8 +337,8 @@ export function ShuffleTeamPanel({
       {error ? <Text style={styles.formError}>{error}</Text> : null}
 
       {teams && teams.length > 0 ? (
-        <View style={styles.resultSection}>
-          <Text style={styles.resultTitle}>チーム分け結果</Text>
+        <View style={[styles.resultSection, { borderTopColor: content.contentDivider }]}>
+          <Text style={[styles.resultTitle, contentTextStyle(content)]}>チーム分け結果</Text>
           <ShuffleTeamResults
             teams={teams}
             friendsById={friendsById}
@@ -321,21 +355,17 @@ export function ShuffleTeamPanel({
 
 const styles = StyleSheet.create({
   shuffleCard: {
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 12,
   },
   emptyHint: {
     fontSize: 13,
-    color: Theme.textSecondary,
     lineHeight: 18,
   },
   hintText: {
     fontSize: 12,
-    color: Theme.textSecondary,
     lineHeight: 17,
   },
   pickCountRow: {
@@ -347,7 +377,6 @@ const styles = StyleSheet.create({
   pickCountLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   stepper: {
     flexDirection: 'row',
@@ -359,8 +388,6 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
-    backgroundColor: Theme.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -370,7 +397,6 @@ const styles = StyleSheet.create({
   stepperButtonText: {
     fontSize: 20,
     fontWeight: '700',
-    color: Theme.textPrimary,
     lineHeight: 22,
   },
   pickCountValue: {
@@ -378,21 +404,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 20,
     fontWeight: '800',
-    color: Theme.textPrimary,
   },
   pickCountMeta: {
     fontSize: 13,
     fontWeight: '600',
-    color: Theme.textSecondary,
   },
   rankToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    backgroundColor: Theme.card,
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
     borderRadius: Radius.md,
     padding: 10,
   },
@@ -403,18 +425,14 @@ const styles = StyleSheet.create({
   rankToggleLabel: {
     fontSize: 13,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   rankToggleHint: {
     fontSize: 11,
-    color: Theme.textSecondary,
     lineHeight: 15,
   },
   rankSection: {
     gap: 10,
-    backgroundColor: Theme.card,
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
     borderRadius: Radius.md,
     padding: 10,
   },
@@ -427,7 +445,6 @@ const styles = StyleSheet.create({
   rankSectionTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: Theme.textPrimary,
   },
   addRankButton: {
     borderWidth: 1,
@@ -451,16 +468,12 @@ const styles = StyleSheet.create({
     width: 18,
     fontSize: 12,
     fontWeight: '700',
-    color: Theme.textSecondary,
     textAlign: 'center',
   },
   rankTierInput: {
     flex: 1,
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.searchFieldBorder,
     borderWidth: 1,
     borderRadius: Radius.md,
-    color: Theme.textPrimary,
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontSize: 13,
@@ -477,7 +490,6 @@ const styles = StyleSheet.create({
   memberRankTitle: {
     fontSize: 12,
     fontWeight: '700',
-    color: Theme.textPrimary,
     marginTop: 4,
   },
   memberRankList: {
@@ -486,7 +498,6 @@ const styles = StyleSheet.create({
   memberRankRow: {
     gap: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Theme.border,
     paddingTop: 10,
   },
   memberChipWrap: {
@@ -499,11 +510,9 @@ const styles = StyleSheet.create({
   },
   rankPill: {
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
     borderRadius: Radius.sm,
     paddingVertical: 5,
     paddingHorizontal: 10,
-    backgroundColor: Theme.bgSurface,
   },
   rankPillSelected: {
     borderColor: Theme.accent,
@@ -512,7 +521,6 @@ const styles = StyleSheet.create({
   rankPillText: {
     fontSize: 12,
     fontWeight: '700',
-    color: Theme.textSecondary,
   },
   rankPillTextSelected: {
     color: Theme.accent,
@@ -536,12 +544,10 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Theme.border,
   },
   resultTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: Theme.textPrimary,
     textAlign: 'center',
   },
   reshuffleButton: {

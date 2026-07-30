@@ -15,7 +15,7 @@ import {
   SettlementTransferRow,
 } from '@/components/settlement';
 import { MoneyLoanRecentCounterpartyChips } from '@/components/money-loan/MoneyLoanRecentCounterpartyChips';
-import { moneyLoanFormStyles as formStyles } from '@/components/money-loan/moneyLoanFormStyles';
+import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { useSettlementMock } from '@/contexts/SettlementMockContext';
 import {
   getAllFriends,
@@ -45,6 +45,12 @@ import {
   partitionTransferSections,
 } from '@/utils/settlementListPartition';
 import { withResolvedSettlementRoomNames } from '@/utils/settlementMockHelpers';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 
 type SettlementTab = 'groups' | 'balances' | 'legacy';
 type BalanceViewMode = 'room' | 'person';
@@ -89,6 +95,8 @@ function mockRoomToEngine(room: MockRoom) {
 
 export default function SettlementScreen() {
   const router = useRouter();
+  const formStyles = useMoneyLoanFormStyles();
+  const content = useContentColors();
   const { rooms, invites, createRoom, acceptInvite, declineInvite, isTransferCompleted, toggleTransferCompleted } =
     useSettlementMock();
   const [activeTab, setActiveTab] = useState<SettlementTab>('groups');
@@ -460,8 +468,10 @@ export default function SettlementScreen() {
                     <>
                       <Text style={formStyles.sectionTitleOnBase}>未清算</Text>
                       {transferPartitions.active.map(({ room, displayTransfers }) => (
-                        <View key={room.id} style={styles.transferCard}>
-                          <Text style={styles.transferRoomTitle}>{room.title}</Text>
+                        <View key={room.id} style={[styles.transferCard, contentSurfaceStyle(content)]}>
+                          <Text style={[styles.transferRoomTitle, contentTextStyle(content)]}>
+                            {room.title}
+                          </Text>
                           {displayTransfers.map((transfer) => (
                             <SettlementTransferRow
                               key={transfer.key}
@@ -480,8 +490,17 @@ export default function SettlementScreen() {
                     <>
                       <SettlementSettledDivider />
                       {transferPartitions.settled.map(({ room, displayTransfers }) => (
-                        <View key={room.id} style={[styles.transferCard, styles.transferCardSettled]}>
-                          <Text style={styles.transferRoomTitle}>{room.title}</Text>
+                        <View
+                          key={room.id}
+                          style={[
+                            styles.transferCard,
+                            contentSurfaceStyle(content),
+                            styles.transferCardSettled,
+                          ]}
+                        >
+                          <Text style={[styles.transferRoomTitle, contentTextStyle(content)]}>
+                            {room.title}
+                          </Text>
                           {displayTransfers.map((transfer) => (
                             <SettlementTransferRow
                               key={transfer.key}
@@ -537,7 +556,7 @@ export default function SettlementScreen() {
         {activeTab === 'legacy' ? (
           <View style={formStyles.formCard}>
             <Text style={formStyles.sectionTitleOnCard}>従来のお金貸し借り</Text>
-            <Text style={styles.legacyBody}>
+            <Text style={[styles.legacyBody, contentMutedTextStyle(content)]}>
               個別の貸し借り登録・返済チェックは、引き続き既存ツールで利用できます。新清算 UI
               が問題なければ、将来ここに統合して旧ツールを廃止する予定です。
             </Text>
@@ -596,9 +615,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   transferCard: {
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 4,
@@ -609,12 +626,10 @@ const styles = StyleSheet.create({
   transferRoomTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: Theme.textPrimary,
     marginBottom: 4,
   },
   legacyBody: {
     fontSize: 13,
-    color: Theme.textSecondary,
     lineHeight: 20,
   },
 });

@@ -7,7 +7,7 @@ import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { screenTopBarIconButtonStyle } from '@/components/screen/ScreenTopBar';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { SettlementTransferRow } from '@/components/settlement';
-import { moneyLoanFormStyles as formStyles } from '@/components/money-loan/moneyLoanFormStyles';
+import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { useSettlementMock } from '@/contexts/SettlementMockContext';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { getAllFriends, getMyself, initializeDatabase } from '@/db';
@@ -25,6 +25,14 @@ import {
 } from '@/utils/settlementMockHelpers';
 import { buildSettlementTransferDisplays } from '@/utils/settlementTransferHelpers';
 import { sortMembersBySelectedId, sortMembersBySelectedIds } from '@/utils/selectionSortHelpers';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 
 function mockRoomToEngine(
   room: NonNullable<ReturnType<ReturnType<typeof useSettlementMock>['getRoom']>>
@@ -73,6 +81,8 @@ export default function SettlementRoomDetailScreen() {
   const [titleEditorVisible, setTitleEditorVisible] = useState(false);
   const appTheme = useAppThemeOptional();
   const topBarText = appTheme?.colors.topBarText ?? Theme.topBarText;
+  const formStyles = useMoneyLoanFormStyles();
+  const content = useContentColors();
 
   const loadFriends = useCallback(() => {
     initializeDatabase();
@@ -333,10 +343,20 @@ export default function SettlementRoomDetailScreen() {
             return (
               <Pressable
                 key={member.id}
-                style={[styles.chip, selected && styles.chipSelected]}
+                style={[
+                  styles.chip,
+                  contentTagStyle(content),
+                  selected && styles.chipSelected,
+                ]}
                 onPress={() => setPayerMemberId(member.id)}
               >
-                <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
+                <Text
+                  style={[
+                    styles.chipText,
+                    contentTextStyle(content),
+                    selected && styles.chipTextSelected,
+                  ]}
+                >
                   {member.displayName}
                 </Text>
               </Pressable>
@@ -353,15 +373,25 @@ export default function SettlementRoomDetailScreen() {
                 style={[styles.splitMemberRow, selected && styles.splitMemberRowSelected]}
                 onPress={() => toggleSplitMember(member.id)}
               >
-                <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+                <View
+                  style={[
+                    styles.checkbox,
+                    { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
+                    selected && styles.checkboxSelected,
+                  ]}
+                >
                   {selected ? <Text style={styles.checkmark}>✓</Text> : null}
                 </View>
-                <Text style={styles.splitMemberName}>{member.displayName}</Text>
+                <Text style={[styles.splitMemberName, contentTextStyle(content)]}>
+                  {member.displayName}
+                </Text>
               </Pressable>
             );
           })}
         </View>
-        {splitPreview ? <Text style={styles.splitPreview}>{splitPreview}</Text> : null}
+        {splitPreview ? (
+          <Text style={[styles.splitPreview, contentMutedTextStyle(content)]}>{splitPreview}</Text>
+        ) : null}
         {formError ? <Text style={formStyles.formError}>{formError}</Text> : null}
         <Pressable style={formStyles.primaryButton} onPress={handleAddExpense}>
           <Text style={formStyles.primaryButtonText}>支出を登録</Text>
@@ -377,13 +407,15 @@ export default function SettlementRoomDetailScreen() {
             .map((id) => payerNameByMemberId.get(id) ?? '?')
             .join('、');
           return (
-            <View key={expense.id} style={styles.expenseCard}>
-              <Text style={styles.expenseTitle}>{expense.title}</Text>
-              <Text style={styles.expenseMeta}>
+            <View key={expense.id} style={[styles.expenseCard, contentSurfaceStyle(content)]}>
+              <Text style={[styles.expenseTitle, contentTextStyle(content)]}>{expense.title}</Text>
+              <Text style={[styles.expenseMeta, contentMutedTextStyle(content)]}>
                 立替: {payerNameByMemberId.get(expense.payerMemberId) ?? '不明'} ·{' '}
                 {formatYen(expense.amount)}
               </Text>
-              <Text style={styles.expenseSplit}>割り勘: {splitNames || '—'}</Text>
+              <Text style={[styles.expenseSplit, contentMutedTextStyle(content)]}>
+                割り勘: {splitNames || '—'}
+              </Text>
             </View>
           );
         })
@@ -411,10 +443,10 @@ export default function SettlementRoomDetailScreen() {
         onRequestClose={closeTitleEditor}
       >
         <View style={styles.titleModalOverlay}>
-          <View style={styles.titleModalCard}>
-            <Text style={styles.titleModalHeading}>グループ名を編集</Text>
+          <View style={[styles.titleModalCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.titleModalHeading, contentTextStyle(content)]}>グループ名を編集</Text>
             <TextInput
-              style={styles.titleModalInput}
+              style={[styles.titleModalInput, contentInputStyle(content)]}
               value={titleDraft}
               onChangeText={(value) => {
                 setTitleDraft(value);
@@ -430,8 +462,11 @@ export default function SettlementRoomDetailScreen() {
             />
             {titleError ? <Text style={styles.titleModalError}>{titleError}</Text> : null}
             <View style={styles.titleModalActions}>
-              <Pressable style={styles.titleModalCancel} onPress={closeTitleEditor}>
-                <Text style={styles.titleModalCancelText}>キャンセル</Text>
+              <Pressable
+                style={[styles.titleModalCancel, contentSurfaceStyle(content)]}
+                onPress={closeTitleEditor}
+              >
+                <Text style={[styles.titleModalCancelText, contentTextStyle(content)]}>キャンセル</Text>
               </Pressable>
               <Pressable style={styles.titleModalSave} onPress={handleSaveTitle}>
                 <Text style={styles.titleModalSaveText}>保存</Text>
@@ -461,25 +496,19 @@ const styles = StyleSheet.create({
   },
   titleModalCard: {
     alignSelf: 'stretch',
-    backgroundColor: Theme.bgSurface,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Theme.border,
     padding: Spacing.md,
     gap: 10,
   },
   titleModalHeading: {
     fontSize: 16,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   titleModalInput: {
     width: '100%',
-    backgroundColor: Theme.card,
-    borderColor: Theme.searchFieldBorder,
     borderWidth: 1,
     borderRadius: Radius.md,
-    color: Theme.textPrimary,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 8,
     fontSize: 14,
@@ -500,9 +529,7 @@ const styles = StyleSheet.create({
   titleModalCancel: {
     flexShrink: 0,
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.bgSurface,
     paddingHorizontal: 12,
     paddingVertical: 8,
     minHeight: 36,
@@ -510,7 +537,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   titleModalCancelText: {
-    color: Theme.textPrimary,
     fontWeight: '700',
     fontSize: 14,
   },
@@ -538,11 +564,9 @@ const styles = StyleSheet.create({
   },
   chip: {
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
     borderRadius: Radius.full,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: Theme.card,
   },
   chipSelected: {
     borderColor: Theme.accent,
@@ -551,7 +575,6 @@ const styles = StyleSheet.create({
   chipText: {
     fontSize: 12,
     fontWeight: '600',
-    color: Theme.textPrimary,
   },
   chipTextSelected: {
     color: Theme.accent,
@@ -574,11 +597,9 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderWidth: 2,
-    borderColor: Theme.searchFieldBorder,
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Theme.card,
   },
   checkboxSelected: {
     borderColor: Theme.accent,
@@ -592,11 +613,9 @@ const styles = StyleSheet.create({
   splitMemberName: {
     fontSize: 14,
     fontWeight: '600',
-    color: Theme.textPrimary,
   },
   splitPreview: {
     fontSize: 11,
-    color: Theme.textSecondary,
     lineHeight: 16,
   },
   emptyTextOnBase: {
@@ -605,9 +624,7 @@ const styles = StyleSheet.create({
     opacity: 0.85,
   },
   expenseCard: {
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 4,
@@ -615,14 +632,11 @@ const styles = StyleSheet.create({
   expenseTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   expenseMeta: {
     fontSize: 12,
-    color: Theme.textSecondary,
   },
   expenseSplit: {
     fontSize: 11,
-    color: Theme.textMuted,
   },
 });

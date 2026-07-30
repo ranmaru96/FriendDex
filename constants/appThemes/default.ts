@@ -1,4 +1,5 @@
 import { HomeCardElevation, Theme } from '@/constants/theme';
+import { lightContentColors } from './contentColors';
 import type { AppThemeBundle } from './types';
 
 /** 現行の見た目（グレー画面ベース） */
@@ -6,6 +7,7 @@ export const defaultAppTheme: AppThemeBundle = {
   variant: 'default',
   label: 'デフォルト',
   colors: {
+    ...lightContentColors,
     screenBackground: Theme.screenBase,
     topBarText: Theme.topBarText,
     topBarBorder: Theme.topBarBorder,

@@ -11,6 +11,7 @@ import {
 import { Radius, Theme } from '@/constants/theme';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { useContentColors } from '@/utils/useContentColors';
 import type { Event } from '@/types';
 import {
   buildScheduleGridChipsForDate,
@@ -24,9 +25,7 @@ import {
 } from '@/utils/scheduleGridCalendar';
 
 const GRID_BORDER = Theme.inputBorder;
-const IN_MONTH_BG = Theme.card;
-const OUT_MONTH_BG = '#f1f5f9';
-/** 当日セルの薄い黄オレンジ背景 */
+/** 当日セルの薄い黄オレンジ背景（テーマ非依存・視認性優先） */
 const TODAY_BG = '#FFF8E6';
 /** 当日日付バッジ（画像参考のオレンジ） */
 const TODAY_BADGE_BG = '#F5A623';
@@ -134,9 +133,10 @@ function DayCell({
     [cellWidth, day.dateKey, events, week]
   );
 
+  const content = useContentColors();
   const dateColor = useMemo(() => {
     if (!day.inCurrentMonth) {
-      return Theme.textSecondary;
+      return content.contentTextSecondary;
     }
     if (day.dayOfWeek === 0) {
       return SUNDAY_COLOR;
@@ -144,8 +144,8 @@ function DayCell({
     if (day.dayOfWeek === 6) {
       return SATURDAY_COLOR;
     }
-    return Theme.textPrimary;
-  }, [day.dayOfWeek, day.inCurrentMonth]);
+    return content.contentText;
+  }, [content.contentText, content.contentTextSecondary, day.dayOfWeek, day.inCurrentMonth]);
 
   const emptySlots = Math.max(0, SCHEDULE_GRID_EVENT_SLOTS - chips.length);
   const hasSpanningLabel = chips.some((chip) => chip.label != null && chip.spanDaysInWeek > 1);
@@ -159,8 +159,8 @@ function DayCell({
           backgroundColor: isToday
             ? TODAY_BG
             : day.inCurrentMonth
-              ? IN_MONTH_BG
-              : OUT_MONTH_BG,
+              ? content.contentCalendarInMonth
+              : content.contentCalendarOutMonth,
         },
         hasSpanningLabel ? styles.dayCellSpanningLabel : null,
       ]}
@@ -214,6 +214,7 @@ export function ScheduleGridMonthCalendar({
   const weekdayLabels = getScheduleGridWeekdayLabels();
   const [cellWidth, setCellWidth] = useState(() => Dimensions.get('window').width / 7);
   const appTheme = useAppThemeOptional();
+  const content = useContentColors();
   const outerBorderColor = appTheme?.colors.calendarOuterBorder ?? GRID_BORDER;
   const bottomSeparatorColor = appTheme?.colors.tabBarBorder ?? outerBorderColor;
   const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
@@ -236,6 +237,7 @@ export function ScheduleGridMonthCalendar({
         styles.root,
         {
           borderColor: outerBorderColor,
+          backgroundColor: content.contentCalendarInMonth,
           /** モノクロ: 上はヘッダー下線と接するので不要。下は薄いセパレーターだけ残す */
           borderTopWidth: isMonochrome ? 0 : StyleSheet.hairlineWidth,
           borderBottomWidth: isMonochrome ? 1.5 : 0,
@@ -244,24 +246,25 @@ export function ScheduleGridMonthCalendar({
         edgeToEdge ? styles.rootEdgeToEdge : null,
       ]}
     >
-      <View style={styles.header}>
+      <View style={[styles.header, { backgroundColor: content.contentCalendarInMonth }]}>
         <Pressable style={styles.navButton} onPress={() => shiftMonth(-1)} hitSlop={8}>
-          <Text style={styles.navButtonText}>‹</Text>
+          <Text style={[styles.navButtonText, { color: content.contentText }]}>‹</Text>
         </Pressable>
-        <Text style={styles.headerTitle}>
+        <Text style={[styles.headerTitle, { color: content.contentText }]}>
           {year}年{month}月
         </Text>
         <Pressable style={styles.navButton} onPress={() => shiftMonth(1)} hitSlop={8}>
-          <Text style={styles.navButtonText}>›</Text>
+          <Text style={[styles.navButtonText, { color: content.contentText }]}>›</Text>
         </Pressable>
       </View>
 
-      <View style={styles.weekdayRow}>
+      <View style={[styles.weekdayRow, { backgroundColor: content.contentCalendarInMonth }]}>
         {weekdayLabels.map((label, index) => (
           <View key={label} style={[styles.weekdayCell, index < 6 ? styles.dayCellBorderRight : null]}>
             <Text
               style={[
                 styles.weekdayText,
+                { color: content.contentTextSecondary },
                 index === 0 ? styles.sundayWeekday : null,
                 index === 6 ? styles.saturdayWeekday : null,
               ]}
@@ -305,7 +308,6 @@ const styles = StyleSheet.create({
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.sm,
     overflow: 'hidden',
-    backgroundColor: IN_MONTH_BG,
   },
   rootEdgeToEdge: {
     borderRadius: 0,
@@ -320,12 +322,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: GRID_BORDER,
-    backgroundColor: IN_MONTH_BG,
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   navButton: {
     width: 32,
@@ -336,14 +336,12 @@ const styles = StyleSheet.create({
   navButtonText: {
     fontSize: 22,
     fontWeight: '600',
-    color: Theme.textPrimary,
     lineHeight: 24,
   },
   weekdayRow: {
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: GRID_BORDER,
-    backgroundColor: '#f8fafc',
   },
   weekdayCell: {
     flex: 1,

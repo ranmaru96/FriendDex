@@ -15,6 +15,13 @@ import { SearchArea, SearchAreaDivider, SearchAreaRow, SearchAreaSelectTrigger, 
 import { ListItemGroup } from '@/components/ui/ListItemGroup';
 import { ListScreenTemplate } from '@/components/screen-templates';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
 import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModal';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
@@ -92,6 +99,7 @@ function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
 
 export default function EpisodeScreen() {
   const kit = useUiKit();
+  const content = useContentColors();
   const listItemEmbedded = kit.listItemStyle === 'panelSections';
   const isEdgeToEdge = kit.episodeListPaddingHorizontal === 0;
   const router = useRouter();
@@ -572,9 +580,9 @@ export default function EpisodeScreen() {
           </SearchArea>
           <SearchAreaDivider />
 
-          {!myselfId ? <Text style={styles.emptyText}>本人が設定されていません</Text> : null}
+          {!myselfId ? <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>本人が設定されていません</Text> : null}
           {filteredEpisodeRows.length === 0 ? (
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>
               {episodeRows.length === 0
                 ? '登録されたエピソードはありません。'
                 : '条件に一致するエピソードはありません。'}
@@ -678,36 +686,46 @@ export default function EpisodeScreen() {
         onRequestClose={() => setTagFilterModalVisible(false)}
       >
         <View style={styles.selectorFilterModalBackdrop}>
-          <View style={styles.selectorFilterModalCard}>
-            <Text style={styles.selectorFilterModalTitle}>タグで絞り込み</Text>
+          <View style={[styles.selectorFilterModalCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.selectorFilterModalTitle, contentTextStyle(content)]}>タグで絞り込み</Text>
             <ScrollView style={styles.selectorFilterModalOptions}>
               <Pressable
-                style={[styles.selectorFilterModalOption, !filterTag ? styles.selectorFilterModalOptionSelected : null]}
+                style={[
+                  styles.selectorFilterModalOption,
+                  !filterTag
+                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                    : null,
+                ]}
                 onPress={() => {
                   setFilterTag('');
                   setTagFilterModalVisible(false);
                 }}
               >
-                <Text style={styles.selectorFilterModalOptionText}>すべて</Text>
+                <Text style={[styles.selectorFilterModalOptionText, contentTextStyle(content)]}>すべて</Text>
               </Pressable>
               {episodeTagOptions.map((option) => {
                 const selected = option.value === filterTag;
                 return (
                   <Pressable
                     key={option.value}
-                    style={[styles.selectorFilterModalOption, selected ? styles.selectorFilterModalOptionSelected : null]}
+                    style={[
+                      styles.selectorFilterModalOption,
+                      selected
+                        ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                        : null,
+                    ]}
                     onPress={() => {
                       setFilterTag(option.value);
                       setTagFilterModalVisible(false);
                     }}
                   >
-                    <Text style={styles.selectorFilterModalOptionText}>{option.label}</Text>
+                    <Text style={[styles.selectorFilterModalOptionText, contentTextStyle(content)]}>{option.label}</Text>
                   </Pressable>
                 );
               })}
             </ScrollView>
-            <Pressable style={styles.eventLinkSecondaryButton} onPress={() => setTagFilterModalVisible(false)}>
-              <Text style={styles.eventLinkSecondaryButtonText}>閉じる</Text>
+            <Pressable style={[styles.eventLinkSecondaryButton, contentInputStyle(content)]} onPress={() => setTagFilterModalVisible(false)}>
+              <Text style={[styles.eventLinkSecondaryButtonText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </View>
         </View>

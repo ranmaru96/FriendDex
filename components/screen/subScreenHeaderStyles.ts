@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import { Spacing, Theme } from '@/constants/theme';
+import { lightContentColors, type AppThemeColors } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
-import type { AppThemeColors } from '@/constants/appThemes';
 
 /** hideNav サブ画面の共通トップバー（背景＝screenBackground、テーマ文字色） */
 export function createSubScreenHeaderStyles(colors: AppThemeColors) {
@@ -52,6 +52,7 @@ export function createSubScreenHeaderStyles(colors: AppThemeColors) {
 }
 
 const fallbackColors: AppThemeColors = {
+  ...lightContentColors,
   screenBackground: Theme.screenBase,
   topBarText: Theme.topBarText,
   topBarBorder: Theme.topBarBorder,

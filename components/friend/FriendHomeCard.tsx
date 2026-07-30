@@ -3,6 +3,7 @@ import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyl
 import { HomeCardElevation, Radius, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useContentColors } from '@/utils/useContentColors';
 import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
 import type { Friend } from '../../types';
 
@@ -30,6 +31,7 @@ export function FriendHomeCard({
 }: FriendHomeCardProps) {
   const kit = useUiKit();
   const appTheme = useAppThemeOptional();
+  const content = useContentColors();
   const [imageError, setImageError] = useState(false);
   const hasPhoto = Boolean(friend.photoUri?.trim()) && !imageError;
   const completeness = computeProfileCompleteness(friend, hasPhoto);
@@ -39,6 +41,7 @@ export function FriendHomeCard({
   const cardOuterStyle = [
     styles.cardOuter,
     {
+      backgroundColor: content.contentCard,
       borderColor: cardBorder.borderColor,
       borderWidth: Theme.homeCardBorderWidth,
     },
@@ -52,7 +55,7 @@ export function FriendHomeCard({
         </View>
       ) : null}
       <View style={[styles.photoOuterFrame, { borderColor: cardBorder.borderColor }]}>
-        <View style={styles.photoInnerFrame}>
+        <View style={[styles.photoInnerFrame, { borderColor: content.contentPhotoInnerBorder }]}>
           {friend.photoUri && !imageError ? (
             <Image
               source={{ uri: friend.photoUri }}
@@ -61,8 +64,16 @@ export function FriendHomeCard({
               onError={() => setImageError(true)}
             />
           ) : (
-            <View style={[styles.cardPhoto, styles.cardPhotoPlaceholder]}>
-              <Text style={styles.cardPhotoPlaceholderText}>No Image</Text>
+            <View
+              style={[
+                styles.cardPhoto,
+                styles.cardPhotoPlaceholder,
+                { backgroundColor: content.contentPhotoPlaceholder },
+              ]}
+            >
+              <Text style={[styles.cardPhotoPlaceholderText, { color: content.contentPhotoPlaceholderText }]}>
+                No Image
+              </Text>
             </View>
           )}
         </View>
@@ -73,7 +84,7 @@ export function FriendHomeCard({
           { paddingVertical: kit.friendHomeCardNamePaddingVertical },
         ]}
       >
-        <Text style={styles.cardMainName}>{friend.name}</Text>
+        <Text style={[styles.cardMainName, { color: content.contentCardName }]}>{friend.name}</Text>
       </View>
     </>
   );
@@ -103,7 +114,6 @@ const styles = StyleSheet.create({
   },
   cardOuter: {
     borderRadius: Radius.md,
-    backgroundColor: Theme.card,
     overflow: 'hidden',
     paddingBottom: 4,
   },
@@ -117,7 +127,6 @@ const styles = StyleSheet.create({
   },
   photoInnerFrame: {
     borderWidth: 2,
-    borderColor: Theme.homeCardPhotoInnerBorder,
     borderRadius: Radius.md - 2,
     overflow: 'hidden',
   },
@@ -148,19 +157,16 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
   },
   cardPhotoPlaceholder: {
-    backgroundColor: Theme.homeCardPhotoPlaceholder,
     alignItems: 'center',
     justifyContent: 'center',
   },
   cardPhotoPlaceholderText: {
     fontSize: 12,
-    color: Theme.homeCardPhotoPlaceholderText,
   },
   cardMainName: {
     width: '100%',
     fontSize: 13,
     fontWeight: '800',
-    color: Theme.homeCardName,
     textAlign: 'center',
     letterSpacing: 0.5,
   },

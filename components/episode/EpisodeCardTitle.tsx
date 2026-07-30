@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { useContentColors } from '@/utils/useContentColors';
 
 type EpisodeCardTitleProps = {
   title: string;
@@ -16,6 +17,7 @@ export function EpisodeCardTitle({
   multiline = false,
   fillRow = true,
 }: EpisodeCardTitleProps) {
+  const content = useContentColors();
   const displayTitle = title.trim() || '-';
 
   return (
@@ -25,8 +27,11 @@ export function EpisodeCardTitle({
         multiline ? styles.episodeCardTitleWrapMultiline : null,
       ]}
     >
-      <View style={styles.episodeCardTitleUnderline}>
-        <Text style={styles.episodeCardTitle} numberOfLines={multiline ? undefined : 1}>
+      <View style={[styles.episodeCardTitleUnderline, { borderBottomColor: content.contentBorder }]}>
+        <Text
+          style={[styles.episodeCardTitle, { color: content.contentText }]}
+          numberOfLines={multiline ? undefined : 1}
+        >
           {displayTitle}
         </Text>
       </View>
@@ -55,11 +60,9 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     paddingBottom: 4,
     borderBottomWidth: 1,
-    borderBottomColor: '#cbd5e1',
   },
   episodeCardTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#1e293b',
   },
 });

@@ -13,6 +13,13 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { PHOTO_LIMITS } from '@/constants';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 import { PhotoCropModal, EPISODE_PHOTO_ASPECT } from '@/components/photo/PhotoCropModal';
 import {
   deleteEpisode,
@@ -38,6 +45,7 @@ export function PendingEpisodeReviewModal({
   onClose,
   onChanged,
 }: PendingEpisodeReviewModalProps) {
+  const content = useContentColors();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
@@ -190,34 +198,34 @@ export function PendingEpisodeReviewModal({
     <>
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.heading}>予定からエピソードが作成されました</Text>
-          {progressLabel ? <Text style={styles.progress}>{progressLabel}</Text> : null}
-          <Text style={styles.subheading}>{participantLabel}</Text>
-          <Text style={styles.meta}>{currentItem.episode.date}</Text>
+        <View style={[styles.card, contentSurfaceStyle(content)]}>
+          <Text style={[styles.heading, contentTextStyle(content)]}>予定からエピソードが作成されました</Text>
+          {progressLabel ? <Text style={[styles.progress, contentMutedTextStyle(content)]}>{progressLabel}</Text> : null}
+          <Text style={[styles.subheading, contentTextStyle(content)]}>{participantLabel}</Text>
+          <Text style={[styles.meta, contentMutedTextStyle(content)]}>{currentItem.episode.date}</Text>
 
           <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-            <Text style={styles.label}>タイトル</Text>
+            <Text style={[styles.label, contentTextStyle(content)]}>タイトル</Text>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, contentInputStyle(content)]}
               value={title}
               onChangeText={setTitle}
               placeholder="タイトル"
-              placeholderTextColor={Theme.inputPlaceholder}
+              placeholderTextColor={content.contentTextSecondary}
             />
 
-            <Text style={styles.label}>説明文</Text>
+            <Text style={[styles.label, contentTextStyle(content)]}>説明文</Text>
             <TextInput
-              style={[styles.textInput, styles.descriptionInput]}
+              style={[styles.textInput, styles.descriptionInput, contentInputStyle(content)]}
               value={description}
               onChangeText={setDescription}
               placeholder="説明文"
-              placeholderTextColor={Theme.inputPlaceholder}
+              placeholderTextColor={content.contentTextSecondary}
               multiline
               textAlignVertical="top"
             />
 
-            <Text style={styles.label}>写真</Text>
+            <Text style={[styles.label, contentTextStyle(content)]}>写真</Text>
             {(photos.length > 0 || newPhotoUris.length > 0) && (
               <ScrollView
                 horizontal
@@ -239,17 +247,17 @@ export function PendingEpisodeReviewModal({
               </ScrollView>
             )}
             <Pressable
-              style={[styles.photoAddButton, isPhotoLimitReached && styles.photoAddButtonDisabled]}
+              style={[styles.photoAddButton, contentInputStyle(content), isPhotoLimitReached && styles.photoAddButtonDisabled]}
               onPress={() => void pickPhoto()}
               disabled={isPhotoLimitReached}
             >
-              <Text style={styles.photoAddButtonText}>写真を追加</Text>
+              <Text style={[styles.photoAddButtonText, contentTextStyle(content)]}>写真を追加</Text>
             </Pressable>
           </ScrollView>
 
           <View style={styles.actions}>
-            <Pressable style={styles.secondaryButton} onPress={onClose}>
-              <Text style={styles.secondaryButtonText}>後で</Text>
+            <Pressable style={[styles.secondaryButton, contentInputStyle(content)]} onPress={onClose}>
+              <Text style={[styles.secondaryButtonText, contentTextStyle(content)]}>後で</Text>
             </Pressable>
             <Pressable style={styles.dangerButton} onPress={handleDelete}>
               <Text style={styles.dangerButtonText}>削除</Text>

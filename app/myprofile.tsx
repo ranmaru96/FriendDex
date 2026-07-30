@@ -14,6 +14,13 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
 import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 import { getAllProfiles, getMyself, initializeDatabase, updateProfile } from '../db';
 import { MBTIType, Profile } from '../types';
 
@@ -91,6 +98,7 @@ const parseOptionalNumber = (value: string): number | null => {
 export default function MyProfileScreen() {
   const router = useRouter();
   const { colors: appTheme } = useAppTheme();
+  const content = useContentColors();
   const headerStyles = useSubScreenHeaderStyles();
   const [profileId, setProfileId] = useState('');
   const [form, setForm] = useState<MyProfileForm>(emptyForm);
@@ -192,7 +200,7 @@ export default function MyProfileScreen() {
           <View style={headerStyles.side} />
         </View>
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyMessage}>本人設定が完了していません</Text>
+          <Text style={[styles.emptyMessage, contentMutedTextStyle(content)]}>本人設定が完了していません</Text>
           <Pressable style={styles.settingsButton} onPress={() => router.replace('/appsettings')}>
             <Text style={styles.settingsButtonText}>設定画面へ戻る</Text>
           </Pressable>
@@ -216,27 +224,27 @@ export default function MyProfileScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.sectionHint}>各項目の右側スイッチで公開する項目を選べます</Text>
+        <Text style={[styles.sectionHint, contentMutedTextStyle(content)]}>各項目の右側スイッチで公開する項目を選べます</Text>
 
-        <View style={styles.formGroup}>
+        <View style={[styles.formGroup, contentSurfaceStyle(content)]}>
           {FIELD_CONFIGS.map((field, index) => (
             <View key={field.key}>
-              {index > 0 ? <View style={styles.separator} /> : null}
+              {index > 0 ? <View style={[styles.separator, { backgroundColor: content.contentDivider }]} /> : null}
               <View style={styles.fieldRow}>
-                <Text style={styles.fieldLabel}>{field.label}</Text>
+                <Text style={[styles.fieldLabel, contentTextStyle(content)]}>{field.label}</Text>
                 <TextInput
                   value={form[field.key]}
                   onChangeText={(text) => updateField(field.key, text)}
-                  style={styles.fieldInput}
+                  style={[styles.fieldInput, contentInputStyle(content)]}
                   keyboardType={field.keyboardType ?? 'default'}
-                  placeholderTextColor={Theme.textSecondary}
+                  placeholderTextColor={content.contentTextSecondary}
                   autoCapitalize="none"
                 />
                 <Switch
                   value={publicFieldSet.has(field.key)}
                   onValueChange={(enabled) => togglePublicField(field.key, enabled)}
-                  trackColor={{ false: Theme.border, true: Theme.accentLight }}
-                  thumbColor={publicFieldSet.has(field.key) ? Theme.accent : Theme.bgSurface}
+                  trackColor={{ false: content.contentBorder, true: Theme.accentLight }}
+                  thumbColor={publicFieldSet.has(field.key) ? Theme.accent : content.contentCard}
                 />
               </View>
             </View>
@@ -247,8 +255,8 @@ export default function MyProfileScreen() {
           <Text style={styles.primaryButtonText}>保存する</Text>
         </Pressable>
 
-        <Pressable style={styles.secondaryButton} onPress={handleShowQr}>
-          <Text style={styles.secondaryButtonText}>QRコードを表示</Text>
+        <Pressable style={[styles.secondaryButton, contentSurfaceStyle(content)]} onPress={handleShowQr}>
+          <Text style={[styles.secondaryButtonText, contentTextStyle(content)]}>QRコードを表示</Text>
         </Pressable>
       </ScrollView>
     </SafeAreaView>

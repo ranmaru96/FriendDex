@@ -7,6 +7,13 @@ import {
   View,
 } from 'react-native';
 import { Theme, Radius, Typography } from '@/constants/theme';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 import { formatEpisodeEventMatchLabel, type EpisodeEventMatch } from '@/utils/eventEpisodeSync';
 
 type EpisodeEventLinkModalProps = {
@@ -26,34 +33,36 @@ export function EpisodeEventLinkModal({
   onCreateNew,
   onCancel,
 }: EpisodeEventLinkModalProps) {
+  const content = useContentColors();
+
   return (
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onCancel}>
       <View style={styles.backdrop}>
-        <View style={styles.card}>
-          <Text style={styles.title}>紐づける予定を選択</Text>
-          <Text style={styles.description}>
+        <View style={[styles.card, contentSurfaceStyle(content)]}>
+          <Text style={[styles.title, contentTextStyle(content)]}>紐づける予定を選択</Text>
+          <Text style={[styles.description, contentMutedTextStyle(content)]}>
             同じ日付・参加者の予定が複数見つかりました。紐づける予定を選んでください。
           </Text>
           <ScrollView style={styles.options}>
             {candidates.map((candidate) => (
               <Pressable
                 key={candidate.event.id}
-                style={styles.option}
+                style={[styles.option, contentSurfaceStyle(content)]}
                 onPress={() => onSelect(candidate.event.id)}
               >
-                <Text style={styles.optionText}>
+                <Text style={[styles.optionText, contentTextStyle(content)]}>
                   {formatEpisodeEventMatchLabel(candidate.event, dateKey)}
                 </Text>
-                <Text style={styles.overlapText}>参加者 {candidate.overlapCount} 人一致</Text>
+                <Text style={[styles.overlapText, contentMutedTextStyle(content)]}>参加者 {candidate.overlapCount} 人一致</Text>
               </Pressable>
             ))}
           </ScrollView>
           <View style={styles.actions}>
-            <Pressable style={styles.secondaryButton} onPress={onCancel}>
-              <Text style={styles.secondaryButtonText}>やめる</Text>
+            <Pressable style={[styles.secondaryButton, contentInputStyle(content)]} onPress={onCancel}>
+              <Text style={[styles.secondaryButtonText, contentTextStyle(content)]}>やめる</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton} onPress={onCreateNew}>
-              <Text style={styles.secondaryButtonText}>新規作成</Text>
+            <Pressable style={[styles.secondaryButton, contentInputStyle(content)]} onPress={onCreateNew}>
+              <Text style={[styles.secondaryButtonText, contentTextStyle(content)]}>新規作成</Text>
             </Pressable>
           </View>
         </View>

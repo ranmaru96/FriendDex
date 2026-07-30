@@ -20,6 +20,7 @@ import { formatEpisodeDateToYMD, parseEpisodeDateString } from '@/components/epi
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
+import { useContentColors } from '@/utils/useContentColors';
 import {
   createEvent,
   deleteEvent,
@@ -97,6 +98,7 @@ const addDaysToDateKey = (dateKey: string, days: number): string => {
 
 export default function EventScreen() {
   const router = useRouter();
+  const content = useContentColors();
   const fieldCorner = { borderRadius: 0 };
   const params = useLocalSearchParams<{ eventId?: string; date?: string }>();
   const eventId = parseRouteParam(params.eventId);
@@ -729,7 +731,12 @@ export default function EventScreen() {
                 return (
                   <Pressable
                     key={option.value}
-                    style={[styles.timingModalOption, selected ? styles.timingModalOptionSelected : null]}
+                    style={[
+                      styles.timingModalOption,
+                      selected
+                        ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                        : null,
+                    ]}
                     onPress={() => {
                       setNotifyTimingPreset(option.value);
                       setTimingModalVisible(false);
@@ -758,7 +765,12 @@ export default function EventScreen() {
             <Text style={styles.timingModalTitle}>エピソードタグ</Text>
             <ScrollView style={styles.timingModalOptions}>
               <Pressable
-                style={[styles.timingModalOption, !episodeTag ? styles.timingModalOptionSelected : null]}
+                style={[
+                  styles.timingModalOption,
+                  !episodeTag
+                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                    : null,
+                ]}
                 onPress={() => {
                   setEpisodeTag('');
                   setTagModalVisible(false);
@@ -771,7 +783,12 @@ export default function EventScreen() {
                 return (
                   <Pressable
                     key={option.value}
-                    style={[styles.timingModalOption, selected ? styles.timingModalOptionSelected : null]}
+                    style={[
+                      styles.timingModalOption,
+                      selected
+                        ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                        : null,
+                    ]}
                     onPress={() => {
                       setEpisodeTag(option.value);
                       setTagModalVisible(false);

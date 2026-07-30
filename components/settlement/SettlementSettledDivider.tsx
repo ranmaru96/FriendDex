@@ -1,20 +1,24 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import { Radius, Spacing, Typography } from '@/constants/theme';
+import { useContentColors } from '@/utils/useContentColors';
+import { contentMutedTextStyle, contentSurfaceStyle } from '@/utils/contentStyleHelpers';
 
 /**
  * 未清算リストと清算済みリストの境目。
  * 見出しではなく「ここから下が完了分」のしきい線として見せる。
  */
 export function SettlementSettledDivider() {
+  const content = useContentColors();
+
   return (
     <View style={styles.root} accessibilityRole="header" accessibilityLabel="ここから下は清算済み">
-      <View style={styles.rule} />
-      <View style={styles.badge}>
-        <Ionicons name="checkmark-circle" size={14} color={Theme.textSecondary} />
-        <Text style={styles.label}>清算済み</Text>
+      <View style={[styles.rule, { backgroundColor: content.contentDivider }]} />
+      <View style={[styles.badge, contentSurfaceStyle(content)]}>
+        <Ionicons name="checkmark-circle" size={14} color={content.contentTextSecondary} />
+        <Text style={[styles.label, contentMutedTextStyle(content)]}>清算済み</Text>
       </View>
-      <View style={styles.rule} />
+      <View style={[styles.rule, { backgroundColor: content.contentDivider }]} />
     </View>
   );
 }
@@ -31,7 +35,6 @@ const styles = StyleSheet.create({
   rule: {
     flex: 1,
     height: StyleSheet.hairlineWidth * 2,
-    backgroundColor: Theme.border,
     borderRadius: 1,
   },
   badge: {
@@ -41,14 +44,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: Radius.full,
-    backgroundColor: Theme.borderSoft,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Theme.border,
   },
   label: {
     fontSize: Typography.sm,
     fontWeight: '700',
     letterSpacing: 0.6,
-    color: Theme.textSecondary,
   },
 });

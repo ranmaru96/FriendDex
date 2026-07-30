@@ -1,5 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Radius, Spacing, Theme } from '@/constants/theme';
+import { useContentColors } from '@/utils/useContentColors';
 
 export type MetaTitleRowLayout = 'plain' | 'column' | 'badge' | 'stacked';
 
@@ -16,7 +17,10 @@ export function MetaTitleRow({
   layout,
   emptyTitle = '（無題）',
 }: MetaTitleRowProps) {
+  const content = useContentColors();
   const displayTitle = title || emptyTitle;
+  const titleColor = { color: content.contentText };
+  const dividerColor = { backgroundColor: content.contentTextSecondary };
 
   if (layout === 'stacked') {
     return (
@@ -24,7 +28,7 @@ export function MetaTitleRow({
         <View style={styles.metaBadge}>
           <Text style={styles.metaBadgeText}>{meta}</Text>
         </View>
-        <Text style={styles.stackedTitle}>{displayTitle}</Text>
+        <Text style={[styles.stackedTitle, titleColor]}>{displayTitle}</Text>
       </>
     );
   }
@@ -35,7 +39,7 @@ export function MetaTitleRow({
         <Text style={styles.metaPlain} numberOfLines={2}>
           {meta}
         </Text>
-        <Text style={styles.inlineTitle} numberOfLines={2}>
+        <Text style={[styles.inlineTitle, titleColor]} numberOfLines={2}>
           {displayTitle}
         </Text>
       </View>
@@ -48,8 +52,8 @@ export function MetaTitleRow({
         <Text style={styles.metaColumn} numberOfLines={3}>
           {meta}
         </Text>
-        <View style={styles.columnDivider} />
-        <Text style={styles.inlineTitle} numberOfLines={3}>
+        <View style={[styles.columnDivider, dividerColor]} />
+        <Text style={[styles.inlineTitle, titleColor]} numberOfLines={3}>
           {displayTitle}
         </Text>
       </View>
@@ -63,7 +67,7 @@ export function MetaTitleRow({
           {meta}
         </Text>
       </View>
-      <Text style={styles.inlineTitle} numberOfLines={1}>
+      <Text style={[styles.inlineTitle, titleColor]} numberOfLines={1}>
         {displayTitle}
       </Text>
     </View>
@@ -98,19 +102,16 @@ const styles = StyleSheet.create({
   columnDivider: {
     width: Math.max(1, StyleSheet.hairlineWidth * 2),
     alignSelf: 'stretch',
-    backgroundColor: Theme.textSecondary,
   },
   inlineTitle: {
     flex: 1,
     minWidth: 0,
     fontSize: 15,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   stackedTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   metaBadgeInRow: {
     flexShrink: 0,

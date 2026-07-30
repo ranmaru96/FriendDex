@@ -44,7 +44,7 @@ export const mainDetailDesign: DetailDesignBundle = {
     tabTrackBorder: '#b8b8c4',
     tabInactive: '#888888',
     tabActiveText: '#ffffff',
-    tagChipBg: 'transparent',
+    tagChipBg: '#F7F7F8',
     tagAffilBorder: '#7c5cbf',
     tagAffilText: '#5c3a9f',
     tagExpBorder: '#2a9d5a',

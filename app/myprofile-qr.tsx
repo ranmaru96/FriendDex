@@ -20,6 +20,14 @@ import ViewShot from 'react-native-view-shot';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
 import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import {
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTagStyle,
+  contentTagTextStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 import { getAllProfiles, ensureProfileUserId, getMyself, initializeDatabase } from '../db';
 import { Profile } from '../types';
 
@@ -112,12 +120,13 @@ type ActionButtonProps = {
 };
 
 function ActionButton({ icon, label, onPress }: ActionButtonProps) {
+  const content = useContentColors();
   return (
     <Pressable style={styles.actionButton} onPress={onPress}>
-      <View style={styles.actionIconWrap}>
-        <Ionicons name={icon} size={24} color="#0f172a" />
+      <View style={[styles.actionIconWrap, contentSurfaceStyle(content)]}>
+        <Ionicons name={icon} size={24} color={content.contentText} />
       </View>
-      <Text style={styles.actionLabel}>{label}</Text>
+      <Text style={[styles.actionLabel, contentTextStyle(content)]}>{label}</Text>
     </Pressable>
   );
 }
@@ -125,6 +134,7 @@ function ActionButton({ icon, label, onPress }: ActionButtonProps) {
 export default function MyProfileQrScreen() {
   const router = useRouter();
   const { colors: appTheme } = useAppTheme();
+  const content = useContentColors();
   const headerStyles = useSubScreenHeaderStyles();
   const cardShotRef = useRef<ViewShot>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -241,14 +251,14 @@ export default function MyProfileQrScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {!profile ? (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyMessage}>本人設定が完了していません</Text>
+            <Text style={[styles.emptyMessage, contentMutedTextStyle(content)]}>本人設定が完了していません</Text>
             <Pressable style={styles.primaryButton} onPress={() => router.replace('/appsettings')}>
               <Text style={styles.primaryButtonText}>設定画面へ戻る</Text>
             </Pressable>
           </View>
         ) : !hasPublicFields ? (
           <View style={styles.emptyContainer}>
-            <Text style={styles.emptyMessage}>
+            <Text style={[styles.emptyMessage, contentMutedTextStyle(content)]}>
               公開する項目がありません。{'\n'}マイプロフィール画面で設定してください。
             </Text>
             <Pressable style={styles.primaryButton} onPress={() => router.push('/myprofile')}>
@@ -258,7 +268,7 @@ export default function MyProfileQrScreen() {
         ) : (
           <>
             <ViewShot ref={cardShotRef} options={{ format: 'png', quality: 1 }}>
-              <View style={styles.designCard} collapsable={false}>
+              <View style={[styles.designCard, { backgroundColor: content.contentCard }]} collapsable={false}>
                 <QRCode
                   value={qrValue}
                   size={QR_SIZE}
@@ -273,7 +283,7 @@ export default function MyProfileQrScreen() {
                   logoAreaSize={ICON_SIZE + 12}
                   logo={<FriendDexIcon size={ICON_SIZE} color={QR_COLOR} />}
                 />
-                <Text style={styles.displayName}>{displayName}</Text>
+                <Text style={[styles.displayName, { color: content.contentText }]}>{displayName}</Text>
               </View>
             </ViewShot>
 
@@ -284,11 +294,11 @@ export default function MyProfileQrScreen() {
             </View>
 
             <View style={styles.chipSection}>
-              <Text style={styles.chipSectionTitle}>公開中の項目</Text>
+              <Text style={[styles.chipSectionTitle, contentMutedTextStyle(content)]}>公開中の項目</Text>
               <View style={styles.chipRow}>
                 {publicFields.map((key) => (
-                  <View key={key} style={styles.chip}>
-                    <Text style={styles.chipText}>{FIELD_LABELS[key] ?? key}</Text>
+                  <View key={key} style={[styles.chip, contentTagStyle(content)]}>
+                    <Text style={[styles.chipText, contentTagTextStyle(content)]}>{FIELD_LABELS[key] ?? key}</Text>
                   </View>
                 ))}
               </View>

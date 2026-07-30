@@ -1,5 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Theme, Radius, Spacing } from '@/constants/theme';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import type { MockSettlementInvite } from '@/types/settlementMock';
 
 type SettlementInviteCardProps = {
@@ -9,6 +15,8 @@ type SettlementInviteCardProps = {
 };
 
 export function SettlementInviteCard({ invite, onAccept, onDecline }: SettlementInviteCardProps) {
+  const content = useContentColors();
+
   return (
     <View style={styles.card}>
       <Text style={styles.title}>管理台帳への追加</Text>
@@ -17,8 +25,8 @@ export function SettlementInviteCard({ invite, onAccept, onDecline }: Settlement
         （グループの計算にはすでに含まれています）
       </Text>
       <View style={styles.actions}>
-        <Pressable style={styles.declineButton} onPress={onDecline}>
-          <Text style={styles.declineText}>辞退</Text>
+        <Pressable style={[styles.declineButton, contentSurfaceStyle(content)]} onPress={onDecline}>
+          <Text style={[styles.declineText, contentMutedTextStyle(content)]}>辞退</Text>
         </Pressable>
         <Pressable style={styles.acceptButton} onPress={onAccept}>
           <Text style={styles.acceptText}>参加</Text>
@@ -44,8 +52,8 @@ const styles = StyleSheet.create({
   },
   body: {
     fontSize: 14,
-    color: Theme.textPrimary,
     lineHeight: 20,
+    color: '#334155',
   },
   actions: {
     flexDirection: 'row',
@@ -57,13 +65,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Theme.border,
-    backgroundColor: Theme.card,
   },
   declineText: {
     fontSize: 13,
     fontWeight: '600',
-    color: Theme.textSecondary,
   },
   acceptButton: {
     paddingHorizontal: 14,

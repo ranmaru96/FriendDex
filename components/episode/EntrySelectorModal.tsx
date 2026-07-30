@@ -11,6 +11,13 @@ import {
   View,
 } from 'react-native';
 import { Theme, Radius, Typography } from '@/constants/theme';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 import type { Option } from '@/components/episode/types';
 import type { Friend } from '@/types';
 import { sortFriendsBySelectedIds, sortOptionsBySelectedValues } from '@/utils/selectionSortHelpers';
@@ -30,6 +37,7 @@ function SelectorFilterField({
   options: Option[];
   onValueChange: (v: string) => void;
 }) {
+  const content = useContentColors();
   const [visible, setVisible] = useState(false);
   const displayLabel = useMemo(() => {
     if (!value) return label;
@@ -38,44 +46,51 @@ function SelectorFilterField({
 
   return (
     <View style={styles.selectorFilterSelectContainer}>
-      <Pressable style={styles.selectorFilterSelectButton} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.selectorFilterSelectValue : styles.selectorFilterSelectPlaceholder}>
+      <Pressable style={[styles.selectorFilterSelectButton, contentInputStyle(content)]} onPress={() => setVisible(true)}>
+        <Text style={[value ? styles.selectorFilterSelectValue : styles.selectorFilterSelectPlaceholder, value ? contentTextStyle(content) : contentMutedTextStyle(content)]}>
           {displayLabel}
         </Text>
-        <Text style={styles.selectorFilterSelectChevron}>▼</Text>
+        <Text style={[styles.selectorFilterSelectChevron, contentMutedTextStyle(content)]}>▼</Text>
       </Pressable>
       <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
         <View style={styles.selectorFilterModalBackdrop}>
-          <View style={styles.selectorFilterModalCard}>
-            <Text style={styles.selectorFilterModalTitle}>{label}</Text>
+          <View style={[styles.selectorFilterModalCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.selectorFilterModalTitle, contentTextStyle(content)]}>{label}</Text>
             <ScrollView style={styles.selectorFilterModalOptions} keyboardShouldPersistTaps="handled">
               <Pressable
-                style={[styles.selectorFilterModalOption, !value && styles.selectorFilterModalOptionSelected]}
+                style={[
+                  styles.selectorFilterModalOption,
+                  !value
+                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                    : null,
+                ]}
                 onPress={() => {
                   onValueChange('');
                   setVisible(false);
                 }}
               >
-                <Text style={styles.selectorFilterModalOptionText}>指定なし</Text>
+                <Text style={[styles.selectorFilterModalOptionText, contentTextStyle(content)]}>指定なし</Text>
               </Pressable>
               {options.map((option) => (
                 <Pressable
                   key={option.value}
                   style={[
                     styles.selectorFilterModalOption,
-                    option.value === value && styles.selectorFilterModalOptionSelected,
+                    option.value === value
+                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                      : null,
                   ]}
                   onPress={() => {
                     onValueChange(option.value);
                     setVisible(false);
                   }}
                 >
-                  <Text style={styles.selectorFilterModalOptionText}>{option.label}</Text>
+                  <Text style={[styles.selectorFilterModalOptionText, contentTextStyle(content)]}>{option.label}</Text>
                 </Pressable>
               ))}
             </ScrollView>
-            <Pressable style={styles.selectorFilterModalCloseButton} onPress={() => setVisible(false)}>
-              <Text style={styles.selectorFilterModalCloseButtonText}>閉じる</Text>
+            <Pressable style={[styles.selectorFilterModalCloseButton, contentInputStyle(content)]} onPress={() => setVisible(false)}>
+              <Text style={[styles.selectorFilterModalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </View>
         </View>
@@ -127,6 +142,7 @@ export function EntrySelectorModal({
   onCancel,
   onConfirm,
 }: EntrySelectorModalProps) {
+  const content = useContentColors();
   const itemWidth = useMemo(() => {
     const screenWidth = Dimensions.get('window').width;
     const totalGap = SELECTOR_GAP * (SELECTOR_COLUMNS - 1);
@@ -159,15 +175,16 @@ export function EntrySelectorModal({
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <View style={styles.selectorOverlay}>
-        <View style={styles.selectorCard}>
+        <View style={[styles.selectorCard, contentSurfaceStyle(content)]}>
           <View style={styles.selectorTabRow}>
             <Pressable
-              style={[styles.selectorTabButton, selectorTab === 'individual' && styles.selectorTabButtonActive]}
+              style={[styles.selectorTabButton, contentInputStyle(content), selectorTab === 'individual' && styles.selectorTabButtonActive]}
               onPress={() => onTabChange('individual')}
             >
               <Text
                 style={[
                   styles.selectorTabButtonText,
+                  contentTextStyle(content),
                   selectorTab === 'individual' && styles.selectorTabButtonTextActive,
                 ]}
               >
@@ -175,26 +192,26 @@ export function EntrySelectorModal({
               </Text>
             </Pressable>
             <Pressable
-              style={[styles.selectorTabButton, selectorTab === 'group' && styles.selectorTabButtonActive]}
+              style={[styles.selectorTabButton, contentInputStyle(content), selectorTab === 'group' && styles.selectorTabButtonActive]}
               onPress={() => onTabChange('group')}
             >
               <Text
-                style={[styles.selectorTabButtonText, selectorTab === 'group' && styles.selectorTabButtonTextActive]}
+                style={[styles.selectorTabButtonText, contentTextStyle(content), selectorTab === 'group' && styles.selectorTabButtonTextActive]}
               >
                 所属
               </Text>
             </Pressable>
           </View>
-          <View style={styles.selectorDivider} />
+          <View style={[styles.selectorDivider, { backgroundColor: content.contentDivider }]} />
           {selectorTab === 'individual' ? (
             <View style={styles.selectorFilterRow}>
               <View style={styles.selectorFilterNameContainer}>
                 <TextInput
-                  style={styles.selectorFilterNameInput}
+                  style={[styles.selectorFilterNameInput, contentInputStyle(content)]}
                   value={nameFilter}
                   onChangeText={onNameFilterChange}
                   placeholder="名前"
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={content.contentTextSecondary}
                   autoCapitalize="none"
                 />
               </View>
@@ -213,15 +230,15 @@ export function EntrySelectorModal({
             </View>
           ) : (
             <TextInput
-              style={styles.selectorNameInput}
+              style={[styles.selectorNameInput, contentInputStyle(content)]}
               value={nameFilter}
               onChangeText={onNameFilterChange}
               placeholder="名前"
-              placeholderTextColor={Theme.inputPlaceholder}
+              placeholderTextColor={content.contentTextSecondary}
               autoCapitalize="none"
             />
           )}
-          <View style={styles.selectorDivider} />
+          <View style={[styles.selectorDivider, { backgroundColor: content.contentDivider }]} />
           {selectorTab === 'individual' ? (
             <FlatList
               data={filteredFriends}
@@ -230,13 +247,13 @@ export function EntrySelectorModal({
                 const checked = selectedIndividualIds.has(item.id);
                 return (
                   <Pressable
-                    style={[styles.selectorPersonRow, { width: itemWidth }]}
+                    style={[styles.selectorPersonRow, contentSurfaceStyle(content), { width: itemWidth }]}
                     onPress={() => onToggleIndividual(item.id)}
                   >
-                    <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+                    <View style={[styles.checkbox, contentSurfaceStyle(content), checked && styles.checkboxChecked]}>
                       {checked ? <Text style={styles.checkmark}>✓</Text> : null}
                     </View>
-                    <Text style={styles.selectorPersonName} numberOfLines={1}>
+                    <Text style={[styles.selectorPersonName, contentTextStyle(content)]} numberOfLines={1}>
                       {item.name}
                     </Text>
                   </Pressable>
@@ -256,13 +273,13 @@ export function EntrySelectorModal({
                 const checked = selectedGroupValues.has(item.value);
                 return (
                   <Pressable
-                    style={[styles.selectorPersonRow, { width: itemWidth }]}
+                    style={[styles.selectorPersonRow, contentSurfaceStyle(content), { width: itemWidth }]}
                     onPress={() => onToggleGroup(item.value)}
                   >
-                    <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+                    <View style={[styles.checkbox, contentSurfaceStyle(content), checked && styles.checkboxChecked]}>
                       {checked ? <Text style={styles.checkmark}>✓</Text> : null}
                     </View>
-                    <Text style={styles.selectorPersonName} numberOfLines={1}>
+                    <Text style={[styles.selectorPersonName, contentTextStyle(content)]} numberOfLines={1}>
                       {item.label}
                     </Text>
                   </Pressable>
@@ -276,8 +293,8 @@ export function EntrySelectorModal({
             />
           )}
           <View style={styles.selectorActions}>
-            <Pressable style={styles.selectorCancelButton} onPress={onCancel}>
-              <Text style={styles.selectorCancelButtonText}>キャンセル</Text>
+            <Pressable style={[styles.selectorCancelButton, contentInputStyle(content)]} onPress={onCancel}>
+              <Text style={[styles.selectorCancelButtonText, contentTextStyle(content)]}>キャンセル</Text>
             </Pressable>
             <Pressable style={styles.selectorOkButton} onPress={onConfirm}>
               <Text style={styles.selectorOkButtonText}>OK</Text>

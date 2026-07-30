@@ -2,6 +2,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Theme, Radius, Spacing } from '@/constants/theme';
 import { MoneyLoanAmountProgress } from '@/components/money-loan/MoneyLoanAmountProgress';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
+import { useContentColors } from '@/utils/useContentColors';
+import { contentMutedTextStyle, contentSurfaceStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
 import {
   formatBatchCardCountLabel,
@@ -28,25 +30,26 @@ export function MoneyLoanSessionCard({
   onPress,
   onLongPress,
 }: MoneyLoanSessionCardProps) {
+  const content = useContentColors();
   const sessionMeta = settled
     ? `登録 ${summary.batchCount}件 · 完済`
     : `登録 ${summary.batchCount}件 · 未返済 ${summary.unpaidLoanCount}人 · 返済 ${summary.repaidLoanCount}人`;
 
   return (
     <Pressable
-      style={[styles.sessionCard, settled && styles.sessionCardSettled]}
+      style={[styles.sessionCard, contentSurfaceStyle(content), settled && styles.sessionCardSettled]}
       onPress={onPress}
       onLongPress={onLongPress}
       delayLongPress={300}
     >
       <View style={styles.sessionCardHeader}>
-        <Text style={styles.sessionTitle} numberOfLines={1}>
+        <Text style={[styles.sessionTitle, contentTextStyle(content)]} numberOfLines={1}>
           {summary.session.title}
         </Text>
         <Text style={styles.sessionEditHint}>編集</Text>
       </View>
 
-      <Text style={styles.sessionMeta}>{sessionMeta}</Text>
+      <Text style={[styles.sessionMeta, contentMutedTextStyle(content)]}>{sessionMeta}</Text>
 
       {summary.registrationTotalAmount > 0 ? (
         <MoneyLoanAmountProgress
@@ -71,7 +74,7 @@ export function MoneyLoanSessionCard({
 
         return (
           <View key={batch.groupId} style={styles.batchBlock}>
-            <Text style={styles.batchMeta}>
+            <Text style={[styles.batchMeta, contentMutedTextStyle(content)]}>
               {showBatchDates ? `${formatMoneyLoanDateLabel(batch.createdAt)} ` : ''}
               {formatBatchCardCountLabel(batch)}
             </Text>
@@ -100,9 +103,7 @@ export function MoneyLoanSessionCard({
 
 const styles = StyleSheet.create({
   sessionCard: {
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 6,
@@ -120,7 +121,6 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   sessionEditHint: {
     fontSize: 12,
@@ -130,7 +130,6 @@ const styles = StyleSheet.create({
   },
   sessionMeta: {
     fontSize: 12,
-    color: Theme.textSecondary,
   },
   batchBlock: {
     gap: 4,
@@ -139,7 +138,6 @@ const styles = StyleSheet.create({
   batchMeta: {
     fontSize: 11,
     fontWeight: '600',
-    color: Theme.textSecondary,
   },
   repaidChipWrap: {
     opacity: 0.65,

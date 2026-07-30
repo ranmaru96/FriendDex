@@ -2,6 +2,8 @@ import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Radius, Theme } from '@/constants/theme';
 import { ParticipantChip } from '@/components/participant/ParticipantChip';
+import { useContentColors } from '@/utils/useContentColors';
+import { contentSurfaceStyle } from '@/utils/contentStyleHelpers';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
 
 const COLUMN_GAP = 6;
@@ -17,6 +19,7 @@ export function ShuffleOrderResults({
   friendNameById,
   friendPhotoById,
 }: ShuffleOrderResultsProps) {
+  const content = useContentColors();
   const [gridWidth, setGridWidth] = useState(0);
 
   const chips = useMemo(
@@ -47,7 +50,7 @@ export function ShuffleOrderResults({
     >
       {columnWidth > 0
         ? chips.map((chip, index) => (
-            <View key={chip.id} style={[styles.cell, { width: columnWidth }]}>
+            <View key={chip.id} style={[styles.cell, contentSurfaceStyle(content), { width: columnWidth }]}>
               <Text style={styles.rank}>{index + 1}</Text>
               <View style={styles.chipWrap}>
                 <ParticipantChip chip={chip} compact />
@@ -69,9 +72,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: Theme.card,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.sm,
     paddingVertical: 4,
     paddingHorizontal: 6,

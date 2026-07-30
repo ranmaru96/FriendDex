@@ -12,7 +12,14 @@ import {
 } from 'react-native';
 import { sortFriendsBySelectedId } from '@/utils/selectionSortHelpers';
 import type { Option } from '@/components/episode/types';
-import { Radius, Theme } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 import type { Friend } from '@/types';
 
 const PERSON_COLUMNS = 3;
@@ -27,6 +34,7 @@ type SelectFieldProps = {
 };
 
 function SelectField({ label, value, options, onValueChange }: SelectFieldProps) {
+  const content = useContentColors();
   const [visible, setVisible] = useState(false);
   const displayLabel = useMemo(() => {
     if (!value) return label;
@@ -35,39 +43,56 @@ function SelectField({ label, value, options, onValueChange }: SelectFieldProps)
 
   return (
     <View style={styles.fieldContainer}>
-      <Pressable style={styles.selectButton} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.selectValue : styles.selectPlaceholder}>{displayLabel}</Text>
-        <Text style={styles.selectChevron}>▼</Text>
+      <Pressable style={[styles.selectButton, contentInputStyle(content)]} onPress={() => setVisible(true)}>
+        <Text
+          style={[
+            value ? styles.selectValue : styles.selectPlaceholder,
+            value ? contentTextStyle(content) : contentMutedTextStyle(content),
+          ]}
+        >
+          {displayLabel}
+        </Text>
+        <Text style={[styles.selectChevron, contentMutedTextStyle(content)]}>▼</Text>
       </Pressable>
       <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{label}</Text>
+          <View style={[styles.modalCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.modalTitle, contentTextStyle(content)]}>{label}</Text>
             <ScrollView style={styles.modalOptions}>
               <Pressable
-                style={[styles.modalOption, !value && styles.modalOptionSelected]}
+                style={[
+                  styles.modalOption,
+                  !value
+                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                    : null,
+                ]}
                 onPress={() => {
                   onValueChange('');
                   setVisible(false);
                 }}
               >
-                <Text style={styles.modalOptionText}>指定なし</Text>
+                <Text style={[styles.modalOptionText, contentTextStyle(content)]}>指定なし</Text>
               </Pressable>
               {options.map((option) => (
                 <Pressable
                   key={option.value}
-                  style={[styles.modalOption, option.value === value && styles.modalOptionSelected]}
+                  style={[
+                    styles.modalOption,
+                    option.value === value
+                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                      : null,
+                  ]}
                   onPress={() => {
                     onValueChange(option.value);
                     setVisible(false);
                   }}
                 >
-                  <Text style={styles.modalOptionText}>{option.label}</Text>
+                  <Text style={[styles.modalOptionText, contentTextStyle(content)]}>{option.label}</Text>
                 </Pressable>
               ))}
             </ScrollView>
             <Pressable style={styles.modalCloseButton} onPress={() => setVisible(false)}>
-              <Text style={styles.modalCloseButtonText}>閉じる</Text>
+              <Text style={[styles.modalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </View>
         </View>
@@ -95,6 +120,7 @@ export function PersonSelectPanel({
   affiliationOptions,
   experienceOptions,
 }: PersonSelectPanelProps) {
+  const content = useContentColors();
   const [nameFilter, setNameFilter] = useState('');
   const [affiliationFilter, setAffiliationFilter] = useState('');
   const [experienceFilter, setExperienceFilter] = useState('');
@@ -134,6 +160,7 @@ export function PersonSelectPanel({
       <Pressable
         style={[
           styles.personRow,
+          contentSurfaceStyle(content),
           { width: personCardWidth },
           highlighted && styles.personRowHighlighted,
           blocked && styles.personRowBlocked,
@@ -142,15 +169,15 @@ export function PersonSelectPanel({
         onPress={() => toggleSelect(item.id)}
         disabled={blocked}
       >
-        <View style={[styles.checkbox, checked && styles.checkboxChecked, blocked && styles.checkboxBlocked]}>
+        <View style={[styles.checkbox, contentSurfaceStyle(content), checked && styles.checkboxChecked, blocked && styles.checkboxBlocked]}>
           {checked ? <Text style={styles.checkmark}>✓</Text> : null}
         </View>
         <View style={styles.personTextWrap}>
-          <Text style={[styles.personName, blocked && styles.personNameBlocked]} numberOfLines={1}>
+          <Text style={[styles.personName, contentTextStyle(content), blocked && contentMutedTextStyle(content)]} numberOfLines={1}>
             {item.name}
           </Text>
           {blocked ? (
-            <Text style={styles.blockedHint} numberOfLines={2}>
+            <Text style={[styles.blockedHint, contentMutedTextStyle(content)]} numberOfLines={2}>
               別のカードと同期済み
             </Text>
           ) : null}
@@ -164,11 +191,11 @@ export function PersonSelectPanel({
       <View style={styles.filterRow}>
         <View style={styles.filterNameContainer}>
           <TextInput
-            style={styles.filterNameInput}
+            style={[styles.filterNameInput, contentInputStyle(content)]}
             value={nameFilter}
             onChangeText={setNameFilter}
             placeholder="名前"
-            placeholderTextColor={Theme.inputPlaceholder}
+            placeholderTextColor={content.contentTextSecondary}
             autoCapitalize="none"
           />
         </View>
@@ -213,22 +240,17 @@ const styles = StyleSheet.create({
   },
   filterNameInput: {
     borderWidth: 1,
-    borderColor: '#94a3b8',
     borderRadius: Radius.sm,
-    backgroundColor: Theme.bgSurface,
     paddingHorizontal: 10,
     paddingVertical: 10,
     fontSize: 14,
-    color: '#111827',
   },
   fieldContainer: {
     flex: 1,
   },
   selectButton: {
     borderWidth: 1,
-    borderColor: '#94a3b8',
     borderRadius: Radius.sm,
-    backgroundColor: Theme.bgSurface,
     paddingHorizontal: 10,
     paddingVertical: 10,
     flexDirection: 'row',
@@ -237,17 +259,14 @@ const styles = StyleSheet.create({
   },
   selectValue: {
     fontSize: 14,
-    color: '#111827',
     flex: 1,
   },
   selectPlaceholder: {
     fontSize: 14,
-    color: Theme.inputPlaceholder,
     flex: 1,
   },
   selectChevron: {
     fontSize: 10,
-    color: '#64748b',
     marginLeft: 4,
   },
   modalBackdrop: {
@@ -257,17 +276,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   modalCard: {
-    backgroundColor: Theme.bgSurface,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: '#94a3b8',
     padding: 14,
     maxHeight: '70%',
   },
   modalTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0f172a',
     marginBottom: 8,
   },
   modalOptions: {
@@ -284,7 +300,6 @@ const styles = StyleSheet.create({
   },
   modalOptionText: {
     fontSize: 15,
-    color: '#111827',
   },
   modalCloseButton: {
     marginTop: 10,
@@ -293,7 +308,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   modalCloseButtonText: {
-    color: '#0f172a',
     fontWeight: '600',
   },
   personList: {
@@ -311,9 +325,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     borderWidth: 2,
-    borderColor: '#d0d0d0',
     borderRadius: Radius.sm,
-    backgroundColor: '#fafafa',
     paddingHorizontal: 8,
     paddingVertical: 10,
   },
@@ -337,7 +349,6 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Theme.bgSurface,
   },
   checkboxChecked: {
     backgroundColor: '#e8f5e9',
@@ -359,14 +370,9 @@ const styles = StyleSheet.create({
   personName: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
-  },
-  personNameBlocked: {
-    color: '#64748b',
   },
   blockedHint: {
     fontSize: 10,
-    color: '#64748b',
     lineHeight: 13,
   },
 });

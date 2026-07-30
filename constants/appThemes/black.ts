@@ -1,3 +1,4 @@
+import { darkContentColors } from './contentColors';
 import type { AppThemeBundle } from './types';
 
 /**
@@ -8,6 +9,7 @@ export const blackAppTheme: AppThemeBundle = {
   variant: 'black',
   label: 'ブラック',
   colors: {
+    ...darkContentColors,
     screenBackground: '#111111',
     topBarText: '#FFFFFF',
     topBarBorder: 'rgba(255, 255, 255, 0.22)',

@@ -2,9 +2,17 @@ import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { EpisodeCardTitle } from '@/components/episode/EpisodeCardTitle';
+import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { Radius, Theme } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentMutedTextStyle,
+  contentPersonTagStyle,
+  contentTagStyle,
+  contentTagTextStyle,
+} from '@/utils/contentStyleHelpers';
 import type { EpisodeVisibilityMode } from '@/types';
 import {
   formatEpisodeDateForCard,
@@ -83,6 +91,7 @@ export function EpisodeListCard({
   style,
 }: EpisodeListCardProps) {
   const kit = useUiKit();
+  const content = useContentColors();
   const [tallPhotoLeftHeight, setTallPhotoLeftHeight] = useState(0);
   const usePhotoLayout = kit.episodeListCardLayout === 'photoRight';
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
@@ -114,19 +123,15 @@ export function EpisodeListCard({
 
     const photoRightMetaRow = (
       <View style={styles.photoRightMetaRow}>
-        <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
-        {normalizedEpisodeTag ? (
-          <View style={styles.episodeCategoryTag}>
-            <Text style={styles.episodeCategoryTagText} numberOfLines={1}>
-              {normalizedEpisodeTag}
-            </Text>
-          </View>
-        ) : null}
+        <Text style={[styles.episodeCardDateText, { color: content.contentTextSecondary }]}>
+          {formatEpisodeDateForCard(date)}
+        </Text>
+        {normalizedEpisodeTag ? <EpisodeTagChip label={normalizedEpisodeTag} /> : null}
         {visibilityMode != null ? (
           <VisibilityModeIcon mode={visibilityMode} />
         ) : showPosterName ? (
-          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag]}>
-            <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
+          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, contentPersonTagStyle(content)]}>
+            <Text style={[styles.episodeParticipantTagName, contentTagTextStyle(content)]} numberOfLines={1}>
               {normalizedPosterName}
             </Text>
           </View>
@@ -141,7 +146,7 @@ export function EpisodeListCard({
         delayLongPress={delayLongPress}
         disabled={!onPress && !onLongPress}
         style={({ pressed }) => [
-          useTallPhoto ? null : styles.photoRightTopLeft,
+          styles.photoRightTopLeft,
           titleMultiline ? styles.photoRightTopLeftMultiline : null,
           pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
         ]}
@@ -214,7 +219,13 @@ export function EpisodeListCard({
         style={[
           styles.episodeCard,
           embedded && styles.episodeCardEmbedded,
-          !embedded ? { borderRadius: cardRadius } : null,
+          !embedded
+            ? {
+                borderRadius: cardRadius,
+                backgroundColor: content.contentCard,
+                borderColor: content.contentBorder,
+              }
+            : null,
           style,
         ]}
       >
@@ -254,7 +265,13 @@ export function EpisodeListCard({
       style={[
         styles.episodeCard,
         embedded && styles.episodeCardEmbedded,
-        !embedded ? { borderRadius: kit.episodeListCardBorderRadius } : null,
+        !embedded
+          ? {
+              borderRadius: kit.episodeListCardBorderRadius,
+              backgroundColor: content.contentCard,
+              borderColor: content.contentBorder,
+            }
+          : null,
         style,
       ]}
     >
@@ -269,22 +286,24 @@ export function EpisodeListCard({
         ]}
       >
         <EpisodeCardTitle title={title} multiline={titleMultiline} />
-        <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(date)}</Text>
+        <Text style={[styles.episodeCardDateText, { color: content.contentTextSecondary }]}>
+          {formatEpisodeDateForCard(date)}
+        </Text>
         {visibilityMode != null ? (
           <VisibilityModeIcon mode={visibilityMode} />
         ) : showPosterName ? (
-          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag]}>
-            <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
+          <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, contentPersonTagStyle(content)]}>
+            <Text style={[styles.episodeParticipantTagName, contentTagTextStyle(content)]} numberOfLines={1}>
               {normalizedPosterName}
             </Text>
           </View>
         ) : null}
         {onEdit && onDelete ? (
           <View style={styles.episodeCardActions}>
-            <Pressable style={styles.episodeCardEditButton} onPress={onEdit} accessibilityLabel="編集">
-              <Ionicons name="pencil-outline" size={18} color="#0f172a" />
+            <Pressable style={[styles.episodeCardEditButton, contentTagStyle(content)]} onPress={onEdit} accessibilityLabel="編集">
+              <Ionicons name="pencil-outline" size={18} color={content.contentText} />
             </Pressable>
-            <Pressable style={styles.episodeCardDeleteButton} onPress={onDelete} accessibilityLabel="削除">
+            <Pressable style={[styles.episodeCardDeleteButton, contentTagStyle(content)]} onPress={onDelete} accessibilityLabel="削除">
               <Ionicons name="trash-outline" size={18} color="#b91c1c" />
             </Pressable>
           </View>
@@ -292,18 +311,14 @@ export function EpisodeListCard({
       </Pressable>
       {showMetaRow2 ? (
         <View style={styles.episodeCardRow2}>
-          {normalizedEpisodeTag ? (
-            <View style={styles.episodeCategoryTag}>
-              <Text style={styles.episodeCategoryTagText}>{normalizedEpisodeTag}</Text>
-            </View>
-          ) : null}
+          {normalizedEpisodeTag ? <EpisodeTagChip label={normalizedEpisodeTag} /> : null}
           {visibilityMode == null && visibility.length > 0 ? (
             <View style={styles.visibilityCol}>
-              <Text style={styles.visibilityLabelFixed}>公開先：</Text>
+              <Text style={[styles.visibilityLabelFixed, contentMutedTextStyle(content)]}>公開先：</Text>
               <View style={styles.visibilityPills}>
                 {visibility.map((label, vi) => (
-                  <View key={`vis-${vi}-${label}`} style={styles.episodeParticipantTag}>
-                    <Text style={styles.episodeParticipantTagName}>{label}</Text>
+                  <View key={`vis-${vi}-${label}`} style={[styles.episodeParticipantTag, contentPersonTagStyle(content)]}>
+                    <Text style={[styles.episodeParticipantTagName, contentTagTextStyle(content)]}>{label}</Text>
                   </View>
                 ))}
               </View>
@@ -330,7 +345,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     paddingLeft: 12,
     paddingRight: 6,
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   episodeCardEmbedded: {
     borderWidth: 0,
@@ -346,7 +361,7 @@ const styles = StyleSheet.create({
   photoRightBodyRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 4,
+    gap: 3,
   },
   photoRightLeftColumn: {
     flex: 1,
@@ -371,10 +386,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flexWrap: 'wrap',
     gap: 6,
-    marginTop: 6,
+    marginTop: 4,
   },
   photoRightParticipantRow: {
-    marginTop: 6,
+    marginTop: 4,
     alignSelf: 'stretch',
     minHeight: 28,
   },
@@ -428,19 +443,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 6,
     flexWrap: 'wrap',
-  },
-  episodeCategoryTag: {
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: 999,
-    backgroundColor: Theme.inputBg,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-  },
-  episodeCategoryTagText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#0f172a',
   },
   episodeCardDateText: {
     fontSize: 12,

@@ -8,6 +8,14 @@ import { formatScannedAtLabel } from '@/utils/qrScanHelpers';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import { Theme } from '@/constants/theme';
 import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSearchAreaStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 
 /** 将来復活予定の友達一覧・Profile共有UI */
 const SHOW_LEGACY_FRIENDS_UI = false;
@@ -65,6 +73,7 @@ function SelectField({
   options: Option[];
   onValueChange: (value: string) => void;
 }) {
+  const content = useContentColors();
   const [visible, setVisible] = useState(false);
 
   const displayLabel = useMemo(() => {
@@ -74,40 +83,77 @@ function SelectField({
 
   return (
     <View style={styles.fieldContainer}>
-      <Pressable style={styles.selectButton} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.selectValue : styles.selectPlaceholder}>{displayLabel}</Text>
-        <Text style={styles.selectChevron}>▼</Text>
+      <Pressable
+        style={[
+          styles.selectButton,
+          {
+            backgroundColor: content.contentInputBg,
+            borderColor: content.contentSearchFieldBorder,
+          },
+        ]}
+        onPress={() => setVisible(true)}
+      >
+        <Text
+          style={[
+            value ? styles.selectValue : styles.selectPlaceholder,
+            { color: value ? content.contentText : content.contentTextSecondary },
+          ]}
+        >
+          {displayLabel}
+        </Text>
+        <Text style={[styles.selectChevron, { color: content.contentTextSecondary }]}>▼</Text>
       </Pressable>
 
       <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{label}</Text>
+          <View
+            style={[
+              styles.modalCard,
+              {
+                backgroundColor: content.contentCard,
+                borderWidth: 1,
+                borderColor: content.contentBorder,
+              },
+            ]}
+          >
+            <Text style={[styles.modalTitle, { color: content.contentText }]}>{label}</Text>
             <ScrollView style={styles.modalOptions}>
               <Pressable
-                style={[styles.modalOption, !value && styles.modalOptionSelected]}
+                style={[
+                  styles.modalOption,
+                  !value
+                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                    : null,
+                ]}
                 onPress={() => {
                   onValueChange('');
                   setVisible(false);
                 }}
               >
-                <Text style={styles.modalOptionText}>指定なし</Text>
+                <Text style={[styles.modalOptionText, { color: content.contentText }]}>指定なし</Text>
               </Pressable>
               {options.map((option) => (
                 <Pressable
                   key={option.value}
-                  style={[styles.modalOption, option.value === value && styles.modalOptionSelected]}
+                  style={[
+                    styles.modalOption,
+                    option.value === value
+                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                      : null,
+                  ]}
                   onPress={() => {
                     onValueChange(option.value);
                     setVisible(false);
                   }}
                 >
-                  <Text style={styles.modalOptionText}>{option.label}</Text>
+                  <Text style={[styles.modalOptionText, { color: content.contentText }]}>
+                    {option.label}
+                  </Text>
                 </Pressable>
               ))}
             </ScrollView>
             <Pressable style={styles.modalCloseButton} onPress={() => setVisible(false)}>
-              <Text style={styles.modalCloseButtonText}>閉じる</Text>
+              <Text style={[styles.modalCloseButtonText, { color: content.contentText }]}>閉じる</Text>
             </Pressable>
           </View>
         </View>
@@ -119,6 +165,7 @@ function SelectField({
 export default function FriendsScreen() {
   const kit = useUiKit();
   const { isPreview } = useUiPreview();
+  const content = useContentColors();
   const listPaddingHorizontal = kit.listScreenPaddingHorizontal;
   const previewBorderRadius = isPreview ? kit.friendsScreenBorderRadius : undefined;
   const router = useRouter();
@@ -224,32 +271,35 @@ export default function FriendsScreen() {
           <Pressable
             style={[
               styles.toolbarIconButton,
+              contentSurfaceStyle(content),
               previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
             ]}
             onPress={() => router.push('/myprofile')}
             accessibilityLabel="QR公開項目の設定"
           >
-            <Ionicons name="person-circle-outline" size={24} color="#334155" />
+            <Ionicons name="person-circle-outline" size={24} color={content.contentTextSecondary} />
           </Pressable>
           <Pressable
             style={[
               styles.toolbarIconButton,
+              contentSurfaceStyle(content),
               previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
             ]}
             onPress={() => router.push('/myprofile-qr')}
             accessibilityLabel="QRコードを表示"
           >
-            <Ionicons name="qr-code-outline" size={24} color="#334155" />
+            <Ionicons name="qr-code-outline" size={24} color={content.contentTextSecondary} />
           </Pressable>
           <Pressable
             style={[
               styles.toolbarIconButton,
+              contentSurfaceStyle(content),
               previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
             ]}
             onPress={() => router.push('/scan')}
             accessibilityLabel="QRコードを読み取る"
           >
-            <Ionicons name="scan-outline" size={24} color="#334155" />
+            <Ionicons name="scan-outline" size={24} color={content.contentTextSecondary} />
           </Pressable>
         </View>
 
@@ -263,29 +313,31 @@ export default function FriendsScreen() {
           <View
             style={[
               styles.section,
+              contentSurfaceStyle(content),
               previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
             ]}
           >
-            <Text style={styles.sectionTitle}>QRで追加した人</Text>
+            <Text style={[styles.sectionTitle, contentTextStyle(content)]}>QRで追加した人</Text>
             {qrFriends.length === 0 ? (
-              <Text style={styles.emptyQrText}>QRコードを読み取って追加した人がここに表示されます。</Text>
+              <Text style={[styles.emptyQrText, contentMutedTextStyle(content)]}>QRコードを読み取って追加した人がここに表示されます。</Text>
             ) : (
               qrFriends.map((friend) => (
                 <Pressable
                   key={friend.id}
                   style={[
                     styles.qrFriendRow,
+                    contentSurfaceStyle(content),
                     previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
                   ]}
                   onPress={() => router.push({ pathname: '/detail', params: { id: friend.id } })}
                 >
                   <View style={styles.qrFriendMain}>
-                    <Text style={styles.qrFriendName}>{friend.name || '-'}</Text>
+                    <Text style={[styles.qrFriendName, contentTextStyle(content)]}>{friend.name || '-'}</Text>
                     {friend.nickname.trim() ? (
-                      <Text style={styles.qrFriendNickname}>{friend.nickname}</Text>
+                      <Text style={[styles.qrFriendNickname, contentMutedTextStyle(content)]}>{friend.nickname}</Text>
                     ) : null}
                   </View>
-                  <Text style={styles.qrFriendDate}>{formatScannedAtLabel(friend.scannedAt)}</Text>
+                  <Text style={[styles.qrFriendDate, contentMutedTextStyle(content)]}>{formatScannedAtLabel(friend.scannedAt)}</Text>
                 </Pressable>
               ))
             )}
@@ -308,8 +360,8 @@ export default function FriendsScreen() {
                 </Pressable>
               </View>
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Profileが届いた</Text>
+              <View style={[styles.section, contentSurfaceStyle(content)]}>
+                <Text style={[styles.sectionTitle, contentTextStyle(content)]}>Profileが届いた</Text>
                 {incomingProfiles.map((item) => (
                   <View key={item.accountName} style={styles.incomingCard}>
                     <Text style={styles.incomingText}>
@@ -325,16 +377,32 @@ export default function FriendsScreen() {
                 ))}
               </View>
 
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>友達一覧</Text>
-                <View style={styles.searchArea}>
+              <View style={[styles.section, contentSurfaceStyle(content)]}>
+                <Text style={[styles.sectionTitle, contentTextStyle(content)]}>友達一覧</Text>
+                <View
+                  style={[
+                    styles.searchArea,
+                    {
+                      backgroundColor: content.contentSearchArea,
+                      borderColor: content.contentSearchFieldBorder,
+                    },
+                  ]}
+                >
                   <View style={styles.row}>
                     <View style={styles.fieldContainer}>
                       <TextInput
                         value={name}
                         onChangeText={setName}
                         placeholder="名前"
-                        style={styles.textInput}
+                        placeholderTextColor={content.contentTextSecondary}
+                        style={[
+                          styles.textInput,
+                          {
+                            backgroundColor: content.contentInputBg,
+                            borderColor: content.contentSearchFieldBorder,
+                            color: content.contentText,
+                          },
+                        ]}
                         autoCapitalize="none"
                       />
                     </View>
@@ -354,13 +422,13 @@ export default function FriendsScreen() {
                 </View>
 
                 {filteredFriends.map((friend) => (
-                  <View key={friend.id} style={styles.friendRow}>
-                    <Text style={styles.friendName}>{friend.name}</Text>
-                    <Text style={styles.friendStatus} numberOfLines={1}>
+                  <View key={friend.id} style={[styles.friendRow, contentSurfaceStyle(content)]}>
+                    <Text style={[styles.friendName, contentTextStyle(content)]}>{friend.name}</Text>
+                    <Text style={[styles.friendStatus, contentMutedTextStyle(content)]} numberOfLines={1}>
                       {friend.status}
                     </Text>
-                    <Pressable style={styles.shareButton} onPress={() => openShareModal(friend)}>
-                      <Text style={styles.shareButtonText}>Profile共有</Text>
+                    <Pressable style={[styles.shareButton, contentSurfaceStyle(content)]} onPress={() => openShareModal(friend)}>
+                      <Text style={[styles.shareButtonText, contentTextStyle(content)]}>Profile共有</Text>
                     </Pressable>
                   </View>
                 ))}
@@ -380,7 +448,7 @@ export default function FriendsScreen() {
           }}
         >
           <View style={styles.shareModalOverlay}>
-            <View style={styles.shareModalCard}>
+            <View style={[styles.shareModalCard, contentSurfaceStyle(content)]}>
               <View style={styles.shareActionRow}>
                 <Pressable
                   style={styles.shareTopButton}
@@ -391,8 +459,8 @@ export default function FriendsScreen() {
                 >
                   <Text style={styles.shareTopButtonText}>閉じる</Text>
                 </Pressable>
-                <View style={styles.shareTargetTag}>
-                  <Text style={styles.shareTargetTagText}>共有先：「{shareTargetFriend?.name ?? '-'}」</Text>
+                <View style={[styles.shareTargetTag, contentSurfaceStyle(content)]}>
+                  <Text style={[styles.shareTargetTagText, contentMutedTextStyle(content)]}>共有先：「{shareTargetFriend?.name ?? '-'}」</Text>
                 </View>
                 <Pressable
                   style={[styles.shareTopButton, selectedProfileIds.length === 0 && styles.shareTopButtonDisabled]}
@@ -403,15 +471,15 @@ export default function FriendsScreen() {
                 </Pressable>
               </View>
 
-              <View style={styles.shareFilterArea}>
+              <View style={[styles.shareFilterArea, contentSearchAreaStyle(content)]}>
                 <View style={styles.row}>
                   <View style={styles.fieldContainer}>
                     <TextInput
                       value={profileNameFilter}
                       onChangeText={setProfileNameFilter}
                       placeholder="名前"
-                      placeholderTextColor="#6b7280"
-                      style={styles.textInput}
+                      placeholderTextColor={content.contentTextSecondary}
+                      style={[styles.textInput, contentInputStyle(content)]}
                       autoCapitalize="none"
                     />
                   </View>
@@ -437,11 +505,11 @@ export default function FriendsScreen() {
                     return (
                       <Pressable
                         key={profile.id}
-                        style={[styles.profileCard, selected && styles.profileCardSelected]}
+                        style={[styles.profileCard, contentSurfaceStyle(content), selected && styles.profileCardSelected]}
                         onPress={() => toggleProfileSelection(profile.id)}
                       >
                         <View style={styles.profileCheckboxWrap}>
-                          <View style={[styles.profileCheckbox, selected && styles.profileCheckboxChecked]}>
+                          <View style={[styles.profileCheckbox, contentSurfaceStyle(content), selected && styles.profileCheckboxChecked]}>
                             {selected ? <Text style={styles.profileCheckboxMark}>✓</Text> : null}
                           </View>
                         </View>
@@ -449,13 +517,13 @@ export default function FriendsScreen() {
                           {profile.photoUri ? (
                             <Image source={{ uri: profile.photoUri }} style={styles.profileImage} resizeMode="cover" />
                           ) : (
-                            <View style={[styles.profileImage, styles.profileImagePlaceholder]}>
-                              <Text style={styles.profileImagePlaceholderText}>No Image</Text>
+                            <View style={[styles.profileImage, styles.profileImagePlaceholder, contentSurfaceStyle(content)]}>
+                              <Text style={[styles.profileImagePlaceholderText, contentMutedTextStyle(content)]}>No Image</Text>
                             </View>
                           )}
                         </View>
-                        <Text style={styles.profileCardName}>{profile.name}</Text>
-                        <Text style={styles.profileCardNickname}>{profile.nickname}</Text>
+                        <Text style={[styles.profileCardName, contentTextStyle(content)]}>{profile.name}</Text>
+                        <Text style={[styles.profileCardNickname, contentMutedTextStyle(content)]}>{profile.nickname}</Text>
                       </Pressable>
                     );
                   })}
@@ -466,21 +534,21 @@ export default function FriendsScreen() {
 
           <Modal visible={confirmModalVisible} animationType="fade" transparent onRequestClose={() => setConfirmModalVisible(false)}>
             <View style={styles.confirmOverlay}>
-              <View style={styles.confirmCard}>
-                <Text style={styles.confirmTitle}>
+              <View style={[styles.confirmCard, contentSurfaceStyle(content)]}>
+                <Text style={[styles.confirmTitle, contentTextStyle(content)]}>
                   以下のProfileを「{shareTargetFriend?.name ?? ''}」に送る
                 </Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.confirmList}>
                   {selectedProfiles.map((profile) => (
-                    <View key={`confirm-${profile.id}`} style={styles.confirmMiniCard}>
-                      <Text style={styles.confirmMiniName}>{profile.name}</Text>
-                      <Text style={styles.confirmMiniNick}>{profile.nickname}</Text>
+                    <View key={`confirm-${profile.id}`} style={[styles.confirmMiniCard, contentSurfaceStyle(content)]}>
+                      <Text style={[styles.confirmMiniName, contentTextStyle(content)]}>{profile.name}</Text>
+                      <Text style={[styles.confirmMiniNick, contentMutedTextStyle(content)]}>{profile.nickname}</Text>
                     </View>
                   ))}
                 </ScrollView>
                 <View style={styles.confirmActions}>
-                  <Pressable style={styles.confirmCancelButton} onPress={() => setConfirmModalVisible(false)}>
-                    <Text style={styles.confirmCancelText}>‹ 戻る</Text>
+                  <Pressable style={[styles.confirmCancelButton, contentSurfaceStyle(content)]} onPress={() => setConfirmModalVisible(false)}>
+                    <Text style={[styles.confirmCancelText, contentTextStyle(content)]}>‹ 戻る</Text>
                   </Pressable>
                   <Pressable style={styles.confirmShareButton} onPress={handleConfirmShare}>
                     <Text style={styles.confirmShareText}>共有</Text>

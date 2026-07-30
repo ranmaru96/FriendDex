@@ -16,6 +16,8 @@ import { useDetailDesign } from '../contexts/DetailDesignContext';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { createDetailStyles } from '../utils/detailStyles';
+import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
+import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
 import { TabScreenTemplate } from '@/components/screen-templates';
 import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
 import {
@@ -40,10 +42,16 @@ import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import {
   EPISODE_TAG_COLOR_PALETTE,
-  getEventCalendarColor,
   getHashedEpisodeTagColor,
 } from '@/utils/calendarEventColors';
 import { INACTIVE_TAB_COLOR_ALPHA, withAlpha } from '@/utils/colorHelpers';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 
 type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先' | 'エピソードタグ';
 type Option = { label: string; value: string };
@@ -105,19 +113,21 @@ function EditorActionButtons({
   saveDisabled?: boolean;
   saveAccessibilityLabel?: string;
 }) {
+  const content = useContentColors();
   return (
     <View style={styles.editorActionButtons}>
       <Pressable
-        style={styles.editorIconButton}
+        style={[styles.editorIconButton, contentSurfaceStyle(content)]}
         onPress={onCancel}
         accessibilityLabel="キャンセル"
         accessibilityRole="button"
       >
-        <Ionicons name="close-outline" size={20} color={Theme.textPrimary} />
+        <Ionicons name="close-outline" size={20} color={content.contentText} />
       </Pressable>
       <Pressable
         style={[
           styles.editorIconButton,
+          contentSurfaceStyle(content),
           styles.editorIconButtonPrimary,
           saveDisabled && styles.editorIconButtonDisabled,
         ]}
@@ -129,7 +139,7 @@ function EditorActionButtons({
         <Ionicons
           name="checkmark-outline"
           size={20}
-          color={saveDisabled ? Theme.textSecondary : Theme.accent}
+          color={saveDisabled ? content.contentTextSecondary : Theme.accent}
         />
       </Pressable>
     </View>
@@ -142,6 +152,7 @@ function SelectField({ label, value, options, onValueChange }: {
   options: Option[];
   onValueChange: (v: string) => void;
 }) {
+  const content = useContentColors();
   const [visible, setVisible] = useState(false);
   const displayLabel = useMemo(() => {
     if (!value) return label;
@@ -150,33 +161,43 @@ function SelectField({ label, value, options, onValueChange }: {
 
   return (
     <View style={styles.filterSelectContainer}>
-      <Pressable style={styles.filterSelectButton} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.filterSelectValue : styles.filterSelectPlaceholder}>{displayLabel}</Text>
-        <Text style={styles.filterSelectChevron}>▼</Text>
+      <Pressable style={[styles.filterSelectButton, contentInputStyle(content)]} onPress={() => setVisible(true)}>
+        <Text style={[value ? styles.filterSelectValue : styles.filterSelectPlaceholder, value ? contentTextStyle(content) : contentMutedTextStyle(content)]}>{displayLabel}</Text>
+        <Text style={[styles.filterSelectChevron, contentMutedTextStyle(content)]}>▼</Text>
       </Pressable>
       <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
         <View style={styles.selectModalBackdrop}>
-          <View style={styles.selectModalCard}>
-            <Text style={styles.selectModalTitle}>{label}</Text>
+          <View style={[styles.selectModalCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.selectModalTitle, contentTextStyle(content)]}>{label}</Text>
             <ScrollView style={styles.selectModalOptions}>
               <Pressable
-                style={[styles.selectModalOption, !value && styles.selectModalOptionSelected]}
+                style={[
+                  styles.selectModalOption,
+                  !value
+                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                    : null,
+                ]}
                 onPress={() => { onValueChange(''); setVisible(false); }}
               >
-                <Text style={styles.selectModalOptionText}>指定なし</Text>
+                <Text style={[styles.selectModalOptionText, contentTextStyle(content)]}>指定なし</Text>
               </Pressable>
               {options.map((opt) => (
                 <Pressable
                   key={opt.value}
-                  style={[styles.selectModalOption, opt.value === value && styles.selectModalOptionSelected]}
+                  style={[
+                    styles.selectModalOption,
+                    opt.value === value
+                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                      : null,
+                  ]}
                   onPress={() => { onValueChange(opt.value); setVisible(false); }}
                 >
-                  <Text style={styles.selectModalOptionText}>{opt.label}</Text>
+                  <Text style={[styles.selectModalOptionText, contentTextStyle(content)]}>{opt.label}</Text>
                 </Pressable>
               ))}
             </ScrollView>
             <Pressable style={styles.selectModalCloseButton} onPress={() => setVisible(false)}>
-              <Text style={styles.selectModalCloseButtonText}>閉じる</Text>
+              <Text style={[styles.selectModalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </View>
         </View>
@@ -187,10 +208,21 @@ function SelectField({ label, value, options, onValueChange }: {
 
 export default function CommonItemsScreen() {
   const kit = useUiKit();
+  const content = useContentColors();
   const { isPreview } = useUiPreview();
   const appTheme = useAppThemeOptional();
   const flushTop = isMonochromeAppTheme(appTheme?.variant);
-  const { bundle } = useDetailDesign();
+  const { bundle: rawBundle } = useDetailDesign();
+  const bundle = useMemo(
+    () =>
+      bridgeDetailBundleForAppTheme(
+        rawBundle,
+        appTheme?.variant ?? 'default',
+        content,
+        appTheme?.colors.screenBackground ?? content.contentCard
+      ),
+    [appTheme?.colors.screenBackground, appTheme?.variant, content, rawBundle]
+  );
   const detailStyles = useMemo(() => createDetailStyles(bundle.colors), [bundle.colors]);
   const isFlatCommonItemsPanel = kit.commonItemsPanelBorderRadius === 0;
   const commonItemsPanelStyle = useMemo(
@@ -455,7 +487,7 @@ export default function CommonItemsScreen() {
     if (!isEpisodeTagTab) return null;
     return (
       <View style={styles.colorPickerSection}>
-        <Text style={styles.colorPickerLabel}>カレンダーの色</Text>
+        <Text style={[styles.colorPickerLabel, contentMutedTextStyle(content)]}>カレンダーの色</Text>
         <View style={styles.colorPickerRow}>
           {EPISODE_TAG_COLOR_PALETTE.map((swatch) => {
             const selected = editorColor.toUpperCase() === swatch.toUpperCase();
@@ -487,11 +519,11 @@ export default function CommonItemsScreen() {
   const renderPersonRow = ({ item }: { item: Friend }) => {
     const checked = selectedMemberIds.has(item.id);
     return (
-      <Pressable style={[styles.personRow, { width: personCardWidth }]} onPress={() => toggleMember(item.id)}>
-        <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
+      <Pressable style={[styles.personRow, contentSurfaceStyle(content), { width: personCardWidth }]} onPress={() => toggleMember(item.id)}>
+        <View style={[styles.checkbox, contentSurfaceStyle(content), checked && styles.checkboxChecked]}>
           {checked ? <Text style={styles.checkmark}>✓</Text> : null}
         </View>
-        <Text style={styles.personName} numberOfLines={1}>{item.name}</Text>
+        <Text style={[styles.personName, contentTextStyle(content)]} numberOfLines={1}>{item.name}</Text>
       </Pressable>
     );
   };
@@ -574,23 +606,39 @@ export default function CommonItemsScreen() {
           nestedScrollEnabled
         >
           {mergedLabels.map((label) => {
-            const tagColor = isEpisodeTagTab ? getEventCalendarColor(label) : null;
+            if (isEpisodeTagTab) {
+              return (
+                <Pressable
+                  key={label}
+                  onPress={() => handlePressTag(label)}
+                  onLongPress={isPreview ? undefined : () => handleLongPressTag(label)}
+                  delayLongPress={isPreview ? undefined : 300}
+                >
+                  <EpisodeTagChip
+                    label={label}
+                    chipStyle={{
+                      backgroundColor: 'transparent',
+                      color: activeChipStyle.color,
+                    }}
+                  />
+                </Pressable>
+              );
+            }
             return (
               <Pressable
                 key={label}
                 style={[
                   styles.valueChip,
                   {
-                    backgroundColor: activeChipStyle.backgroundColor,
-                    borderColor: tagColor ?? activeChipStyle.borderColor,
-                    borderWidth: tagColor ? 2 : activeChipStyle.borderWidth,
+                    backgroundColor: 'transparent',
+                    borderColor: activeChipStyle.borderColor,
+                    borderWidth: activeChipStyle.borderWidth,
                   },
                 ]}
                 onPress={() => handlePressTag(label)}
                 onLongPress={isPreview ? undefined : () => handleLongPressTag(label)}
                 delayLongPress={isPreview ? undefined : 300}
               >
-                {tagColor ? <View style={[styles.tagColorDot, { backgroundColor: tagColor }]} /> : null}
                 <Text style={[styles.valueChipText, { color: activeChipStyle.color }]}>{label}</Text>
               </Pressable>
             );
@@ -611,6 +659,7 @@ export default function CommonItemsScreen() {
             style={[
               detailStyles.tabTrack,
               styles.tabTrackAligned,
+              contentSurfaceStyle(content),
               styles.itemsPanel,
               commonItemsPanelStyle,
               isFlatCommonItemsPanel ? styles.tabTrackFlatPreview : null,
@@ -625,11 +674,11 @@ export default function CommonItemsScreen() {
       {/* Simple editor（エピソードタグなど） */}
       <Modal visible={editorVisible} transparent animationType="fade" onRequestClose={() => setEditorVisible(false)}>
         <View style={styles.editorOverlay}>
-          <View style={[styles.editorCard, isPreview ? styles.editorCardPreview : null]}>
+          <View style={[styles.editorCard, contentSurfaceStyle(content), isPreview ? styles.editorCardPreview : null]}>
             {isPreview ? (
               <>
                 <View style={styles.editorHeaderPreview}>
-                  <Text style={styles.editorTitlePreview} numberOfLines={1}>
+                  <Text style={[styles.editorTitlePreview, contentTextStyle(content)]} numberOfLines={1}>
                     {simpleEditorTitle}
                   </Text>
                   <EditorActionButtons
@@ -640,9 +689,9 @@ export default function CommonItemsScreen() {
                 <TextInput
                   value={editorText}
                   onChangeText={setEditorText}
-                  style={styles.editorInput}
+                  style={[styles.editorInput, contentInputStyle(content)]}
                   placeholder={`${activeTab}を入力`}
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={content.contentTextSecondary}
                   autoCapitalize="none"
                   autoFocus
                 />
@@ -655,20 +704,20 @@ export default function CommonItemsScreen() {
               </>
             ) : (
               <>
-                <Text style={styles.editorTitle}>{simpleEditorTitle}</Text>
+                <Text style={[styles.editorTitle, contentTextStyle(content)]}>{simpleEditorTitle}</Text>
                 <TextInput
                   value={editorText}
                   onChangeText={setEditorText}
-                  style={styles.editorInput}
+                  style={[styles.editorInput, contentInputStyle(content)]}
                   placeholder={`${activeTab}を入力`}
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={content.contentTextSecondary}
                   autoCapitalize="none"
                   autoFocus
                 />
                 {renderEpisodeTagColorPicker()}
                 <View style={styles.editorActions}>
-                  <Pressable style={styles.editorCancelButton} onPress={() => setEditorVisible(false)}>
-                    <Text style={styles.editorCancelText}>キャンセル</Text>
+                  <Pressable style={[styles.editorCancelButton, contentSurfaceStyle(content)]} onPress={() => setEditorVisible(false)}>
+                    <Text style={[styles.editorCancelText, contentTextStyle(content)]}>キャンセル</Text>
                   </Pressable>
                   <Pressable style={styles.editorSaveButton} onPress={handleSaveEditor}>
                     <Text style={styles.editorSaveText}>保存</Text>
@@ -683,16 +732,16 @@ export default function CommonItemsScreen() {
       {/* Group editor（所属/公開先など） */}
       <Modal visible={groupEditorVisible} transparent animationType="slide" onRequestClose={() => setGroupEditorVisible(false)}>
         <View style={styles.groupEditorOverlay}>
-          <View style={styles.groupEditorCard}>
+          <View style={[styles.groupEditorCard, contentSurfaceStyle(content)]}>
             {isPreview ? (
               <>
                 <View style={styles.groupHeaderRowPreview}>
                   <TextInput
                     value={groupName}
                     onChangeText={setGroupName}
-                    style={styles.groupNameInputPreview}
+                    style={[styles.groupNameInputPreview, contentInputStyle(content)]}
                     placeholder={`${activeTab}名`}
-                    placeholderTextColor={Theme.inputPlaceholder}
+                    placeholderTextColor={content.contentTextSecondary}
                     autoCapitalize="none"
                   />
                   <EditorActionButtons
@@ -706,11 +755,11 @@ export default function CommonItemsScreen() {
                 <View style={styles.filterRow}>
                   <View style={styles.filterNameContainer}>
                     <TextInput
-                      style={styles.filterNameInput}
+                      style={[styles.filterNameInput, contentInputStyle(content)]}
                       value={personNameFilter}
                       onChangeText={setPersonNameFilter}
                       placeholder="名前"
-                      placeholderTextColor={Theme.inputPlaceholder}
+                      placeholderTextColor={content.contentTextSecondary}
                       autoCapitalize="none"
                     />
                   </View>
@@ -750,14 +799,14 @@ export default function CommonItemsScreen() {
                   <TextInput
                     value={groupName}
                     onChangeText={setGroupName}
-                    style={styles.groupNameInput}
+                    style={[styles.groupNameInput, contentInputStyle(content)]}
                     placeholder={`${activeTab}名`}
-                    placeholderTextColor={Theme.inputPlaceholder}
+                    placeholderTextColor={content.contentTextSecondary}
                     autoCapitalize="none"
                   />
                   <View style={styles.groupEditButtons}>
-                    <Pressable style={styles.groupCancelButton} onPress={() => setGroupEditorVisible(false)}>
-                      <Text style={styles.groupCancelButtonText}>キャンセル</Text>
+                    <Pressable style={[styles.groupCancelButton, contentSurfaceStyle(content)]} onPress={() => setGroupEditorVisible(false)}>
+                      <Text style={[styles.groupCancelButtonText, contentTextStyle(content)]}>キャンセル</Text>
                     </Pressable>
                     <Pressable
                       style={[
@@ -777,11 +826,11 @@ export default function CommonItemsScreen() {
                 <View style={styles.filterRow}>
                   <View style={styles.filterNameContainer}>
                     <TextInput
-                      style={styles.filterNameInput}
+                      style={[styles.filterNameInput, contentInputStyle(content)]}
                       value={personNameFilter}
                       onChangeText={setPersonNameFilter}
                       placeholder="名前"
-                      placeholderTextColor={Theme.inputPlaceholder}
+                      placeholderTextColor={content.contentTextSecondary}
                       autoCapitalize="none"
                     />
                   </View>
@@ -877,11 +926,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: Radius.full,
-  },
-  tagColorDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
   },
   valueChipText: {
     fontSize: Typography.sm,

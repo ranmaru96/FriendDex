@@ -21,6 +21,11 @@ import type { Option } from '@/components/episode/types';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { Panel, PanelSection, SectionDivider } from '@/components/ui/Panel';
 import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
+import {
+  contentMutedTextStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 import { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 
@@ -61,6 +66,7 @@ export default function EpisodeDetailScreen() {
   const router = useRouter();
   const { isPreview } = useUiPreview();
   const kit = useUiKit();
+  const content = useContentColors();
   const bottomNavClearance = useBottomNavScrollClearance();
   const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string }>();
   const [episode, setEpisode] = useState<Episode | null>(null);
@@ -295,7 +301,7 @@ export default function EpisodeDetailScreen() {
       <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
         <ScreenTopBar onBack={() => router.back()} />
         <View style={styles.missingContainer}>
-          <Text style={styles.missingText}>エピソードが見つかりませんでした。</Text>
+          <Text style={[styles.missingText, contentMutedTextStyle(content)]}>エピソードが見つかりませんでした。</Text>
         </View>
       </SafeAreaView>
     );
@@ -359,7 +365,7 @@ export default function EpisodeDetailScreen() {
               <>
                 <SectionDivider />
                 <PanelSection style={styles.detailSection}>
-                  <Text style={styles.descriptionText}>{episode.description}</Text>
+                  <Text style={[styles.descriptionText, contentTextStyle(content)]}>{episode.description}</Text>
                 </PanelSection>
               </>
             ) : null}
@@ -383,8 +389,8 @@ export default function EpisodeDetailScreen() {
 
             <SectionDivider />
             <PanelSection style={styles.detailSection}>
-              <Text style={styles.privateMemoLabel}>非公開メモ</Text>
-              <Text style={styles.privateMemoPlaceholder}>非公開メモ（近日実装予定）</Text>
+              <Text style={[styles.privateMemoLabel, contentTextStyle(content)]}>非公開メモ</Text>
+              <Text style={[styles.privateMemoPlaceholder, contentMutedTextStyle(content)]}>非公開メモ（近日実装予定）</Text>
             </PanelSection>
           </Panel>
 

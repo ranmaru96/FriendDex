@@ -29,6 +29,8 @@ import { useDetailDesign } from './contexts/DetailDesignContext';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppTheme } from './contexts/AppThemeContext';
 import { createDetailStyles } from './utils/detailStyles';
+import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
+import { useContentColors } from '@/utils/useContentColors';
 import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import {
@@ -222,14 +224,23 @@ type Option = {
   value: string;
 };
 
-function MultiValueSummarySection({ rows, withCard = true }: { rows: MultiValueRow[]; withCard?: boolean }) {
-  const { bundle } = useDetailDesign();
-  const styles = useMemo(() => createDetailStyles(bundle.colors), [bundle.colors]);
-  const c = bundle.colors;
+function MultiValueSummarySection({
+  rows,
+  withCard = true,
+  styles,
+  infoChipStyles,
+  colors: c,
+}: {
+  rows: MultiValueRow[];
+  withCard?: boolean;
+  styles: ReturnType<typeof createDetailStyles>;
+  infoChipStyles: Record<string, { backgroundColor: string; borderColor: string; color: string; borderWidth: number }>;
+  colors: ReturnType<typeof useDetailDesign>['bundle']['colors'];
+}) {
   return (
     <View style={withCard ? styles.multiValueCard : styles.multiValuePlainContainer}>
       {rows.map((row, rowIndex) => {
-        const chipColors = bundle.infoChipStyles[row.title] ?? {
+        const chipColors = infoChipStyles[row.title] ?? {
           backgroundColor: 'transparent',
           borderColor: c.border,
           color: c.textSecondary,
@@ -505,6 +516,9 @@ function DetailAdjacentSlidePanel({
             {activeTab === '情報' ? (
               <MultiValueSummarySection
                 withCard
+                styles={styles}
+                infoChipStyles={bundle.infoChipStyles}
+                colors={c}
                 rows={[
                   { title: '所属', values: friend.affiliations },
                   { title: '経験', values: friend.experiences },
@@ -524,9 +538,20 @@ function DetailAdjacentSlidePanel({
 }
 
 export default function DetailScreen() {
-  const { bundle, reload: reloadDetailDesign } = useDetailDesign();
+  const { bundle: rawBundle, reload: reloadDetailDesign } = useDetailDesign();
   const { colors: appTheme, variant: appThemeVariant } = useAppTheme();
+  const content = useContentColors();
   const isMonochromeTheme = isMonochromeAppTheme(appThemeVariant);
+  const bundle = useMemo(
+    () =>
+      bridgeDetailBundleForAppTheme(
+        rawBundle,
+        appThemeVariant,
+        content,
+        appTheme.screenBackground
+      ),
+    [appTheme.screenBackground, appThemeVariant, content, rawBundle]
+  );
   const c = bundle.colors;
   const styles = useMemo(() => createDetailStyles(c), [c]);
   const detailTabs = bundle.detailTabs;
@@ -2130,6 +2155,9 @@ export default function DetailScreen() {
           {activeTab === '情報' && (
             <MultiValueSummarySection
               withCard
+              styles={styles}
+              infoChipStyles={bundle.infoChipStyles}
+              colors={c}
               rows={[
                 { title: '所属', values: friend.affiliations },
                 { title: '経験', values: friend.experiences },

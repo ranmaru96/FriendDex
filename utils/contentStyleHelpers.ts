@@ -1,0 +1,53 @@
+import type { TextStyle, ViewStyle } from 'react-native';
+import type { AppThemeContentColorFields } from '@/constants/appThemes/contentColors';
+
+/** カード／パネルの面 */
+export function contentSurfaceStyle(c: AppThemeContentColorFields): ViewStyle {
+  return {
+    backgroundColor: c.contentCard,
+    borderColor: c.contentBorder,
+  };
+}
+
+export function contentInputStyle(c: AppThemeContentColorFields): ViewStyle & TextStyle {
+  return {
+    backgroundColor: c.contentInputBg,
+    borderColor: c.contentSearchFieldBorder,
+    color: c.contentText,
+  };
+}
+
+export function contentTextStyle(c: AppThemeContentColorFields): TextStyle {
+  return { color: c.contentText };
+}
+
+export function contentMutedTextStyle(c: AppThemeContentColorFields): TextStyle {
+  return { color: c.contentTextSecondary };
+}
+
+/** 小さなタグ／チップ（人物・エピソードタグなど） */
+export function contentTagStyle(c: AppThemeContentColorFields): ViewStyle {
+  return {
+    backgroundColor: c.contentInputBg,
+    borderColor: c.contentBorder,
+  };
+}
+
+/** 人物タグ専用。白黒テーマで背景を安定させる */
+export function contentPersonTagStyle(c: AppThemeContentColorFields): ViewStyle {
+  return {
+    backgroundColor: c.contentPersonTagBg,
+    borderColor: c.contentBorder,
+  };
+}
+
+export function contentTagTextStyle(c: AppThemeContentColorFields): TextStyle {
+  return { color: c.contentText };
+}
+
+export function contentSearchAreaStyle(c: AppThemeContentColorFields): ViewStyle {
+  return {
+    backgroundColor: c.contentSearchArea,
+    borderColor: c.contentSearchFieldBorder,
+  };
+}

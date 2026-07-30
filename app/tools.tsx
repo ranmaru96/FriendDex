@@ -1,8 +1,15 @@
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Theme, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 
 type ToolEntry = {
   id: string;
@@ -41,6 +48,7 @@ const TOOL_ENTRIES: ToolEntry[] = [
 export default function ToolsScreen() {
   const router = useRouter();
   const kit = useUiKit();
+  const content = useContentColors();
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
@@ -60,7 +68,11 @@ export default function ToolsScreen() {
         {TOOL_ENTRIES.map((entry) => (
           <Pressable
             key={entry.id}
-            style={[styles.toolCard, { borderRadius: kit.toolScreenCardBorderRadius }]}
+            style={[
+              styles.toolCard,
+              contentSurfaceStyle(content),
+              { borderRadius: kit.toolScreenCardBorderRadius },
+            ]}
             disabled={!entry.route}
             onPress={() => {
               if (entry.route) {
@@ -68,12 +80,20 @@ export default function ToolsScreen() {
               }
             }}
           >
-            <View style={[styles.toolIconWrap, { borderRadius: kit.toolScreenIconBorderRadius }]}>
-              <Ionicons name={entry.icon} size={22} color="#334155" />
+            <View
+              style={[
+                styles.toolIconWrap,
+                contentTagStyle(content),
+                { borderRadius: kit.toolScreenIconBorderRadius },
+              ]}
+            >
+              <Ionicons name={entry.icon} size={22} color={content.contentTextSecondary} />
             </View>
             <View style={styles.toolTextWrap}>
-              <Text style={styles.toolTitle}>{entry.title}</Text>
-              <Text style={styles.toolDescription}>{entry.description}</Text>
+              <Text style={[styles.toolTitle, contentTextStyle(content)]}>{entry.title}</Text>
+              <Text style={[styles.toolDescription, contentMutedTextStyle(content)]}>
+                {entry.description}
+              </Text>
             </View>
           </Pressable>
         ))}
@@ -103,9 +123,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Spacing.md,
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     padding: Spacing.md,
   },
   toolIconWrap: {
@@ -113,9 +131,7 @@ const styles = StyleSheet.create({
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f1f5f9',
     borderWidth: 1,
-    borderColor: '#e2e8f0',
   },
   toolTextWrap: {
     flex: 1,
@@ -124,11 +140,9 @@ const styles = StyleSheet.create({
   toolTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   toolDescription: {
     fontSize: 13,
-    color: Theme.textSecondary,
     lineHeight: 18,
   },
 });

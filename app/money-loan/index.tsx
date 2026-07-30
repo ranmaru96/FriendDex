@@ -16,7 +16,7 @@ import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { MoneyLoanSessionCard } from '@/components/money-loan/MoneyLoanSessionCard';
 import { MoneyLoanSessionEditModal } from '@/components/money-loan/MoneyLoanSessionEditModal';
-import { moneyLoanFormStyles as formStyles } from '@/components/money-loan/moneyLoanFormStyles';
+import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { MoneyLoanRecentCounterpartyChips } from '@/components/money-loan/MoneyLoanRecentCounterpartyChips';
 import {
   createMoneyLoans,
@@ -52,6 +52,12 @@ import {
   buildMoneyLoanCounterpartyFriends,
   getRecentTogetherFriendIdsFromPastEvents,
 } from '../../utils/eventRecencyHelpers';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 
 type MoneyLoanTab = 'register' | 'lent' | 'borrowed';
 type RegisterMode = 'split' | 'individual';
@@ -90,6 +96,8 @@ function parseYenInput(value: string): number {
 
 export default function MoneyLoanScreen() {
   const router = useRouter();
+  const formStyles = useMoneyLoanFormStyles();
+  const content = useContentColors();
   const [activeTab, setActiveTab] = useState<MoneyLoanTab>('register');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [sessions, setSessions] = useState<MoneyLoanSession[]>([]);
@@ -439,15 +447,17 @@ export default function MoneyLoanScreen() {
     }
 
     return aggregates.map((aggregate) => (
-      <View key={aggregate.counterpartyKey} style={styles.personCard}>
+      <View key={aggregate.counterpartyKey} style={[styles.personCard, contentSurfaceStyle(content)]}>
         <View style={styles.personCardHeader}>
-          <Text style={styles.personName} numberOfLines={1}>
+          <Text style={[styles.personName, contentTextStyle(content)]} numberOfLines={1}>
             {aggregate.displayName}
           </Text>
-          <Text style={styles.personTotal}>{formatYen(aggregate.totalAmount)}</Text>
+          <Text style={[styles.personTotal, contentTextStyle(content)]}>
+            {formatYen(aggregate.totalAmount)}
+          </Text>
         </View>
         {aggregate.items.length > 1 ? (
-          <Text style={styles.personBreakdownLabel}>内訳</Text>
+          <Text style={[styles.personBreakdownLabel, contentMutedTextStyle(content)]}>内訳</Text>
         ) : null}
         {aggregate.items.map((item) => (
           <Pressable
@@ -455,14 +465,19 @@ export default function MoneyLoanScreen() {
             style={styles.breakdownRow}
             onPress={() => handleToggleRepaid(item.loanId)}
           >
-            <View style={styles.repaidCheck}>
-              <Text style={styles.repaidCheckHint}>済</Text>
+            <View
+              style={[
+                styles.repaidCheck,
+                { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
+              ]}
+            >
+              <Text style={[styles.repaidCheckHint, contentMutedTextStyle(content)]}>済</Text>
             </View>
             <View style={styles.breakdownBody}>
-              <Text style={styles.breakdownTitle} numberOfLines={1}>
+              <Text style={[styles.breakdownTitle, contentTextStyle(content)]} numberOfLines={1}>
                 {item.sessionTitle}
               </Text>
-              <Text style={styles.breakdownMeta}>
+              <Text style={[styles.breakdownMeta, contentMutedTextStyle(content)]}>
                 {formatMoneyLoanDateLabel(item.createdAt)} · {formatYen(item.amount)}
               </Text>
             </View>
@@ -728,9 +743,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   personCard: {
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 8,
@@ -745,18 +758,15 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   personTotal: {
     fontSize: 16,
     fontWeight: '800',
-    color: Theme.textPrimary,
     flexShrink: 0,
   },
   personBreakdownLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: Theme.textSecondary,
   },
   breakdownRow: {
     flexDirection: 'row',
@@ -769,15 +779,12 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: Theme.searchFieldBorder,
-    backgroundColor: Theme.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
   repaidCheckHint: {
     fontSize: 11,
     fontWeight: '700',
-    color: Theme.textSecondary,
   },
   breakdownBody: {
     flex: 1,
@@ -787,10 +794,8 @@ const styles = StyleSheet.create({
   breakdownTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: Theme.textPrimary,
   },
   breakdownMeta: {
     fontSize: 12,
-    color: Theme.textSecondary,
   },
 });

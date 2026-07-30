@@ -2,18 +2,20 @@ import { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import { BorderWidth, Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useContentColors } from '@/utils/useContentColors';
 
 /** 一覧・エピソードなど、タブ画面上部の検索エリア（UiKit 連動） */
 export function useSearchAreaStyles() {
   const kit = useUiKit();
+  const content = useContentColors();
 
   return useMemo(() => {
     const isFlat = kit.searchAreaStyle === 'singleBorder';
 
     return StyleSheet.create({
       area: {
-        backgroundColor: isFlat ? 'transparent' : Theme.searchAreaBase,
-        borderColor: Theme.border,
+        backgroundColor: isFlat ? 'transparent' : content.contentSearchArea,
+        borderColor: content.contentBorder,
         borderWidth: isFlat ? 0 : 1,
         borderRadius: isFlat ? 0 : Radius.md,
         padding: kit.searchAreaPadding,
@@ -22,7 +24,7 @@ export function useSearchAreaStyles() {
       },
       areaDivider: {
         height: 1,
-        backgroundColor: Theme.card,
+        backgroundColor: content.contentCard,
         marginTop: 10,
         marginBottom: 10,
       },
@@ -33,7 +35,7 @@ export function useSearchAreaStyles() {
       },
       areaDividerFlatLine: {
         height: 1,
-        backgroundColor: Theme.border,
+        backgroundColor: content.contentDivider,
         alignSelf: 'stretch',
       },
       row: {
@@ -47,28 +49,28 @@ export function useSearchAreaStyles() {
       fieldLabel: {
         fontSize: 11,
         fontWeight: '600',
-        color: Theme.textSecondary,
+        color: content.contentTextSecondary,
         marginBottom: 4,
       },
       textInput: {
-        backgroundColor: Theme.card,
-        borderColor: Theme.searchFieldBorder,
+        backgroundColor: content.contentInputBg,
+        borderColor: content.contentSearchFieldBorder,
         borderWidth: BorderWidth.input,
         borderRadius: kit.searchAreaFieldBorderRadius,
-        color: Theme.textPrimary,
+        color: content.contentText,
         paddingHorizontal: Spacing.sm,
         paddingVertical: kit.searchAreaShowFieldLabels ? 6 : Spacing.sm,
         fontSize: Typography.base,
         minHeight: kit.searchAreaShowFieldLabels ? 34 : 38,
       },
       textInputActive: {
-        borderColor: Theme.accent,
-        backgroundColor: Theme.accentLight,
+        borderColor: content.contentText,
+        backgroundColor: content.contentInputBg,
       },
       selectButton: {
         flex: 1,
-        backgroundColor: Theme.card,
-        borderColor: Theme.searchFieldBorder,
+        backgroundColor: content.contentInputBg,
+        borderColor: content.contentSearchFieldBorder,
         borderWidth: BorderWidth.input,
         borderRadius: kit.searchAreaFieldBorderRadius,
         paddingHorizontal: Spacing.sm,
@@ -79,27 +81,27 @@ export function useSearchAreaStyles() {
         minHeight: kit.searchAreaShowFieldLabels ? 34 : 38,
       },
       selectButtonActive: {
-        borderColor: Theme.accent,
-        backgroundColor: Theme.accentLight,
+        borderColor: content.contentText,
+        backgroundColor: content.contentInputBg,
       },
       selectValue: {
         fontSize: Typography.base,
-        color: Theme.textPrimary,
+        color: content.contentText,
         flex: 1,
       },
       selectPlaceholder: {
         fontSize: Typography.base,
-        color: Theme.textSecondary,
+        color: content.contentTextSecondary,
         flex: 1,
       },
       tagField: {
         opacity: 0.72,
       },
       tagPlaceholder: {
-        borderColor: Theme.searchFieldBorder,
+        borderColor: content.contentSearchFieldBorder,
         borderWidth: BorderWidth.input,
         borderRadius: kit.searchAreaFieldBorderRadius,
-        backgroundColor: Theme.card,
+        backgroundColor: content.contentInputBg,
         paddingHorizontal: Spacing.sm,
         paddingVertical: kit.searchAreaShowFieldLabels ? 6 : Spacing.sm,
         minHeight: kit.searchAreaShowFieldLabels ? 34 : 38,
@@ -107,8 +109,8 @@ export function useSearchAreaStyles() {
       },
       tagPlaceholderText: {
         fontSize: Typography.base,
-        color: Theme.textSecondary,
+        color: content.contentTextSecondary,
       },
     });
-  }, [kit]);
+  }, [content, kit]);
 }

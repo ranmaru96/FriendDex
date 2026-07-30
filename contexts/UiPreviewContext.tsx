@@ -99,8 +99,14 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
     const base = getUiKit(variant);
     let next: UiKit = {
       ...base,
-      screenBackground: appThemeColors.screenBackground,
-      topBarText: appThemeColors.topBarText,
+      screenBackground: appThemeColors.screenBackground as UiKit['screenBackground'],
+      topBarText: appThemeColors.topBarText as UiKit['topBarText'],
+      panelBackground: appThemeColors.contentCard,
+      panelBorderColor: appThemeColors.contentBorder,
+      textPrimary: appThemeColors.contentText as UiKit['textPrimary'],
+      textSecondary: appThemeColors.contentTextSecondary as UiKit['textSecondary'],
+      inputBg: appThemeColors.contentInputBg as UiKit['inputBg'],
+      inputBorder: appThemeColors.contentSearchFieldBorder as UiKit['inputBorder'],
     };
     if (variant !== 'preview') {
       return next;
@@ -130,6 +136,12 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
     variant,
     appThemeColors.screenBackground,
     appThemeColors.topBarText,
+    appThemeColors.contentCard,
+    appThemeColors.contentBorder,
+    appThemeColors.contentText,
+    appThemeColors.contentTextSecondary,
+    appThemeColors.contentInputBg,
+    appThemeColors.contentSearchFieldBorder,
     calendarEventCardStyle,
     calendarEventTimeDisplay,
     episodeListPhotoLayout,

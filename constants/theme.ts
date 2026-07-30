@@ -128,7 +128,7 @@ export const LightTheme = {
   tagLikeText: Palette.textPrimary,
   tagDislikeBorder: Palette.border,
   tagDislikeText: Palette.textPrimary,
-  tagChipBg: Palette.border,
+  tagChipBg: '#F7F7F8',
 
   // --- 公開設定バッジ ---
   badgePrivateBg: Palette.border,

@@ -1,5 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Theme, Radius, Spacing } from '@/constants/theme';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import type { SettlementPersonAggregate } from '@/utils/settlementPersonAggregates';
 import { formatSettlementNetSignedAmount } from '@/utils/settlementPersonAggregates';
 
@@ -16,29 +22,68 @@ export function SettlementPersonAggregateCard({
   onToggleItem,
   settled = false,
 }: SettlementPersonAggregateCardProps) {
+  const content = useContentColors();
+
   return (
-    <View style={[styles.card, settled && styles.cardSettled]}>
+    <View style={[styles.card, contentSurfaceStyle(content), settled && styles.cardSettled]}>
       <View style={styles.header}>
-        <Text style={[styles.personName, settled && styles.personNameSettled]} numberOfLines={1}>
+        <Text
+          style={[
+            styles.personName,
+            contentTextStyle(content),
+            settled && contentMutedTextStyle(content),
+          ]}
+          numberOfLines={1}
+        >
           {aggregate.displayName}
         </Text>
-        <Text style={[styles.personTotal, settled && styles.personTotalSettled]}>
+        <Text
+          style={[
+            styles.personTotal,
+            contentTextStyle(content),
+            settled && contentMutedTextStyle(content),
+          ]}
+        >
           {formatSettlementNetSignedAmount(aggregate.netSignedAmount)}
         </Text>
       </View>
-      {aggregate.items.length > 1 ? <Text style={styles.breakdownLabel}>内訳</Text> : null}
+      {aggregate.items.length > 1 ? (
+        <Text style={[styles.breakdownLabel, contentMutedTextStyle(content)]}>内訳</Text>
+      ) : null}
       {aggregate.items.map((item) => {
         const completed = isItemCompleted(item.key);
         return (
           <Pressable key={item.key} style={styles.breakdownRow} onPress={() => onToggleItem(item.key)}>
-            <View style={[styles.check, completed && styles.checkCompleted]}>
-              <Text style={[styles.checkText, completed && styles.checkTextCompleted]}>済</Text>
+            <View
+              style={[
+                styles.check,
+                { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
+                completed && styles.checkCompleted,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.checkText,
+                  contentMutedTextStyle(content),
+                  completed && styles.checkTextCompleted,
+                ]}
+              >
+                済
+              </Text>
             </View>
             <View style={styles.breakdownBody}>
-              <Text style={[styles.breakdownTitle, completed && styles.breakdownTitleCompleted]} numberOfLines={1}>
+              <Text
+                style={[
+                  styles.breakdownTitle,
+                  contentTextStyle(content),
+                  completed && styles.breakdownTitleCompleted,
+                  completed && contentMutedTextStyle(content),
+                ]}
+                numberOfLines={1}
+              >
                 {item.roomTitle}
               </Text>
-              <Text style={styles.breakdownMeta}>{item.lineLabel}</Text>
+              <Text style={[styles.breakdownMeta, contentMutedTextStyle(content)]}>{item.lineLabel}</Text>
             </View>
           </Pressable>
         );
@@ -49,9 +94,7 @@ export function SettlementPersonAggregateCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 8,
@@ -69,24 +112,15 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '700',
-    color: Theme.textPrimary,
-  },
-  personNameSettled: {
-    color: Theme.textSecondary,
   },
   personTotal: {
     fontSize: 16,
     fontWeight: '800',
-    color: Theme.textPrimary,
     flexShrink: 0,
-  },
-  personTotalSettled: {
-    color: Theme.textSecondary,
   },
   breakdownLabel: {
     fontSize: 11,
     fontWeight: '600',
-    color: Theme.textSecondary,
   },
   breakdownRow: {
     flexDirection: 'row',
@@ -99,8 +133,6 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: 6,
     borderWidth: 2,
-    borderColor: Theme.searchFieldBorder,
-    backgroundColor: Theme.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -111,7 +143,6 @@ const styles = StyleSheet.create({
   checkText: {
     fontSize: 11,
     fontWeight: '700',
-    color: Theme.textSecondary,
   },
   checkTextCompleted: {
     color: Theme.accent,
@@ -124,14 +155,11 @@ const styles = StyleSheet.create({
   breakdownTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: Theme.textPrimary,
   },
   breakdownTitleCompleted: {
-    color: Theme.textSecondary,
     textDecorationLine: 'line-through',
   },
   breakdownMeta: {
     fontSize: 12,
-    color: Theme.textSecondary,
   },
 });

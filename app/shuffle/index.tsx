@@ -37,6 +37,14 @@ import {
 import type { Friend, ShufflePool } from '../../types';
 import { buildParticipantChipDisplays } from '../../utils/episodeHelpers';
 import { buildFriendNameById } from '../../utils/moneyLoanHelpers';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import {
   buildDefaultShufflePoolLabel,
   buildShuffleMemberSetKey,
@@ -108,6 +116,7 @@ function draftToActivePool(draft: ShufflePoolDraft | null): ShufflePool | null {
 export default function ShuffleScreen() {
   const router = useRouter();
   const { colors: appTheme } = useAppTheme();
+  const content = useContentColors();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pools, setPools] = useState<ShufflePool[]>([]);
   const [poolDraft, setPoolDraft] = useState<ShufflePoolDraft | null>(null);
@@ -432,12 +441,12 @@ export default function ShuffleScreen() {
         }
         scrollContentStyle={styles.scrollContent}
       >
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, contentSurfaceStyle(content)]}>
           {activePool ? (
             <>
               <View style={styles.poolHeaderRow}>
                 <View style={styles.poolHeaderMain}>
-                  <Text style={styles.poolLabel} numberOfLines={1}>
+                  <Text style={[styles.poolLabel, contentTextStyle(content)]} numberOfLines={1}>
                     {activePool.label}
                   </Text>
                   <Pressable
@@ -448,7 +457,9 @@ export default function ShuffleScreen() {
                   >
                     <Ionicons name="create-outline" size={18} color={Theme.accent} />
                   </Pressable>
-                  <Text style={styles.poolMemberCount}>· {activePool.memberIds.length}人</Text>
+                  <Text style={[styles.poolMemberCount, contentMutedTextStyle(content)]}>
+                    · {activePool.memberIds.length}人
+                  </Text>
                 </View>
               </View>
               <ParticipantChipList chips={activeMemberChips} compact layout="scroll" />
@@ -456,20 +467,26 @@ export default function ShuffleScreen() {
           ) : (
             <>
               <Text style={[styles.sectionTitle, { color: appTheme.onScreenText }]}>メンバー</Text>
-              <Text style={styles.emptyHint}>
+              <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
                 参加者を選ぶか、ライブラリから引用してください。シャッフル実行時にライブラリへ保存されます。
               </Text>
             </>
           )}
 
           <View style={styles.memberActionsRow}>
-            <Pressable style={styles.memberActionButton} onPress={openParticipantSelector}>
-              <Ionicons name="people-outline" size={18} color={Theme.textPrimary} />
-              <Text style={styles.memberActionButtonText}>参加者</Text>
+            <Pressable
+              style={[styles.memberActionButton, contentTagStyle(content)]}
+              onPress={openParticipantSelector}
+            >
+              <Ionicons name="people-outline" size={18} color={content.contentText} />
+              <Text style={[styles.memberActionButtonText, contentTextStyle(content)]}>参加者</Text>
             </Pressable>
-            <Pressable style={styles.memberActionButton} onPress={openLibraryModal}>
-              <Ionicons name="albums-outline" size={18} color={Theme.textPrimary} />
-              <Text style={styles.memberActionButtonText}>ライブラリ</Text>
+            <Pressable
+              style={[styles.memberActionButton, contentTagStyle(content)]}
+              onPress={openLibraryModal}
+            >
+              <Ionicons name="albums-outline" size={18} color={content.contentText} />
+              <Text style={[styles.memberActionButtonText, contentTextStyle(content)]}>ライブラリ</Text>
             </Pressable>
           </View>
 
@@ -478,34 +495,43 @@ export default function ShuffleScreen() {
 
         <View style={styles.shuffleSection}>
           {shuffleMode === 'random' ? (
-            <View style={styles.shuffleCard}>
+            <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
               {!activePool ? (
-                <Text style={styles.emptyHint}>メンバーを選ぶと、ここからランダム抽選できます。</Text>
+                <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
+                  メンバーを選ぶと、ここからランダム抽選できます。
+                </Text>
               ) : (
                 <>
                   <View style={styles.pickCountRow}>
-                    <Text style={styles.pickCountLabel}>選ぶ人数</Text>
+                    <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>選ぶ人数</Text>
                     <View style={styles.stepper}>
-                      <Pressable
-                        style={[styles.stepperButton, pickCount <= 1 && styles.stepperButtonDisabled]}
-                        onPress={decrementPickCount}
-                        disabled={pickCount <= 1}
-                      >
-                        <Text style={styles.stepperButtonText}>−</Text>
-                      </Pressable>
-                      <Text style={styles.pickCountValue}>{pickCount}</Text>
                       <Pressable
                         style={[
                           styles.stepperButton,
+                          contentTagStyle(content),
+                          pickCount <= 1 && styles.stepperButtonDisabled,
+                        ]}
+                        onPress={decrementPickCount}
+                        disabled={pickCount <= 1}
+                      >
+                        <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
+                      </Pressable>
+                      <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{pickCount}</Text>
+                      <Pressable
+                        style={[
+                          styles.stepperButton,
+                          contentTagStyle(content),
                           pickCount >= activeMemberCount && styles.stepperButtonDisabled,
                         ]}
                         onPress={incrementPickCount}
                         disabled={pickCount >= activeMemberCount}
                       >
-                        <Text style={styles.stepperButtonText}>＋</Text>
+                        <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
                       </Pressable>
                     </View>
-                    <Text style={styles.pickCountMeta}>／ {activeMemberCount}人</Text>
+                    <Text style={[styles.pickCountMeta, contentMutedTextStyle(content)]}>
+                      ／ {activeMemberCount}人
+                    </Text>
                   </View>
 
                   <Pressable style={styles.shuffleButton} onPress={runRandomShuffle}>
@@ -515,8 +541,8 @@ export default function ShuffleScreen() {
                   {shuffleError ? <Text style={styles.formError}>{shuffleError}</Text> : null}
 
                   {resultMemberIds && resultMemberIds.length > 0 ? (
-                    <View style={styles.resultSection}>
-                      <Text style={styles.resultTitle}>
+                    <View style={[styles.resultSection, { borderTopColor: content.contentDivider }]}>
+                      <Text style={[styles.resultTitle, contentTextStyle(content)]}>
                         {resultMemberIds.length === 1 ? '選ばれた人' : `選ばれた${resultMemberIds.length}人`}
                       </Text>
                       <ShuffleResultCards
@@ -533,12 +559,16 @@ export default function ShuffleScreen() {
               )}
             </View>
           ) : shuffleMode === 'order' ? (
-            <View style={styles.shuffleCard}>
+            <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
               {!activePool ? (
-                <Text style={styles.emptyHint}>メンバーを選ぶと、ここから並び替えできます。</Text>
+                <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
+                  メンバーを選ぶと、ここから並び替えできます。
+                </Text>
               ) : (
                 <>
-                  <Text style={styles.orderHint}>全員をランダムな順番に並べ替えます。</Text>
+                  <Text style={[styles.orderHint, contentMutedTextStyle(content)]}>
+                    全員をランダムな順番に並べ替えます。
+                  </Text>
                   <Pressable style={styles.shuffleButton} onPress={runOrderShuffle}>
                     <Text style={styles.shuffleButtonText}>シャッフル</Text>
                   </Pressable>
@@ -546,8 +576,8 @@ export default function ShuffleScreen() {
                   {shuffleError ? <Text style={styles.formError}>{shuffleError}</Text> : null}
 
                   {orderResultMemberIds && orderResultMemberIds.length > 0 ? (
-                    <View style={styles.resultSection}>
-                      <Text style={styles.resultTitle}>並び順</Text>
+                    <View style={[styles.resultSection, { borderTopColor: content.contentDivider }]}>
+                      <Text style={[styles.resultTitle, contentTextStyle(content)]}>並び順</Text>
                       <ShuffleOrderResults
                         memberIds={orderResultMemberIds}
                         friendNameById={friendNameById}
@@ -621,11 +651,13 @@ export default function ShuffleScreen() {
         onRequestClose={() => setLabelEditVisible(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>集団の名前</Text>
-            <Text style={styles.modalHint}>名前の変更は、シャッフル実行時にライブラリへ保存されます。</Text>
+          <View style={[styles.modalCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.modalTitle, contentTextStyle(content)]}>集団の名前</Text>
+            <Text style={[styles.modalHint, contentMutedTextStyle(content)]}>
+              名前の変更は、シャッフル実行時にライブラリへ保存されます。
+            </Text>
             <TextInput
-              style={styles.textInput}
+              style={[styles.textInput, contentInputStyle(content)]}
               value={labelDraft}
               onChangeText={setLabelDraft}
               placeholder="名前"
@@ -635,7 +667,7 @@ export default function ShuffleScreen() {
             {labelError ? <Text style={styles.formError}>{labelError}</Text> : null}
             <View style={styles.modalActions}>
               <Pressable style={styles.modalButton} onPress={() => setLabelEditVisible(false)}>
-                <Text style={styles.modalButtonText}>キャンセル</Text>
+                <Text style={[styles.modalButtonText, contentMutedTextStyle(content)]}>キャンセル</Text>
               </Pressable>
               <Pressable style={styles.modalButton} onPress={handleSaveLabel}>
                 <Text style={[styles.modalButtonText, styles.modalButtonTextPrimary]}>反映</Text>
@@ -655,9 +687,7 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   sectionCard: {
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 10,
@@ -686,16 +716,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.card,
     paddingVertical: 8,
     paddingHorizontal: 10,
   },
   memberActionButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   sectionTitle: {
     fontSize: 16,
@@ -705,32 +732,26 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     fontSize: 16,
     fontWeight: '800',
-    color: Theme.textPrimary,
   },
   poolMemberCount: {
     fontSize: 13,
     fontWeight: '600',
-    color: Theme.textSecondary,
   },
   emptyHint: {
     fontSize: 13,
-    color: Theme.textSecondary,
     lineHeight: 18,
   },
   shuffleSection: {
     gap: 10,
   },
   shuffleCard: {
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 12,
   },
   orderHint: {
     fontSize: 13,
-    color: Theme.textSecondary,
     lineHeight: 18,
   },
   pickCountRow: {
@@ -742,7 +763,6 @@ const styles = StyleSheet.create({
   pickCountLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   stepper: {
     flexDirection: 'row',
@@ -754,8 +774,6 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
-    backgroundColor: Theme.card,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -765,7 +783,6 @@ const styles = StyleSheet.create({
   stepperButtonText: {
     fontSize: 20,
     fontWeight: '700',
-    color: Theme.textPrimary,
     lineHeight: 22,
   },
   pickCountValue: {
@@ -773,12 +790,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 20,
     fontWeight: '800',
-    color: Theme.textPrimary,
   },
   pickCountMeta: {
     fontSize: 13,
     fontWeight: '600',
-    color: Theme.textSecondary,
   },
   shuffleButton: {
     backgroundColor: Theme.accent,
@@ -795,12 +810,10 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Theme.border,
   },
   resultTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: Theme.textPrimary,
     textAlign: 'center',
   },
   reshuffleButton: {
@@ -828,27 +841,22 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   modalCard: {
-    backgroundColor: Theme.card,
     borderRadius: Radius.md,
+    borderWidth: 1,
     padding: 14,
     gap: 12,
   },
   modalTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   modalHint: {
     fontSize: 12,
-    color: Theme.textSecondary,
     lineHeight: 17,
   },
   textInput: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.searchFieldBorder,
     borderWidth: 1,
     borderRadius: Radius.md,
-    color: Theme.textPrimary,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     fontSize: 13,
@@ -866,7 +874,6 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: 14,
     fontWeight: '600',
-    color: Theme.textSecondary,
   },
   modalButtonTextPrimary: {
     color: Theme.accent,

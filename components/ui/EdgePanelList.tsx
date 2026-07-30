@@ -2,8 +2,9 @@ import { Children, Fragment, isValidElement, type ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { StyleSheet, View } from 'react-native';
 import { useUiKit } from '@/contexts/UiPreviewContext';
-import { Spacing, Theme } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { SectionDivider } from '@/components/ui/Panel';
+import { useContentColors } from '@/utils/useContentColors';
 
 type EdgePanelListProps = {
   children: ReactNode;
@@ -20,14 +21,16 @@ export function EdgePanelDivider({ style }: EdgePanelDividerProps) {
 
 export function EdgePanelList({ children, style }: EdgePanelListProps) {
   const kit = useUiKit();
+  const content = useContentColors();
   const items = Children.toArray(children).filter((child) => isValidElement(child));
 
   if (items.length === 0) {
     return null;
   }
 
-  const borderColor = kit.textSecondary;
-  const panelBackground = kit.listPanelStyle === 'edgeFlat' ? Theme.card : kit.panelBackground;
+  const borderColor = content.contentTextSecondary;
+  const panelBackground =
+    kit.listPanelStyle === 'edgeFlat' ? content.contentCard : kit.panelBackground;
 
   return (
     <View

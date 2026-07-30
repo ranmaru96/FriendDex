@@ -18,6 +18,16 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { Theme, Radius, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentPersonTagStyle,
+  contentSurfaceStyle,
+  contentTagStyle,
+  contentTagTextStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 import { FormOverlayTemplate, FormScreenBody, FormScreenSection } from '@/components/screen-templates';
 import {
   formatEpisodeDateToYMD,
@@ -65,6 +75,7 @@ function SelectInput({
   variant?: 'field' | 'chip';
 }) {
   const kit = useUiKit();
+  const content = useContentColors();
   const resolvedVariant = variant ?? (kit.formLayout === 'horizontal' ? 'chip' : 'field');
   const [modalVisible, setModalVisible] = useState(false);
   const selectedLabel = useMemo(() => {
@@ -83,12 +94,16 @@ function SelectInput({
           isChip ? styles.selectChipButton : styles.episodeSelectButton,
           isChip ? styles.selectChipButtonLayout : null,
           { borderRadius: isChip ? chipRadius : fieldRadius },
+          !isChip ? contentInputStyle(content) : null,
           style,
         ]}
         onPress={() => setModalVisible(true)}
       >
         <Text
-          style={isChip ? (value ? styles.selectChipText : styles.selectChipPlaceholder) : value ? styles.episodeSelectText : styles.episodeSelectPlaceholder}
+          style={[
+            isChip ? (value ? styles.selectChipText : styles.selectChipPlaceholder) : value ? styles.episodeSelectText : styles.episodeSelectPlaceholder,
+            !isChip ? (value ? contentTextStyle(content) : contentMutedTextStyle(content)) : null,
+          ]}
           numberOfLines={1}
         >
           {selectedLabel}
@@ -97,35 +112,45 @@ function SelectInput({
       </Pressable>
       <Modal transparent animationType="fade" visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{placeholder}</Text>
+          <View style={[styles.modalCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.modalTitle, contentTextStyle(content)]}>{placeholder}</Text>
             <ScrollView style={styles.modalOptionsScroll} keyboardShouldPersistTaps="handled">
               {includeEmptyOption ? (
                 <Pressable
-                  style={[styles.modalOption, value === '' && styles.modalOptionSelected]}
+                  style={[
+                    styles.modalOption,
+                    value === ''
+                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                      : null,
+                  ]}
                   onPress={() => {
                     onChange('');
                     setModalVisible(false);
                   }}
                 >
-                  <Text style={styles.modalOptionText}>{placeholder}</Text>
+                  <Text style={[styles.modalOptionText, contentTextStyle(content)]}>{placeholder}</Text>
                 </Pressable>
               ) : null}
               {options.map((option) => (
                 <Pressable
                   key={option.value}
-                  style={[styles.modalOption, value === option.value && styles.modalOptionSelected]}
+                  style={[
+                    styles.modalOption,
+                    value === option.value
+                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
+                      : null,
+                  ]}
                   onPress={() => {
                     onChange(option.value);
                     setModalVisible(false);
                   }}
                 >
-                  <Text style={styles.modalOptionText}>{option.label}</Text>
+                  <Text style={[styles.modalOptionText, contentTextStyle(content)]}>{option.label}</Text>
                 </Pressable>
               ))}
             </ScrollView>
-            <Pressable style={styles.modalCloseButton} onPress={() => setModalVisible(false)}>
-              <Text style={styles.modalCloseButtonText}>閉じる</Text>
+            <Pressable style={[styles.modalCloseButton, contentInputStyle(content)]} onPress={() => setModalVisible(false)}>
+              <Text style={[styles.modalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </View>
         </View>
@@ -146,6 +171,7 @@ export function EpisodeFormOverlay({
   onLinkToEvent,
 }: EpisodeFormOverlayProps) {
   const kit = useUiKit();
+  const content = useContentColors();
   const fieldRadius = kit.formFieldBorderRadius;
   const fieldCorner = { borderRadius: fieldRadius };
   const tagChipRadius = fieldRadius === 0 ? 0 : 999;
@@ -179,9 +205,9 @@ export function EpisodeFormOverlay({
           <FormScreenSection style={styles.episodeFormSection}>
             <FormRow label="タイトル">
               <TextInput
-                style={[styles.episodeInput, fieldCorner]}
+                style={[styles.episodeInput, fieldCorner, contentInputStyle(content)]}
                 placeholder="入力"
-                placeholderTextColor={Theme.inputPlaceholder}
+                placeholderTextColor={content.contentTextSecondary}
                 value={form.title}
                 onChangeText={form.setTitle}
               />
@@ -189,10 +215,10 @@ export function EpisodeFormOverlay({
 
             <FormRow label="日付">
               <Pressable
-                style={[styles.episodeInput, fieldCorner, styles.episodeDateInput]}
+                style={[styles.episodeInput, fieldCorner, contentInputStyle(content), styles.episodeDateInput]}
                 onPress={() => form.setShowDatePicker(true)}
               >
-                <Text style={form.date ? styles.episodeDateText : styles.episodeDatePlaceholder}>
+                <Text style={form.date ? [styles.episodeDateText, contentTextStyle(content)] : [styles.episodeDatePlaceholder, contentMutedTextStyle(content)]}>
                   {form.date || 'YYYY-MM-DD'}
                 </Text>
               </Pressable>
@@ -212,22 +238,22 @@ export function EpisodeFormOverlay({
                     if (selected) form.setDate(formatEpisodeDateToYMD(selected));
                   }}
                 />
-                <Pressable style={[styles.datePickerDone, fieldCorner]} onPress={() => form.setShowDatePicker(false)}>
-                  <Text style={styles.datePickerDoneText}>完了</Text>
+                <Pressable style={[styles.datePickerDone, fieldCorner, contentInputStyle(content)]} onPress={() => form.setShowDatePicker(false)}>
+                  <Text style={[styles.datePickerDoneText, contentTextStyle(content)]}>完了</Text>
                 </Pressable>
               </View>
             ) : null}
 
             <FormRow label="参加者" contentLayout="action">
-              <Pressable style={[styles.addParticipantButton, fieldCorner]} onPress={form.openParticipantSelector}>
-                <Text style={styles.addParticipantButtonText}>参加者を選ぶ</Text>
+              <Pressable style={[styles.addParticipantButton, fieldCorner, contentInputStyle(content)]} onPress={form.openParticipantSelector}>
+                <Text style={[styles.addParticipantButtonText, contentTextStyle(content)]}>参加者を選ぶ</Text>
               </Pressable>
             </FormRow>
-            <Pressable style={[styles.selectedEntryTagArea, fieldCorner]} onPress={form.openParticipantSelector}>
+            <Pressable style={[styles.selectedEntryTagArea, fieldCorner, contentSurfaceStyle(content)]} onPress={form.openParticipantSelector}>
               {participantChips.length > 0 ? (
                 <ParticipantChipList chips={participantChips} layout="wrap" />
               ) : (
-                <Text style={styles.selectedEntryEmptyText}>参加者が選択されていません</Text>
+                <Text style={[styles.selectedEntryEmptyText, contentMutedTextStyle(content)]}>参加者が選択されていません</Text>
               )}
             </Pressable>
 
@@ -256,11 +282,11 @@ export function EpisodeFormOverlay({
             {form.visibilityMode === 'limited' ? (
               <>
                 <FormRow label="公開先" contentLayout="action">
-                  <Pressable style={[styles.addParticipantButton, fieldCorner]} onPress={form.openVisibilitySelector}>
-                    <Text style={styles.addParticipantButtonText}>公開先を選ぶ</Text>
+                  <Pressable style={[styles.addParticipantButton, fieldCorner, contentInputStyle(content)]} onPress={form.openVisibilitySelector}>
+                    <Text style={[styles.addParticipantButtonText, contentTextStyle(content)]}>公開先を選ぶ</Text>
                   </Pressable>
                 </FormRow>
-                <Pressable style={[styles.selectedEntryTagArea, fieldCorner]} onPress={form.openVisibilitySelector}>
+                <Pressable style={[styles.selectedEntryTagArea, fieldCorner, contentSurfaceStyle(content)]} onPress={form.openVisibilitySelector}>
                   {form.visibility.filter((entry) => entry.value.trim().length > 0).length > 0 ? (
                     <View style={styles.selectedEntryTagWrap}>
                       {form.visibility
@@ -273,15 +299,15 @@ export function EpisodeFormOverlay({
                           return (
                             <View
                               key={`visibility-tag-${entry.kind}-${entry.value}-${index}`}
-                              style={[styles.episodeParticipantTag, { borderRadius: tagChipRadius }]}
+                              style={[styles.episodeParticipantTag, contentPersonTagStyle(content), { borderRadius: tagChipRadius }]}
                             >
-                              <Text style={styles.episodeParticipantTagName}>{label}</Text>
+                              <Text style={[styles.episodeParticipantTagName, contentTagTextStyle(content)]}>{label}</Text>
                             </View>
                           );
                         })}
                     </View>
                   ) : (
-                    <Text style={styles.selectedEntryEmptyText}>公開先が選択されていません</Text>
+                    <Text style={[styles.selectedEntryEmptyText, contentMutedTextStyle(content)]}>公開先が選択されていません</Text>
                   )}
                 </Pressable>
               </>
@@ -289,14 +315,15 @@ export function EpisodeFormOverlay({
 
             <FormRow label="写真" contentLayout="action">
               <Pressable
-                style={[styles.episodePhotoAddButton, fieldCorner, form.isPhotoLimitReached && styles.episodePhotoAddButtonDisabled]}
+                style={[styles.episodePhotoAddButton, fieldCorner, contentInputStyle(content), form.isPhotoLimitReached && styles.episodePhotoAddButtonDisabled]}
                 onPress={form.pickPhoto}
                 disabled={form.isPhotoLimitReached}
               >
                 <Text
                   style={[
                     styles.episodePhotoAddButtonText,
-                    form.isPhotoLimitReached && styles.episodePhotoAddButtonTextDisabled,
+                    contentTextStyle(content),
+                    form.isPhotoLimitReached && [styles.episodePhotoAddButtonTextDisabled, contentMutedTextStyle(content)],
                   ]}
                 >
                   写真を追加
@@ -312,7 +339,7 @@ export function EpisodeFormOverlay({
               >
                 {form.visibleExistingPhotos.map((photo) => (
                   <View key={`existing-photo-${photo.id}`} style={styles.episodePhotoThumbWrap}>
-                    <Image source={{ uri: photo.photoUri }} style={[styles.episodePhotoThumb, fieldCorner]} />
+                    <Image source={{ uri: photo.photoUri }} style={[styles.episodePhotoThumb, fieldCorner, { backgroundColor: content.contentPhotoPlaceholder, borderColor: content.contentBorder }]} />
                     <Pressable
                       style={styles.episodePhotoRemoveButton}
                       onPress={() => form.removeExistingPhoto(photo.id)}
@@ -323,7 +350,7 @@ export function EpisodeFormOverlay({
                 ))}
                 {form.newPhotoUris.map((uri, index) => (
                   <View key={`new-photo-${index}-${uri}`} style={styles.episodePhotoThumbWrap}>
-                    <Image source={{ uri }} style={[styles.episodePhotoThumb, fieldCorner]} />
+                    <Image source={{ uri }} style={[styles.episodePhotoThumb, fieldCorner, { backgroundColor: content.contentPhotoPlaceholder, borderColor: content.contentBorder }]} />
                     <Pressable
                       style={styles.episodePhotoRemoveButton}
                       onPress={() => form.removeNewPhoto(index)}
@@ -335,23 +362,23 @@ export function EpisodeFormOverlay({
               </ScrollView>
             )}
             {form.isPhotoLimitReached ? (
-              <Text style={styles.episodePhotoUpgradeHint}>
+              <Text style={[styles.episodePhotoUpgradeHint, contentMutedTextStyle(content)]}>
                 プランをアップグレードするとさらに追加できます
               </Text>
             ) : null}
 
             <TextInput
-              style={[styles.episodeDescriptionInput, fieldCorner]}
+              style={[styles.episodeDescriptionInput, fieldCorner, contentInputStyle(content)]}
               placeholder="説明文の記入（記入式）"
-              placeholderTextColor={Theme.inputPlaceholder}
+              placeholderTextColor={content.contentTextSecondary}
               multiline
               value={form.description}
               onChangeText={form.setDescription}
             />
             {form.formError ? <Text style={styles.episodeErrorText}>{form.formError}</Text> : null}
             {form.editingEpisodeId && !form.linkedEventId && onLinkToEvent ? (
-              <Pressable style={[styles.linkToEventButton, fieldCorner]} onPress={onLinkToEvent}>
-                <Text style={styles.linkToEventButtonText}>予定に紐づける</Text>
+              <Pressable style={[styles.linkToEventButton, fieldCorner, contentSurfaceStyle(content)]} onPress={onLinkToEvent}>
+                <Text style={[styles.linkToEventButtonText, contentTextStyle(content)]}>予定に紐づける</Text>
               </Pressable>
             ) : null}
             <View style={styles.episodeFormActions}>

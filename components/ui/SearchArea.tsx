@@ -13,8 +13,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Radius, Theme } from '@/constants/theme';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useSearchAreaStyles } from '@/utils/useSearchAreaStyles';
+import { useContentColors } from '@/utils/useContentColors';
 
 type SearchAreaProps = {
   children: ReactNode;
@@ -92,10 +94,11 @@ export function SearchAreaField({
 
 function SearchAreaChevron() {
   const kit = useUiKit();
+  const content = useContentColors();
   if (kit.searchAreaShowFieldLabels) {
-    return <Ionicons name="chevron-down" size={14} color={Theme.textSecondary} />;
+    return <Ionicons name="chevron-down" size={14} color={content.contentTextSecondary} />;
   }
-  return <Text style={legacyChevronStyles.chevron}>▼</Text>;
+  return <Text style={{ fontSize: 10, color: content.contentTextSecondary, marginLeft: 4 }}>▼</Text>;
 }
 
 export function SearchAreaSelectTrigger({
@@ -139,11 +142,66 @@ export function SearchAreaSelectField({
   onValueChange,
   style,
 }: SearchAreaSelectFieldProps) {
+  const content = useContentColors();
+  const appTheme = useAppThemeOptional();
   const [visible, setVisible] = useState(false);
   const displayText = useMemo(() => {
     if (!value) return '';
     return options.find((item) => item.value === value)?.label ?? value;
   }, [options, value]);
+  const modalStyles = useMemo(
+    () =>
+      StyleSheet.create({
+        backdrop: {
+          flex: 1,
+          backgroundColor: appTheme?.colors.overlay ?? Theme.overlay,
+          justifyContent: 'center',
+          padding: 24,
+        },
+        card: {
+          backgroundColor: content.contentCard,
+          borderColor: content.contentBorder,
+          borderWidth: 1,
+          borderRadius: Radius.md,
+          padding: 16,
+          maxHeight: '70%',
+        },
+        title: {
+          fontSize: 16,
+          fontWeight: '700',
+          color: content.contentText,
+          marginBottom: 10,
+        },
+        options: {
+          maxHeight: 320,
+        },
+        option: {
+          paddingVertical: 12,
+          paddingHorizontal: 8,
+          borderRadius: 8,
+        },
+        optionSelected: {
+          backgroundColor: content.contentInputBg,
+          borderWidth: 1,
+          borderColor: content.contentText,
+        },
+        optionText: {
+          fontSize: 15,
+          color: content.contentText,
+        },
+        closeButton: {
+          marginTop: 12,
+          alignItems: 'center',
+          paddingVertical: 10,
+        },
+        closeButtonText: {
+          fontSize: 15,
+          color: content.contentTextSecondary,
+          fontWeight: '600',
+        },
+      }),
+    [appTheme?.colors.overlay, content]
+  );
 
   return (
     <>
@@ -199,6 +257,7 @@ export function SearchAreaTextInputField({
 }: SearchAreaTextInputFieldProps) {
   const kit = useUiKit();
   const styles = useSearchAreaStyles();
+  const content = useContentColors();
   const hasValue = Boolean(value.trim());
 
   return (
@@ -207,63 +266,9 @@ export function SearchAreaTextInputField({
         {...textInputProps}
         value={value}
         placeholder={kit.searchAreaShowFieldLabels ? '入力' : label}
-        placeholderTextColor={Theme.textSecondary}
+        placeholderTextColor={content.contentTextSecondary}
         style={[styles.textInput, hasValue ? styles.textInputActive : null]}
       />
     </SearchAreaField>
   );
 }
-
-const legacyChevronStyles = StyleSheet.create({
-  chevron: {
-    fontSize: 10,
-    color: Theme.textSecondary,
-    marginLeft: 4,
-  },
-});
-
-const modalStyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: Theme.overlay,
-    justifyContent: 'center',
-    padding: 24,
-  },
-  card: {
-    backgroundColor: Theme.card,
-    borderRadius: Radius.md,
-    padding: 16,
-    maxHeight: '70%',
-  },
-  title: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Theme.textPrimary,
-    marginBottom: 10,
-  },
-  options: {
-    maxHeight: 320,
-  },
-  option: {
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-  },
-  optionSelected: {
-    backgroundColor: Theme.accentLight,
-  },
-  optionText: {
-    fontSize: 15,
-    color: Theme.textPrimary,
-  },
-  closeButton: {
-    marginTop: 12,
-    alignItems: 'center',
-    paddingVertical: 10,
-  },
-  closeButtonText: {
-    fontSize: 15,
-    color: Theme.textSecondary,
-    fontWeight: '600',
-  },
-});

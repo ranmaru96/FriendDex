@@ -3,6 +3,8 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, Spacing } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { contentSearchAreaStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 
 export type PillTabItem<T extends string> = {
   key: T;
@@ -26,6 +28,7 @@ export function PillTabBar<T extends string>({
   perTabColors = false,
 }: PillTabBarProps<T>) {
   const kit = useUiKit();
+  const content = useContentColors();
 
   return (
     <View
@@ -34,7 +37,7 @@ export function PillTabBar<T extends string>({
         { paddingHorizontal: kit.subToolScreenPaddingHorizontal, backgroundColor: kit.screenBackground },
       ]}
     >
-      <View style={styles.tabTrack}>
+      <View style={[styles.tabTrack, contentSearchAreaStyle(content)]}>
         <View style={styles.tabInner}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
@@ -69,7 +72,7 @@ export function PillTabBar<T extends string>({
                   <Text
                     style={[
                       styles.tabPillCaption,
-                      isActive ? styles.tabPillCaptionActive : styles.tabPillCaptionInactive,
+                      isActive ? styles.tabPillCaptionActive : [styles.tabPillCaptionInactive, contentTextStyle(content)],
                     ]}
                     numberOfLines={1}
                     adjustsFontSizeToFit

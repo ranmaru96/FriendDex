@@ -1,4 +1,6 @@
 import { ScrollView, View } from 'react-native';
+import { isMonochromeAppTheme } from '@/constants/appThemes';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { participantChipStyles as styles } from '@/utils/participantChipStyles';
 import type { ParticipantChipDisplay } from '@/utils/episodeHelpers';
@@ -26,8 +28,10 @@ export function ParticipantChipList({
   onRemoveChip,
 }: ParticipantChipListProps) {
   const kit = useUiKit();
+  const appTheme = useAppThemeOptional();
   const resolvedChipStyle = chipStyle ?? kit.participantChipStyle;
-  const resolvedChipBackground = chipBackgroundColor ?? kit.participantChipBackground;
+  const resolvedChipBackground = chipBackgroundColor
+    ?? (isMonochromeAppTheme(appTheme?.variant) ? undefined : kit.participantChipBackground);
 
   if (chips.length === 0) {
     return null;

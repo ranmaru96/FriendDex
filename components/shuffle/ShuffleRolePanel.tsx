@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Radius, Spacing, Theme } from '@/constants/theme';
+import { useContentColors } from '@/utils/useContentColors';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSurfaceStyle,
+  contentTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import { ParticipantChip } from '@/components/participant/ParticipantChip';
 import type { Friend, ShufflePool } from '../../types';
 import { buildParticipantChipDisplays } from '../../utils/episodeHelpers';
@@ -31,6 +39,7 @@ export function ShuffleRolePanel({
   myselfId = null,
   onShuffleComplete,
 }: ShuffleRolePanelProps) {
+  const content = useContentColors();
   const [roleDrafts, setRoleDrafts] = useState<ShuffleRoleDraft[]>([createEmptyRoleDraft(1)]);
   const [assignments, setAssignments] = useState<ShuffleRoleAssignment[] | null>(null);
   const [error, setError] = useState('');
@@ -152,22 +161,26 @@ export function ShuffleRolePanel({
 
   if (!activePool) {
     return (
-      <View style={styles.shuffleCard}>
-        <Text style={styles.emptyHint}>集団を選ぶと、ここから役割分担できます。</Text>
+      <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
+        <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
+          集団を選ぶと、ここから役割分担できます。
+        </Text>
       </View>
     );
   }
 
   return (
-    <View style={styles.shuffleCard}>
-      <Text style={styles.hintText}>役を追加し、人数と「この役にしない人」を設定してからシャッフルします。</Text>
+    <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
+      <Text style={[styles.hintText, contentMutedTextStyle(content)]}>
+        役を追加し、人数と「この役にしない人」を設定してからシャッフルします。
+      </Text>
 
       {roleDrafts.map((role, index) => {
         const excludedSet = new Set(role.excludedMemberIds);
         return (
-          <View key={role.id} style={styles.roleCard}>
+          <View key={role.id} style={[styles.roleCard, contentTagStyle(content)]}>
             <View style={styles.roleCardHeader}>
-              <Text style={styles.roleCardTitle}>役 {index + 1}</Text>
+              <Text style={[styles.roleCardTitle, contentTextStyle(content)]}>役 {index + 1}</Text>
               <Pressable onPress={() => removeRole(role.id)} hitSlop={8}>
                 <Text style={styles.removeRoleText}>削除</Text>
               </Pressable>
@@ -175,7 +188,7 @@ export function ShuffleRolePanel({
 
             <View style={styles.roleNameCountRow}>
               <TextInput
-                style={styles.roleNameInput}
+                style={[styles.roleNameInput, contentInputStyle(content)]}
                 value={role.name}
                 onChangeText={(name) => updateRole(role.id, { name })}
                 placeholder="役名（例: 運転手）"
@@ -183,29 +196,34 @@ export function ShuffleRolePanel({
               />
               <View style={styles.stepper}>
                 <Pressable
-                  style={[styles.stepperButton, role.count <= 1 && styles.stepperButtonDisabled]}
+                  style={[
+                    styles.stepperButton,
+                    contentTagStyle(content),
+                    role.count <= 1 && styles.stepperButtonDisabled,
+                  ]}
                   onPress={() => decrementRoleCount(role.id)}
                   disabled={role.count <= 1}
                 >
-                  <Text style={styles.stepperButtonText}>−</Text>
+                  <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
                 </Pressable>
-                <Text style={styles.pickCountValue}>{role.count}</Text>
+                <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{role.count}</Text>
                 <Pressable
                   style={[
                     styles.stepperButton,
+                    contentTagStyle(content),
                     role.count >= memberCount && styles.stepperButtonDisabled,
                   ]}
                   onPress={() => incrementRoleCount(role.id)}
                   disabled={role.count >= memberCount}
                 >
-                  <Text style={styles.stepperButtonText}>＋</Text>
+                  <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
                 </Pressable>
               </View>
             </View>
 
             <View style={styles.excludeSection}>
-              <Text style={styles.excludeLabel}>この役にしない人</Text>
-              <Text style={styles.excludeHint}>タップで選択・解除</Text>
+              <Text style={[styles.excludeLabel, contentTextStyle(content)]}>この役にしない人</Text>
+              <Text style={[styles.excludeHint, contentMutedTextStyle(content)]}>タップで選択・解除</Text>
               <View style={styles.excludeChipWrap}>
                 {poolMemberChips.map((chip) => {
                   const memberId = chip.friendId;
@@ -239,8 +257,8 @@ export function ShuffleRolePanel({
       {error ? <Text style={styles.formError}>{error}</Text> : null}
 
       {assignments && assignments.length > 0 ? (
-        <View style={styles.resultSection}>
-          <Text style={styles.resultTitle}>振り分け結果</Text>
+        <View style={[styles.resultSection, { borderTopColor: content.contentDivider }]}>
+          <Text style={[styles.resultTitle, contentTextStyle(content)]}>振り分け結果</Text>
           <ShuffleRoleResults
             assignments={assignments}
             friendsById={friendsById}
@@ -257,27 +275,21 @@ export function ShuffleRolePanel({
 
 const styles = StyleSheet.create({
   shuffleCard: {
-    backgroundColor: Theme.bgSurface,
     borderWidth: 1,
-    borderColor: Theme.border,
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 12,
   },
   emptyHint: {
     fontSize: 13,
-    color: Theme.textSecondary,
     lineHeight: 18,
   },
   hintText: {
     fontSize: 12,
-    color: Theme.textSecondary,
     lineHeight: 17,
   },
   roleCard: {
-    backgroundColor: Theme.card,
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
     borderRadius: Radius.md,
     padding: 10,
     gap: 8,
@@ -290,7 +302,6 @@ const styles = StyleSheet.create({
   roleCardTitle: {
     fontSize: 14,
     fontWeight: '800',
-    color: Theme.textPrimary,
   },
   removeRoleText: {
     fontSize: 12,
@@ -305,11 +316,8 @@ const styles = StyleSheet.create({
   roleNameInput: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.searchFieldBorder,
     borderWidth: 1,
     borderRadius: Radius.md,
-    color: Theme.textPrimary,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 6,
     fontSize: 13,
@@ -326,8 +334,6 @@ const styles = StyleSheet.create({
     height: 28,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
-    backgroundColor: Theme.bgSurface,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -337,7 +343,6 @@ const styles = StyleSheet.create({
   stepperButtonText: {
     fontSize: 16,
     fontWeight: '700',
-    color: Theme.textPrimary,
     lineHeight: 18,
   },
   pickCountValue: {
@@ -345,7 +350,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 15,
     fontWeight: '800',
-    color: Theme.textPrimary,
   },
   excludeSection: {
     gap: 4,
@@ -353,11 +357,9 @@ const styles = StyleSheet.create({
   excludeLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: Theme.textPrimary,
   },
   excludeHint: {
     fontSize: 11,
-    color: Theme.textSecondary,
   },
   excludeChipWrap: {
     flexDirection: 'row',
@@ -406,12 +408,10 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: Theme.border,
   },
   resultTitle: {
     fontSize: 15,
     fontWeight: '800',
-    color: Theme.textPrimary,
     textAlign: 'center',
   },
   reshuffleButton: {

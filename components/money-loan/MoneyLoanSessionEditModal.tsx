@@ -13,7 +13,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view
 import { Theme, Spacing, ScreenHorizontalInset } from '@/constants/theme';
 import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { useAppTheme } from '@/contexts/AppThemeContext';
-import { moneyLoanFormStyles as formStyles } from '@/components/money-loan/moneyLoanFormStyles';
+import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
@@ -42,6 +42,8 @@ import {
   type MoneyLoanIndividualLineDraft,
   splitAmountEvenly,
 } from '../../utils/moneyLoanHelpers';
+import { useContentColors } from '@/utils/useContentColors';
+import { contentTextStyle } from '@/utils/contentStyleHelpers';
 
 type RegisterMode = 'split' | 'individual';
 type Option = { label: string; value: string };
@@ -214,6 +216,8 @@ function BatchEditSection({
   onRemoveParticipant,
   onDelete,
 }: BatchEditSectionProps) {
+  const formStyles = useMoneyLoanFormStyles();
+  const content = useContentColors();
   const participantEntries = useMemo(
     () =>
       draft.participants
@@ -256,7 +260,9 @@ function BatchEditSection({
   return (
     <View style={formStyles.formCard}>
       {showDateLabel ? (
-        <Text style={styles.batchDateLabel}>登録 {formatMoneyLoanDateLabel(draft.createdAt)}</Text>
+        <Text style={[styles.batchDateLabel, contentTextStyle(content)]}>
+          登録 {formatMoneyLoanDateLabel(draft.createdAt)}
+        </Text>
       ) : null}
 
       <View style={formStyles.formRow}>
@@ -403,6 +409,7 @@ export function MoneyLoanSessionEditModal({
 }: MoneyLoanSessionEditModalProps) {
   const { colors: appTheme } = useAppTheme();
   const headerStyles = useSubScreenHeaderStyles();
+  const formStyles = useMoneyLoanFormStyles();
   const [titleDraft, setTitleDraft] = useState('');
   const [batchDrafts, setBatchDrafts] = useState<BatchEditDraft[]>([]);
   const [formError, setFormError] = useState('');
@@ -718,7 +725,6 @@ const styles = StyleSheet.create({
   batchDateLabel: {
     fontSize: 14,
     fontWeight: '700',
-    color: Theme.textPrimary,
     marginBottom: 2,
   },
   dangerButton: {
