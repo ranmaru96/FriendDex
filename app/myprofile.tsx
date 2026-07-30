@@ -18,6 +18,7 @@ import {
   contentInputStyle,
   contentMutedTextStyle,
   contentSurfaceStyle,
+  contentSwitchColors,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
@@ -99,6 +100,7 @@ export default function MyProfileScreen() {
   const router = useRouter();
   const { colors: appTheme } = useAppTheme();
   const content = useContentColors();
+  const switchColors = contentSwitchColors(content);
   const headerStyles = useSubScreenHeaderStyles();
   const [profileId, setProfileId] = useState('');
   const [form, setForm] = useState<MyProfileForm>(emptyForm);
@@ -243,8 +245,10 @@ export default function MyProfileScreen() {
                 <Switch
                   value={publicFieldSet.has(field.key)}
                   onValueChange={(enabled) => togglePublicField(field.key, enabled)}
-                  trackColor={{ false: content.contentBorder, true: Theme.accentLight }}
-                  thumbColor={publicFieldSet.has(field.key) ? Theme.accent : content.contentCard}
+                  trackColor={switchColors.trackColor}
+                  thumbColor={
+                    publicFieldSet.has(field.key) ? Theme.accent : switchColors.thumbColorOff
+                  }
                 />
               </View>
             </View>

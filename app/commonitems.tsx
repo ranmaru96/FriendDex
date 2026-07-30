@@ -48,7 +48,9 @@ import { INACTIVE_TAB_COLOR_ALPHA, withAlpha } from '@/utils/colorHelpers';
 import {
   contentInputStyle,
   contentMutedTextStyle,
+  contentSelectedOptionStyle,
   contentSurfaceStyle,
+  contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
@@ -129,6 +131,7 @@ function EditorActionButtons({
           styles.editorIconButton,
           contentSurfaceStyle(content),
           styles.editorIconButtonPrimary,
+          { borderColor: content.contentText, backgroundColor: content.contentPersonTagBg },
           saveDisabled && styles.editorIconButtonDisabled,
         ]}
         onPress={onSave}
@@ -139,7 +142,7 @@ function EditorActionButtons({
         <Ionicons
           name="checkmark-outline"
           size={20}
-          color={saveDisabled ? content.contentTextSecondary : Theme.accent}
+          color={saveDisabled ? content.contentTextSecondary : content.contentText}
         />
       </Pressable>
     </View>
@@ -173,9 +176,7 @@ function SelectField({ label, value, options, onValueChange }: {
               <Pressable
                 style={[
                   styles.selectModalOption,
-                  !value
-                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                    : null,
+                  !value ? contentSelectedOptionStyle(content) : null,
                 ]}
                 onPress={() => { onValueChange(''); setVisible(false); }}
               >
@@ -186,9 +187,7 @@ function SelectField({ label, value, options, onValueChange }: {
                   key={opt.value}
                   style={[
                     styles.selectModalOption,
-                    opt.value === value
-                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                      : null,
+                    opt.value === value ? contentSelectedOptionStyle(content) : null,
                   ]}
                   onPress={() => { onValueChange(opt.value); setVisible(false); }}
                 >
@@ -196,7 +195,10 @@ function SelectField({ label, value, options, onValueChange }: {
                 </Pressable>
               ))}
             </ScrollView>
-            <Pressable style={styles.selectModalCloseButton} onPress={() => setVisible(false)}>
+            <Pressable
+              style={[styles.selectModalCloseButton, contentTagStyle(content)]}
+              onPress={() => setVisible(false)}
+            >
               <Text style={[styles.selectModalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </View>
@@ -520,7 +522,18 @@ export default function CommonItemsScreen() {
     const checked = selectedMemberIds.has(item.id);
     return (
       <Pressable style={[styles.personRow, contentSurfaceStyle(content), { width: personCardWidth }]} onPress={() => toggleMember(item.id)}>
-        <View style={[styles.checkbox, contentSurfaceStyle(content), checked && styles.checkboxChecked]}>
+        <View
+          style={[
+            styles.checkbox,
+            contentSurfaceStyle(content),
+            checked
+              ? {
+                  backgroundColor: content.contentInputBg,
+                  borderColor: '#4caf50',
+                }
+              : null,
+          ]}
+        >
           {checked ? <Text style={styles.checkmark}>✓</Text> : null}
         </View>
         <Text style={[styles.personName, contentTextStyle(content)]} numberOfLines={1}>{item.name}</Text>
@@ -697,7 +710,16 @@ export default function CommonItemsScreen() {
                 />
                 {renderEpisodeTagColorPicker()}
                 {editingOriginalLabel ? (
-                  <Pressable style={styles.editorDeleteButton} onPress={handleDeleteSimpleEditor}>
+                  <Pressable
+                    style={[
+                      styles.editorDeleteButton,
+                      {
+                        backgroundColor: 'rgba(248, 113, 113, 0.18)',
+                        borderColor: 'rgba(248, 113, 113, 0.55)',
+                      },
+                    ]}
+                    onPress={handleDeleteSimpleEditor}
+                  >
                     <Text style={styles.editorDeleteText}>削除</Text>
                   </Pressable>
                 ) : null}
@@ -788,7 +810,16 @@ export default function CommonItemsScreen() {
                 />
 
                 {groupEditingId ? (
-                  <Pressable style={styles.editorDeleteButton} onPress={handleDeleteGroupEditor}>
+                  <Pressable
+                    style={[
+                      styles.editorDeleteButton,
+                      {
+                        backgroundColor: 'rgba(248, 113, 113, 0.18)',
+                        borderColor: 'rgba(248, 113, 113, 0.55)',
+                      },
+                    ]}
+                    onPress={handleDeleteGroupEditor}
+                  >
                     <Text style={styles.editorDeleteText}>削除</Text>
                   </Pressable>
                 ) : null}
@@ -1005,7 +1036,6 @@ const styles = StyleSheet.create({
   },
   editorIconButtonPrimary: {
     borderColor: Theme.accent,
-    backgroundColor: Theme.accentLight,
   },
   editorIconButtonDisabled: {
     opacity: 0.45,
@@ -1018,15 +1048,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     borderRadius: Radius.sm,
     borderWidth: 1,
-    borderColor: '#dc2626',
-    backgroundColor: '#fef2f2',
     alignItems: 'center',
     justifyContent: 'center',
   },
   editorDeleteText: {
     fontSize: Typography.base,
     fontWeight: '700',
-    color: '#dc2626',
+    color: '#f87171',
   },
   editorTitle: {
     fontSize: 16,
@@ -1240,22 +1268,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: Radius.sm,
   },
-  selectModalOptionSelected: {
-    backgroundColor: '#e0f2fe',
-  },
   selectModalOptionText: {
     fontSize: 14,
-    color: '#1e293b',
   },
   selectModalCloseButton: {
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: Radius.sm,
-    backgroundColor: '#e2e8f0',
+    borderWidth: StyleSheet.hairlineWidth,
   },
   selectModalCloseButtonText: {
-    color: '#0f172a',
     fontWeight: '600',
   },
 
@@ -1275,9 +1298,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     borderWidth: 2,
-    borderColor: '#d0d0d0',
     borderRadius: Radius.sm,
-    backgroundColor: '#fafafa',
     paddingHorizontal: 8,
     paddingVertical: 10,
   },
@@ -1289,14 +1310,9 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Theme.bgSurface,
-  },
-  checkboxChecked: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#4caf50',
   },
   checkmark: {
-    color: '#2e7d32',
+    color: '#4caf50',
     fontSize: 16,
     fontWeight: '900',
   },
@@ -1304,6 +1320,5 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     fontWeight: '600',
-    color: '#333',
   },
 });

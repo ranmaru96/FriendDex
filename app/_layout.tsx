@@ -12,8 +12,18 @@ import { DetailDesignProvider } from '../contexts/DetailDesignContext';
 import { UiPreviewProvider } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
 import { getActiveTab, shouldHideBottomNav, shouldHideHeader } from '../utils/bottomNavVisibility';
+import { getNextTabAnimation } from '../utils/tabTransition';
 import { initializeDatabase } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
+
+const BOTTOM_TAB_ROUTE_NAMES = new Set([
+  'index',
+  'commonitems',
+  'calendar',
+  'episode',
+  'tools',
+  'friends',
+]);
 
 function PastEventConversionScheduler() {
   usePastEventConversionSchedule();
@@ -31,7 +41,16 @@ function AppShell() {
     <View style={[styles.shell, { backgroundColor: colors.screenBackground }]}>
       {!hideHeader && <AppHeader />}
       <View style={styles.content}>
-        <Stack screenOptions={{ headerShown: false }} />
+        <Stack
+          screenOptions={({ route }) => ({
+            headerShown: false,
+            animation: BOTTOM_TAB_ROUTE_NAMES.has(route.name)
+              ? getNextTabAnimation()
+              : 'slide_from_right',
+            /** replace でも push と同じ方向で入る（pop だと向きが反転する） */
+            animationTypeForReplace: 'push',
+          })}
+        />
       </View>
       {!hideBottomNav && <BottomNav active={activeTab} />}
     </View>

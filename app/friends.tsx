@@ -14,6 +14,7 @@ import {
   contentMutedTextStyle,
   contentSearchAreaStyle,
   contentSurfaceStyle,
+  contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 
@@ -152,7 +153,10 @@ function SelectField({
                 </Pressable>
               ))}
             </ScrollView>
-            <Pressable style={styles.modalCloseButton} onPress={() => setVisible(false)}>
+            <Pressable
+              style={[styles.modalCloseButton, contentTagStyle(content)]}
+              onPress={() => setVisible(false)}
+            >
               <Text style={[styles.modalCloseButtonText, { color: content.contentText }]}>閉じる</Text>
             </Pressable>
           </View>
@@ -509,8 +513,21 @@ export default function FriendsScreen() {
                         onPress={() => toggleProfileSelection(profile.id)}
                       >
                         <View style={styles.profileCheckboxWrap}>
-                          <View style={[styles.profileCheckbox, contentSurfaceStyle(content), selected && styles.profileCheckboxChecked]}>
-                            {selected ? <Text style={styles.profileCheckboxMark}>✓</Text> : null}
+                          <View
+                            style={[
+                              styles.profileCheckbox,
+                              contentSurfaceStyle(content),
+                              selected
+                                ? {
+                                    backgroundColor: content.contentInputBg,
+                                    borderColor: '#4caf50',
+                                  }
+                                : null,
+                            ]}
+                          >
+                            {selected ? (
+                              <Text style={[styles.profileCheckboxMark, { color: '#4caf50' }]}>✓</Text>
+                            ) : null}
                           </View>
                         </View>
                         <View style={styles.profilePhotoWrapper}>
@@ -878,16 +895,11 @@ const styles = StyleSheet.create({
     height: 24,
     borderWidth: 2,
     borderColor: '#94a3b8',
-    backgroundColor: '#fff',
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  profileCheckboxChecked: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#4caf50',
-  },
   profileCheckboxMark: {
-    color: '#2e7d32',
     fontSize: 16,
     fontWeight: '900',
     lineHeight: 16,
@@ -1034,22 +1046,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: 8,
   },
-  modalOptionSelected: {
-    backgroundColor: '#e0f2fe',
-  },
   modalOptionText: {
     fontSize: 14,
-    color: '#1e293b',
   },
   modalCloseButton: {
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 8,
-    backgroundColor: '#e2e8f0',
+    borderWidth: StyleSheet.hairlineWidth,
   },
   modalCloseButtonText: {
-    color: '#0f172a',
     fontWeight: '600',
   },
 });

@@ -20,14 +20,19 @@ export function SettlementTransferRow({ transfer, isCompleted, onToggle }: Settl
         style={[
           styles.check,
           { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
-          isCompleted && styles.checkCompleted,
+          isCompleted
+            ? {
+                borderColor: content.contentText,
+                backgroundColor: content.contentPersonTagBg,
+              }
+            : null,
         ]}
       >
         <Text
           style={[
             styles.checkText,
             contentMutedTextStyle(content),
-            isCompleted && styles.checkTextCompleted,
+            isCompleted ? contentTextStyle(content) : null,
           ]}
         >
           済
@@ -67,16 +72,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkCompleted: {
-    borderColor: Theme.accent,
-    backgroundColor: Theme.accentLight,
-  },
   checkText: {
     fontSize: 11,
     fontWeight: '700',
-  },
-  checkTextCompleted: {
-    color: Theme.accent,
   },
   body: {
     flex: 1,

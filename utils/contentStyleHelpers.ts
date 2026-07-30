@@ -51,3 +51,25 @@ export function contentSearchAreaStyle(c: AppThemeContentColorFields): ViewStyle
     borderColor: c.contentSearchFieldBorder,
   };
 }
+
+/** モーダル内の選択中オプション行 */
+export function contentSelectedOptionStyle(c: AppThemeContentColorFields): ViewStyle {
+  return {
+    backgroundColor: c.contentInputBg,
+    borderColor: c.contentText,
+    borderWidth: 1,
+  };
+}
+
+/** Switch のトラック／つまみ（true 時はアクセントではなくコンテンツ面で） */
+export function contentSwitchColors(c: AppThemeContentColorFields): {
+  trackColor: { false: string; true: string };
+  thumbColorOn: string;
+  thumbColorOff: string;
+} {
+  return {
+    trackColor: { false: c.contentBorder, true: c.contentPersonTagBg },
+    thumbColorOn: c.contentText,
+    thumbColorOff: c.contentCard,
+  };
+}

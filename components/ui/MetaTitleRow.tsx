@@ -1,5 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { Radius, Spacing, Theme } from '@/constants/theme';
+import {
+  contentPersonTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 
 export type MetaTitleRowLayout = 'plain' | 'column' | 'badge' | 'stacked';
@@ -19,14 +23,16 @@ export function MetaTitleRow({
 }: MetaTitleRowProps) {
   const content = useContentColors();
   const displayTitle = title || emptyTitle;
-  const titleColor = { color: content.contentText };
+  const titleColor = contentTextStyle(content);
+  const metaAccent = { color: Theme.accent };
+  const badgeStyle = contentPersonTagStyle(content);
   const dividerColor = { backgroundColor: content.contentTextSecondary };
 
   if (layout === 'stacked') {
     return (
       <>
-        <View style={styles.metaBadge}>
-          <Text style={styles.metaBadgeText}>{meta}</Text>
+        <View style={[styles.metaBadge, badgeStyle]}>
+          <Text style={[styles.metaBadgeText, contentTextStyle(content)]}>{meta}</Text>
         </View>
         <Text style={[styles.stackedTitle, titleColor]}>{displayTitle}</Text>
       </>
@@ -36,7 +42,7 @@ export function MetaTitleRow({
   if (layout === 'plain') {
     return (
       <View style={styles.row}>
-        <Text style={styles.metaPlain} numberOfLines={2}>
+        <Text style={[styles.metaPlain, metaAccent]} numberOfLines={2}>
           {meta}
         </Text>
         <Text style={[styles.inlineTitle, titleColor]} numberOfLines={2}>
@@ -49,7 +55,7 @@ export function MetaTitleRow({
   if (layout === 'column') {
     return (
       <View style={[styles.row, styles.rowColumn]}>
-        <Text style={styles.metaColumn} numberOfLines={3}>
+        <Text style={[styles.metaColumn, metaAccent]} numberOfLines={3}>
           {meta}
         </Text>
         <View style={[styles.columnDivider, dividerColor]} />
@@ -62,8 +68,8 @@ export function MetaTitleRow({
 
   return (
     <View style={styles.row}>
-      <View style={styles.metaBadgeInRow}>
-        <Text style={styles.metaBadgeText} numberOfLines={1}>
+      <View style={[styles.metaBadgeInRow, badgeStyle]}>
+        <Text style={[styles.metaBadgeText, contentTextStyle(content)]} numberOfLines={1}>
           {meta}
         </Text>
       </View>
@@ -88,7 +94,6 @@ const styles = StyleSheet.create({
     maxWidth: '46%',
     fontSize: 12,
     fontWeight: '600',
-    color: Theme.accent,
     lineHeight: 16,
   },
   metaColumn: {
@@ -96,7 +101,6 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     fontSize: 11,
     fontWeight: '700',
-    color: Theme.accent,
     lineHeight: 15,
   },
   columnDivider: {
@@ -117,15 +121,15 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     maxWidth: '48%',
     alignSelf: 'center',
-    backgroundColor: Theme.accentLight,
     borderRadius: Radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
   },
   metaBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: Theme.accentLight,
     borderRadius: Radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     maxWidth: '100%',
@@ -133,7 +137,6 @@ const styles = StyleSheet.create({
   metaBadgeText: {
     fontSize: 12,
     fontWeight: '700',
-    color: Theme.accent,
     flexShrink: 1,
   },
 });

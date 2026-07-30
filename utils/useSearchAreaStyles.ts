@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
-import { BorderWidth, Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import { BorderWidth, Radius, Spacing, Typography } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useContentColors } from '@/utils/useContentColors';
 

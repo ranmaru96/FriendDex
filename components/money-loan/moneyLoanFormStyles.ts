@@ -77,8 +77,8 @@ export function createMoneyLoanFormStyles(
       alignItems: 'center',
     },
     modeButtonSelected: {
-      borderColor: Theme.accent,
-      backgroundColor: Theme.accentLight,
+      borderColor: c.contentText,
+      backgroundColor: c.contentPersonTagBg,
     },
     modeButtonText: {
       fontSize: 13,
@@ -86,7 +86,7 @@ export function createMoneyLoanFormStyles(
       color: c.contentText,
     },
     modeButtonTextSelected: {
-      color: Theme.accent,
+      color: c.contentText,
     },
     splitPreview: {
       fontSize: 12,
@@ -182,8 +182,8 @@ export function createMoneyLoanFormStyles(
       paddingVertical: 6,
     },
     individualDirectionButtonSelected: {
-      borderColor: Theme.accent,
-      backgroundColor: Theme.accentLight,
+      borderColor: c.contentText,
+      backgroundColor: c.contentPersonTagBg,
     },
     individualDirectionText: {
       fontSize: 12,

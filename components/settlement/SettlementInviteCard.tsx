@@ -18,9 +18,17 @@ export function SettlementInviteCard({ invite, onAccept, onDecline }: Settlement
   const content = useContentColors();
 
   return (
-    <View style={styles.card}>
-      <Text style={styles.title}>管理台帳への追加</Text>
-      <Text style={styles.body}>
+    <View
+      style={[
+        styles.card,
+        {
+          backgroundColor: content.contentCard,
+          borderColor: '#E8C96A',
+        },
+      ]}
+    >
+      <Text style={[styles.title, contentTextStyle(content)]}>管理台帳への追加</Text>
+      <Text style={[styles.body, contentMutedTextStyle(content)]}>
         {invite.fromDisplayName} さんの「{invite.roomTitle}」を、あなたの清算台帳に載せますか？
         （グループの計算にはすでに含まれています）
       </Text>
@@ -38,9 +46,7 @@ export function SettlementInviteCard({ invite, onAccept, onDecline }: Settlement
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#FFF8E8',
     borderWidth: 1,
-    borderColor: '#E8C96A',
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 8,
@@ -48,12 +54,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#8A6A00',
   },
   body: {
     fontSize: 14,
     lineHeight: 20,
-    color: '#334155',
   },
   actions: {
     flexDirection: 'row',

@@ -29,6 +29,7 @@ import { useContentColors } from '@/utils/useContentColors';
 import {
   contentInputStyle,
   contentMutedTextStyle,
+  contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentTagStyle,
   contentTextStyle,
@@ -322,7 +323,7 @@ export default function SettlementRoomDetailScreen() {
             value={expenseTitle}
             onChangeText={setExpenseTitle}
             placeholder="例: 昼食"
-            placeholderTextColor={Theme.inputPlaceholder}
+            placeholderTextColor={content.contentTextSecondary}
           />
         </View>
         <View style={formStyles.formRow}>
@@ -332,7 +333,7 @@ export default function SettlementRoomDetailScreen() {
             value={expenseAmountText}
             onChangeText={setExpenseAmountText}
             placeholder="例: 9000"
-            placeholderTextColor={Theme.inputPlaceholder}
+            placeholderTextColor={content.contentTextSecondary}
             keyboardType="number-pad"
           />
         </View>
@@ -346,7 +347,7 @@ export default function SettlementRoomDetailScreen() {
                 style={[
                   styles.chip,
                   contentTagStyle(content),
-                  selected && styles.chipSelected,
+                  selected ? contentSelectedOptionStyle(content) : null,
                 ]}
                 onPress={() => setPayerMemberId(member.id)}
               >
@@ -354,7 +355,6 @@ export default function SettlementRoomDetailScreen() {
                   style={[
                     styles.chipText,
                     contentTextStyle(content),
-                    selected && styles.chipTextSelected,
                   ]}
                 >
                   {member.displayName}
@@ -370,17 +370,29 @@ export default function SettlementRoomDetailScreen() {
             return (
               <Pressable
                 key={member.id}
-                style={[styles.splitMemberRow, selected && styles.splitMemberRowSelected]}
+                style={[
+                  styles.splitMemberRow,
+                  selected
+                    ? { backgroundColor: content.contentPersonTagBg }
+                    : null,
+                ]}
                 onPress={() => toggleSplitMember(member.id)}
               >
                 <View
                   style={[
                     styles.checkbox,
                     { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
-                    selected && styles.checkboxSelected,
+                    selected
+                      ? {
+                          borderColor: content.contentText,
+                          backgroundColor: content.contentPersonTagBg,
+                        }
+                      : null,
                   ]}
                 >
-                  {selected ? <Text style={styles.checkmark}>✓</Text> : null}
+                  {selected ? (
+                    <Text style={[styles.checkmark, { color: content.contentText }]}>✓</Text>
+                  ) : null}
                 </View>
                 <Text style={[styles.splitMemberName, contentTextStyle(content)]}>
                   {member.displayName}
@@ -455,7 +467,7 @@ export default function SettlementRoomDetailScreen() {
                 }
               }}
               placeholder="例: 北海道旅行"
-              placeholderTextColor={Theme.inputPlaceholder}
+              placeholderTextColor={content.contentTextSecondary}
               autoFocus
               returnKeyType="done"
               onSubmitEditing={handleSaveTitle}
@@ -568,16 +580,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
   },
-  chipSelected: {
-    borderColor: Theme.accent,
-    backgroundColor: Theme.accentLight,
-  },
   chipText: {
     fontSize: 12,
     fontWeight: '600',
-  },
-  chipTextSelected: {
-    color: Theme.accent,
   },
   splitMemberList: {
     gap: 4,
@@ -590,9 +595,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     borderRadius: Radius.sm,
   },
-  splitMemberRowSelected: {
-    backgroundColor: Theme.accentLight,
-  },
   checkbox: {
     width: 22,
     height: 22,
@@ -601,14 +603,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxSelected: {
-    borderColor: Theme.accent,
-    backgroundColor: Theme.accentLight,
-  },
   checkmark: {
     fontSize: 14,
     fontWeight: '900',
-    color: Theme.accent,
   },
   splitMemberName: {
     fontSize: 14,

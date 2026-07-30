@@ -5,6 +5,7 @@ import { useContentColors } from '@/utils/useContentColors';
 import {
   contentInputStyle,
   contentMutedTextStyle,
+  contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentTagStyle,
   contentTextStyle,
@@ -192,7 +193,7 @@ export function ShuffleRolePanel({
                 value={role.name}
                 onChangeText={(name) => updateRole(role.id, { name })}
                 placeholder="役名（例: 運転手）"
-                placeholderTextColor={Theme.inputPlaceholder}
+                placeholderTextColor={content.contentTextSecondary}
               />
               <View style={styles.stepper}>
                 <Pressable
@@ -234,7 +235,15 @@ export function ShuffleRolePanel({
                   return (
                     <View
                       key={`${role.id}-${chip.id}`}
-                      style={[styles.excludeChipItem, excluded && styles.excludeChipItemSelected]}
+                      style={[
+                        styles.excludeChipItem,
+                        excluded
+                          ? {
+                              borderColor: '#f87171',
+                              backgroundColor: 'rgba(248, 113, 113, 0.18)',
+                            }
+                          : null,
+                      ]}
                     >
                       <ParticipantChip chip={chip} compact onPress={() => toggleExcludedMember(role.id, memberId)} />
                     </View>
@@ -246,8 +255,11 @@ export function ShuffleRolePanel({
         );
       })}
 
-      <Pressable style={styles.addRoleButton} onPress={addRole}>
-        <Text style={styles.addRoleButtonText}>＋ 役を追加</Text>
+      <Pressable
+        style={[styles.addRoleButton, contentSelectedOptionStyle(content)]}
+        onPress={addRole}
+      >
+        <Text style={[styles.addRoleButtonText, contentTextStyle(content)]}>＋ 役を追加</Text>
       </Pressable>
 
       <Pressable style={styles.shuffleButton} onPress={runRoleShuffle}>
@@ -264,8 +276,13 @@ export function ShuffleRolePanel({
             friendsById={friendsById}
             myselfId={myselfId}
           />
-          <Pressable style={styles.reshuffleButton} onPress={runRoleShuffle}>
-            <Text style={styles.reshuffleButtonText}>もう一度シャッフル</Text>
+          <Pressable
+            style={[styles.reshuffleButton, contentSelectedOptionStyle(content)]}
+            onPress={runRoleShuffle}
+          >
+            <Text style={[styles.reshuffleButtonText, contentTextStyle(content)]}>
+              もう一度シャッフル
+            </Text>
           </Pressable>
         </View>
       ) : null}
@@ -371,23 +388,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'transparent',
   },
-  excludeChipItemSelected: {
-    borderColor: '#b91c1c',
-    backgroundColor: '#fef2f2',
-  },
   addRoleButton: {
     alignSelf: 'flex-start',
     borderWidth: 1,
-    borderColor: Theme.accent,
     borderRadius: Radius.md,
     paddingVertical: 8,
     paddingHorizontal: 12,
-    backgroundColor: Theme.accentLight,
   },
   addRoleButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: Theme.accent,
   },
   shuffleButton: {
     backgroundColor: Theme.accent,
@@ -417,15 +427,12 @@ const styles = StyleSheet.create({
   reshuffleButton: {
     alignSelf: 'center',
     borderWidth: 1,
-    borderColor: Theme.accent,
     borderRadius: Radius.md,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    backgroundColor: Theme.accentLight,
   },
   reshuffleButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: Theme.accent,
   },
 });

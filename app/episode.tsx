@@ -1043,9 +1043,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: Radius.sm,
   },
-  selectorFilterModalOptionSelected: {
-    backgroundColor: '#e0f2fe',
-  },
   selectorFilterModalOptionText: {
     fontSize: 14,
     color: '#1e293b',
@@ -1124,10 +1121,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: Theme.bgSurface,
-  },
-  checkboxChecked: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#4caf50',
   },
   checkmark: {
     color: '#2e7d32',
@@ -1364,9 +1357,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: Radius.sm,
-  },
-  modalOptionSelected: {
-    backgroundColor: '#e0f2fe',
   },
   modalOptionText: {
     fontSize: 14,

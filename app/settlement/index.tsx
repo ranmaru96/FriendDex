@@ -329,8 +329,16 @@ export default function SettlementScreen() {
         extraScrollHeight={24}
         scrollContentStyle={styles.scrollContent}
       >
-        <View style={styles.prototypeBanner}>
-          <Text style={styles.prototypeBannerText}>
+        <View
+          style={[
+            styles.prototypeBanner,
+            {
+              backgroundColor: content.contentPersonTagBg,
+              borderColor: content.contentBorder,
+            },
+          ]}
+        >
+          <Text style={[styles.prototypeBannerText, contentMutedTextStyle(content)]}>
             UI 試作版（サーバ未接続）。メンバーは全員グループに含めて計算。片方向フォローは相手の台帳への自動反映のみ招待。
           </Text>
         </View>
@@ -355,7 +363,7 @@ export default function SettlementScreen() {
                   value={title}
                   onChangeText={setTitle}
                   placeholder="例: 北海道旅行"
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={content.contentTextSecondary}
                 />
               </View>
               <View style={formStyles.participantRow}>
@@ -598,15 +606,12 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
   },
   prototypeBanner: {
-    backgroundColor: '#EEF4FF',
     borderWidth: 1,
-    borderColor: '#B8CCF0',
     borderRadius: Radius.md,
     padding: Spacing.sm,
   },
   prototypeBannerText: {
     fontSize: 12,
-    color: '#334155',
     lineHeight: 18,
   },
   emptyTextOnBase: {

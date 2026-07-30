@@ -25,6 +25,12 @@ import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { useAppTheme } from '../contexts/AppThemeContext';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
 import { useUiKit, useUiPreview } from '../contexts/UiPreviewContext';
+import {
+  contentSelectedOptionStyle,
+  contentTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 
 type Option = { label: string; value: string };
 
@@ -40,9 +46,10 @@ function ProfileSelectField({
   onValueChange: (value: string) => void;
 }) {
   const { variant, colors } = useAppTheme();
+  const content = useContentColors();
   const isMonochrome = isMonochromeAppTheme(variant);
   const isBlack = variant === 'black';
-  const monoSurface = isBlack ? '#1c1c1c' : undefined;
+  const monoSurface = isBlack ? content.contentCard : undefined;
   const [visible, setVisible] = useState(false);
   const displayLabel = useMemo(() => {
     if (!value) return label;
@@ -93,25 +100,24 @@ function ProfileSelectField({
                   key={option.value}
                   style={[
                     styles.modalOption,
-                    option.value === value && styles.modalOptionSelected,
-                    isBlack && option.value === value && { backgroundColor: '#2a2a2a' },
+                    option.value === value ? contentSelectedOptionStyle(content) : null,
                   ]}
                   onPress={() => {
                     onValueChange(option.value);
                     setVisible(false);
                   }}
                 >
-                  <Text style={[styles.modalOptionText, isMonochrome && { color: colors.onScreenText }]}>
+                  <Text style={[styles.modalOptionText, contentTextStyle(content)]}>
                     {option.label}
                   </Text>
                 </Pressable>
               ))}
             </ScrollView>
             <Pressable
-              style={[styles.modalCloseButton, isBlack && { backgroundColor: '#2a2a2a' }]}
+              style={[styles.modalCloseButton, contentTagStyle(content)]}
               onPress={() => setVisible(false)}
             >
-              <Text style={[styles.modalCloseButtonText, isMonochrome && { color: colors.onScreenText }]}>
+              <Text style={[styles.modalCloseButtonText, contentTextStyle(content)]}>
                 閉じる
               </Text>
             </Pressable>
@@ -520,22 +526,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     borderRadius: Radius.sm,
   },
-  modalOptionSelected: {
-    backgroundColor: '#e0f2fe',
-  },
   modalOptionText: {
     fontSize: 15,
-    color: '#1e293b',
   },
   modalCloseButton: {
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: Radius.sm,
-    backgroundColor: '#e2e8f0',
+    borderWidth: StyleSheet.hairlineWidth,
   },
   modalCloseButtonText: {
-    color: '#0f172a',
     fontWeight: '600',
   },
 });

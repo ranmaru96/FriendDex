@@ -41,6 +41,7 @@ import { useContentColors } from '@/utils/useContentColors';
 import {
   contentInputStyle,
   contentMutedTextStyle,
+  contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentTagStyle,
   contentTextStyle,
@@ -550,8 +551,13 @@ export default function ShuffleScreen() {
                         friendsById={friendsById}
                         myselfId={myselfId}
                       />
-                      <Pressable style={styles.reshuffleButton} onPress={runRandomShuffle}>
-                        <Text style={styles.reshuffleButtonText}>もう一度シャッフル</Text>
+                      <Pressable
+                        style={[styles.reshuffleButton, contentSelectedOptionStyle(content)]}
+                        onPress={runRandomShuffle}
+                      >
+                        <Text style={[styles.reshuffleButtonText, contentTextStyle(content)]}>
+                          もう一度シャッフル
+                        </Text>
                       </Pressable>
                     </View>
                   ) : null}
@@ -583,8 +589,13 @@ export default function ShuffleScreen() {
                         friendNameById={friendNameById}
                         friendPhotoById={friendPhotoById}
                       />
-                      <Pressable style={styles.reshuffleButton} onPress={runOrderShuffle}>
-                        <Text style={styles.reshuffleButtonText}>もう一度シャッフル</Text>
+                      <Pressable
+                        style={[styles.reshuffleButton, contentSelectedOptionStyle(content)]}
+                        onPress={runOrderShuffle}
+                      >
+                        <Text style={[styles.reshuffleButtonText, contentTextStyle(content)]}>
+                          もう一度シャッフル
+                        </Text>
                       </Pressable>
                     </View>
                   ) : null}
@@ -661,7 +672,7 @@ export default function ShuffleScreen() {
               value={labelDraft}
               onChangeText={setLabelDraft}
               placeholder="名前"
-              placeholderTextColor={Theme.inputPlaceholder}
+              placeholderTextColor={content.contentTextSecondary}
               autoFocus
             />
             {labelError ? <Text style={styles.formError}>{labelError}</Text> : null}
@@ -819,16 +830,13 @@ const styles = StyleSheet.create({
   reshuffleButton: {
     alignSelf: 'center',
     borderWidth: 1,
-    borderColor: Theme.accent,
     borderRadius: Radius.md,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    backgroundColor: Theme.accentLight,
   },
   reshuffleButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: Theme.accent,
   },
   formError: {
     fontSize: 12,

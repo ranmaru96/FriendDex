@@ -25,8 +25,9 @@ import {
 } from '@/utils/scheduleGridCalendar';
 
 const GRID_BORDER = Theme.inputBorder;
-/** 当日セルの薄い黄オレンジ背景（テーマ非依存・視認性優先） */
-const TODAY_BG = '#FFF8E6';
+/** 当日セル背景（ライト）／ブラックは濃面 */
+const TODAY_BG_LIGHT = '#FFF8E6';
+const TODAY_BG_BLACK = '#2a2a2a';
 /** 当日日付バッジ（画像参考のオレンジ） */
 const TODAY_BADGE_BG = '#F5A623';
 const SELECTED_RING = Theme.accent;
@@ -134,6 +135,9 @@ function DayCell({
   );
 
   const content = useContentColors();
+  const appTheme = useAppThemeOptional();
+  const todayBackground =
+    appTheme?.variant === 'black' ? TODAY_BG_BLACK : TODAY_BG_LIGHT;
   const dateColor = useMemo(() => {
     if (!day.inCurrentMonth) {
       return content.contentTextSecondary;
@@ -157,7 +161,7 @@ function DayCell({
         !isLastColumn ? styles.dayCellBorderRight : null,
         {
           backgroundColor: isToday
-            ? TODAY_BG
+            ? todayBackground
             : day.inCurrentMonth
               ? content.contentCalendarInMonth
               : content.contentCalendarOutMonth,

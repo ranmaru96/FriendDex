@@ -5,6 +5,7 @@ import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { setNextTabAnimation } from '@/utils/tabTransition';
 
 type TabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'friends';
 
@@ -35,6 +36,16 @@ export default function BottomNav({ active }: BottomNavProps) {
   const tabBarActivePill = appTheme?.colors.tabBarActivePill ?? Theme.tabBarActivePill;
   const tabBarActiveText = appTheme?.colors.tabBarActiveText ?? '#ffffff';
 
+  const handleTabPress = (tab: (typeof TABS)[number]) => {
+    if (active === tab.key) {
+      return;
+    }
+    const fromIndex = TABS.findIndex((item) => item.key === active);
+    const toIndex = TABS.findIndex((item) => item.key === tab.key);
+    setNextTabAnimation(toIndex > fromIndex ? 'slide_from_right' : 'slide_from_left');
+    router.replace(tab.route);
+  };
+
   return (
     <View
       style={[
@@ -55,7 +66,7 @@ export default function BottomNav({ active }: BottomNavProps) {
               styles.tabPill,
               isActive ? { backgroundColor: tabBarActivePill } : null,
             ]}
-            onPress={() => router.replace(tab.route)}
+            onPress={() => handleTabPress(tab)}
             accessibilityRole="tab"
             accessibilityState={{ selected: isActive }}
             accessibilityLabel={tab.label}

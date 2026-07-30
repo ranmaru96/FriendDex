@@ -20,6 +20,15 @@ import { FormRow } from '@/components/ui/FormRow';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSelectedOptionStyle,
+  contentSurfaceStyle,
+  contentTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
 
 import {
   createFriend,
@@ -104,23 +113,31 @@ function IconButton({
   icon,
   onPress,
   accessibilityLabel,
-  color = Theme.textPrimary,
-  backgroundColor = Theme.bgSurface,
-  borderColor = Theme.border,
+  color,
+  backgroundColor,
+  borderColor,
 }: IconButtonProps) {
+  const content = useContentColors();
   return (
     <Pressable
-      style={[styles.iconButton, { backgroundColor, borderColor }]}
+      style={[
+        styles.iconButton,
+        {
+          backgroundColor: backgroundColor ?? content.contentInputBg,
+          borderColor: borderColor ?? content.contentBorder,
+        },
+      ]}
       onPress={onPress}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
     >
-      <Ionicons name={icon} size={20} color={color} />
+      <Ionicons name={icon} size={20} color={color ?? content.contentText} />
     </Pressable>
   );
 }
 
 function SelectField({ label, value, options, placeholder = '選択', onChange }: SelectFieldProps) {
+  const content = useContentColors();
   const [visible, setVisible] = useState(false);
   const selectedLabel = useMemo(() => {
     const item = options.find((option) => option.value === value);
@@ -130,34 +147,43 @@ function SelectField({ label, value, options, placeholder = '選択', onChange }
   return (
     <>
       <FormRow label={label}>
-        <Pressable style={styles.selectButton} onPress={() => setVisible(true)}>
-          <Text style={styles.selectValue} numberOfLines={1}>
+        <Pressable
+          style={[styles.selectButton, contentInputStyle(content)]}
+          onPress={() => setVisible(true)}
+        >
+          <Text style={[styles.selectValue, contentTextStyle(content)]} numberOfLines={1}>
             {selectedLabel}
           </Text>
-          <Ionicons name="chevron-down" size={14} color={Theme.textMuted} />
+          <Ionicons name="chevron-down" size={14} color={content.contentTextSecondary} />
         </Pressable>
       </FormRow>
 
       <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{label}</Text>
+          <View style={[styles.modalCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.modalTitle, contentTextStyle(content)]}>{label}</Text>
             <ScrollView style={styles.modalOptions}>
               {options.map((option) => (
                 <Pressable
                   key={option.value}
-                  style={[styles.modalOption, option.value === value && styles.modalOptionSelected]}
+                  style={[
+                    styles.modalOption,
+                    option.value === value ? contentSelectedOptionStyle(content) : null,
+                  ]}
                   onPress={() => {
                     onChange(option.value);
                     setVisible(false);
                   }}
                 >
-                  <Text style={styles.modalOptionText}>{option.label}</Text>
+                  <Text style={[styles.modalOptionText, contentTextStyle(content)]}>{option.label}</Text>
                 </Pressable>
               ))}
             </ScrollView>
-            <Pressable style={styles.modalClose} onPress={() => setVisible(false)}>
-              <Text style={styles.modalCloseText}>閉じる</Text>
+            <Pressable
+              style={[styles.modalClose, contentTagStyle(content)]}
+              onPress={() => setVisible(false)}
+            >
+              <Text style={[styles.modalCloseText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </View>
         </View>
@@ -167,6 +193,7 @@ function SelectField({ label, value, options, placeholder = '選択', onChange }
 }
 
 function DynamicInputList({ title, values, onChange, placeholder }: DynamicInputListProps) {
+  const content = useContentColors();
   const updateItem = (index: number, text: string) => {
     const next = [...values];
     next[index] = text;
@@ -179,9 +206,13 @@ function DynamicInputList({ title, values, onChange, placeholder }: DynamicInput
   return (
     <FormScreenSection>
       <View style={styles.multiSectionHeader}>
-        <Text style={styles.sectionCaption}>{title}</Text>
-        <Pressable style={styles.addIconButton} onPress={addItem} accessibilityLabel={`${title}を追加`}>
-          <Ionicons name="add" size={18} color={Theme.accent} />
+        <Text style={[styles.sectionCaption, contentMutedTextStyle(content)]}>{title}</Text>
+        <Pressable
+          style={[styles.addIconButton, contentTagStyle(content)]}
+          onPress={addItem}
+          accessibilityLabel={`${title}を追加`}
+        >
+          <Ionicons name="add" size={18} color={content.contentText} />
         </Pressable>
       </View>
 
@@ -191,8 +222,8 @@ function DynamicInputList({ title, values, onChange, placeholder }: DynamicInput
             value={value}
             onChangeText={(text) => updateItem(index, text)}
             placeholder={placeholder}
-            placeholderTextColor={Theme.inputPlaceholder}
-            style={styles.multiInput}
+            placeholderTextColor={content.contentTextSecondary}
+            style={[styles.multiInput, contentInputStyle(content)]}
           />
           {values.length > 1 && (
             <Pressable
@@ -200,7 +231,7 @@ function DynamicInputList({ title, values, onChange, placeholder }: DynamicInput
               onPress={() => removeItem(index)}
               accessibilityLabel="削除"
             >
-              <Ionicons name="close" size={16} color="#b91c1c" />
+              <Ionicons name="close" size={16} color="#f87171" />
             </Pressable>
           )}
         </View>
@@ -222,6 +253,7 @@ const parseOptionalNumber = (value: string): number | null => {
 
 export default function EditScreen() {
   const kit = useUiKit();
+  const content = useContentColors();
   const fieldIndent = kit.formLayout === 'horizontal' ? kit.formLabelWidth + kit.formRowGap : 0;
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -446,9 +478,9 @@ export default function EditScreen() {
           icon="sync-outline"
           onPress={handleResyncAffiliationEpisodes}
           accessibilityLabel="所属グループのエピソードを同期"
-          backgroundColor={Theme.accentLight}
-          borderColor={Theme.accent}
-          color={Theme.accent}
+          backgroundColor={content.contentInputBg}
+          borderColor={content.contentText}
+          color={content.contentText}
         />
       )}
       <IconButton
@@ -474,11 +506,15 @@ export default function EditScreen() {
         <FormScreenSection>
           <View style={styles.profileTopRow}>
             <View style={styles.photoColumn}>
-              <Pressable onPress={onPickImage} style={styles.photoBox} accessibilityLabel="写真を選択">
+              <Pressable
+                onPress={onPickImage}
+                style={[styles.photoBox, contentSurfaceStyle(content)]}
+                accessibilityLabel="写真を選択"
+              >
                 {form.photoUri ? (
                   <Image source={{ uri: form.photoUri }} style={styles.photoImage} />
                 ) : (
-                  <Ionicons name="camera-outline" size={28} color={Theme.textMuted} />
+                  <Ionicons name="camera-outline" size={28} color={content.contentTextSecondary} />
                 )}
               </Pressable>
               {form.photoUri ? (
@@ -487,7 +523,7 @@ export default function EditScreen() {
                   onPress={handleDeletePhoto}
                   accessibilityLabel="写真を削除"
                 >
-                  <Ionicons name="trash-outline" size={14} color="#b91c1c" />
+                  <Ionicons name="trash-outline" size={14} color="#f87171" />
                 </Pressable>
               ) : null}
             </View>
@@ -498,9 +534,9 @@ export default function EditScreen() {
                   <TextInput
                     value={form.name}
                     onChangeText={(text) => updateText('name', text)}
-                    style={[styles.input, showNameError && styles.inputNameError]}
+                    style={[styles.input, contentInputStyle(content), showNameError && styles.inputNameError]}
                     placeholder="苗字 名前"
-                    placeholderTextColor={Theme.inputPlaceholder}
+                    placeholderTextColor={content.contentTextSecondary}
                   />
                 </FormRow>
                 {showNameError ? (
@@ -511,9 +547,9 @@ export default function EditScreen() {
                 <TextInput
                   value={form.nickname}
                   onChangeText={(text) => updateText('nickname', text)}
-                  style={styles.input}
+                  style={[styles.input, contentInputStyle(content)]}
                   placeholder="記入式"
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={content.contentTextSecondary}
                 />
               </FormRow>
             </View>
@@ -524,24 +560,33 @@ export default function EditScreen() {
               <TextInput
                 value={form.origin}
                 onChangeText={(text) => updateText('origin', text)}
-                style={styles.input}
+                style={[styles.input, contentInputStyle(content)]}
                 placeholder="記入式"
-                placeholderTextColor={Theme.inputPlaceholder}
+                placeholderTextColor={content.contentTextSecondary}
               />
             </FormRow>
             <FormRow label="居住地">
               <TextInput
                 value={form.residence}
                 onChangeText={(text) => updateText('residence', text)}
-                style={styles.input}
+                style={[styles.input, contentInputStyle(content)]}
                 placeholder="記入式"
-                placeholderTextColor={Theme.inputPlaceholder}
+                placeholderTextColor={content.contentTextSecondary}
               />
             </FormRow>
             <SelectField label="MBTI" value={form.mbti} options={mbtiOptions} onChange={(value) => updateText('mbti', value)} />
             <FormRow label="誕生日">
-              <Pressable style={styles.dateButton} onPress={() => setShowBirthdayPicker(true)}>
-                <Text style={form.birthday ? styles.dateButtonText : styles.dateButtonPlaceholder}>
+              <Pressable
+                style={[styles.dateButton, contentInputStyle(content)]}
+                onPress={() => setShowBirthdayPicker(true)}
+              >
+                <Text
+                  style={
+                    form.birthday
+                      ? [styles.dateButtonText, contentTextStyle(content)]
+                      : [styles.dateButtonPlaceholder, contentMutedTextStyle(content)]
+                  }
+                >
                   {form.birthday || 'YYYY-MM-DD'}
                 </Text>
               </Pressable>
@@ -559,8 +604,11 @@ export default function EditScreen() {
                     if (selected) updateText('birthday', formatDateToYMD(selected));
                   }}
                 />
-                <Pressable style={styles.datePickerDone} onPress={() => setShowBirthdayPicker(false)}>
-                  <Text style={styles.datePickerDoneText}>完了</Text>
+                <Pressable
+                  style={[styles.datePickerDone, contentTagStyle(content)]}
+                  onPress={() => setShowBirthdayPicker(false)}
+                >
+                  <Text style={[styles.datePickerDoneText, contentTextStyle(content)]}>完了</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -569,20 +617,20 @@ export default function EditScreen() {
                 <TextInput
                   value={form.height === null ? '' : String(form.height)}
                   onChangeText={(text) => updateNumber('height', text)}
-                  style={styles.input}
+                  style={[styles.input, contentInputStyle(content)]}
                   keyboardType="decimal-pad"
                   placeholder="cm"
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={content.contentTextSecondary}
                 />
               </FormRow>
               <FormRow label="体重" style={styles.twinField}>
                 <TextInput
                   value={form.weight === null ? '' : String(form.weight)}
                   onChangeText={(text) => updateNumber('weight', text)}
-                  style={styles.input}
+                  style={[styles.input, contentInputStyle(content)]}
                   keyboardType="decimal-pad"
                   placeholder="kg"
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={content.contentTextSecondary}
                 />
               </FormRow>
             </View>
@@ -590,22 +638,22 @@ export default function EditScreen() {
               <TextInput
                 value={form.category}
                 onChangeText={(text) => updateText('category', text)}
-                style={styles.input}
+                style={[styles.input, contentInputStyle(content)]}
                 placeholder="記入式"
-                placeholderTextColor={Theme.inputPlaceholder}
+                placeholderTextColor={content.contentTextSecondary}
               />
             </FormRow>
           </View>
         </FormScreenSection>
 
         <FormScreenSection>
-          <Text style={styles.sectionCaption}>説明</Text>
+          <Text style={[styles.sectionCaption, contentMutedTextStyle(content)]}>説明</Text>
           <TextInput
             value={form.description}
             onChangeText={(text) => updateText('description', text)}
-            style={styles.descriptionInput}
+            style={[styles.descriptionInput, contentInputStyle(content)]}
             placeholder="複数行で入力"
-            placeholderTextColor={Theme.inputPlaceholder}
+            placeholderTextColor={content.contentTextSecondary}
             multiline
             textAlignVertical="top"
           />
@@ -716,8 +764,8 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#fee2e2',
-    borderColor: '#fecaca',
+    backgroundColor: 'rgba(248, 113, 113, 0.18)',
+    borderColor: 'rgba(248, 113, 113, 0.45)',
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
@@ -841,8 +889,6 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: Theme.accentLight,
-    borderColor: Theme.accent,
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
@@ -855,11 +901,8 @@ const styles = StyleSheet.create({
   multiInput: {
     flex: 1,
     height: INPUT_H,
-    backgroundColor: Theme.inputBg,
-    borderColor: Theme.inputBorder,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.sm,
-    color: Theme.inputText,
     fontSize: Typography.sm,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 0,
@@ -868,8 +911,8 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#fee2e2',
-    borderColor: '#fecaca',
+    backgroundColor: 'rgba(248, 113, 113, 0.18)',
+    borderColor: 'rgba(248, 113, 113, 0.45)',
     borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
     justifyContent: 'center',
@@ -881,15 +924,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   modalCard: {
-    backgroundColor: Theme.bgSurface,
     borderRadius: Radius.md,
     padding: Spacing.md,
     maxHeight: '70%',
+    borderWidth: 1,
   },
   modalTitle: {
     fontSize: Typography.base,
     fontWeight: '700',
-    color: Theme.textPrimary,
     marginBottom: Spacing.sm,
   },
   modalOptions: {
@@ -900,22 +942,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     borderRadius: Radius.sm,
   },
-  modalOptionSelected: {
-    backgroundColor: Theme.accentLight,
-  },
   modalOptionText: {
     fontSize: Typography.sm,
-    color: Theme.textPrimary,
   },
   modalClose: {
     alignSelf: 'flex-end',
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.background,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   modalCloseText: {
-    color: Theme.textPrimary,
     fontWeight: '600',
     fontSize: Typography.sm,
   },

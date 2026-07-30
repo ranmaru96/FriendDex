@@ -58,14 +58,19 @@ export function SettlementPersonAggregateCard({
               style={[
                 styles.check,
                 { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
-                completed && styles.checkCompleted,
+                completed
+                  ? {
+                      borderColor: content.contentText,
+                      backgroundColor: content.contentPersonTagBg,
+                    }
+                  : null,
               ]}
             >
               <Text
                 style={[
                   styles.checkText,
                   contentMutedTextStyle(content),
-                  completed && styles.checkTextCompleted,
+                  completed ? contentTextStyle(content) : null,
                 ]}
               >
                 済
@@ -136,16 +141,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkCompleted: {
-    borderColor: Theme.accent,
-    backgroundColor: Theme.accentLight,
-  },
   checkText: {
     fontSize: 11,
     fontWeight: '700',
-  },
-  checkTextCompleted: {
-    color: Theme.accent,
   },
   breakdownBody: {
     flex: 1,

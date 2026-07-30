@@ -501,7 +501,7 @@ export default function MoneyLoanScreen() {
                 value={title}
                 onChangeText={setTitle}
                 placeholder="例: フットサル"
-                placeholderTextColor={Theme.inputPlaceholder}
+                placeholderTextColor={content.contentTextSecondary}
               />
             </View>
 
@@ -534,7 +534,7 @@ export default function MoneyLoanScreen() {
                     value={totalAmountText}
                     onChangeText={setTotalAmountText}
                     placeholder="例: 9000"
-                    placeholderTextColor={Theme.inputPlaceholder}
+                    placeholderTextColor={content.contentTextSecondary}
                     keyboardType="number-pad"
                   />
                 </View>
@@ -596,7 +596,7 @@ export default function MoneyLoanScreen() {
                         value={line.amountText}
                         onChangeText={(value) => updateIndividualLine(line.friendId, { amountText: value })}
                         placeholder="金額"
-                        placeholderTextColor={Theme.inputPlaceholder}
+                        placeholderTextColor={content.contentTextSecondary}
                         keyboardType="number-pad"
                       />
                       <View style={formStyles.individualDirectionRow}>

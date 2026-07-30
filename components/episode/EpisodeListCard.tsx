@@ -5,6 +5,7 @@ import { EpisodeCardTitle } from '@/components/episode/EpisodeCardTitle';
 import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { Radius, Theme } from '@/constants/theme';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useContentColors } from '@/utils/useContentColors';
 import {
@@ -92,8 +93,12 @@ export function EpisodeListCard({
 }: EpisodeListCardProps) {
   const kit = useUiKit();
   const content = useContentColors();
+  const appTheme = useAppThemeOptional();
   const [tallPhotoLeftHeight, setTallPhotoLeftHeight] = useState(0);
   const usePhotoLayout = kit.episodeListCardLayout === 'photoRight';
+  const photoFrameBorderColor = 'transparent';
+  const episodeCardBackgroundColor =
+    appTheme?.variant === 'black' ? '#252525' : content.contentCard;
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
   const normalizedPosterName = posterName?.trim() ? posterName.trim() : null;
   const showPosterName = visibilityMode == null && normalizedPosterName != null;
@@ -147,6 +152,7 @@ export function EpisodeListCard({
         disabled={!onPress && !onLongPress}
         style={({ pressed }) => [
           styles.photoRightTopLeft,
+          hasParticipants || useTallPhoto ? styles.photoRightTopLeftHug : null,
           titleMultiline ? styles.photoRightTopLeftMultiline : null,
           pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
         ]}
@@ -182,7 +188,12 @@ export function EpisodeListCard({
           <View
             style={[
               styles.photoRightPhotoFrame,
-              { width: tallPhotoWidth, height: tallPhotoHeight },
+              {
+                width: tallPhotoWidth,
+                height: tallPhotoHeight,
+                borderColor: photoFrameBorderColor,
+                backgroundColor: content.contentPhotoPlaceholder,
+              },
             ]}
           >
             <Image
@@ -196,14 +207,30 @@ export function EpisodeListCard({
             {displayPhotoUris.map((uri, index) => (
               <View
                 key={`episode-photo-${index}-${uri}`}
-                style={[styles.photoRightPhotoFrame, styles.photoRightPhotoFrameCompact]}
+                style={[
+                  styles.photoRightPhotoFrame,
+                  styles.photoRightPhotoFrameCompact,
+                  {
+                    borderColor: photoFrameBorderColor,
+                    backgroundColor: content.contentPhotoPlaceholder,
+                  },
+                ]}
               >
                 <Image source={{ uri }} style={styles.photoRightPhotoImage} resizeMode="cover" />
               </View>
             ))}
           </View>
         ) : (
-          <View style={[styles.photoRightPhotoFrame, styles.photoRightPhotoFrameCompact]}>
+          <View
+            style={[
+              styles.photoRightPhotoFrame,
+              styles.photoRightPhotoFrameCompact,
+              {
+                borderColor: photoFrameBorderColor,
+                backgroundColor: content.contentPhotoPlaceholder,
+              },
+            ]}
+          >
             <Image
               source={{ uri: displayPhotoUris[0] }}
               style={styles.photoRightPhotoImage}
@@ -222,7 +249,7 @@ export function EpisodeListCard({
           !embedded
             ? {
                 borderRadius: cardRadius,
-                backgroundColor: content.contentCard,
+                backgroundColor: episodeCardBackgroundColor,
                 borderColor: content.contentBorder,
               }
             : null,
@@ -268,7 +295,7 @@ export function EpisodeListCard({
         !embedded
           ? {
               borderRadius: kit.episodeListCardBorderRadius,
-              backgroundColor: content.contentCard,
+              backgroundColor: episodeCardBackgroundColor,
               borderColor: content.contentBorder,
             }
           : null,
@@ -374,6 +401,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     overflow: 'hidden',
   },
+  /** 参加者行がある／縦長写真時は固定高を外し、メタ〜参加者の空きをなくす */
+  photoRightTopLeftHug: {
+    height: undefined,
+    overflow: undefined,
+  },
   photoRightTopLeftMultiline: {
     flex: undefined,
     alignSelf: 'flex-start',
@@ -389,7 +421,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   photoRightParticipantRow: {
-    marginTop: 4,
+    marginTop: 2,
     alignSelf: 'stretch',
     minHeight: 28,
   },
@@ -411,7 +443,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     overflow: 'hidden',
     backgroundColor: Theme.homeCardPhotoPlaceholder,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: Theme.inputBorder,
   },
   photoRightPhotoFrameCompact: {

@@ -5,7 +5,9 @@ import { useContentColors } from '@/utils/useContentColors';
 import {
   contentInputStyle,
   contentMutedTextStyle,
+  contentSelectedOptionStyle,
   contentSurfaceStyle,
+  contentSwitchColors,
   contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
@@ -42,6 +44,7 @@ export function ShuffleTeamPanel({
   onShuffleComplete,
 }: ShuffleTeamPanelProps) {
   const content = useContentColors();
+  const switchColors = contentSwitchColors(content);
   const [teamCount, setTeamCount] = useState(2);
   const [useRanks, setUseRanks] = useState(false);
   const [rankTiers, setRankTiers] = useState<ShuffleRankTier[]>(createDefaultRankTiers);
@@ -222,8 +225,8 @@ export function ShuffleTeamPanel({
             setUseRanks(value);
             setError('');
           }}
-          trackColor={{ false: content.contentSearchFieldBorder, true: Theme.accentLight }}
-          thumbColor={useRanks ? Theme.accent : content.contentInputBg}
+          trackColor={switchColors.trackColor}
+          thumbColor={useRanks ? Theme.accent : switchColors.thumbColorOff}
         />
       </View>
 
@@ -231,8 +234,11 @@ export function ShuffleTeamPanel({
         <View style={[styles.rankSection, contentTagStyle(content)]}>
           <View style={styles.rankSectionHeader}>
             <Text style={[styles.rankSectionTitle, contentTextStyle(content)]}>ランク設定</Text>
-            <Pressable style={styles.addRankButton} onPress={addRankTier}>
-              <Text style={styles.addRankButtonText}>＋ ランク追加</Text>
+            <Pressable
+              style={[styles.addRankButton, contentSelectedOptionStyle(content)]}
+              onPress={addRankTier}
+            >
+              <Text style={[styles.addRankButtonText, contentTextStyle(content)]}>＋ ランク追加</Text>
             </Pressable>
           </View>
 
@@ -244,7 +250,7 @@ export function ShuffleTeamPanel({
                 value={tier.label}
                 onChangeText={(label) => updateRankLabel(tier.id, label)}
                 placeholder={`ランク${index + 1}`}
-                placeholderTextColor={Theme.inputPlaceholder}
+                placeholderTextColor={content.contentTextSecondary}
               />
               <Pressable
                 onPress={() => removeRankTier(tier.id)}
@@ -284,15 +290,14 @@ export function ShuffleTeamPanel({
                       style={[
                         styles.rankPill,
                         contentTagStyle(content),
-                        !assignedTierId && styles.rankPillSelected,
+                        !assignedTierId ? contentSelectedOptionStyle(content) : null,
                       ]}
                       onPress={() => assignMemberRank(memberId, null)}
                     >
                       <Text
                         style={[
                           styles.rankPillText,
-                          contentMutedTextStyle(content),
-                          !assignedTierId && styles.rankPillTextSelected,
+                          contentTextStyle(content),
                         ]}
                       >
                         なし
@@ -306,15 +311,14 @@ export function ShuffleTeamPanel({
                           style={[
                             styles.rankPill,
                             contentTagStyle(content),
-                            selected && styles.rankPillSelected,
+                            selected ? contentSelectedOptionStyle(content) : null,
                           ]}
                           onPress={() => assignMemberRank(memberId, tier.id)}
                         >
                           <Text
                             style={[
                               styles.rankPillText,
-                              contentMutedTextStyle(content),
-                              selected && styles.rankPillTextSelected,
+                              contentTextStyle(content),
                             ]}
                           >
                             {tier.label.trim() || '?'}
@@ -344,8 +348,13 @@ export function ShuffleTeamPanel({
             friendsById={friendsById}
             myselfId={myselfId}
           />
-          <Pressable style={styles.reshuffleButton} onPress={runTeamShuffle}>
-            <Text style={styles.reshuffleButtonText}>もう一度シャッフル</Text>
+          <Pressable
+            style={[styles.reshuffleButton, contentSelectedOptionStyle(content)]}
+            onPress={runTeamShuffle}
+          >
+            <Text style={[styles.reshuffleButtonText, contentTextStyle(content)]}>
+              もう一度シャッフル
+            </Text>
           </Pressable>
         </View>
       ) : null}
@@ -448,16 +457,13 @@ const styles = StyleSheet.create({
   },
   addRankButton: {
     borderWidth: 1,
-    borderColor: Theme.accent,
     borderRadius: Radius.sm,
     paddingVertical: 4,
     paddingHorizontal: 8,
-    backgroundColor: Theme.accentLight,
   },
   addRankButtonText: {
     fontSize: 11,
     fontWeight: '700',
-    color: Theme.accent,
   },
   rankTierRow: {
     flexDirection: 'row',
@@ -514,16 +520,9 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     paddingHorizontal: 10,
   },
-  rankPillSelected: {
-    borderColor: Theme.accent,
-    backgroundColor: Theme.accentLight,
-  },
   rankPillText: {
     fontSize: 12,
     fontWeight: '700',
-  },
-  rankPillTextSelected: {
-    color: Theme.accent,
   },
   shuffleButton: {
     backgroundColor: Theme.accent,
@@ -553,15 +552,12 @@ const styles = StyleSheet.create({
   reshuffleButton: {
     alignSelf: 'center',
     borderWidth: 1,
-    borderColor: Theme.accent,
     borderRadius: Radius.md,
     paddingVertical: 8,
     paddingHorizontal: 16,
-    backgroundColor: Theme.accentLight,
   },
   reshuffleButtonText: {
     fontSize: 13,
     fontWeight: '700',
-    color: Theme.accent,
   },
 });

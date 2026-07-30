@@ -11,6 +11,13 @@ import { PersonSelectPanel } from '@/components/PersonSelectPanel';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { Radius, Theme } from '@/constants/theme';
 import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSelectedOptionStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
+import { useContentColors } from '@/utils/useContentColors';
+import {
   applyQrLinkToFriend,
   findFriendByScannedUserId,
   getAllFriends,
@@ -32,6 +39,7 @@ type ImportMode = 'new' | 'overwrite';
 
 export default function QrImportScreen() {
   const router = useRouter();
+  const content = useContentColors();
   const params = useLocalSearchParams<{
     scannedUserId?: string;
     publicFields?: string;
@@ -177,24 +185,32 @@ export default function QrImportScreen() {
       </Pressable>
 
         <Text style={styles.title}>QR読み取り結果</Text>
-        <Text style={styles.subtitle}>
+        <Text style={[styles.subtitle, contentMutedTextStyle(content)]}>
           {displayName} のプロフィールをどう登録しますか？
         </Text>
 
         <View style={styles.modeRow}>
           <Pressable
-            style={[styles.modeButton, mode === 'new' && styles.modeButtonActive]}
+            style={[
+              styles.modeButton,
+              contentInputStyle(content),
+              mode === 'new' ? contentSelectedOptionStyle(content) : null,
+            ]}
             onPress={() => setMode('new')}
           >
-            <Text style={[styles.modeButtonText, mode === 'new' && styles.modeButtonTextActive]}>
+            <Text style={[styles.modeButtonText, contentTextStyle(content)]}>
               新規で登録
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.modeButton, mode === 'overwrite' && styles.modeButtonActive]}
+            style={[
+              styles.modeButton,
+              contentInputStyle(content),
+              mode === 'overwrite' ? contentSelectedOptionStyle(content) : null,
+            ]}
             onPress={() => setMode('overwrite')}
           >
-            <Text style={[styles.modeButtonText, mode === 'overwrite' && styles.modeButtonTextActive]}>
+            <Text style={[styles.modeButtonText, contentTextStyle(content)]}>
               既存に上書き
             </Text>
           </Pressable>
@@ -202,7 +218,7 @@ export default function QrImportScreen() {
 
         {mode === 'new' ? (
           <View style={styles.newPanel}>
-            <Text style={styles.helpText}>
+            <Text style={[styles.helpText, contentMutedTextStyle(content)]}>
               新しい人物カードとして登録します。内容は次の画面で確認・編集できます。
             </Text>
             <Pressable style={styles.primaryButton} onPress={handleNewRegister}>
@@ -212,11 +228,11 @@ export default function QrImportScreen() {
         ) : (
           <View style={styles.overwritePanel}>
             {linkedFriend ? (
-              <Text style={styles.helpText}>
+              <Text style={[styles.helpText, contentMutedTextStyle(content)]}>
                 このQRコードは「{linkedFriend.name}」と同期済みです。別の人物に上書きする場合は選び直せます。
               </Text>
             ) : (
-              <Text style={styles.helpText}>
+              <Text style={[styles.helpText, contentMutedTextStyle(content)]}>
                 上書きする人物を1人選んでください。名前が一致する候補はハイライト表示されます。
               </Text>
             )}
@@ -278,23 +294,13 @@ const styles = StyleSheet.create({
   modeButton: {
     flex: 1,
     borderWidth: 1.5,
-    borderColor: '#94a3b8',
     borderRadius: Radius.sm,
-    backgroundColor: Theme.bgSurface,
     paddingVertical: 12,
     alignItems: 'center',
-  },
-  modeButtonActive: {
-    borderColor: '#0ea5e9',
-    backgroundColor: '#e0f2fe',
   },
   modeButtonText: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#475569',
-  },
-  modeButtonTextActive: {
-    color: '#0c4a6e',
   },
   newPanel: {
     flex: 1,
@@ -306,11 +312,10 @@ const styles = StyleSheet.create({
   },
   helpText: {
     fontSize: 13,
-    color: Theme.textSecondary,
     lineHeight: 18,
   },
   primaryButton: {
-    backgroundColor: '#0ea5e9',
+    backgroundColor: Theme.btnPrimaryBg,
     borderRadius: Radius.sm,
     paddingVertical: 14,
     alignItems: 'center',
@@ -319,7 +324,7 @@ const styles = StyleSheet.create({
     opacity: 0.45,
   },
   primaryButtonText: {
-    color: '#fff',
+    color: Theme.btnPrimaryText,
     fontSize: 15,
     fontWeight: '700',
   },

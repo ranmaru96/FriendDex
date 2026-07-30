@@ -1,5 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Theme, Radius } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
 import { contentMutedTextStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 import type { MockFollowRelation, MockSettlementMember } from '@/types/settlementMock';
@@ -20,10 +20,10 @@ export function SettlementMemberRow({ member, followRelation, isSelf }: Settleme
       : '台帳未反映（通知済）';
 
   const statusStyle = isSelf
-    ? styles.badgeSelf
+    ? { backgroundColor: content.contentPersonTagBg }
     : member.ledgerSynced
-      ? styles.badgeSynced
-      : styles.badgePending;
+      ? { backgroundColor: content.contentInputBg, borderWidth: 1, borderColor: '#4caf50' }
+      : { backgroundColor: content.contentPersonTagBg, borderWidth: 1, borderColor: '#E8C96A' };
 
   return (
     <View style={styles.row}>
@@ -72,15 +72,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: Radius.full,
-  },
-  badgeSelf: {
-    backgroundColor: Theme.accentLight,
-  },
-  badgeSynced: {
-    backgroundColor: '#E8F4EA',
-  },
-  badgePending: {
-    backgroundColor: '#FFF3D6',
   },
   badgeText: {
     fontSize: 10,

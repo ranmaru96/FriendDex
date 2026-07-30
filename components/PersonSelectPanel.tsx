@@ -16,7 +16,9 @@ import { Radius } from '@/constants/theme';
 import {
   contentInputStyle,
   contentMutedTextStyle,
+  contentSelectedOptionStyle,
   contentSurfaceStyle,
+  contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
@@ -62,9 +64,8 @@ function SelectField({ label, value, options, onValueChange }: SelectFieldProps)
               <Pressable
                 style={[
                   styles.modalOption,
-                  !value
-                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                    : null,
+                  { borderBottomColor: content.contentDivider },
+                  !value ? contentSelectedOptionStyle(content) : null,
                 ]}
                 onPress={() => {
                   onValueChange('');
@@ -78,9 +79,8 @@ function SelectField({ label, value, options, onValueChange }: SelectFieldProps)
                   key={option.value}
                   style={[
                     styles.modalOption,
-                    option.value === value
-                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                      : null,
+                    { borderBottomColor: content.contentDivider },
+                    option.value === value ? contentSelectedOptionStyle(content) : null,
                   ]}
                   onPress={() => {
                     onValueChange(option.value);
@@ -91,7 +91,10 @@ function SelectField({ label, value, options, onValueChange }: SelectFieldProps)
                 </Pressable>
               ))}
             </ScrollView>
-            <Pressable style={styles.modalCloseButton} onPress={() => setVisible(false)}>
+            <Pressable
+              style={[styles.modalCloseButton, contentTagStyle(content)]}
+              onPress={() => setVisible(false)}
+            >
               <Text style={[styles.modalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </View>
@@ -162,15 +165,47 @@ export function PersonSelectPanel({
           styles.personRow,
           contentSurfaceStyle(content),
           { width: personCardWidth },
-          highlighted && styles.personRowHighlighted,
-          blocked && styles.personRowBlocked,
-          checked && styles.personRowSelected,
+          highlighted
+            ? {
+                borderColor: '#f59e0b',
+                backgroundColor: content.contentPersonTagBg,
+              }
+            : null,
+          blocked
+            ? {
+                opacity: 0.55,
+                backgroundColor: content.contentCalendarOutMonth,
+              }
+            : null,
+          checked
+            ? {
+                borderColor: '#4caf50',
+                backgroundColor: content.contentInputBg,
+              }
+            : null,
         ]}
         onPress={() => toggleSelect(item.id)}
         disabled={blocked}
       >
-        <View style={[styles.checkbox, contentSurfaceStyle(content), checked && styles.checkboxChecked, blocked && styles.checkboxBlocked]}>
-          {checked ? <Text style={styles.checkmark}>✓</Text> : null}
+        <View
+          style={[
+            styles.checkbox,
+            contentSurfaceStyle(content),
+            checked
+              ? {
+                  backgroundColor: content.contentInputBg,
+                  borderColor: '#4caf50',
+                }
+              : null,
+            blocked
+              ? {
+                  borderColor: content.contentBorder,
+                  backgroundColor: content.contentCalendarOutMonth,
+                }
+              : null,
+          ]}
+        >
+          {checked ? <Text style={[styles.checkmark, { color: '#4caf50' }]}>✓</Text> : null}
         </View>
         <View style={styles.personTextWrap}>
           <Text style={[styles.personName, contentTextStyle(content), blocked && contentMutedTextStyle(content)]} numberOfLines={1}>
@@ -293,10 +328,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e2e8f0',
-  },
-  modalOptionSelected: {
-    backgroundColor: '#e0f2fe',
   },
   modalOptionText: {
     fontSize: 15,
@@ -306,6 +337,8 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end',
     paddingHorizontal: 12,
     paddingVertical: 8,
+    borderRadius: Radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
   },
   modalCloseButtonText: {
     fontWeight: '600',
@@ -329,18 +362,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 10,
   },
-  personRowHighlighted: {
-    borderColor: '#f59e0b',
-    backgroundColor: '#fffbeb',
-  },
-  personRowBlocked: {
-    opacity: 0.55,
-    backgroundColor: '#f1f5f9',
-  },
-  personRowSelected: {
-    borderColor: '#4caf50',
-    backgroundColor: '#f1f8f4',
-  },
   checkbox: {
     width: 24,
     height: 24,
@@ -350,16 +371,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxChecked: {
-    backgroundColor: '#e8f5e9',
-    borderColor: '#4caf50',
-  },
-  checkboxBlocked: {
-    borderColor: '#cbd5e1',
-    backgroundColor: '#e2e8f0',
-  },
   checkmark: {
-    color: '#2e7d32',
     fontSize: 16,
     fontWeight: '900',
   },

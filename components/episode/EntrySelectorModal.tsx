@@ -14,6 +14,7 @@ import { Theme, Radius, Typography } from '@/constants/theme';
 import {
   contentInputStyle,
   contentMutedTextStyle,
+  contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
@@ -178,26 +179,26 @@ export function EntrySelectorModal({
         <View style={[styles.selectorCard, contentSurfaceStyle(content)]}>
           <View style={styles.selectorTabRow}>
             <Pressable
-              style={[styles.selectorTabButton, contentInputStyle(content), selectorTab === 'individual' && styles.selectorTabButtonActive]}
+              style={[
+                styles.selectorTabButton,
+                contentInputStyle(content),
+                selectorTab === 'individual' ? contentSelectedOptionStyle(content) : null,
+              ]}
               onPress={() => onTabChange('individual')}
             >
-              <Text
-                style={[
-                  styles.selectorTabButtonText,
-                  contentTextStyle(content),
-                  selectorTab === 'individual' && styles.selectorTabButtonTextActive,
-                ]}
-              >
+              <Text style={[styles.selectorTabButtonText, contentTextStyle(content)]}>
                 個人
               </Text>
             </Pressable>
             <Pressable
-              style={[styles.selectorTabButton, contentInputStyle(content), selectorTab === 'group' && styles.selectorTabButtonActive]}
+              style={[
+                styles.selectorTabButton,
+                contentInputStyle(content),
+                selectorTab === 'group' ? contentSelectedOptionStyle(content) : null,
+              ]}
               onPress={() => onTabChange('group')}
             >
-              <Text
-                style={[styles.selectorTabButtonText, contentTextStyle(content), selectorTab === 'group' && styles.selectorTabButtonTextActive]}
-              >
+              <Text style={[styles.selectorTabButtonText, contentTextStyle(content)]}>
                 所属
               </Text>
             </Pressable>
@@ -250,8 +251,19 @@ export function EntrySelectorModal({
                     style={[styles.selectorPersonRow, contentSurfaceStyle(content), { width: itemWidth }]}
                     onPress={() => onToggleIndividual(item.id)}
                   >
-                    <View style={[styles.checkbox, contentSurfaceStyle(content), checked && styles.checkboxChecked]}>
-                      {checked ? <Text style={styles.checkmark}>✓</Text> : null}
+                    <View
+                      style={[
+                        styles.checkbox,
+                        contentSurfaceStyle(content),
+                        checked
+                          ? {
+                              backgroundColor: content.contentInputBg,
+                              borderColor: '#4caf50',
+                            }
+                          : null,
+                      ]}
+                    >
+                      {checked ? <Text style={[styles.checkmark, { color: '#4caf50' }]}>✓</Text> : null}
                     </View>
                     <Text style={[styles.selectorPersonName, contentTextStyle(content)]} numberOfLines={1}>
                       {item.name}
@@ -276,8 +288,19 @@ export function EntrySelectorModal({
                     style={[styles.selectorPersonRow, contentSurfaceStyle(content), { width: itemWidth }]}
                     onPress={() => onToggleGroup(item.value)}
                   >
-                    <View style={[styles.checkbox, contentSurfaceStyle(content), checked && styles.checkboxChecked]}>
-                      {checked ? <Text style={styles.checkmark}>✓</Text> : null}
+                    <View
+                      style={[
+                        styles.checkbox,
+                        contentSurfaceStyle(content),
+                        checked
+                          ? {
+                              backgroundColor: content.contentInputBg,
+                              borderColor: '#4caf50',
+                            }
+                          : null,
+                      ]}
+                    >
+                      {checked ? <Text style={[styles.checkmark, { color: '#4caf50' }]}>✓</Text> : null}
                     </View>
                     <Text style={[styles.selectorPersonName, contentTextStyle(content)]} numberOfLines={1}>
                       {item.label}
@@ -296,8 +319,24 @@ export function EntrySelectorModal({
             <Pressable style={[styles.selectorCancelButton, contentInputStyle(content)]} onPress={onCancel}>
               <Text style={[styles.selectorCancelButtonText, contentTextStyle(content)]}>キャンセル</Text>
             </Pressable>
-            <Pressable style={styles.selectorOkButton} onPress={onConfirm}>
-              <Text style={styles.selectorOkButtonText}>OK</Text>
+            <Pressable
+              style={[
+                styles.selectorOkButton,
+                {
+                  backgroundColor: content.contentText,
+                  borderColor: content.contentText,
+                },
+              ]}
+              onPress={onConfirm}
+            >
+              <Text
+                style={[
+                  styles.selectorOkButtonText,
+                  { color: content.contentCard },
+                ]}
+              >
+                OK
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -324,18 +363,14 @@ const styles = StyleSheet.create({
   selectorTabRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
   selectorTabButton: {
     flex: 1,
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
     borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 8,
     alignItems: 'center',
   },
-  selectorTabButtonActive: { backgroundColor: '#67e8f9', borderColor: '#0891b2' },
-  selectorTabButtonText: { fontSize: Typography.base, fontWeight: '700', color: '#0f172a' },
-  selectorTabButtonTextActive: { color: '#083344' },
-  selectorDivider: { height: 1, backgroundColor: '#e2e8f0', marginBottom: 10 },
+  selectorTabButtonText: { fontSize: Typography.base, fontWeight: '700' },
+  selectorDivider: { height: 1, marginBottom: 10 },
   selectorNameInput: {
     minHeight: 38,
     borderColor: Theme.inputBorder,
@@ -386,8 +421,7 @@ const styles = StyleSheet.create({
   selectorFilterModalTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 10 },
   selectorFilterModalOptions: { marginBottom: 10 },
   selectorFilterModalOption: { paddingVertical: 10, paddingHorizontal: 8, borderRadius: Radius.sm },
-  selectorFilterModalOptionSelected: { backgroundColor: '#e0f2fe' },
-  selectorFilterModalOptionText: { fontSize: 14, color: '#1e293b' },
+  selectorFilterModalOptionText: { fontSize: 14 },
   selectorFilterModalCloseButton: {
     alignSelf: 'flex-end',
     paddingVertical: 8,
@@ -419,27 +453,21 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Theme.bgSurface,
   },
-  checkboxChecked: { backgroundColor: '#e8f5e9', borderColor: '#4caf50' },
-  checkmark: { color: '#2e7d32', fontSize: 16, fontWeight: '900' },
+  checkmark: { fontSize: 16, fontWeight: '900' },
   selectorActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 8 },
   selectorCancelButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
     borderWidth: 1,
     borderRadius: Radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  selectorCancelButtonText: { color: '#0f172a', fontWeight: '700', fontSize: Typography.base },
+  selectorCancelButtonText: { fontWeight: '700', fontSize: Typography.base },
   selectorOkButton: {
-    backgroundColor: '#67e8f9',
-    borderColor: '#0891b2',
     borderWidth: 1,
     borderRadius: Radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 8,
   },
-  selectorOkButtonText: { color: '#083344', fontWeight: '700', fontSize: Typography.base },
+  selectorOkButtonText: { fontWeight: '700', fontSize: Typography.base },
 });

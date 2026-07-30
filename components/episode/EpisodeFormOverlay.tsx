@@ -22,6 +22,7 @@ import {
   contentInputStyle,
   contentMutedTextStyle,
   contentPersonTagStyle,
+  contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentTagStyle,
   contentTagTextStyle,
@@ -94,21 +95,29 @@ function SelectInput({
           isChip ? styles.selectChipButton : styles.episodeSelectButton,
           isChip ? styles.selectChipButtonLayout : null,
           { borderRadius: isChip ? chipRadius : fieldRadius },
-          !isChip ? contentInputStyle(content) : null,
+          isChip ? contentPersonTagStyle(content) : contentInputStyle(content),
           style,
         ]}
         onPress={() => setModalVisible(true)}
       >
         <Text
           style={[
-            isChip ? (value ? styles.selectChipText : styles.selectChipPlaceholder) : value ? styles.episodeSelectText : styles.episodeSelectPlaceholder,
-            !isChip ? (value ? contentTextStyle(content) : contentMutedTextStyle(content)) : null,
+            isChip
+              ? value
+                ? styles.selectChipText
+                : styles.selectChipPlaceholder
+              : value
+                ? styles.episodeSelectText
+                : styles.episodeSelectPlaceholder,
+            value ? contentTextStyle(content) : contentMutedTextStyle(content),
           ]}
           numberOfLines={1}
         >
           {selectedLabel}
         </Text>
-        {isChip ? <Text style={styles.selectChipChevron}>▼</Text> : null}
+        {isChip ? (
+          <Text style={[styles.selectChipChevron, contentMutedTextStyle(content)]}>▼</Text>
+        ) : null}
       </Pressable>
       <Modal transparent animationType="fade" visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -119,9 +128,7 @@ function SelectInput({
                 <Pressable
                   style={[
                     styles.modalOption,
-                    value === ''
-                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                      : null,
+                    value === '' ? contentSelectedOptionStyle(content) : null,
                   ]}
                   onPress={() => {
                     onChange('');
@@ -136,9 +143,7 @@ function SelectInput({
                   key={option.value}
                   style={[
                     styles.modalOption,
-                    value === option.value
-                      ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                      : null,
+                    value === option.value ? contentSelectedOptionStyle(content) : null,
                   ]}
                   onPress={() => {
                     onChange(option.value);
@@ -591,10 +596,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   selectChipButton: {
-    borderColor: Theme.accent,
     borderWidth: 1,
     borderRadius: Radius.full,
-    backgroundColor: Theme.accentLight,
     paddingHorizontal: 12,
     paddingVertical: 6,
     maxWidth: '100%',
@@ -608,22 +611,19 @@ const styles = StyleSheet.create({
   selectChipText: {
     fontSize: Typography.sm,
     fontWeight: '600',
-    color: Theme.accent,
     flexShrink: 1,
   },
   selectChipPlaceholder: {
     fontSize: Typography.sm,
     fontWeight: '600',
-    color: Theme.textSecondary,
     flexShrink: 1,
   },
   selectChipChevron: {
     fontSize: 9,
-    color: Theme.accent,
     marginTop: 1,
   },
-  episodeSelectText: { fontSize: 14, color: '#0f172a' },
-  episodeSelectPlaceholder: { fontSize: 14, color: '#94a3b8' },
+  episodeSelectText: { fontSize: 14 },
+  episodeSelectPlaceholder: { fontSize: 14 },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
@@ -631,22 +631,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   modalCard: {
-    backgroundColor: Theme.bgSurface,
     borderRadius: Radius.md,
     padding: 14,
     maxHeight: '70%',
   },
-  modalTitle: { fontSize: 16, fontWeight: '700', color: '#0f172a', marginBottom: 10 },
+  modalTitle: { fontSize: 16, fontWeight: '700', marginBottom: 10 },
   modalOptionsScroll: { marginBottom: 10 },
   modalOption: { paddingVertical: 10, paddingHorizontal: 8, borderRadius: Radius.sm },
-  modalOptionSelected: { backgroundColor: '#e0f2fe' },
-  modalOptionText: { fontSize: 14, color: '#1e293b' },
+  modalOptionText: { fontSize: 14 },
   modalCloseButton: {
     alignSelf: 'flex-end',
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: Radius.sm,
-    backgroundColor: '#e2e8f0',
   },
-  modalCloseButtonText: { color: '#0f172a', fontWeight: '600' },
+  modalCloseButtonText: { fontWeight: '600' },
 });

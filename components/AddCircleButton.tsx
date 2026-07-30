@@ -6,6 +6,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { useContentColors } from '@/utils/useContentColors';
 
 const BUTTON_SIZE = 36;
 const GLYPH_SIZE = 22;
@@ -23,10 +25,17 @@ export function AddCircleButton({
   accessibilityLabel = '追加',
   style,
 }: AddCircleButtonProps) {
+  const appTheme = useAppThemeOptional();
+  const content = useContentColors();
+  const isBlack = appTheme?.variant === 'black';
+  const fill = isBlack ? content.contentCard : '#FFFFFF';
+  const ink = isBlack ? content.contentText : '#565656';
+
   return (
     <Pressable
       style={({ pressed }) => [
         styles.button,
+        { backgroundColor: fill, borderColor: ink },
         style,
         disabled && styles.buttonDisabled,
         pressed && !disabled && styles.buttonPressed,
@@ -37,7 +46,7 @@ export function AddCircleButton({
       accessibilityRole="button"
     >
       <View style={styles.glyph}>
-        <Text style={styles.glyphText}>＋</Text>
+        <Text style={[styles.glyphText, { color: ink }]}>＋</Text>
       </View>
     </Pressable>
   );
@@ -49,8 +58,6 @@ const styles = StyleSheet.create({
     height: BUTTON_SIZE,
     borderRadius: BUTTON_SIZE / 2,
     borderWidth: 2,
-    borderColor: '#565656',
-    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000000',
@@ -77,7 +84,6 @@ const styles = StyleSheet.create({
   glyphText: {
     fontSize: GLYPH_SIZE,
     fontWeight: '900',
-    color: '#565656',
     includeFontPadding: false,
   },
 });

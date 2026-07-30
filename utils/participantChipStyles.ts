@@ -29,7 +29,7 @@ export const participantChipStyles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Theme.border,
     borderRadius: 999,
-    backgroundColor: Theme.accentLight,
+    backgroundColor: 'transparent',
     paddingLeft: 4,
     paddingRight: 4,
   },

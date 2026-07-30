@@ -20,6 +20,15 @@ import { formatEpisodeDateToYMD, parseEpisodeDateString } from '@/components/epi
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
+import {
+  contentInputStyle,
+  contentMutedTextStyle,
+  contentSelectedOptionStyle,
+  contentSurfaceStyle,
+  contentSwitchColors,
+  contentTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   createEvent,
@@ -99,6 +108,7 @@ const addDaysToDateKey = (dateKey: string, days: number): string => {
 export default function EventScreen() {
   const router = useRouter();
   const content = useContentColors();
+  const switchColors = contentSwitchColors(content);
   const fieldCorner = { borderRadius: 0 };
   const params = useLocalSearchParams<{ eventId?: string; date?: string }>();
   const eventId = parseRouteParam(params.eventId);
@@ -558,17 +568,26 @@ export default function EventScreen() {
         <FormScreenSection elevated style={styles.formSection}>
           <FormRow label="タイトル">
             <TextInput
-              style={[styles.textInput, fieldCorner]}
+              style={[styles.textInput, fieldCorner, contentInputStyle(content)]}
               placeholder="予定のタイトル"
-              placeholderTextColor={Theme.inputPlaceholder}
+              placeholderTextColor={content.contentTextSecondary}
               value={title}
               onChangeText={setTitle}
             />
           </FormRow>
 
           <FormRow label="エピソードタグ">
-            <Pressable style={[styles.pickerButton, fieldCorner]} onPress={() => setTagModalVisible(true)}>
-              <Text style={episodeTag ? styles.pickerButtonText : styles.pickerPlaceholder}>
+            <Pressable
+              style={[styles.pickerButton, fieldCorner, contentInputStyle(content)]}
+              onPress={() => setTagModalVisible(true)}
+            >
+              <Text
+                style={
+                  episodeTag
+                    ? [styles.pickerButtonText, contentTextStyle(content)]
+                    : [styles.pickerPlaceholder, contentMutedTextStyle(content)]
+                }
+              >
                 {episodeTag || '未設定'}
               </Text>
             </Pressable>
@@ -578,25 +597,25 @@ export default function EventScreen() {
             <Switch
               value={allDay}
               onValueChange={setAllDay}
-              trackColor={{ false: Theme.border, true: Theme.accentLight }}
-              thumbColor={allDay ? Theme.accent : Theme.card}
+              trackColor={switchColors.trackColor}
+              thumbColor={allDay ? Theme.accent : switchColors.thumbColorOff}
             />
           </FormRow>
 
           <FormRow label={`開始${allDay ? '日' : '日時'}`}>
             <View style={styles.dateTimeRow}>
               <Pressable
-                style={[styles.pickerButton, styles.dateButton, fieldCorner]}
+                style={[styles.pickerButton, styles.dateButton, fieldCorner, contentInputStyle(content)]}
                 onPress={() => setActivePicker('startDate')}
               >
-                <Text style={styles.pickerButtonText}>{startDateKey}</Text>
+                <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{startDateKey}</Text>
               </Pressable>
               {!allDay ? (
                 <Pressable
-                  style={[styles.pickerButton, styles.timeButton, fieldCorner]}
+                  style={[styles.pickerButton, styles.timeButton, fieldCorner, contentInputStyle(content)]}
                   onPress={() => setActivePicker('startTime')}
                 >
-                  <Text style={styles.pickerButtonText}>{startTime}</Text>
+                  <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{startTime}</Text>
                 </Pressable>
               ) : null}
             </View>
@@ -605,19 +624,31 @@ export default function EventScreen() {
           <FormRow label={`終了${allDay ? '日' : '日時'}`}>
             <View style={styles.dateTimeRow}>
               <Pressable
-                style={[styles.pickerButton, styles.dateButton, fieldCorner]}
+                style={[styles.pickerButton, styles.dateButton, fieldCorner, contentInputStyle(content)]}
                 onPress={() => setActivePicker('endDate')}
               >
-                <Text style={endDateKey ? styles.pickerButtonText : styles.pickerPlaceholder}>
+                <Text
+                  style={
+                    endDateKey
+                      ? [styles.pickerButtonText, contentTextStyle(content)]
+                      : [styles.pickerPlaceholder, contentMutedTextStyle(content)]
+                  }
+                >
                   {endDateKey || '未設定'}
                 </Text>
               </Pressable>
               {!allDay ? (
                 <Pressable
-                  style={[styles.pickerButton, styles.timeButton, fieldCorner]}
+                  style={[styles.pickerButton, styles.timeButton, fieldCorner, contentInputStyle(content)]}
                   onPress={() => setActivePicker('endTime')}
                 >
-                  <Text style={endTime ? styles.pickerButtonText : styles.pickerPlaceholder}>
+                  <Text
+                    style={
+                      endTime
+                        ? [styles.pickerButtonText, contentTextStyle(content)]
+                        : [styles.pickerPlaceholder, contentMutedTextStyle(content)]
+                    }
+                  >
                     {endTime || '未設定'}
                   </Text>
                 </Pressable>
@@ -643,19 +674,19 @@ export default function EventScreen() {
                 onChange={handlePickerChange}
               />
               <Pressable
-                style={[styles.pickerDoneButton, fieldCorner]}
+                style={[styles.pickerDoneButton, fieldCorner, contentTagStyle(content)]}
                 onPress={() => setActivePicker(null)}
               >
-                <Text style={styles.pickerDoneText}>完了</Text>
+                <Text style={[styles.pickerDoneText, contentTextStyle(content)]}>完了</Text>
               </Pressable>
             </View>
           ) : null}
 
           <FormRow label="メモ" contentStyle={styles.memoField}>
             <TextInput
-              style={[styles.textInput, styles.memoInput, fieldCorner]}
+              style={[styles.textInput, styles.memoInput, fieldCorner, contentInputStyle(content)]}
               placeholder="メモ（任意）"
-              placeholderTextColor={Theme.inputPlaceholder}
+              placeholderTextColor={content.contentTextSecondary}
               value={memo}
               onChangeText={setMemo}
               multiline
@@ -669,14 +700,17 @@ export default function EventScreen() {
             <Switch
               value={notifyEnabled}
               onValueChange={setNotifyEnabled}
-              trackColor={{ false: Theme.border, true: Theme.accentLight }}
-              thumbColor={notifyEnabled ? Theme.accent : Theme.card}
+              trackColor={switchColors.trackColor}
+              thumbColor={notifyEnabled ? Theme.accent : switchColors.thumbColorOff}
             />
           </FormRow>
           {notifyEnabled ? (
             <FormRow label="通知タイミング">
-              <Pressable style={[styles.pickerButton, fieldCorner]} onPress={() => setTimingModalVisible(true)}>
-                <Text style={styles.pickerButtonText}>{selectedTimingLabel}</Text>
+              <Pressable
+                style={[styles.pickerButton, fieldCorner, contentInputStyle(content)]}
+                onPress={() => setTimingModalVisible(true)}
+              >
+                <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{selectedTimingLabel}</Text>
               </Pressable>
             </FormRow>
           ) : null}
@@ -684,12 +718,12 @@ export default function EventScreen() {
 
         <FormScreenSection elevated style={styles.formSection}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.fieldLabel}>会う人</Text>
+            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>会う人</Text>
             <Pressable
-              style={[styles.addParticipantButton, fieldCorner]}
+              style={[styles.addParticipantButton, fieldCorner, contentTagStyle(content)]}
               onPress={openParticipantSelector}
             >
-              <Text style={styles.addParticipantButtonText}>追加</Text>
+              <Text style={[styles.addParticipantButtonText, contentTextStyle(content)]}>追加</Text>
             </Pressable>
           </View>
           {participantDisplays.length > 0 ? (
@@ -699,7 +733,9 @@ export default function EventScreen() {
               onRemoveProfile={handleRemoveParticipant}
             />
           ) : (
-            <Text style={styles.emptyParticipantText}>会う人が選択されていません</Text>
+            <Text style={[styles.emptyParticipantText, contentMutedTextStyle(content)]}>
+              会う人が選択されていません
+            </Text>
           )}
         </FormScreenSection>
         </FormScreenBody>
@@ -723,8 +759,11 @@ export default function EventScreen() {
         onRequestClose={() => setTimingModalVisible(false)}
       >
         <Pressable style={styles.timingModalBackdrop} onPress={() => setTimingModalVisible(false)}>
-          <Pressable style={styles.timingModalCard} onPress={(event) => event.stopPropagation()}>
-            <Text style={styles.timingModalTitle}>通知タイミング</Text>
+          <Pressable
+            style={[styles.timingModalCard, contentSurfaceStyle(content)]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <Text style={[styles.timingModalTitle, contentTextStyle(content)]}>通知タイミング</Text>
             <ScrollView style={styles.timingModalOptions}>
               {availableTimingOptions.map((option) => {
                 const selected = option.value === notifyTimingPreset;
@@ -733,22 +772,25 @@ export default function EventScreen() {
                     key={option.value}
                     style={[
                       styles.timingModalOption,
-                      selected
-                        ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                        : null,
+                      selected ? contentSelectedOptionStyle(content) : null,
                     ]}
                     onPress={() => {
                       setNotifyTimingPreset(option.value);
                       setTimingModalVisible(false);
                     }}
                   >
-                    <Text style={styles.timingModalOptionText}>{option.label}</Text>
+                    <Text style={[styles.timingModalOptionText, contentTextStyle(content)]}>
+                      {option.label}
+                    </Text>
                   </Pressable>
                 );
               })}
             </ScrollView>
-            <Pressable style={styles.timingModalCloseButton} onPress={() => setTimingModalVisible(false)}>
-              <Text style={styles.timingModalCloseButtonText}>閉じる</Text>
+            <Pressable
+              style={[styles.timingModalCloseButton, contentTagStyle(content)]}
+              onPress={() => setTimingModalVisible(false)}
+            >
+              <Text style={[styles.timingModalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -761,22 +803,23 @@ export default function EventScreen() {
         onRequestClose={() => setTagModalVisible(false)}
       >
         <Pressable style={styles.timingModalBackdrop} onPress={() => setTagModalVisible(false)}>
-          <Pressable style={styles.timingModalCard} onPress={(event) => event.stopPropagation()}>
-            <Text style={styles.timingModalTitle}>エピソードタグ</Text>
+          <Pressable
+            style={[styles.timingModalCard, contentSurfaceStyle(content)]}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <Text style={[styles.timingModalTitle, contentTextStyle(content)]}>エピソードタグ</Text>
             <ScrollView style={styles.timingModalOptions}>
               <Pressable
                 style={[
                   styles.timingModalOption,
-                  !episodeTag
-                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                    : null,
+                  !episodeTag ? contentSelectedOptionStyle(content) : null,
                 ]}
                 onPress={() => {
                   setEpisodeTag('');
                   setTagModalVisible(false);
                 }}
               >
-                <Text style={styles.timingModalOptionText}>未設定</Text>
+                <Text style={[styles.timingModalOptionText, contentTextStyle(content)]}>未設定</Text>
               </Pressable>
               {episodeTagOptions.map((option) => {
                 const selected = option.value === episodeTag;
@@ -785,22 +828,25 @@ export default function EventScreen() {
                     key={option.value}
                     style={[
                       styles.timingModalOption,
-                      selected
-                        ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                        : null,
+                      selected ? contentSelectedOptionStyle(content) : null,
                     ]}
                     onPress={() => {
                       setEpisodeTag(option.value);
                       setTagModalVisible(false);
                     }}
                   >
-                    <Text style={styles.timingModalOptionText}>{option.label}</Text>
+                    <Text style={[styles.timingModalOptionText, contentTextStyle(content)]}>
+                      {option.label}
+                    </Text>
                   </Pressable>
                 );
               })}
             </ScrollView>
-            <Pressable style={styles.timingModalCloseButton} onPress={() => setTagModalVisible(false)}>
-              <Text style={styles.timingModalCloseButtonText}>閉じる</Text>
+            <Pressable
+              style={[styles.timingModalCloseButton, contentTagStyle(content)]}
+              onPress={() => setTagModalVisible(false)}
+            >
+              <Text style={[styles.timingModalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </Pressable>
         </Pressable>
@@ -998,9 +1044,6 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: Radius.sm,
-  },
-  timingModalOptionSelected: {
-    backgroundColor: Theme.accentLight,
   },
   timingModalOptionText: {
     fontSize: 14,

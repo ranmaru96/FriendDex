@@ -302,7 +302,7 @@ function BatchEditSection({
               value={draft.totalAmountText}
               onChangeText={(value) => onChange(draft.groupId, { totalAmountText: value })}
               placeholder="例: 9000"
-              placeholderTextColor={Theme.inputPlaceholder}
+              placeholderTextColor={content.contentTextSecondary}
               keyboardType="number-pad"
             />
           </View>
@@ -357,7 +357,7 @@ function BatchEditSection({
                   value={line.amountText}
                   onChangeText={(value) => updateIndividualLine(line.friendId, { amountText: value })}
                   placeholder="金額"
-                  placeholderTextColor={Theme.inputPlaceholder}
+                  placeholderTextColor={content.contentTextSecondary}
                   keyboardType="number-pad"
                 />
                 <View style={formStyles.individualDirectionRow}>
@@ -647,7 +647,7 @@ export function MoneyLoanSessionEditModal({
                 value={titleDraft}
                 onChangeText={setTitleDraft}
                 placeholder="例: フットサル"
-                placeholderTextColor={Theme.inputPlaceholder}
+                placeholderTextColor={content.contentTextSecondary}
               />
             </View>
           </View>
