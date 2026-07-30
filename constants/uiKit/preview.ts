@@ -41,7 +41,7 @@ export const previewUiKit: UiKit = {
   episodeListCardLayout: 'photoRight',
   listScreenPaddingHorizontal: Spacing.sm,
   episodeListPaddingHorizontal: Spacing.sm,
-  episodeListCardGap: 4,
+  episodeListCardGap: 6,
   episodeListCardBorderRadius: 6,
   episodeListPhotoLayout: 'tallOne',
   episodeListPhotoSpanRows: 3,

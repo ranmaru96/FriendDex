@@ -41,7 +41,7 @@ export const stableUiKit: UiKit = {
   episodeListCardLayout: 'photoRight',
   listScreenPaddingHorizontal: ScreenHorizontalInset,
   episodeListPaddingHorizontal: ScreenHorizontalInset,
-  episodeListCardGap: 4,
+  episodeListCardGap: 6,
   episodeListCardBorderRadius: 10,
   episodeListPhotoLayout: 'compactOne',
   episodeListPhotoSpanRows: 2,
