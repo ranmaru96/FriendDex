@@ -20,7 +20,7 @@ import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModa
 import type { Option } from '@/components/episode/types';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { Panel, PanelSection, SectionDivider } from '@/components/ui/Panel';
-import { useUiPreview } from '@/contexts/UiPreviewContext';
+import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
 import { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 
@@ -60,6 +60,7 @@ const PHOTO_PEEK = 28;
 export default function EpisodeDetailScreen() {
   const router = useRouter();
   const { isPreview } = useUiPreview();
+  const kit = useUiKit();
   const bottomNavClearance = useBottomNavScrollClearance();
   const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string }>();
   const [episode, setEpisode] = useState<Episode | null>(null);
@@ -291,7 +292,7 @@ export default function EpisodeDetailScreen() {
 
   if (!episode) {
     return (
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
         <ScreenTopBar onBack={() => router.back()} />
         <View style={styles.missingContainer}>
           <Text style={styles.missingText}>エピソードが見つかりませんでした。</Text>
@@ -302,7 +303,7 @@ export default function EpisodeDetailScreen() {
 
   return (
     <>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
         <ScreenTopBar
           title="エピソード"
           onBack={() => router.back()}
@@ -314,7 +315,7 @@ export default function EpisodeDetailScreen() {
                 accessibilityLabel="編集"
                 hitSlop={8}
               >
-                <Ionicons name="pencil-outline" size={18} color={Theme.topBarText} />
+                <Ionicons name="pencil-outline" size={18} color={kit.topBarText} />
               </Pressable>
             ) : null
           }
@@ -444,7 +445,6 @@ export default function EpisodeDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.screenBase,
   },
   mainScroll: {
     flex: 1,

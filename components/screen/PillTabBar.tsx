@@ -28,7 +28,12 @@ export function PillTabBar<T extends string>({
   const kit = useUiKit();
 
   return (
-    <View style={[styles.tabSection, { paddingHorizontal: kit.subToolScreenPaddingHorizontal }]}>
+    <View
+      style={[
+        styles.tabSection,
+        { paddingHorizontal: kit.subToolScreenPaddingHorizontal, backgroundColor: kit.screenBackground },
+      ]}
+    >
       <View style={styles.tabTrack}>
         <View style={styles.tabInner}>
           {tabs.map((tab) => {
@@ -86,7 +91,6 @@ const styles = StyleSheet.create({
   tabSection: {
     paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
-    backgroundColor: Theme.screenBase,
   },
   tabTrack: {
     backgroundColor: '#F8F8F8',

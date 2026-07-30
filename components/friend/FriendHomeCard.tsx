@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { HomeCardElevation, Radius, Theme } from '@/constants/theme';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
 import type { Friend } from '../../types';
@@ -28,10 +29,12 @@ export function FriendHomeCard({
   style,
 }: FriendHomeCardProps) {
   const kit = useUiKit();
+  const appTheme = useAppThemeOptional();
   const [imageError, setImageError] = useState(false);
   const hasPhoto = Boolean(friend.photoUri?.trim()) && !imageError;
   const completeness = computeProfileCompleteness(friend, hasPhoto);
   const cardBorder = getHomeCardBorderStyle(completeness);
+  const cardElevation = appTheme?.colors.homeCardElevation ?? HomeCardElevation;
 
   const cardOuterStyle = [
     styles.cardOuter,
@@ -76,7 +79,7 @@ export function FriendHomeCard({
   );
 
   return (
-    <View style={[styles.cardShadow, width != null ? { width } : null, style]}>
+    <View style={[styles.cardShadow, cardElevation, width != null ? { width } : null, style]}>
       {onPress || onLongPress ? (
         <Pressable
           style={cardOuterStyle}
@@ -97,7 +100,6 @@ const styles = StyleSheet.create({
   cardShadow: {
     borderRadius: Radius.md,
     backgroundColor: 'transparent',
-    ...HomeCardElevation,
   },
   cardOuter: {
     borderRadius: Radius.md,

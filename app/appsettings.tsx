@@ -12,9 +12,17 @@ import { confirmAndExportBackup, confirmAndImportBackup } from '../backup';
 import { getAllProfiles, getMyself, initializeDatabase, setMyself } from '../db';
 import { Profile } from '../types';
 import { DETAIL_DESIGN_OPTIONS } from '@/constants/detailThemes';
-import { CALENDAR_EVENT_TIME_DISPLAY_OPTIONS, EPISODE_LIST_PHOTO_LAYOUT_OPTIONS, UI_PREVIEW_OPTIONS } from '@/constants/uiKit';
+import { APP_THEME_OPTIONS, isMonochromeAppTheme } from '@/constants/appThemes';
+import {
+  CALENDAR_EVENT_CARD_STYLE_OPTIONS,
+  CALENDAR_EVENT_TIME_DISPLAY_OPTIONS,
+  DETAIL_PROFILE_CARD_STYLE_OPTIONS,
+  EPISODE_LIST_PHOTO_LAYOUT_OPTIONS,
+  UI_PREVIEW_OPTIONS,
+} from '@/constants/uiKit';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
+import { useAppTheme } from '../contexts/AppThemeContext';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
 import { useUiKit, useUiPreview } from '../contexts/UiPreviewContext';
 
@@ -31,6 +39,10 @@ function ProfileSelectField({
   options: Option[];
   onValueChange: (value: string) => void;
 }) {
+  const { variant, colors } = useAppTheme();
+  const isMonochrome = isMonochromeAppTheme(variant);
+  const isBlack = variant === 'black';
+  const monoSurface = isBlack ? '#1c1c1c' : undefined;
   const [visible, setVisible] = useState(false);
   const displayLabel = useMemo(() => {
     if (!value) return label;
@@ -39,30 +51,69 @@ function ProfileSelectField({
 
   return (
     <View>
-      <Pressable style={styles.selectButton} onPress={() => setVisible(true)}>
-        <Text style={value ? styles.selectValue : styles.selectPlaceholder}>{displayLabel}</Text>
-        <Text style={styles.selectChevron}>▼</Text>
+      <Pressable
+        style={[
+          styles.selectButton,
+          isMonochrome && {
+            borderColor: colors.headerBorder,
+            borderWidth: 1,
+            ...(monoSurface ? { backgroundColor: monoSurface } : null),
+          },
+        ]}
+        onPress={() => setVisible(true)}
+      >
+        <Text
+          style={[
+            value ? styles.selectValue : styles.selectPlaceholder,
+            isMonochrome && { color: value ? colors.onScreenText : colors.onScreenTextSecondary },
+          ]}
+        >
+          {displayLabel}
+        </Text>
+        <Text style={[styles.selectChevron, isMonochrome && { color: colors.onScreenTextSecondary }]}>
+          ▼
+        </Text>
       </Pressable>
       <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
-            <Text style={styles.modalTitle}>{label}</Text>
+          <View
+            style={[
+              styles.modalCard,
+              isMonochrome && {
+                borderWidth: 1,
+                borderColor: colors.headerBorder,
+                ...(monoSurface ? { backgroundColor: monoSurface } : null),
+              },
+            ]}
+          >
+            <Text style={[styles.modalTitle, isMonochrome && { color: colors.onScreenText }]}>{label}</Text>
             <ScrollView style={styles.modalOptions}>
               {options.map((option) => (
                 <Pressable
                   key={option.value}
-                  style={[styles.modalOption, option.value === value && styles.modalOptionSelected]}
+                  style={[
+                    styles.modalOption,
+                    option.value === value && styles.modalOptionSelected,
+                    isBlack && option.value === value && { backgroundColor: '#2a2a2a' },
+                  ]}
                   onPress={() => {
                     onValueChange(option.value);
                     setVisible(false);
                   }}
                 >
-                  <Text style={styles.modalOptionText}>{option.label}</Text>
+                  <Text style={[styles.modalOptionText, isMonochrome && { color: colors.onScreenText }]}>
+                    {option.label}
+                  </Text>
                 </Pressable>
               ))}
             </ScrollView>
-            <Pressable style={styles.modalCloseButton} onPress={() => setVisible(false)}>
-              <Text style={styles.modalCloseButtonText}>閉じる</Text>
+            <Pressable
+              style={[styles.modalCloseButton, isBlack && { backgroundColor: '#2a2a2a' }]}
+              onPress={() => setVisible(false)}
+            >
+              <Text style={[styles.modalCloseButtonText, isMonochrome && { color: colors.onScreenText }]}>
+                閉じる
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -84,16 +135,60 @@ const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | nu
 
 export default function AppSettingsScreen() {
   const router = useRouter();
+  const { variant: appThemeVariant, setVariant: setAppThemeVariant, colors: appThemeColors } =
+    useAppTheme();
+  const isMonochromeTheme = isMonochromeAppTheme(appThemeVariant);
   const { variant: detailDesignVariant, setVariant: setDetailDesignVariant } = useDetailDesign();
   const {
     variant: uiPreviewVariant,
     setVariant: setUiPreviewVariant,
+    setCalendarEventCardStyle,
     setCalendarEventTimeDisplay,
     setEpisodeListPhotoLayout,
+    setDetailProfileCardStyle,
   } = useUiPreview();
   const kit = useUiKit();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
+
+  const themed = useMemo(
+    () =>
+      isMonochromeTheme
+        ? {
+            backText: { color: appThemeColors.onScreenText },
+            sectionHeader: { color: appThemeColors.onScreenText },
+            hint: { color: appThemeColors.onScreenTextSecondary },
+            emptyText: { color: appThemeColors.onScreenTextSecondary },
+            rowLabel: { color: appThemeColors.onScreenText },
+            group: {
+              borderWidth: 1,
+              borderColor: appThemeColors.headerBorder,
+              backgroundColor:
+                appThemeVariant === 'black' ? '#1c1c1c' : Theme.bgSurface,
+            },
+            separator: {
+              height: 1,
+              backgroundColor: appThemeColors.headerBorder,
+            },
+          }
+        : {
+            backText: { color: kit.topBarText },
+            sectionHeader: null,
+            hint: null,
+            emptyText: null,
+            rowLabel: null,
+            group: null,
+            separator: null,
+          },
+    [
+      appThemeColors.headerBorder,
+      appThemeColors.onScreenText,
+      appThemeColors.onScreenTextSecondary,
+      appThemeVariant,
+      isMonochromeTheme,
+      kit.topBarText,
+    ]
+  );
 
   const profileOptions = useMemo(
     (): Option[] => profiles.map((profile) => ({ label: profile.name, value: profile.id })),
@@ -128,15 +223,15 @@ export default function AppSettingsScreen() {
 
   return (
     <SubToolScreenTemplate useTopBar={false} useScreenPadding={false} scrollContentStyle={styles.scrollContent}>
-      <Pressable style={styles.backRow} onPress={() => router.back()}>
-        <Text style={styles.backText}>‹ 戻る</Text>
-      </Pressable>
+        <Pressable style={styles.backRow} onPress={() => router.back()}>
+          <Text style={[styles.backText, themed.backText]}>‹ 戻る</Text>
+        </Pressable>
 
-        <Text style={styles.sectionHeader}>本人設定</Text>
-        <View style={styles.group}>
+        <Text style={[styles.sectionHeader, themed.sectionHeader]}>本人設定</Text>
+        <View style={[styles.group, themed.group]}>
           {profiles.length === 0 ? (
             <View style={styles.row}>
-              <Text style={styles.emptyText}>プロフィールを登録してください</Text>
+              <Text style={[styles.emptyText, themed.emptyText]}>プロフィールを登録してください</Text>
             </View>
           ) : (
             <View style={styles.row}>
@@ -150,13 +245,31 @@ export default function AppSettingsScreen() {
           )}
         </View>
 
-        <Text style={styles.sectionHeader}>Detail 画面デザイン</Text>
-        <View style={styles.group}>
+        <Text style={[styles.sectionHeader, themed.sectionHeader]}>アプリ全体テーマ</Text>
+        <View style={[styles.group, themed.group]}>
+          {APP_THEME_OPTIONS.map((option, index) => (
+            <View key={option.value}>
+              {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
+              <Pressable style={styles.row} onPress={() => setAppThemeVariant(option.value)}>
+                <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
+                {appThemeVariant === option.value ? (
+                  <Text style={styles.selectedMark}>✓</Text>
+                ) : null}
+              </Pressable>
+            </View>
+          ))}
+        </View>
+        <Text style={[styles.hint, themed.hint]}>
+          全画面のベース背景・サブ画面トップバー色を切り替えます（デフォルト / ホワイト / ブラック）
+        </Text>
+
+        <Text style={[styles.sectionHeader, themed.sectionHeader]}>Detail 画面デザイン</Text>
+        <View style={[styles.group, themed.group]}>
           {DETAIL_DESIGN_OPTIONS.map((option, index) => (
             <View key={option.value}>
-              {index > 0 ? <View style={styles.separator} /> : null}
+              {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
               <Pressable style={styles.row} onPress={() => setDetailDesignVariant(option.value)}>
-                <Text style={styles.rowLabel}>{option.label}</Text>
+                <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
                 {detailDesignVariant === option.value ? (
                   <Text style={styles.selectedMark}>✓</Text>
                 ) : null}
@@ -164,15 +277,15 @@ export default function AppSettingsScreen() {
             </View>
           ))}
         </View>
-        <Text style={styles.hint}>Detail 画面の配色とタブ・タグのスタイルを切り替えます</Text>
+        <Text style={[styles.hint, themed.hint]}>Detail 画面の配色とタブ・タグのスタイルを切り替えます</Text>
 
-        <Text style={styles.sectionHeader}>UI プレビュー</Text>
-        <View style={styles.group}>
+        <Text style={[styles.sectionHeader, themed.sectionHeader]}>UI プレビュー</Text>
+        <View style={[styles.group, themed.group]}>
           {UI_PREVIEW_OPTIONS.map((option, index) => (
             <View key={option.value}>
-              {index > 0 ? <View style={styles.separator} /> : null}
+              {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
               <Pressable style={styles.row} onPress={() => setUiPreviewVariant(option.value)}>
-                <Text style={styles.rowLabel}>{option.label}</Text>
+                <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
                 {uiPreviewVariant === option.value ? (
                   <Text style={styles.selectedMark}>✓</Text>
                 ) : null}
@@ -180,22 +293,22 @@ export default function AppSettingsScreen() {
             </View>
           ))}
         </View>
-        <Text style={styles.hint}>
+        <Text style={[styles.hint, themed.hint]}>
           アプリ全体のレイアウト・枠・フォームの試作版を切り替えます。Detail の配色とは別の設定です
         </Text>
 
         {uiPreviewVariant === 'preview' ? (
           <>
-            <Text style={styles.sectionHeader}>カレンダー予定カード（試作）</Text>
-            <View style={styles.group}>
+            <Text style={[styles.sectionHeader, themed.sectionHeader]}>カレンダー予定カード（試作）</Text>
+            <View style={[styles.group, themed.group]}>
               {CALENDAR_EVENT_TIME_DISPLAY_OPTIONS.map((option, index) => (
                 <View key={option.value}>
-                  {index > 0 ? <View style={styles.separator} /> : null}
+                  {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
                   <Pressable
                     style={styles.row}
                     onPress={() => setCalendarEventTimeDisplay(option.value)}
                   >
-                    <Text style={styles.rowLabel}>{option.label}</Text>
+                    <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
                     {kit.calendarEventTimeDisplay === option.value ? (
                       <Text style={styles.selectedMark}>✓</Text>
                     ) : null}
@@ -203,18 +316,41 @@ export default function AppSettingsScreen() {
                 </View>
               ))}
             </View>
-            <Text style={styles.hint}>Preview モード時のみ。予定カード左側の時刻表示スタイルを切り替えます</Text>
+            <Text style={[styles.hint, themed.hint]}>
+              Preview モード時のみ。予定カード左側の時刻表示スタイルを切り替えます
+            </Text>
 
-            <Text style={styles.sectionHeader}>エピソードカード写真（試作）</Text>
-            <View style={styles.group}>
+            <Text style={[styles.sectionHeader, themed.sectionHeader]}>予定カード形状（試作）</Text>
+            <View style={[styles.group, themed.group]}>
+              {CALENDAR_EVENT_CARD_STYLE_OPTIONS.map((option, index) => (
+                <View key={option.value}>
+                  {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
+                  <Pressable
+                    style={styles.row}
+                    onPress={() => setCalendarEventCardStyle(option.value)}
+                  >
+                    <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
+                    {kit.calendarEventCardStyle === option.value ? (
+                      <Text style={styles.selectedMark}>✓</Text>
+                    ) : null}
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+            <Text style={[styles.hint, themed.hint]}>
+              Preview モード時のみ。ホワイト版などの予定一覧で、各予定を独立した丸角カードにするかを切り替えます
+            </Text>
+
+            <Text style={[styles.sectionHeader, themed.sectionHeader]}>エピソードカード写真（試作）</Text>
+            <View style={[styles.group, themed.group]}>
               {EPISODE_LIST_PHOTO_LAYOUT_OPTIONS.map((option, index) => (
                 <View key={option.value}>
-                  {index > 0 ? <View style={styles.separator} /> : null}
+                  {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
                   <Pressable
                     style={styles.row}
                     onPress={() => setEpisodeListPhotoLayout(option.value)}
                   >
-                    <Text style={styles.rowLabel}>{option.label}</Text>
+                    <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
                     {kit.episodeListPhotoLayout === option.value ? (
                       <Text style={styles.selectedMark}>✓</Text>
                     ) : null}
@@ -222,23 +358,44 @@ export default function AppSettingsScreen() {
                 </View>
               ))}
             </View>
-            <Text style={styles.hint}>
+            <Text style={[styles.hint, themed.hint]}>
               Preview モード時のみ。一覧カード右側の写真の高さ・枚数レイアウトを切り替えます
+            </Text>
+
+            <Text style={[styles.sectionHeader, themed.sectionHeader]}>Detail プロフィール枠（試作）</Text>
+            <View style={[styles.group, themed.group]}>
+              {DETAIL_PROFILE_CARD_STYLE_OPTIONS.map((option, index) => (
+                <View key={option.value}>
+                  {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
+                  <Pressable
+                    style={styles.row}
+                    onPress={() => setDetailProfileCardStyle(option.value)}
+                  >
+                    <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
+                    {kit.detailProfileCardStyle === option.value ? (
+                      <Text style={styles.selectedMark}>✓</Text>
+                    ) : null}
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+            <Text style={[styles.hint, themed.hint]}>
+              Preview モード時のみ。Detail の影・角丸・外枠の有無を切り替えます
             </Text>
           </>
         ) : null}
 
-        <Text style={styles.sectionHeader}>バックアップ</Text>
-        <View style={styles.group}>
+        <Text style={[styles.sectionHeader, themed.sectionHeader]}>バックアップ</Text>
+        <View style={[styles.group, themed.group]}>
           <Pressable style={styles.row} onPress={confirmAndExportBackup}>
-            <Text style={styles.rowLabel}>バックアップを書き出す</Text>
+            <Text style={[styles.rowLabel, themed.rowLabel]}>バックアップを書き出す</Text>
           </Pressable>
-          <View style={styles.separator} />
+          <View style={[styles.separator, themed.separator]} />
           <Pressable style={styles.row} onPress={confirmAndImportBackup}>
-            <Text style={styles.rowLabel}>バックアップから復元する</Text>
+            <Text style={[styles.rowLabel, themed.rowLabel]}>バックアップから復元する</Text>
           </Pressable>
         </View>
-        <Text style={styles.hint}>自動バックアップは起動時に自動実行されます</Text>
+        <Text style={[styles.hint, themed.hint]}>自動バックアップは起動時に自動実行されます</Text>
     </SubToolScreenTemplate>
   );
 }
@@ -253,7 +410,6 @@ const styles = StyleSheet.create({
   },
   backText: {
     fontSize: 17,
-    color: Theme.topBarText,
     fontWeight: '600',
   },
   sectionHeader: {

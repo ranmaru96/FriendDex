@@ -34,6 +34,10 @@ import {
 import { normalizeEpisodeTag } from './utils/episodeHelpers';
 import { buildDefaultShufflePoolLabel, buildShuffleMemberSetKey, normalizeShuffleMemberIds } from './utils/shuffleHelpers';
 import { mergeFriendInputWithPublicFields } from './utils/qrScanHelpers';
+import type {
+  MockSettlementExpense,
+  MockSettlementRoom,
+} from './types/settlementMock';
 
 /** 移行用: 旧 friends テーブル行（DROP 後は未使用） */
 type FriendRow = {
@@ -100,6 +104,7 @@ type CommonItemOptionRow = {
   kind: CommonItemKind;
   label: string;
   members: string;
+  color: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -175,6 +180,10 @@ const EVENTS_TABLE = 'events';
 const EVENT_PARTICIPANTS_TABLE = 'event_participants';
 const MONEY_LOAN_SESSIONS_TABLE = 'money_loan_sessions';
 const MONEY_LOANS_TABLE = 'money_loans';
+const SETTLEMENT_ROOMS_TABLE = 'settlement_rooms';
+const SETTLEMENT_MEMBERS_TABLE = 'settlement_members';
+const SETTLEMENT_EXPENSES_TABLE = 'settlement_expenses';
+const SETTLEMENT_TRANSFER_COMPLETIONS_TABLE = 'settlement_transfer_completions';
 const SHUFFLE_POOLS_TABLE = 'shuffle_pools';
 const MYSELF_KEY = 'myself_friend_id';
 
@@ -428,6 +437,10 @@ const rowToCommonItemOption = (row: CommonItemOptionRow): CommonItemOption => ({
   kind: row.kind,
   label: row.label,
   members: fromJson(row.members ?? '[]'),
+  color:
+    typeof row.color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(row.color.trim())
+      ? row.color.trim().toUpperCase()
+      : null,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
@@ -574,6 +587,7 @@ export const initializeDatabase = (): void => {
       kind TEXT NOT NULL,
       label TEXT NOT NULL,
       members TEXT NOT NULL DEFAULT '[]',
+      color TEXT,
       createdAt TEXT NOT NULL,
       updatedAt TEXT NOT NULL,
       UNIQUE(kind, label)
@@ -734,10 +748,56 @@ export const initializeDatabase = (): void => {
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_${SHUFFLE_POOLS_TABLE}_member_set_key ON ${SHUFFLE_POOLS_TABLE}(member_set_key);`
   );
 
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${SETTLEMENT_ROOMS_TABLE} (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${SETTLEMENT_ROOMS_TABLE}_created_at ON ${SETTLEMENT_ROOMS_TABLE}(created_at);`
+  );
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${SETTLEMENT_MEMBERS_TABLE} (
+      id TEXT PRIMARY KEY NOT NULL,
+      room_id TEXT NOT NULL,
+      friend_id TEXT NOT NULL,
+      display_name TEXT NOT NULL,
+      ledger_synced INTEGER NOT NULL DEFAULT 0
+    );
+  `);
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${SETTLEMENT_MEMBERS_TABLE}_room_id ON ${SETTLEMENT_MEMBERS_TABLE}(room_id);`
+  );
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${SETTLEMENT_EXPENSES_TABLE} (
+      id TEXT PRIMARY KEY NOT NULL,
+      room_id TEXT NOT NULL,
+      payer_member_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      amount INTEGER NOT NULL,
+      split_member_ids TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL
+    );
+  `);
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${SETTLEMENT_EXPENSES_TABLE}_room_id ON ${SETTLEMENT_EXPENSES_TABLE}(room_id);`
+  );
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${SETTLEMENT_TRANSFER_COMPLETIONS_TABLE} (
+      transfer_key TEXT PRIMARY KEY NOT NULL,
+      completed_at TEXT NOT NULL
+    );
+  `);
+
   const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COMMON_ITEM_OPTIONS_TABLE});`);
   const commonColumns = new Set(commonTableInfo.map((c) => c.name));
   if (!commonColumns.has('members')) {
     db.execSync(`ALTER TABLE ${COMMON_ITEM_OPTIONS_TABLE} ADD COLUMN members TEXT NOT NULL DEFAULT '[]';`);
+  }
+  if (!commonColumns.has('color')) {
+    db.execSync(`ALTER TABLE ${COMMON_ITEM_OPTIONS_TABLE} ADD COLUMN color TEXT;`);
   }
 
   const profileTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${PROFILES_TABLE});`);
@@ -850,6 +910,11 @@ export const initializeDatabase = (): void => {
   const myselfId = getMyself();
   if (myselfId) {
     backfillEpisodeAuthorFriendIds(myselfId);
+  }
+
+  if (getAppSetting(COMMON_ITEM_MEMBERS_RECONCILED_KEY) !== '1') {
+    reconcileAllGroupOptionMembers();
+    setAppSetting(COMMON_ITEM_MEMBERS_RECONCILED_KEY, '1');
   }
 };
 
@@ -1001,7 +1066,7 @@ export const createFriend = (input: FriendInput): Friend => {
     ]
   );
 
-  return {
+  const created: Friend = {
     id: personId,
     ...input,
     episodes: input.episodes ?? [],
@@ -1010,6 +1075,8 @@ export const createFriend = (input: FriendInput): Friend => {
     scannedUserId: '',
     scannedAt: '',
   };
+  syncFriendGroupLabelsToOptions(personId, null, input);
+  return created;
 };
 
 export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string): Friend => {
@@ -1059,7 +1126,7 @@ export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string
     ]
   );
 
-  return {
+  const created: Friend = {
     id: personId,
     ...input,
     episodes: input.episodes ?? [],
@@ -1068,6 +1135,8 @@ export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string
     scannedUserId: normalizedUserId,
     scannedAt: timestamp,
   };
+  syncFriendGroupLabelsToOptions(personId, null, input);
+  return created;
 };
 
 export const findFriendByScannedUserId = (scannedUserId: string): Friend | null => {
@@ -1277,8 +1346,11 @@ export const getMyself = (): string | null => {
 
 export const DETAIL_DESIGN_VARIANT_KEY = 'detail_design_variant';
 export const UI_PREVIEW_VARIANT_KEY = 'ui_preview_variant';
+export const APP_THEME_VARIANT_KEY = 'app_theme_variant';
 export const UI_CALENDAR_EVENT_TIME_DISPLAY_KEY = 'ui_calendar_event_time_display';
+export const UI_CALENDAR_EVENT_CARD_STYLE_KEY = 'ui_calendar_event_card_style';
 export const UI_EPISODE_LIST_PHOTO_LAYOUT_KEY = 'ui_episode_list_photo_layout';
+export const UI_DETAIL_PROFILE_CARD_STYLE_KEY = 'ui_detail_profile_card_style';
 
 export const getAppSetting = (key: string): string | null => {
   const row = db.getFirstSync<{ value: string }>(`SELECT value FROM ${SETTINGS_TABLE} WHERE key = ?;`, [key]);
@@ -1310,6 +1382,18 @@ export const setUiPreviewVariant = (variant: 'stable' | 'preview'): void => {
   setAppSetting(UI_PREVIEW_VARIANT_KEY, variant);
 };
 
+export const getAppThemeVariant = (): 'default' | 'white' | 'black' => {
+  const value = getAppSetting(APP_THEME_VARIANT_KEY);
+  if (value === 'white' || value === 'black') {
+    return value;
+  }
+  return 'default';
+};
+
+export const setAppThemeVariant = (variant: 'default' | 'white' | 'black'): void => {
+  setAppSetting(APP_THEME_VARIANT_KEY, variant);
+};
+
 export const getCalendarEventTimeDisplayOverride = (): 'plain' | 'column' | 'badge' | null => {
   const value = getAppSetting(UI_CALENDAR_EVENT_TIME_DISPLAY_KEY);
   if (value === 'plain' || value === 'column' || value === 'badge') {
@@ -1320,6 +1404,18 @@ export const getCalendarEventTimeDisplayOverride = (): 'plain' | 'column' | 'bad
 
 export const setCalendarEventTimeDisplayOverride = (display: 'plain' | 'column' | 'badge'): void => {
   setAppSetting(UI_CALENDAR_EVENT_TIME_DISPLAY_KEY, display);
+};
+
+export const getCalendarEventCardStyleOverride = (): 'current' | 'roundedCards' | null => {
+  const value = getAppSetting(UI_CALENDAR_EVENT_CARD_STYLE_KEY);
+  if (value === 'current' || value === 'roundedCards') {
+    return value;
+  }
+  return null;
+};
+
+export const setCalendarEventCardStyleOverride = (style: 'current' | 'roundedCards'): void => {
+  setAppSetting(UI_CALENDAR_EVENT_CARD_STYLE_KEY, style);
 };
 
 export const getEpisodeListPhotoLayoutOverride = ():
@@ -1338,6 +1434,18 @@ export const setEpisodeListPhotoLayoutOverride = (
   layout: 'compactOne' | 'compactTwoSideBySide' | 'tallOne'
 ): void => {
   setAppSetting(UI_EPISODE_LIST_PHOTO_LAYOUT_KEY, layout);
+};
+
+export const getDetailProfileCardStyleOverride = (): 'card' | 'flat' | null => {
+  const value = getAppSetting(UI_DETAIL_PROFILE_CARD_STYLE_KEY);
+  if (value === 'card' || value === 'flat') {
+    return value;
+  }
+  return null;
+};
+
+export const setDetailProfileCardStyleOverride = (style: 'card' | 'flat'): void => {
+  setAppSetting(UI_DETAIL_PROFILE_CARD_STYLE_KEY, style);
 };
 
 export const setMyself = (friendId: string | null): boolean => {
@@ -1419,8 +1527,13 @@ export const updateFriend = (id: string, input: FriendInput): boolean => {
   if (!exists) {
     return false;
   }
+  const previous = getFriendById(id);
   const timestamp = nowIso();
   upsertDefaultProfileFromFriend(id, input, timestamp);
+  syncFriendGroupLabelsToOptions(id, previous, input);
+  if (!previous || previous.name !== input.name) {
+    syncSettlementMemberDisplayName(id, input.name);
+  }
   return true;
 };
 
@@ -1493,6 +1606,9 @@ export const updateProfile = (profileId: string, input: ProfileSelfUpdateInput):
       profileId,
     ]
   );
+  if (result.changes > 0 && row.name !== input.name) {
+    syncSettlementMemberDisplayName(row.friendId, input.name);
+  }
   return result.changes > 0;
 };
 
@@ -2165,6 +2281,176 @@ const getProfileColumnByKind = (kind: CommonItemKind): ProfileArrayColumn | null
   return null;
 };
 
+const COMMON_ITEM_MEMBERS_RECONCILED_KEY = 'common_item_members_reconciled_v1';
+
+const GROUP_MEMBER_SYNC_KINDS: CommonItemKind[] = [
+  'affiliation',
+  'experience',
+  'personality',
+  'like',
+  'dislike',
+];
+
+type GroupLabelFriendData = Pick<
+  FriendInput,
+  'affiliations' | 'experiences' | 'personalities' | 'likes' | 'dislikes'
+>;
+
+const extractNormalizedLabels = (values: string[] | undefined): string[] =>
+  Array.from(new Set((values ?? []).map((value) => normalizeCommonLabel(value)).filter((value) => value.length > 0)));
+
+const getGroupLabelsFromFriendData = (
+  data: GroupLabelFriendData | Friend | null,
+  kind: CommonItemKind
+): string[] => {
+  const column = getProfileColumnByKind(kind);
+  if (!column || !data) {
+    return [];
+  }
+  return extractNormalizedLabels(data[column]);
+};
+
+const collectProfileMemberIdsByColumn = (columnName: ProfileArrayColumn, label: string): string[] => {
+  if (!label.trim()) {
+    return [];
+  }
+  const rows = db.getAllSync<{ friendId: string; value: string }>(
+    `SELECT friendId, ${columnName} as value FROM ${PROFILES_TABLE} WHERE isDefault = 1;`
+  );
+  return rows
+    .filter((row) => fromJson(row.value).includes(label))
+    .map((row) => row.friendId)
+    .filter((id) => id.trim().length > 0);
+};
+
+const addFriendToGroupOptionMembers = (kind: CommonItemKind, label: string, friendId: string): void => {
+  const normalized = normalizeCommonLabel(label);
+  if (!normalized || !friendId.trim() || !getProfileColumnByKind(kind)) {
+    return;
+  }
+  const existing = db.getFirstSync<CommonItemOptionRow>(
+    `SELECT * FROM ${COMMON_ITEM_OPTIONS_TABLE} WHERE kind = ? AND label = ? LIMIT 1;`,
+    [kind, normalized]
+  );
+  const now = nowIso();
+  if (existing) {
+    const members = fromJson(existing.members ?? '[]');
+    if (members.includes(friendId)) {
+      return;
+    }
+    const nextMembers = Array.from(new Set([...members, friendId]));
+    db.runSync(`UPDATE ${COMMON_ITEM_OPTIONS_TABLE} SET members = ?, updatedAt = ? WHERE id = ?;`, [
+      toJson(nextMembers),
+      now,
+      existing.id,
+    ]);
+    return;
+  }
+  const id = uuidv4();
+  db.runSync(
+    `INSERT INTO ${COMMON_ITEM_OPTIONS_TABLE} (id, kind, label, members, color, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?);`,
+    [id, kind, normalized, toJson([friendId]), null, now, now]
+  );
+};
+
+const removeFriendFromGroupOptionMembers = (kind: CommonItemKind, label: string, friendId: string): void => {
+  const normalized = normalizeCommonLabel(label);
+  if (!normalized || !friendId.trim() || !getProfileColumnByKind(kind)) {
+    return;
+  }
+  const existing = db.getFirstSync<CommonItemOptionRow>(
+    `SELECT * FROM ${COMMON_ITEM_OPTIONS_TABLE} WHERE kind = ? AND label = ? LIMIT 1;`,
+    [kind, normalized]
+  );
+  if (!existing) {
+    return;
+  }
+  const members = fromJson(existing.members ?? '[]');
+  if (!members.includes(friendId)) {
+    return;
+  }
+  const nextMembers = members.filter((memberId) => memberId !== friendId);
+  db.runSync(`UPDATE ${COMMON_ITEM_OPTIONS_TABLE} SET members = ?, updatedAt = ? WHERE id = ?;`, [
+    toJson(nextMembers),
+    nowIso(),
+    existing.id,
+  ]);
+};
+
+const syncFriendGroupLabelsToOptions = (
+  friendId: string,
+  previous: Friend | null,
+  next: FriendInput
+): void => {
+  GROUP_MEMBER_SYNC_KINDS.forEach((kind) => {
+    const prevLabels = new Set(getGroupLabelsFromFriendData(previous, kind));
+    const nextLabels = getGroupLabelsFromFriendData(next, kind);
+    const nextLabelSet = new Set(nextLabels);
+    nextLabels.forEach((label) => {
+      if (!prevLabels.has(label)) {
+        addFriendToGroupOptionMembers(kind, label, friendId);
+      }
+    });
+    prevLabels.forEach((label) => {
+      if (!nextLabelSet.has(label)) {
+        removeFriendFromGroupOptionMembers(kind, label, friendId);
+      }
+    });
+  });
+};
+
+/** プロフィール実データと common_item_options.members を突き合わせ、和集合で DB を揃える */
+export const reconcileGroupOptionMembers = (kind: CommonItemKind, label: string): string[] => {
+  const normalized = normalizeCommonLabel(label);
+  const column = getProfileColumnByKind(kind);
+  if (!normalized || !column) {
+    return [];
+  }
+
+  const profileMemberIds = collectProfileMemberIdsByColumn(column, normalized);
+  const existing = db.getFirstSync<CommonItemOptionRow>(
+    `SELECT * FROM ${COMMON_ITEM_OPTIONS_TABLE} WHERE kind = ? AND label = ? LIMIT 1;`,
+    [kind, normalized]
+  );
+  const storedMembers = existing ? fromJson(existing.members ?? '[]') : [];
+  const mergedMembers = Array.from(new Set([...storedMembers, ...profileMemberIds]));
+  const now = nowIso();
+
+  if (existing) {
+    const storedSet = new Set(storedMembers);
+    const changed =
+      mergedMembers.length !== storedMembers.length ||
+      mergedMembers.some((memberId) => !storedSet.has(memberId));
+    if (changed) {
+      db.runSync(`UPDATE ${COMMON_ITEM_OPTIONS_TABLE} SET members = ?, updatedAt = ? WHERE id = ?;`, [
+        toJson(mergedMembers),
+        now,
+        existing.id,
+      ]);
+    }
+    return mergedMembers;
+  }
+
+  if (mergedMembers.length === 0) {
+    return [];
+  }
+
+  const id = uuidv4();
+  db.runSync(
+    `INSERT INTO ${COMMON_ITEM_OPTIONS_TABLE} (id, kind, label, members, color, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?);`,
+    [id, kind, normalized, toJson(mergedMembers), null, now, now]
+  );
+  return mergedMembers;
+};
+
+const reconcileAllGroupOptionMembers = (): void => {
+  GROUP_MEMBER_SYNC_KINDS.forEach((kind) => {
+    getMergedCommonItemLabels(kind).forEach((label) => {
+      reconcileGroupOptionMembers(kind, label);
+    });
+  });
+};
+
 const rewriteProfileArrayColumnValue = (
   columnName: ProfileArrayColumn,
   fromLabel: string,
@@ -2358,25 +2644,71 @@ export const getMergedCommonItemLabels = (kind: CommonItemKind): string[] => {
   return mergeUniqueLabels(options, used);
 };
 
-export const addCommonItemOption = (kind: CommonItemKind, label: string): CommonItemOption | null => {
+const normalizeCommonItemColor = (color: string | null | undefined): string | null => {
+  if (typeof color !== 'string') return null;
+  const trimmed = color.trim();
+  if (!/^#[0-9A-Fa-f]{6}$/.test(trimmed)) return null;
+  return trimmed.toUpperCase();
+};
+
+export const addCommonItemOption = (
+  kind: CommonItemKind,
+  label: string,
+  color?: string | null
+): CommonItemOption | null => {
   const normalized = normalizeCommonLabel(label);
   if (!normalized) {
     return null;
   }
+  const colorValue = kind === 'episode_tag' ? normalizeCommonItemColor(color) : null;
   const existing = db.getFirstSync<CommonItemOptionRow>(
     `SELECT * FROM ${COMMON_ITEM_OPTIONS_TABLE} WHERE kind = ? AND label = ? LIMIT 1;`,
     [kind, normalized]
   );
   if (existing) {
+    if (kind === 'episode_tag' && colorValue && existing.color !== colorValue) {
+      db.runSync(`UPDATE ${COMMON_ITEM_OPTIONS_TABLE} SET color = ?, updatedAt = ? WHERE id = ?;`, [
+        colorValue,
+        nowIso(),
+        existing.id,
+      ]);
+      return rowToCommonItemOption({ ...existing, color: colorValue, updatedAt: nowIso() });
+    }
     return rowToCommonItemOption(existing);
   }
   const now = nowIso();
   const id = uuidv4();
   db.runSync(
-    `INSERT INTO ${COMMON_ITEM_OPTIONS_TABLE} (id, kind, label, members, createdAt, updatedAt) VALUES (?, ?, ?, '[]', ?, ?);`,
-    [id, kind, normalized, now, now]
+    `INSERT INTO ${COMMON_ITEM_OPTIONS_TABLE} (id, kind, label, members, color, createdAt, updatedAt) VALUES (?, ?, ?, '[]', ?, ?, ?);`,
+    [id, kind, normalized, colorValue, now, now]
   );
-  return { id, kind, label: normalized, members: [], createdAt: now, updatedAt: now };
+  return { id, kind, label: normalized, members: [], color: colorValue, createdAt: now, updatedAt: now };
+};
+
+/** エピソードタグ等の色を設定。未登録ラベルならオプションを新規作成する */
+export const setCommonItemOptionColor = (
+  kind: CommonItemKind,
+  label: string,
+  color: string | null
+): boolean => {
+  const normalized = normalizeCommonLabel(label);
+  if (!normalized) {
+    return false;
+  }
+  const colorValue = kind === 'episode_tag' ? normalizeCommonItemColor(color) : null;
+  const existing = db.getFirstSync<CommonItemOptionRow>(
+    `SELECT * FROM ${COMMON_ITEM_OPTIONS_TABLE} WHERE kind = ? AND label = ? LIMIT 1;`,
+    [kind, normalized]
+  );
+  if (existing) {
+    db.runSync(`UPDATE ${COMMON_ITEM_OPTIONS_TABLE} SET color = ?, updatedAt = ? WHERE id = ?;`, [
+      colorValue,
+      nowIso(),
+      existing.id,
+    ]);
+    return true;
+  }
+  return addCommonItemOption(kind, normalized, colorValue) != null;
 };
 
 export const updateCommonItemOption = (id: string, label: string): boolean => {
@@ -2544,7 +2876,15 @@ export const createGroupOption = (
     addLabelToProfilesByFriendIds(column, normalized, uniqueMembers);
   }
 
-  return { id, kind, label: normalized, members: uniqueMembers, createdAt: now, updatedAt: now };
+  return {
+    id,
+    kind,
+    label: normalized,
+    members: uniqueMembers,
+    color: null,
+    createdAt: now,
+    updatedAt: now,
+  };
 };
 
 export const updateGroupOption = (
@@ -3275,6 +3615,212 @@ export const deleteShufflePool = (poolId: string): boolean => {
   return result.changes > 0;
 };
 
+type SettlementRoomRow = {
+  id: string;
+  title: string;
+  created_at: string;
+};
+
+type SettlementMemberRow = {
+  id: string;
+  room_id: string;
+  friend_id: string;
+  display_name: string;
+  ledger_synced: number;
+};
+
+type SettlementExpenseRow = {
+  id: string;
+  room_id: string;
+  payer_member_id: string;
+  title: string;
+  amount: number;
+  split_member_ids: string;
+  created_at: string;
+};
+
+const rowToMockSettlementExpense = (row: SettlementExpenseRow): MockSettlementExpense => ({
+  id: row.id,
+  payerMemberId: row.payer_member_id,
+  title: row.title,
+  amount: row.amount,
+  splitMemberIds: fromJson(row.split_member_ids),
+  createdAt: row.created_at,
+});
+
+/** 精算ルーム一覧（メンバー・支出込み） */
+export const getAllMockSettlementRooms = (): MockSettlementRoom[] => {
+  const roomRows = db.getAllSync<SettlementRoomRow>(
+    `SELECT * FROM ${SETTLEMENT_ROOMS_TABLE} ORDER BY created_at DESC;`
+  );
+  if (roomRows.length === 0) {
+    return [];
+  }
+  return roomRows.map((roomRow) => {
+    const memberRows = db.getAllSync<SettlementMemberRow>(
+      `SELECT * FROM ${SETTLEMENT_MEMBERS_TABLE} WHERE room_id = ? ORDER BY rowid ASC;`,
+      [roomRow.id]
+    );
+    const expenseRows = db.getAllSync<SettlementExpenseRow>(
+      `SELECT * FROM ${SETTLEMENT_EXPENSES_TABLE} WHERE room_id = ? ORDER BY created_at DESC;`,
+      [roomRow.id]
+    );
+    return {
+      id: roomRow.id,
+      title: roomRow.title,
+      createdAt: roomRow.created_at,
+      members: memberRows.map((row) => ({
+        id: row.id,
+        friendId: row.friend_id,
+        displayName: row.display_name,
+        ledgerSynced: row.ledger_synced === 1,
+      })),
+      expenses: expenseRows.map(rowToMockSettlementExpense),
+    };
+  });
+};
+
+export const insertMockSettlementRoom = (room: MockSettlementRoom): void => {
+  db.execSync('BEGIN IMMEDIATE;');
+  try {
+    db.runSync(
+      `INSERT INTO ${SETTLEMENT_ROOMS_TABLE} (id, title, created_at) VALUES (?, ?, ?);`,
+      [room.id, room.title.trim(), room.createdAt]
+    );
+    room.members.forEach((member) => {
+      db.runSync(
+        `INSERT INTO ${SETTLEMENT_MEMBERS_TABLE} (id, room_id, friend_id, display_name, ledger_synced) VALUES (?, ?, ?, ?, ?);`,
+        [
+          member.id,
+          room.id,
+          member.friendId,
+          member.displayName,
+          member.ledgerSynced ? 1 : 0,
+        ]
+      );
+    });
+    room.expenses.forEach((expense) => {
+      db.runSync(
+        `INSERT INTO ${SETTLEMENT_EXPENSES_TABLE} (id, room_id, payer_member_id, title, amount, split_member_ids, created_at) VALUES (?, ?, ?, ?, ?, ?, ?);`,
+        [
+          expense.id,
+          room.id,
+          expense.payerMemberId,
+          expense.title,
+          expense.amount,
+          toJson(expense.splitMemberIds),
+          expense.createdAt,
+        ]
+      );
+    });
+    db.execSync('COMMIT;');
+  } catch (error) {
+    db.execSync('ROLLBACK;');
+    throw error;
+  }
+};
+
+export const updateMockSettlementRoomTitle = (roomId: string, title: string): boolean => {
+  const normalizedRoomId = roomId.trim();
+  const normalizedTitle = title.trim();
+  if (!normalizedRoomId || !normalizedTitle) {
+    return false;
+  }
+  const result = db.runSync(`UPDATE ${SETTLEMENT_ROOMS_TABLE} SET title = ? WHERE id = ?;`, [
+    normalizedTitle,
+    normalizedRoomId,
+  ]);
+  return result.changes > 0;
+};
+
+export const insertMockSettlementExpense = (
+  roomId: string,
+  expense: MockSettlementExpense
+): MockSettlementExpense | null => {
+  const normalizedRoomId = roomId.trim();
+  if (!normalizedRoomId) {
+    return null;
+  }
+  const exists = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM ${SETTLEMENT_ROOMS_TABLE} WHERE id = ? LIMIT 1;`,
+    [normalizedRoomId]
+  );
+  if (!exists) {
+    return null;
+  }
+  db.runSync(
+    `INSERT INTO ${SETTLEMENT_EXPENSES_TABLE} (id, room_id, payer_member_id, title, amount, split_member_ids, created_at) VALUES (?, ?, ?, ?, ?, ?, ?);`,
+    [
+      expense.id,
+      normalizedRoomId,
+      expense.payerMemberId,
+      expense.title,
+      expense.amount,
+      toJson(expense.splitMemberIds),
+      expense.createdAt,
+    ]
+  );
+  return expense;
+};
+
+export const setMockSettlementMemberLedgerSynced = (
+  roomId: string,
+  friendId: string,
+  ledgerSynced: boolean
+): boolean => {
+  const normalizedRoomId = roomId.trim();
+  const normalizedFriendId = friendId.trim();
+  if (!normalizedRoomId || !normalizedFriendId) {
+    return false;
+  }
+  const result = db.runSync(
+    `UPDATE ${SETTLEMENT_MEMBERS_TABLE} SET ledger_synced = ? WHERE room_id = ? AND friend_id = ?;`,
+    [ledgerSynced ? 1 : 0, normalizedRoomId, normalizedFriendId]
+  );
+  return result.changes > 0;
+};
+
+/** 友達名変更時に精算メンバーの表示名を同期。myself の場合は friend_id='myself' も更新 */
+export const syncSettlementMemberDisplayName = (friendId: string, displayName: string): void => {
+  const normalizedFriendId = friendId.trim();
+  const normalizedName = displayName.trim();
+  if (!normalizedFriendId || !normalizedName) {
+    return;
+  }
+  db.runSync(`UPDATE ${SETTLEMENT_MEMBERS_TABLE} SET display_name = ? WHERE friend_id = ?;`, [
+    normalizedName,
+    normalizedFriendId,
+  ]);
+  const myselfId = getMyself();
+  if (myselfId && myselfId === normalizedFriendId) {
+    db.runSync(`UPDATE ${SETTLEMENT_MEMBERS_TABLE} SET display_name = ? WHERE friend_id = 'myself';`, [
+      normalizedName,
+    ]);
+  }
+};
+
+export const getSettlementCompletedTransferKeys = (): string[] => {
+  const rows = db.getAllSync<{ transfer_key: string }>(
+    `SELECT transfer_key FROM ${SETTLEMENT_TRANSFER_COMPLETIONS_TABLE};`
+  );
+  return rows.map((row) => row.transfer_key);
+};
+
+export const setSettlementTransferCompleted = (transferKey: string, completed: boolean): void => {
+  const normalizedKey = transferKey.trim();
+  if (!normalizedKey) {
+    return;
+  }
+  if (completed) {
+    db.runSync(
+      `INSERT OR REPLACE INTO ${SETTLEMENT_TRANSFER_COMPLETIONS_TABLE} (transfer_key, completed_at) VALUES (?, ?);`,
+      [normalizedKey, nowIso()]
+    );
+    return;
+  }
+  db.runSync(`DELETE FROM ${SETTLEMENT_TRANSFER_COMPLETIONS_TABLE} WHERE transfer_key = ?;`, [normalizedKey]);
+};
+
 const BACKUP_TABLE_SQL: Record<FriendDexBackupTableName, string> = {
   friend_profiles: PROFILES_TABLE,
   app_settings: SETTINGS_TABLE,
@@ -3346,6 +3892,7 @@ export const importBackupPayload = (payload: FriendDexBackup): void => {
       }
     });
     db.execSync('COMMIT;');
+    reconcileAllGroupOptionMembers();
   } catch (error) {
     db.execSync('ROLLBACK;');
     throw error;

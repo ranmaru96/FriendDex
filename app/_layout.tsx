@@ -7,7 +7,7 @@ import AppHeader from '../AppHeader';
 import { runAutoBackup } from '../backup';
 import BottomNav from '../components/BottomNav';
 import { EventNotificationHandler } from '../components/EventNotificationHandler';
-import { Theme } from '@/constants/theme';
+import { AppThemeProvider, useAppTheme } from '../contexts/AppThemeContext';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
 import { UiPreviewProvider } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
@@ -25,9 +25,10 @@ function AppShell() {
   const hideHeader = shouldHideHeader(pathname);
   const hideBottomNav = shouldHideBottomNav(pathname);
   const activeTab = getActiveTab(pathname);
+  const { colors } = useAppTheme();
 
   return (
-    <View style={styles.shell}>
+    <View style={[styles.shell, { backgroundColor: colors.screenBackground }]}>
       {!hideHeader && <AppHeader />}
       <View style={styles.content}>
         <Stack screenOptions={{ headerShown: false }} />
@@ -47,13 +48,15 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        <DetailDesignProvider>
-          <UiPreviewProvider>
-            <EventNotificationHandler />
-            <PastEventConversionScheduler />
-            <AppShell />
-          </UiPreviewProvider>
-        </DetailDesignProvider>
+        <AppThemeProvider>
+          <DetailDesignProvider>
+            <UiPreviewProvider>
+              <EventNotificationHandler />
+              <PastEventConversionScheduler />
+              <AppShell />
+            </UiPreviewProvider>
+          </DetailDesignProvider>
+        </AppThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -65,7 +68,6 @@ const styles = StyleSheet.create({
   },
   shell: {
     flex: 1,
-    backgroundColor: Theme.background,
   },
   content: {
     flex: 1,

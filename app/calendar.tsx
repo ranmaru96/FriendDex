@@ -11,7 +11,13 @@ import { CompactSectionHeader } from '@/components/ui/CompactSectionHeader';
 import { EdgePanelList } from '@/components/ui/EdgePanelList';
 import { MetaTitleRow, type MetaTitleRowLayout } from '@/components/ui/MetaTitleRow';
 import { HomeCardElevation, Radius, Spacing, Theme } from '@/constants/theme';
-import type { CalendarEventMemoDisplay, CalendarEventTimeDisplay } from '@/constants/uiKit/types';
+import type {
+  CalendarEventCardStyle,
+  CalendarEventMemoDisplay,
+  CalendarEventTimeDisplay,
+} from '@/constants/uiKit/types';
+import { isMonochromeAppTheme } from '@/constants/appThemes';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { getEventParticipantsForEvents, getEventsByDateRange, initializeDatabase } from '../db';
 import type { Event } from '../types';
@@ -86,6 +92,11 @@ type CalendarEventCardBodyProps = {
   style?: StyleProp<ViewStyle>;
 };
 
+const isRoundedCalendarEventCardStyle = (
+  style: CalendarEventCardStyle,
+  isMonochrome: boolean
+): boolean => isMonochrome && style === 'roundedCards';
+
 function CalendarEventCardBody({
   event,
   participants,
@@ -133,6 +144,14 @@ function CalendarEventCardBody({
 
 export default function CalendarScreen() {
   const kit = useUiKit();
+  const appTheme = useAppThemeOptional();
+  const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
+  const flushTop = isMonochrome;
+  const whiteCalendarSeparator = appTheme?.colors.tabBarBorder ?? Theme.border;
+  const roundedEventCards = isRoundedCalendarEventCardStyle(
+    kit.calendarEventCardStyle,
+    isMonochrome
+  );
   const isCompactEventCard = kit.calendarEventMemoDisplay === 'oneLine';
   const isScheduleGrid = kit.calendarMonthLayout === 'scheduleGrid';
   const isEdgeToEdge = kit.calendarScreenPaddingHorizontal === 0;
@@ -140,6 +159,14 @@ export default function CalendarScreen() {
     isEdgeToEdge && isScheduleGrid && kit.calendarEventTimeDisplay === 'column';
   const useBadgeInsetEventCards =
     kit.calendarEventTimeDisplay === 'badge' && kit.calendarEventListPaddingHorizontal > 0;
+  const useRoundedCardEventList = roundedEventCards && !useBadgeInsetEventCards;
+  const roundedEventCardElevation = {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  };
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const routeDate = typeof params.date === 'string' ? params.date.trim() : '';
@@ -240,13 +267,14 @@ export default function CalendarScreen() {
   }, [isScheduleGrid, selectedDate]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
       <ScrollView
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.scrollContent,
           { paddingHorizontal: kit.calendarScreenPaddingHorizontal },
+          flushTop ? styles.scrollContentFlushTop : null,
           isEdgeToEdge ? styles.scrollContentEdgeToEdge : null,
           isCompactEventCard ? styles.scrollContentCompact : null,
         ]}
@@ -264,7 +292,14 @@ export default function CalendarScreen() {
           />
         ) : (
           <View style={[styles.calendarShadow, isEdgeToEdge ? styles.calendarShadowEdgeToEdge : null]}>
-            <View style={[styles.calendarCard, isEdgeToEdge ? styles.calendarCardEdgeToEdge : null]}>
+            <View
+              style={[
+                styles.calendarCard,
+                flushTop ? { borderBottomWidth: 1.5, borderBottomColor: whiteCalendarSeparator } : null,
+                isEdgeToEdge ? styles.calendarCardEdgeToEdge : null,
+                flushTop ? styles.calendarCardFlushTop : null,
+              ]}
+            >
               <Calendar
                 current={selectedDate}
                 onDayPress={handleDayPress}
@@ -351,7 +386,7 @@ export default function CalendarScreen() {
                   <Text style={styles.emptyText}>この日に登録された予定はまだありません。</Text>
                 </View>
               </View>
-            ) : isColumnPanelList ? (
+            ) : isColumnPanelList && !useRoundedCardEventList ? (
           <EdgePanelList>
             {eventsForSelectedDate.map((event) => {
               const participants = participantsByEventId.get(event.id) ?? [];
@@ -375,13 +410,22 @@ export default function CalendarScreen() {
             })}
           </EdgePanelList>
         ) : (
-          <View style={isEdgeToEdge ? styles.eventListEdgeToEdge : undefined}>
+          <View
+            style={[
+              isEdgeToEdge ? styles.eventListEdgeToEdge : undefined,
+              useRoundedCardEventList ? styles.roundedEventList : undefined,
+            ]}
+          >
             {eventsForSelectedDate.map((event) => {
             const participants = participantsByEventId.get(event.id) ?? [];
             return (
               <View
                 key={event.id}
-                style={[styles.eventShadow, isEdgeToEdge ? styles.eventShadowEdgeToEdge : null]}
+                style={[
+                  styles.eventShadow,
+                  isEdgeToEdge && !useRoundedCardEventList ? styles.eventShadowEdgeToEdge : null,
+                  useRoundedCardEventList ? roundedEventCardElevation : null,
+                ]}
               >
                 <CalendarEventCardBody
                   event={event}
@@ -397,7 +441,8 @@ export default function CalendarScreen() {
                   style={[
                     styles.eventCard,
                     isCompactEventCard ? styles.eventCardCompact : null,
-                    isEdgeToEdge ? styles.eventCardEdgeToEdge : null,
+                    isEdgeToEdge && !useRoundedCardEventList ? styles.eventCardEdgeToEdge : null,
+                    useRoundedCardEventList ? styles.roundedEventCard : null,
                   ]}
                 />
               </View>
@@ -421,18 +466,19 @@ export default function CalendarScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.screenBase,
   },
   scrollContent: {
     paddingTop: Spacing.sm,
     paddingBottom: 100,
     gap: Spacing.md,
   },
+  scrollContentFlushTop: {
+    paddingTop: 0,
+  },
   scrollContentCompact: {
     gap: Spacing.sm,
   },
   scrollContentEdgeToEdge: {
-    paddingTop: Spacing.sm,
     gap: Spacing.sm,
   },
   calendarShadow: {
@@ -457,11 +503,19 @@ const styles = StyleSheet.create({
     borderLeftWidth: 0,
     borderRightWidth: 0,
   },
+  calendarCardFlushTop: {
+    borderTopWidth: 0,
+    borderBottomWidth: 0,
+  },
   calendar: {
     borderRadius: Radius.md,
   },
   eventListEdgeToEdge: {
     gap: 0,
+  },
+  roundedEventList: {
+    paddingHorizontal: Spacing.sm,
+    gap: Spacing.sm,
   },
   eventCardPanelItem: {
     borderRadius: 0,
@@ -493,6 +547,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 0,
     borderBottomWidth: Math.max(1, StyleSheet.hairlineWidth * 2),
     borderBottomColor: Theme.textSecondary,
+  },
+  roundedEventCard: {
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Theme.border,
   },
   eventCardCompact: {
     padding: Spacing.sm,

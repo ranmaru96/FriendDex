@@ -1,5 +1,7 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { Spacing, Theme } from '@/constants/theme';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 
 type CompactSectionHeaderProps = {
   title: string;
@@ -19,24 +21,59 @@ export function CompactSectionHeader({
   edgeToEdge = false,
   style,
 }: CompactSectionHeaderProps) {
+  const appTheme = useAppThemeOptional();
   const showCount = count != null;
+  const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
+  const isBlack = appTheme?.variant === 'black';
+  const titleColor = appTheme?.colors.onScreenText ?? '#FFFFFF';
+  const countColor = appTheme?.colors.onScreenTextSecondary ?? Theme.textSecondary;
+
+  if (isMonochrome) {
+    return (
+      <View style={[styles.monoRow, edgeToEdge ? styles.edgeToEdge : null, style]}>
+        <View
+          style={[styles.monoChip, isBlack ? styles.monoChipBlack : styles.monoChipWhite]}
+        >
+          <Text
+            style={[
+              variant === 'compact' ? styles.compactTitle : styles.classicTitle,
+              { color: titleColor },
+            ]}
+            numberOfLines={1}
+          >
+            {title}
+          </Text>
+          {showCount ? (
+            <Text style={[styles.count, { color: countColor }]}>
+              {count}
+              {countSuffix}
+            </Text>
+          ) : null}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View
       style={[
+        styles.band,
         variant === 'compact' ? styles.compactHeader : styles.classicHeader,
         edgeToEdge ? styles.edgeToEdge : null,
         style,
       ]}
     >
       <Text
-        style={variant === 'compact' ? styles.compactTitle : styles.classicTitle}
+        style={[
+          variant === 'compact' ? styles.compactTitle : styles.classicTitle,
+          { color: titleColor },
+        ]}
         numberOfLines={1}
       >
         {title}
       </Text>
       {showCount ? (
-        <Text style={styles.count}>
+        <Text style={[styles.count, { color: countColor }]}>
           {count}
           {countSuffix}
         </Text>
@@ -46,18 +83,37 @@ export function CompactSectionHeader({
 }
 
 const styles = StyleSheet.create({
-  classicHeader: {
+  band: {
     flexDirection: 'row',
     alignItems: 'baseline',
     justifyContent: 'space-between',
     gap: Spacing.sm,
+  },
+  monoRow: {
+    alignItems: 'flex-start',
+  },
+  monoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  monoChipWhite: {
+    backgroundColor: '#f3f4f6',
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+  },
+  monoChipBlack: {
+    backgroundColor: '#2a2a2a',
+    borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  classicHeader: {
     paddingHorizontal: 2,
   },
   compactHeader: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    gap: Spacing.sm,
     paddingHorizontal: 2,
     paddingTop: 2,
   },
@@ -67,16 +123,13 @@ const styles = StyleSheet.create({
   classicTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: Theme.card,
   },
   compactTitle: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#FFFFFF',
   },
   count: {
     fontSize: 12,
     fontWeight: '600',
-    color: Theme.textSecondary,
   },
 });

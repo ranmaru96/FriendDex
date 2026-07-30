@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import {
   Alert,
+  FlatList,
   Image,
   Modal,
   Platform,
@@ -9,9 +10,9 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   useWindowDimensions,
   View,
+  type ListRenderItem,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -21,12 +22,15 @@ import type { DetailTabKey } from '@/constants/detailThemes';
 import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
 import { TabScreenTemplate } from '@/components/screen-templates';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
-import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
-import { ListItemGroup } from '@/components/ui/ListItemGroup';
+import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 import { useDetailDesign } from './contexts/DetailDesignContext';
+import { isMonochromeAppTheme } from '@/constants/appThemes';
+import { useAppTheme } from './contexts/AppThemeContext';
 import { createDetailStyles } from './utils/detailStyles';
 import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
+import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import {
   createEpisode,
   createSayings,
@@ -90,12 +94,104 @@ import type { EpisodeEventMatch } from './utils/eventEpisodeSync';
 
 const EPISODE_PICKER_COLUMNS = 3;
 const EPISODE_PICKER_GAP = 6;
-const DETAIL_SLIDE_MS = 220;
+const DETAIL_SLIDE_MS = 260;
 
 type AdjacentDirection = 'prev' | 'next';
+/** none=写真なし / pending=読み込み中 / loaded|failed=成否確定 */
+type ProfileImageStatus = 'none' | 'pending' | 'loaded' | 'failed';
+type AdjacentSlideSnapshot = {
+  friend: Friend;
+  activeTab: DetailTabKey;
+  habitCount: number;
+  sayingCount: number;
+  sinceYear: string;
+  profileCompleteness: number;
+  profileImageStatus: ProfileImageStatus;
+  showProfileSwitcher: boolean;
+  profileByLabel: string;
+};
+type AdjacentTransition = {
+  outgoing: AdjacentSlideSnapshot;
+  incoming: AdjacentSlideSnapshot;
+  targetId: string;
+};
 type MultiValueRow = {
   title: string;
   values: string[];
+};
+
+const resolveAdjacentProfileMeta = (
+  friend: Friend,
+  profiles: Profile[],
+  myselfId: string | null,
+  friendNameById: Map<string, string>
+): { showProfileSwitcher: boolean; profileByLabel: string } => {
+  const hasOnlyOneSelfProfile =
+    profiles.length === 1 &&
+    (profiles[0].source === 'self' || (myselfId !== null && profiles[0].authorUserId === myselfId));
+  const showProfileSwitcher =
+    friend.importSource !== 'qr_scan' && profiles.length > 0 && !hasOnlyOneSelfProfile;
+  const selected =
+    (friend.activeProfileId
+      ? profiles.find((profile) => profile.id === friend.activeProfileId)
+      : undefined) ??
+    profiles.find(
+      (profile) =>
+        profile.source === 'self' || (myselfId !== null && profile.authorUserId === myselfId)
+    ) ??
+    profiles[0];
+  if (!selected) {
+    return { showProfileSwitcher, profileByLabel: '' };
+  }
+  const isSelf =
+    selected.source === 'self' || (myselfId !== null && selected.authorUserId === myselfId);
+  if (isSelf) {
+    return { showProfileSwitcher, profileByLabel: 'me' };
+  }
+  if (!selected.authorUserId) {
+    return { showProfileSwitcher, profileByLabel: '' };
+  }
+  return {
+    showProfileSwitcher,
+    profileByLabel: friendNameById.get(selected.authorUserId) ?? '',
+  };
+};
+
+const resolveProfileImageStatus = (
+  friend: Friend,
+  known?: ProfileImageStatus
+): ProfileImageStatus => {
+  if (known) {
+    return known;
+  }
+  // 未観測の相手は URI があれば pending（Completeness は出さない）
+  return friend.photoUri?.trim() ? 'pending' : 'none';
+};
+
+const buildAdjacentSlideSnapshot = (
+  friend: Friend,
+  activeTab: DetailTabKey,
+  options?: {
+    habitCount?: number;
+    sinceYear?: string;
+    profileImageStatus?: ProfileImageStatus;
+    showProfileSwitcher?: boolean;
+    profileByLabel?: string;
+  }
+): AdjacentSlideSnapshot => {
+  const profileImageStatus = resolveProfileImageStatus(friend, options?.profileImageStatus);
+  const hasPhoto = profileImageStatus === 'loaded';
+  return {
+    friend,
+    activeTab,
+    habitCount: options?.habitCount ?? friend.traits.length,
+    sayingCount: friend.sayings.length,
+    sinceYear: options?.sinceYear ?? '—',
+    profileCompleteness: computeProfileCompleteness(friend, hasPhoto),
+    profileImageStatus,
+    showProfileSwitcher: options?.showProfileSwitcher ?? false,
+    profileByLabel: options?.profileByLabel ?? '',
+  };
 };
 
 const formatDateToYMD = (d: Date): string => {
@@ -173,30 +269,309 @@ function MultiValueSummarySection({ rows, withCard = true }: { rows: MultiValueR
   );
 }
 
+/** 前後移動中だけ使う静止スナップショット（退場・入場とも同じ見た目） */
+function DetailAdjacentSlidePanel({
+  snapshot,
+  styles,
+  detailTabs,
+  bundle,
+  c,
+  isMonochromeTheme,
+  isFlatProfileCard,
+}: {
+  snapshot: AdjacentSlideSnapshot;
+  styles: ReturnType<typeof createDetailStyles>;
+  detailTabs: ReturnType<typeof useDetailDesign>['bundle']['detailTabs'];
+  bundle: ReturnType<typeof useDetailDesign>['bundle'];
+  c: ReturnType<typeof useDetailDesign>['bundle']['colors'];
+  isMonochromeTheme: boolean;
+  isFlatProfileCard: boolean;
+}) {
+  const {
+    friend,
+    activeTab,
+    habitCount,
+    sayingCount,
+    sinceYear,
+    profileCompleteness,
+    profileImageStatus,
+    showProfileSwitcher,
+    profileByLabel,
+  } = snapshot;
+  const profileCardBorder = getHomeCardBorderStyle(profileCompleteness);
+  const birthdayLabel = (() => {
+    if (!friend.birthday.trim()) return '';
+    const formatted = formatEpisodeDateForCard(friend.birthday);
+    return formatted === '-' ? '' : formatted;
+  })();
+  const [photoFailed, setPhotoFailed] = useState(profileImageStatus === 'failed');
+  const photoUri = friend.photoUri?.trim() ?? '';
+  const showPhoto = Boolean(photoUri) && !photoFailed && profileImageStatus !== 'failed';
+  const isCompletenessReady = profileImageStatus !== 'pending';
+
+  return (
+    <ScrollView
+      style={{ flex: 1, marginHorizontal: isFlatProfileCard ? 0 : 6 }}
+      contentContainerStyle={{ paddingBottom: 60 }}
+      scrollEnabled={false}
+      pointerEvents="none"
+    >
+      <View
+        style={[
+          styles.profileCardShadow,
+          { marginHorizontal: 0 },
+          isFlatProfileCard
+            ? {
+                marginHorizontal: 0,
+                borderRadius: 0,
+                elevation: 0,
+                shadowOpacity: 0,
+                shadowRadius: 0,
+                shadowOffset: { width: 0, height: 0 },
+              }
+            : null,
+        ]}
+      >
+        <View
+          style={[
+            styles.profileCardOuter,
+            {
+              borderColor: profileCardBorder.borderColor,
+              borderWidth: isFlatProfileCard ? 0 : Theme.homeCardBorderWidth,
+              borderRadius: isFlatProfileCard ? 0 : 12,
+            },
+          ]}
+        >
+          <View style={[styles.hero, isMonochromeTheme ? { paddingTop: 8 } : null]}>
+            <View style={styles.heroIdentityRow}>
+              <View style={[styles.heroPhotoOuterFrame, { borderColor: profileCardBorder.borderColor }]}>
+                <View style={styles.heroPhotoInnerFrame}>
+                  {showPhoto ? (
+                    <Image
+                      source={{ uri: photoUri }}
+                      style={styles.heroPhoto}
+                      resizeMode="cover"
+                      onError={() => setPhotoFailed(true)}
+                    />
+                  ) : (
+                    <View style={styles.heroPhotoPlaceholder}>
+                      <Text style={styles.heroPhotoPlaceholderText}>No Image</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+              <View style={styles.heroIdentityCol}>
+                <View style={styles.heroNameRow}>
+                  <Text style={styles.heroName} numberOfLines={2}>
+                    {friend.name}
+                  </Text>
+                  <View style={styles.heroEditButton}>
+                    <Ionicons name="pencil-outline" size={16} color={c.accent} />
+                  </View>
+                </View>
+                {friend.nickname.trim() || friend.importSource === 'qr_scan' ? (
+                  <View style={styles.heroNicknameRow}>
+                    {friend.nickname.trim() ? (
+                      <Text style={styles.heroNickname}>{friend.nickname}</Text>
+                    ) : null}
+                    {friend.importSource === 'qr_scan' ? (
+                      <Ionicons name="qr-code-outline" size={14} color={c.textMuted} />
+                    ) : null}
+                  </View>
+                ) : null}
+                {showProfileSwitcher ? (
+                  <Text style={styles.heroByTag}>
+                    {profileByLabel ? `by ${profileByLabel}` : 'プロフィールを切り替え'}
+                  </Text>
+                ) : null}
+                {friend.mbti || birthdayLabel || friend.category.trim() ? (
+                  <View style={styles.heroTagRow}>
+                    {friend.mbti ? (
+                      <View style={styles.heroTagMbti}>
+                        <Text style={styles.heroTagMbtiText}>{friend.mbti}</Text>
+                      </View>
+                    ) : null}
+                    {birthdayLabel ? (
+                      <View style={styles.heroTagBirthday}>
+                        <Text style={styles.heroTagBirthdayText}>{birthdayLabel}</Text>
+                      </View>
+                    ) : null}
+                    {friend.category.trim() ? (
+                      <View style={styles.heroTagCategory}>
+                        <Text style={styles.heroTagCategoryText}>{friend.category}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
+                {friend.description.trim() ? (
+                  <Text style={styles.heroDescription}>{friend.description}</Text>
+                ) : null}
+              </View>
+            </View>
+            <View style={styles.heroStatsRow}>
+              <View style={styles.heroStatCell}>
+                <Text style={styles.heroStatLabel}>EPISODES</Text>
+                <View style={styles.heroStatValueRow}>
+                  <Text style={styles.heroStatValue}>{friend.episodes.length}</Text>
+                  <Text style={styles.heroStatUnit}>件</Text>
+                </View>
+              </View>
+              <View style={styles.heroStatCell}>
+                <Text style={styles.heroStatLabel}>習性 + 彼曰く</Text>
+                <View style={styles.heroStatValueRow}>
+                  <Text style={styles.heroStatValue}>{habitCount + sayingCount}</Text>
+                  <Text style={styles.heroStatUnit}>件</Text>
+                </View>
+              </View>
+              <View style={styles.heroStatCell}>
+                <Text style={styles.heroStatLabel}>SINCE</Text>
+                <View style={styles.heroStatValueRow}>
+                  <Text style={styles.heroStatValue}>{sinceYear}</Text>
+                  <Text style={styles.heroStatUnit}>年〜</Text>
+                </View>
+              </View>
+            </View>
+            <View style={styles.heroCompletenessSection}>
+              <View style={styles.heroCompletenessHeader}>
+                <Text style={styles.heroCompletenessLabel}>PROFILE COMPLETENESS</Text>
+                <Text style={styles.heroCompletenessPercent}>
+                  {isCompletenessReady ? `${profileCompleteness}%` : ''}
+                </Text>
+              </View>
+              <View style={styles.heroCompletenessTrack}>
+                <View
+                  style={[
+                    styles.heroCompletenessFill,
+                    { width: `${isCompletenessReady ? profileCompleteness : 0}%` },
+                  ]}
+                />
+              </View>
+            </View>
+          </View>
+          <View style={styles.tabSection}>
+            <View style={styles.tabTrack}>
+              <View style={styles.tabInner}>
+                {detailTabs.map((tab) => {
+                  const isActive = activeTab === tab.key;
+                  const activeColor = bundle.tabMode === 'perTab' ? tab.color : c.accent;
+                  const inactiveIconBg = bundle.tabMode === 'perTab' ? tab.color : c.tabInactive;
+                  return (
+                    <View
+                      key={tab.key}
+                      style={[
+                        styles.tabPill,
+                        isActive
+                          ? { borderColor: activeColor, backgroundColor: activeColor }
+                          : null,
+                      ]}
+                    >
+                      <View style={styles.tabPillContent}>
+                        <View
+                          style={[
+                            styles.tabPillIconCircle,
+                            isActive
+                              ? styles.tabPillIconCircleActive
+                              : { backgroundColor: inactiveIconBg },
+                          ]}
+                        >
+                          {tab.iconSet === 'material' ? (
+                            <MaterialCommunityIcons
+                              name={tab.icon as ComponentProps<typeof MaterialCommunityIcons>['name']}
+                              size={16}
+                              color={c.onAccent}
+                            />
+                          ) : (
+                            <Ionicons
+                              name={tab.icon as ComponentProps<typeof Ionicons>['name']}
+                              size={16}
+                              color={c.onAccent}
+                            />
+                          )}
+                        </View>
+                        <Text
+                          style={[
+                            styles.tabPillCaption,
+                            isActive ? styles.tabPillCaptionActive : styles.tabPillCaptionInactive,
+                          ]}
+                        >
+                          {tab.caption}
+                        </Text>
+                      </View>
+                    </View>
+                  );
+                })}
+              </View>
+            </View>
+            {activeTab === '情報' ? (
+              <MultiValueSummarySection
+                withCard
+                rows={[
+                  { title: '所属', values: friend.affiliations },
+                  { title: '経験', values: friend.experiences },
+                  { title: '性格', values: friend.personalities },
+                  { title: '好物', values: friend.likes },
+                  { title: '苦手', values: friend.dislikes },
+                ]}
+              />
+            ) : (
+              <View style={[styles.tabPane, { minHeight: 80 }]} />
+            )}
+          </View>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
 export default function DetailScreen() {
   const { bundle, reload: reloadDetailDesign } = useDetailDesign();
+  const { colors: appTheme, variant: appThemeVariant } = useAppTheme();
+  const isMonochromeTheme = isMonochromeAppTheme(appThemeVariant);
   const c = bundle.colors;
   const styles = useMemo(() => createDetailStyles(c), [c]);
   const detailTabs = bundle.detailTabs;
   const kit = useUiKit();
   const useSharedEpisodeCard = kit.episodeListCardLayout === 'photoRight';
   const listItemEmbedded = kit.listItemStyle === 'panelSections';
-  const episodeListEdgeToEdge =
-    kit.listItemStyle === 'panelSections' && kit.listPanelStyle === 'edgeFlat';
+  const isFlatProfileCard = kit.detailProfileCardStyle === 'flat';
+  const profileChromeSideBorder = isFlatProfileCard ? 0 : Theme.homeCardBorderWidth;
+  const profileCardShadowFlatStyle = isFlatProfileCard
+    ? {
+        marginHorizontal: 0,
+        borderRadius: 0,
+        elevation: 0,
+        shadowOpacity: 0,
+        shadowRadius: 0,
+        shadowOffset: { width: 0, height: 0 },
+      }
+    : null;
+  const profileCardOuterFlatStyle = isFlatProfileCard
+    ? { borderRadius: 0, borderWidth: 0 }
+    : null;
+  const profileHeroFlatStyle = isFlatProfileCard
+    ? { borderTopLeftRadius: 0, borderTopRightRadius: 0 }
+    : null;
+  const profileTabSectionFlatStyle = isFlatProfileCard
+    ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }
+    : null;
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const params = useLocalSearchParams<{ id?: string }>();
-  const contentSlideX = useSharedValue(0);
+  const outgoingSlideX = useSharedValue(0);
+  const incomingSlideX = useSharedValue(0);
   const isAdjacentSlidingRef = useRef(false);
-  const pendingEnterDirectionRef = useRef<AdjacentDirection | null>(null);
+  const pendingAdjacentDirectionRef = useRef<AdjacentDirection | null>(null);
+  const [adjacentTransition, setAdjacentTransition] = useState<AdjacentTransition | null>(null);
   const [friend, setFriend] = useState<Friend | null>(null);
   const [episodePhotoUrisById, setEpisodePhotoUrisById] = useState<Map<string, string[]>>(
     () => new Map()
   );
-  const [profileImageLoadError, setProfileImageLoadError] = useState(false);
+  const [profileImageStatus, setProfileImageStatus] = useState<ProfileImageStatus>('none');
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTabKey>('情報');
+  const isEpisodeTab = activeTab === 'エピソード';
+  const bottomNavClearance = useBottomNavScrollClearance();
   const [habitNotes, setHabitNotes] = useState<string[]>([]);
   const [isHabitFormVisible, setIsHabitFormVisible] = useState(false);
   const [editingHabitIndex, setEditingHabitIndex] = useState<number | null>(null);
@@ -251,56 +626,32 @@ export default function DetailScreen() {
     };
   }, [friendId, homeFilter]);
 
-  const finishAdjacentSlideIn = useCallback(() => {
-    isAdjacentSlidingRef.current = false;
-  }, []);
+  const pendingCommitTargetIdRef = useRef<string | null>(null);
+  const loadFriendRef = useRef<(idOverride?: string) => void>(() => {});
 
-  const startAdjacentEnterAnimation = useCallback(() => {
-    contentSlideX.value = withTiming(0, { duration: DETAIL_SLIDE_MS }, (finished) => {
-      runOnJS(finishAdjacentSlideIn)();
-    });
-  }, [contentSlideX, finishAdjacentSlideIn]);
-
-  const commitAdjacentFriend = useCallback(
-    (targetId: string, direction: AdjacentDirection) => {
-      // 次へ: 右から入る / 前へ: 左から入る（退場位置から入場位置へ先に寄せる）
-      contentSlideX.value = direction === 'next' ? screenWidth : -screenWidth;
-      pendingEnterDirectionRef.current = direction;
-      // 同一画面の params 更新のみ（Stack遷移でトップバーごと動かないようにする）
+  const finishAdjacentSlide = useCallback(() => {
+    const targetId = pendingCommitTargetIdRef.current;
+    pendingCommitTargetIdRef.current = null;
+    if (targetId) {
+      loadFriendRef.current(targetId);
       router.setParams({ id: targetId });
-    },
-    [contentSlideX, router, screenWidth]
-  );
-
-  const goToAdjacentFriend = useCallback(
-    (targetId: string | null, direction: AdjacentDirection) => {
-      if (!targetId || isAdjacentSlidingRef.current) {
-        return;
-      }
-      isAdjacentSlidingRef.current = true;
-      // 次へ: 左へ退く / 前へ: 右へ退く
-      const exitTo = direction === 'next' ? -screenWidth : screenWidth;
-      contentSlideX.value = withTiming(exitTo, { duration: DETAIL_SLIDE_MS }, (finished) => {
-        if (finished) {
-          runOnJS(commitAdjacentFriend)(targetId, direction);
-        } else {
-          runOnJS(finishAdjacentSlideIn)();
-        }
-      });
-    },
-    [commitAdjacentFriend, contentSlideX, finishAdjacentSlideIn, screenWidth]
-  );
-
-  useEffect(() => {
-    if (!pendingEnterDirectionRef.current) {
-      return;
     }
-    pendingEnterDirectionRef.current = null;
-    startAdjacentEnterAnimation();
-  }, [friendId, startAdjacentEnterAnimation]);
+    // 本番ヒーローの1フレーム目を用意してからスナップショットを外し、位置ずれを防ぐ
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        setAdjacentTransition(null);
+        outgoingSlideX.value = 0;
+        incomingSlideX.value = 0;
+        isAdjacentSlidingRef.current = false;
+      });
+    });
+  }, [incomingSlideX, outgoingSlideX, router]);
 
-  const contentSlideStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: contentSlideX.value }],
+  const outgoingSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: outgoingSlideX.value }],
+  }));
+  const incomingSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: incomingSlideX.value }],
   }));
 
   const detailEpisodeFilterKey = useMemo(
@@ -329,25 +680,27 @@ export default function DetailScreen() {
     }, [reloadDetailDesign])
   );
 
-  const loadFriend = useCallback(() => {
+  const loadFriend = useCallback((idOverride?: string) => {
     initializeDatabase();
-    if (!friendId) {
+    const id = (idOverride ?? friendId).trim();
+    if (!id) {
       setFriend(null);
       setProfiles([]);
       setMyselfId(null);
       setAllFriends([]);
+      setProfileImageStatus('none');
       return;
     }
-    const loadedProfiles = getProfilesByFriendId(friendId);
+    const loadedProfiles = getProfilesByFriendId(id);
     const currentMyselfId = getMyself();
-    let loaded = getFriendById(friendId);
+    let loaded = getFriendById(id);
     if (loaded && loadedProfiles.length > 0 && !loaded.activeProfileId) {
       const selfProfile = loadedProfiles.find(
         (profile) => profile.source === 'self' || (currentMyselfId !== null && profile.authorUserId === currentMyselfId)
       );
       const fallbackProfile = selfProfile ?? loadedProfiles[0];
-      if (fallbackProfile && setDefaultProfile(friendId, fallbackProfile.id)) {
-        loaded = getFriendById(friendId);
+      if (fallbackProfile && setDefaultProfile(id, fallbackProfile.id)) {
+        loaded = getFriendById(id);
       }
     }
     setFriend(loaded);
@@ -356,7 +709,7 @@ export default function DetailScreen() {
     );
     setProfiles(loadedProfiles);
     setMyselfId(currentMyselfId);
-    setProfileImageLoadError(false);
+    setProfileImageStatus(loaded?.photoUri?.trim() ? 'pending' : 'none');
     const loadedTraits = loaded?.traits ?? [];
     setHabitNotes(loadedTraits);
     setAllFriends(getAllFriends());
@@ -364,6 +717,8 @@ export default function DetailScreen() {
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
   }, [friendId]);
+
+  loadFriendRef.current = loadFriend;
 
   useFocusEffect(
     useCallback(() => {
@@ -461,6 +816,11 @@ export default function DetailScreen() {
     return (episodePickerGridWidth - totalGap) / EPISODE_PICKER_COLUMNS;
   }, [episodePickerGridWidth]);
 
+  const episodePickerFriends = useMemo(
+    () => sortFriendsBySelectedIds(allFriends, episodeFilterSelectedIdsDraft),
+    [allFriends, episodeFilterSelectedIdsDraft]
+  );
+
   const episodeParticipantFilterSummary = useMemo(() => {
     if (episodeFilterSelectedIds.size === 0) {
       return '指定なし';
@@ -509,6 +869,7 @@ export default function DetailScreen() {
     });
   }, [episodeFilterSelectedIds, episodeTitleFilter, sortedEpisodes]);
 
+
   const sortedSayings = useMemo(() => {
     if (!friend) return [];
     return [...friend.sayings].sort((a, b) => {
@@ -531,9 +892,10 @@ export default function DetailScreen() {
     if (!friend) {
       return 0;
     }
-    const hasPhoto = Boolean(friend.photoUri?.trim()) && !profileImageLoadError;
+    const hasPhoto = profileImageStatus === 'loaded';
     return computeProfileCompleteness(friend, hasPhoto);
-  }, [friend, profileImageLoadError]);
+  }, [friend, profileImageStatus]);
+  const isProfileCompletenessReady = profileImageStatus !== 'pending';
 
   const profileCardBorder = useMemo(
     () => getHomeCardBorderStyle(profileCompleteness),
@@ -544,6 +906,88 @@ export default function DetailScreen() {
     () => formatProfileSinceYear(selectedProfile?.createdAt),
     [selectedProfile]
   );
+
+  const goToAdjacentFriend = useCallback(
+    (targetId: string | null, direction: AdjacentDirection) => {
+      if (!targetId || !friend || isAdjacentSlidingRef.current) {
+        return;
+      }
+      initializeDatabase();
+      const nextFriend = getFriendById(targetId);
+      if (!nextFriend) {
+        return;
+      }
+
+      const nextProfiles = getProfilesByFriendId(targetId);
+      const nextDefaultProfile =
+        (nextFriend.activeProfileId
+          ? nextProfiles.find((profile) => profile.id === nextFriend.activeProfileId)
+          : undefined) ??
+        nextProfiles.find((profile) => profile.source === 'self') ??
+        nextProfiles[0];
+      const outgoingProfileMeta = {
+        showProfileSwitcher: selectableProfiles.length > 0,
+        profileByLabel: profileTagLabel,
+      };
+      const incomingProfileMeta = resolveAdjacentProfileMeta(
+        nextFriend,
+        nextProfiles,
+        myselfId,
+        friendNameById
+      );
+
+      isAdjacentSlidingRef.current = true;
+      pendingAdjacentDirectionRef.current = direction;
+      pendingCommitTargetIdRef.current = targetId;
+      setAdjacentTransition({
+        outgoing: buildAdjacentSlideSnapshot(friend, activeTab, {
+          habitCount: habitNotes.length,
+          sinceYear,
+          profileImageStatus,
+          ...outgoingProfileMeta,
+        }),
+        incoming: buildAdjacentSlideSnapshot(nextFriend, activeTab, {
+          sinceYear: formatProfileSinceYear(nextDefaultProfile?.createdAt),
+          ...incomingProfileMeta,
+        }),
+        targetId,
+      });
+      // 本番の friend / params 切替はアニメ完了後（finishAdjacentSlide）
+    },
+    [
+      activeTab,
+      friend,
+      friendNameById,
+      habitNotes.length,
+      myselfId,
+      profileImageStatus,
+      profileTagLabel,
+      selectableProfiles.length,
+      sinceYear,
+    ]
+  );
+
+  useLayoutEffect(() => {
+    const direction = pendingAdjacentDirectionRef.current;
+    if (!adjacentTransition || !direction) {
+      return;
+    }
+    pendingAdjacentDirectionRef.current = null;
+    const exitTo = direction === 'next' ? -screenWidth : screenWidth;
+    const enterFrom = direction === 'next' ? screenWidth : -screenWidth;
+    outgoingSlideX.value = 0;
+    incomingSlideX.value = enterFrom;
+    outgoingSlideX.value = withTiming(exitTo, { duration: DETAIL_SLIDE_MS });
+    incomingSlideX.value = withTiming(0, { duration: DETAIL_SLIDE_MS }, () => {
+      runOnJS(finishAdjacentSlide)();
+    });
+  }, [
+    adjacentTransition,
+    finishAdjacentSlide,
+    incomingSlideX,
+    outgoingSlideX,
+    screenWidth,
+  ]);
 
   const openEpisodeParticipantPicker = useCallback(() => {
     setEpisodeFilterSelectedIdsDraft(new Set(episodeFilterSelectedIds));
@@ -791,6 +1235,200 @@ export default function DetailScreen() {
     ]);
   };
 
+  const renderSharedEpisodeItem = useCallback<ListRenderItem<Episode>>(
+    ({ item: episode }) => {
+      if (!friend) return null;
+      const canManage = canManageEpisode(episode, friend.id, myselfId);
+      const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
+      const chips = buildParticipantChips(episode, friendNameById, {
+        excludeFriendIds: myselfId ? [myselfId] : [],
+        friendPhotoById,
+      });
+      const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
+      return (
+        <View
+          style={{
+            backgroundColor: c.tabPaneBackground,
+            borderColor: profileCardBorder.borderColor,
+            borderLeftWidth: profileChromeSideBorder,
+            borderRightWidth: profileChromeSideBorder,
+            // タブバー（tabTrack marginHorizontal: 12）と同じくカード端から 12
+            paddingHorizontal: 12,
+          }}
+        >
+          <EpisodeListCard
+            embedded={listItemEmbedded}
+            title={episode.title}
+            date={episode.date}
+            episodeTag={episode.tag}
+            chips={chips}
+            visibilityMode={canManage ? episode.visibilityMode : undefined}
+            posterName={canManage ? null : posterName}
+            photoUris={episodePhotoUrisById.get(episode.id) ?? []}
+            onPress={() =>
+              router.push({
+                pathname: '/episode-detail',
+                params: {
+                  episodeId: episode.id,
+                  ownerId: episodeOwnerId,
+                },
+              })
+            }
+            onLongPress={
+              canManage
+                ? () => {
+                    Alert.alert('操作を選択', 'このエピソードに対する操作を選んでください。', [
+                      { text: 'キャンセル', style: 'cancel' },
+                      { text: '編集', onPress: () => startEditEpisode(episode) },
+                      {
+                        text: '削除',
+                        style: 'destructive',
+                        onPress: () => handleDeleteEpisode(episode.id),
+                      },
+                    ]);
+                  }
+                : undefined
+            }
+          />
+        </View>
+      );
+    },
+    [
+      c.tabPaneBackground,
+      episodePhotoUrisById,
+      friend,
+      friendNameById,
+      friendPhotoById,
+      listItemEmbedded,
+      myselfId,
+      profileCardBorder.borderColor,
+      profileChromeSideBorder,
+      router,
+      startEditEpisode,
+      handleDeleteEpisode,
+    ]
+  );
+
+  const renderLegacyEpisodeItem = useCallback<ListRenderItem<Episode>>(
+    ({ item: episode }) => {
+      if (!friend) return null;
+      const canManage = canManageEpisode(episode, friend.id, myselfId);
+      const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
+      const chips = buildParticipantChips(episode, friendNameById, {
+        excludeFriendIds: myselfId ? [myselfId] : [],
+        friendPhotoById,
+      });
+      const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
+      return (
+        <View
+          style={{
+            backgroundColor: c.tabPaneBackground,
+            borderColor: profileCardBorder.borderColor,
+            borderLeftWidth: profileChromeSideBorder,
+            borderRightWidth: profileChromeSideBorder,
+            paddingHorizontal: 12,
+          }}
+        >
+        <Pressable
+          onPress={() =>
+            router.push({
+              pathname: '/episode-detail',
+              params: {
+                episodeId: episode.id,
+                ownerId: episodeOwnerId,
+              },
+            })
+          }
+          onLongPress={
+            canManage
+              ? () => {
+                  Alert.alert('操作を選択', 'このエピソードに対する操作を選んでください。', [
+                    { text: 'キャンセル', style: 'cancel' },
+                    { text: '編集', onPress: () => startEditEpisode(episode) },
+                    {
+                      text: '削除',
+                      style: 'destructive',
+                      onPress: () => handleDeleteEpisode(episode.id),
+                    },
+                  ]);
+                }
+              : undefined
+          }
+          delayLongPress={300}
+        >
+          <View style={styles.episodeCard}>
+            <View style={styles.episodeCardRow1}>
+              <Text style={styles.episodeCardTitle} numberOfLines={1}>
+                {episode.title || '-'}
+              </Text>
+              <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(episode.date)}</Text>
+              {canManage ? (
+                <View
+                  style={styles.visibilityModeIconWrap}
+                  accessibilityRole="image"
+                  accessibilityLabel={getVisibilityModeLabel(episode.visibilityMode)}
+                >
+                  <Ionicons
+                    name={getVisibilityModeIconName(episode.visibilityMode)}
+                    size={16}
+                    color={getVisibilityModeIconColor(episode.visibilityMode)}
+                  />
+                </View>
+              ) : (
+                <View style={styles.episodeParticipantTag}>
+                  <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
+                    {posterName || '-'}
+                  </Text>
+                </View>
+              )}
+            </View>
+            {chips.length > 0 ? (
+              <View style={styles.episodeCardRow2}>
+                <View style={styles.episodeParticipantChipList}>
+                  <ParticipantChipList chips={chips} layout="scroll" compact />
+                </View>
+              </View>
+            ) : null}
+          </View>
+        </Pressable>
+        </View>
+      );
+    },
+    [
+      c.tabPaneBackground,
+      friend,
+      friendNameById,
+      friendPhotoById,
+      myselfId,
+      profileCardBorder.borderColor,
+      profileChromeSideBorder,
+      router,
+      styles,
+      startEditEpisode,
+      handleDeleteEpisode,
+    ]
+  );
+
+  const episodeItemSeparator = useCallback(
+    () => (
+      <View
+        style={{
+          height: kit.episodeListCardGap,
+          backgroundColor: c.tabPaneBackground,
+          borderColor: profileCardBorder.borderColor,
+          borderLeftWidth: profileChromeSideBorder,
+          borderRightWidth: profileChromeSideBorder,
+        }}
+      />
+    ),
+    [
+      c.tabPaneBackground,
+      kit.episodeListCardGap,
+      profileCardBorder.borderColor,
+      profileChromeSideBorder,
+    ]
+  );
+
   const finishEditEpisodeLink = useCallback(
     (eventId: string) => {
       if (!editLinkTarget) {
@@ -1006,14 +1644,17 @@ export default function DetailScreen() {
   return (
     <>
       <TabScreenTemplate
-        scrollable
-        keyboardAware
+        scrollable={false}
         useScreenPadding={false}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { flex: 1, paddingBottom: 0 },
+          isMonochromeTheme ? { paddingTop: 0 } : null,
+        ]}
         extraScrollHeight={18}
         header={
           <ScreenTopBar
-            title={friend.name}
+            title="Profile"
             onBack={() => router.back()}
             titleLeading={
               <Pressable
@@ -1027,7 +1668,7 @@ export default function DetailScreen() {
                   name="chevron-back"
                   size={20}
                   color={
-                    homeAdjacentFriendIds.prevId ? Theme.topBarText : 'rgba(255, 255, 255, 0.28)'
+                    homeAdjacentFriendIds.prevId ? appTheme.topBarText : appTheme.topBarTextMuted
                   }
                 />
               </Pressable>
@@ -1044,37 +1685,176 @@ export default function DetailScreen() {
                   name="chevron-forward"
                   size={20}
                   color={
-                    homeAdjacentFriendIds.nextId ? Theme.topBarText : 'rgba(255, 255, 255, 0.28)'
+                    homeAdjacentFriendIds.nextId ? appTheme.topBarText : appTheme.topBarTextMuted
                   }
                 />
-              </Pressable>
-            }
-            right={
-              <Pressable
-                style={episodeDetailTopBarButtonStyles.button}
-                onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
-                accessibilityLabel="編集"
-                hitSlop={8}
-              >
-                <Ionicons name="pencil-outline" size={18} color={Theme.topBarText} />
               </Pressable>
             }
           />
         }
       >
-        <View style={{ overflow: 'hidden', width: '100%' }}>
-          <Animated.View style={contentSlideStyle}>
-            <View style={styles.profileCardShadow}>
+        <View style={{ overflow: 'hidden', width: '100%', flex: 1 }}>
+          {adjacentTransition ? (
+            <>
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  {
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: 0,
+                    width: screenWidth,
+                    zIndex: 1,
+                    backgroundColor: appTheme.screenBackground,
+                  },
+                  outgoingSlideStyle,
+                ]}
+              >
+                <DetailAdjacentSlidePanel
+                  snapshot={adjacentTransition.outgoing}
+                  styles={styles}
+                  detailTabs={detailTabs}
+                  bundle={bundle}
+                  c={c}
+                  isMonochromeTheme={isMonochromeTheme}
+                  isFlatProfileCard={isFlatProfileCard}
+                />
+              </Animated.View>
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  {
+                    position: 'absolute',
+                    top: 0,
+                    bottom: 0,
+                    left: 0,
+                    width: screenWidth,
+                    zIndex: 2,
+                    backgroundColor: appTheme.screenBackground,
+                  },
+                  incomingSlideStyle,
+                ]}
+              >
+                <DetailAdjacentSlidePanel
+                  snapshot={adjacentTransition.incoming}
+                  styles={styles}
+                  detailTabs={detailTabs}
+                  bundle={bundle}
+                  c={c}
+                  isMonochromeTheme={isMonochromeTheme}
+                  isFlatProfileCard={isFlatProfileCard}
+                />
+              </Animated.View>
+            </>
+          ) : null}
+          <View
+            style={{
+              flex: 1,
+              opacity: adjacentTransition ? 0 : 1,
+            }}
+            pointerEvents={adjacentTransition ? 'none' : 'auto'}
+          >
+            <FlatList
+                style={{ flex: 1, marginHorizontal: isFlatProfileCard ? 0 : 6 }}
+                data={isEpisodeTab ? filteredEpisodes : []}
+                keyExtractor={(item) => item.id}
+                renderItem={useSharedEpisodeCard ? renderSharedEpisodeItem : renderLegacyEpisodeItem}
+                ItemSeparatorComponent={episodeItemSeparator}
+                keyboardShouldPersistTaps="handled"
+                initialNumToRender={6}
+                maxToRenderPerBatch={6}
+                windowSize={7}
+                removeClippedSubviews
+                showsVerticalScrollIndicator
+                contentContainerStyle={{
+                  paddingBottom: bottomNavClearance > 0 ? 60 : Spacing.lg,
+                }}
+                ListHeaderComponentStyle={{ marginBottom: 0 }}
+                ListEmptyComponent={
+                  isEpisodeTab ? (
+                  <View
+                    style={{
+                      backgroundColor: c.tabPaneBackground,
+                      borderColor: profileCardBorder.borderColor,
+                      borderLeftWidth: profileChromeSideBorder,
+                      borderRightWidth: profileChromeSideBorder,
+                      paddingHorizontal: 12,
+                      paddingTop: 8,
+                      paddingBottom: 10,
+                    }}
+                  >
+                    <Text style={styles.emptyEpisodeText}>該当するエピソードはありません。</Text>
+                  </View>
+                  ) : null
+                }
+                ListFooterComponent={
+                  isEpisodeTab ? (
+                  filteredEpisodes.length === 0 ? (
+                    <View
+                      style={{
+                        backgroundColor: c.tabPaneBackground,
+                        borderColor: profileCardBorder.borderColor,
+                        borderLeftWidth: profileChromeSideBorder,
+                        borderRightWidth: profileChromeSideBorder,
+                        borderBottomWidth: isFlatProfileCard ? 0 : Theme.homeCardBorderWidth,
+                        borderBottomLeftRadius: isFlatProfileCard ? 0 : 12,
+                        borderBottomRightRadius: isFlatProfileCard ? 0 : 12,
+                        height: 10,
+                      }}
+                    />
+                  ) : (
+                    <View
+                      style={{
+                        backgroundColor: c.tabPaneBackground,
+                        borderColor: profileCardBorder.borderColor,
+                        borderLeftWidth: profileChromeSideBorder,
+                        borderRightWidth: profileChromeSideBorder,
+                        borderBottomWidth: isFlatProfileCard ? 0 : Theme.homeCardBorderWidth,
+                        borderBottomLeftRadius: isFlatProfileCard ? 0 : 12,
+                        borderBottomRightRadius: isFlatProfileCard ? 0 : 12,
+                        paddingBottom: 10,
+                      }}
+                    />
+                  )
+                  ) : null
+                }
+                ListHeaderComponent={
+                  <>
+            <View
+              style={[
+                styles.profileCardShadow,
+                { marginHorizontal: 0 },
+                isEpisodeTab
+                  ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }
+                  : null,
+                profileCardShadowFlatStyle,
+              ]}
+            >
         <View
           style={[
             styles.profileCardOuter,
             {
               borderColor: profileCardBorder.borderColor,
               borderWidth: Theme.homeCardBorderWidth,
+              ...(isEpisodeTab
+                ? {
+                    borderBottomWidth: 0,
+                    borderBottomLeftRadius: 0,
+                    borderBottomRightRadius: 0,
+                  }
+                : null),
             },
+            profileCardOuterFlatStyle,
           ]}
         >
-        <View style={styles.hero}>
+        <View
+          style={[
+            styles.hero,
+            profileHeroFlatStyle,
+            isMonochromeTheme ? { paddingTop: 8 } : null,
+          ]}
+        >
           <View style={styles.heroIdentityRow}>
             <View
               style={[
@@ -1083,12 +1863,13 @@ export default function DetailScreen() {
               ]}
             >
               <View style={styles.heroPhotoInnerFrame}>
-                {friend.photoUri && !profileImageLoadError ? (
+                {friend.photoUri && profileImageStatus !== 'failed' ? (
                   <Image
                     source={{ uri: friend.photoUri }}
                     style={styles.heroPhoto}
                     resizeMode="cover"
-                    onError={() => setProfileImageLoadError(true)}
+                    onLoad={() => setProfileImageStatus('loaded')}
+                    onError={() => setProfileImageStatus('failed')}
                   />
                 ) : (
                   <View style={styles.heroPhotoPlaceholder}>
@@ -1102,6 +1883,14 @@ export default function DetailScreen() {
                 <Text style={styles.heroName} numberOfLines={2}>
                   {friend.name}
                 </Text>
+                <Pressable
+                  style={styles.heroEditButton}
+                  onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
+                  accessibilityLabel="編集"
+                  hitSlop={8}
+                >
+                  <Ionicons name="pencil-outline" size={16} color={c.accent} />
+                </Pressable>
               </View>
               {(friend.nickname.trim() || friend.importSource === 'qr_scan') ? (
                 <View style={styles.heroNicknameRow}>
@@ -1172,31 +1961,47 @@ export default function DetailScreen() {
           <View style={styles.heroCompletenessSection}>
             <View style={styles.heroCompletenessHeader}>
               <Text style={styles.heroCompletenessLabel}>PROFILE COMPLETENESS</Text>
-              <Text style={styles.heroCompletenessPercent}>{profileCompleteness}%</Text>
+              <Text style={styles.heroCompletenessPercent}>
+                {isProfileCompletenessReady ? `${profileCompleteness}%` : ''}
+              </Text>
             </View>
             <View style={styles.heroCompletenessTrack}>
-              <View style={[styles.heroCompletenessFill, { width: `${profileCompleteness}%` }]} />
+              <View
+                style={[
+                  styles.heroCompletenessFill,
+                  { width: `${isProfileCompletenessReady ? profileCompleteness : 0}%` },
+                ]}
+              />
             </View>
           </View>
         </View>
 
-        <View style={styles.tabSection}>
+        <View
+          style={[
+            styles.tabSection,
+            isEpisodeTab ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : null,
+            profileTabSectionFlatStyle,
+          ]}
+        >
           <View style={styles.tabTrack}>
             <View style={styles.tabInner}>
               {detailTabs.map((tab) => {
                 const isActive = activeTab === tab.key;
                 const activeColor = bundle.tabMode === 'perTab' ? tab.color : c.accent;
+                // 非選択: メインはカテゴリ色そのまま / ライトは tabInactive（半透明化しない）
                 const inactiveIconBg = bundle.tabMode === 'perTab' ? tab.color : c.tabInactive;
                 return (
-                  <TouchableOpacity
+                  <Pressable
                     key={tab.key}
                     onPress={() => setActiveTab(tab.key)}
                     style={[
                       styles.tabPill,
-                      isActive && {
-                        borderColor: activeColor,
-                        backgroundColor: activeColor,
-                      },
+                      isActive
+                        ? {
+                            borderColor: activeColor,
+                            backgroundColor: activeColor,
+                          }
+                        : null,
                     ]}
                     accessibilityRole="tab"
                     accessibilityState={{ selected: isActive }}
@@ -1234,13 +2039,94 @@ export default function DetailScreen() {
                         {tab.caption}
                       </Text>
                     </View>
-                  </TouchableOpacity>
+                  </Pressable>
                 );
               })}
             </View>
           </View>
 
+
           <View style={styles.tabContentArea}>
+          {activeTab === 'エピソード' && (
+            <View style={[styles.tabPane, { paddingBottom: 0 }]}>
+            <View style={styles.episodeToolbarRow}>
+              <Pressable
+                style={[styles.episodeFilterField, styles.episodeParticipantFilterField]}
+                onPress={openEpisodeParticipantPicker}
+              >
+                <Text style={styles.episodeFilterFieldLabel}>参加者</Text>
+                <Text style={styles.episodeFilterFieldValue} numberOfLines={1}>
+                  {episodeParticipantFilterSummary}
+                </Text>
+              </Pressable>
+              <TextInput
+                style={[styles.episodeFilterField, styles.episodeTitleFilterField]}
+                placeholder="タイトル"
+                placeholderTextColor={c.inputPlaceholder}
+                value={episodeTitleDraft}
+                onChangeText={setEpisodeTitleDraft}
+                onSubmitEditing={handleEpisodeTitleSubmit}
+                returnKeyType="search"
+                blurOnSubmit
+                autoCapitalize="none"
+              />
+              <Pressable
+                style={styles.episodeToolbarAddButton}
+                onPress={() => {
+                  if (isEpisodeFormVisible && !episodeForm.editingEpisodeId) {
+                    episodeForm.reset();
+                    setIsEpisodeFormVisible(false);
+                  } else {
+                    startCreateEpisode();
+                  }
+                }}
+              >
+                <Text style={styles.episodeAddButtonText}>
+                  {isEpisodeFormVisible && !episodeForm.editingEpisodeId ? '閉じる' : '+ 追加'}
+                </Text>
+              </Pressable>
+            </View>
+
+            {isEpisodeParticipantPickerOpen && (
+              <View style={styles.episodeParticipantPickerPanel}>
+                <View
+                  style={styles.episodeParticipantPickerGrid}
+                  onLayout={(event) => {
+                    const width = event.nativeEvent.layout.width;
+                    if (width > 0) {
+                      setEpisodePickerGridWidth(width);
+                    }
+                  }}
+                >
+                  {episodePickerFriends.map((person) => {
+                    const checked = episodeFilterSelectedIdsDraft.has(person.id);
+                    return (
+                      <Pressable
+                        key={person.id}
+                        style={[styles.episodePersonRow, { width: episodePickerCardWidth }]}
+                        onPress={() => toggleEpisodeFilterParticipant(person.id)}
+                      >
+                        <View
+                          style={[styles.episodePersonCheckbox, checked && styles.episodePersonCheckboxChecked]}
+                        >
+                          {checked ? <Text style={styles.episodePersonCheckmark}>✓</Text> : null}
+                        </View>
+                        <Text style={styles.episodePersonName} numberOfLines={1}>
+                          {person.name}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Pressable style={styles.episodePickerSearchButton} onPress={handleParticipantPickerSearch}>
+                  <Text style={styles.episodeSearchButtonText}>検索</Text>
+                </Pressable>
+              </View>
+            )}
+
+            </View>
+          )}
+
           {activeTab === '情報' && (
             <MultiValueSummarySection
               withCard
@@ -1255,7 +2141,7 @@ export default function DetailScreen() {
           )}
 
           {activeTab === 'ステータス' && (
-            <View style={styles.tabPane}>
+            <View style={styles.tabContentFrame}>
               {[
                 { label: '出身', value: friend.origin.trim() || '—' },
                 { label: '居住地', value: friend.residence.trim() || '—' },
@@ -1351,220 +2237,6 @@ export default function DetailScreen() {
                   <Text style={styles.habitCardText}>{note}</Text>
                 </Pressable>
               ))
-            )}
-            </View>
-          )}
-
-          {activeTab === 'エピソード' && (
-            <View style={styles.tabPane}>
-            <View style={styles.episodeToolbarRow}>
-              <Pressable
-                style={[styles.episodeFilterField, styles.episodeParticipantFilterField]}
-                onPress={openEpisodeParticipantPicker}
-              >
-                <Text style={styles.episodeFilterFieldLabel}>参加者</Text>
-                <Text style={styles.episodeFilterFieldValue} numberOfLines={1}>
-                  {episodeParticipantFilterSummary}
-                </Text>
-              </Pressable>
-              <TextInput
-                style={[styles.episodeFilterField, styles.episodeTitleFilterField]}
-                placeholder="タイトル"
-                placeholderTextColor={c.inputPlaceholder}
-                value={episodeTitleDraft}
-                onChangeText={setEpisodeTitleDraft}
-                onSubmitEditing={handleEpisodeTitleSubmit}
-                returnKeyType="search"
-                blurOnSubmit
-                autoCapitalize="none"
-              />
-              <Pressable
-                style={styles.episodeToolbarAddButton}
-                onPress={() => {
-                  if (isEpisodeFormVisible && !episodeForm.editingEpisodeId) {
-                    episodeForm.reset();
-                    setIsEpisodeFormVisible(false);
-                  } else {
-                    startCreateEpisode();
-                  }
-                }}
-              >
-                <Text style={styles.episodeAddButtonText}>
-                  {isEpisodeFormVisible && !episodeForm.editingEpisodeId ? '閉じる' : '+ 追加'}
-                </Text>
-              </Pressable>
-            </View>
-
-            {isEpisodeParticipantPickerOpen && (
-              <View style={styles.episodeParticipantPickerPanel}>
-                <View
-                  style={styles.episodeParticipantPickerGrid}
-                  onLayout={(event) => {
-                    const width = event.nativeEvent.layout.width;
-                    if (width > 0) {
-                      setEpisodePickerGridWidth(width);
-                    }
-                  }}
-                >
-                  {allFriends.map((person) => {
-                    const checked = episodeFilterSelectedIdsDraft.has(person.id);
-                    return (
-                      <Pressable
-                        key={person.id}
-                        style={[styles.episodePersonRow, { width: episodePickerCardWidth }]}
-                        onPress={() => toggleEpisodeFilterParticipant(person.id)}
-                      >
-                        <View
-                          style={[styles.episodePersonCheckbox, checked && styles.episodePersonCheckboxChecked]}
-                        >
-                          {checked ? <Text style={styles.episodePersonCheckmark}>✓</Text> : null}
-                        </View>
-                        <Text style={styles.episodePersonName} numberOfLines={1}>
-                          {person.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <Pressable style={styles.episodePickerSearchButton} onPress={handleParticipantPickerSearch}>
-                  <Text style={styles.episodeSearchButtonText}>検索</Text>
-                </Pressable>
-              </View>
-            )}
-
-            {filteredEpisodes.length === 0 ? (
-              <Text style={styles.emptyEpisodeText}>該当するエピソードはありません。</Text>
-            ) : useSharedEpisodeCard ? (
-              <View
-                style={
-                  episodeListEdgeToEdge ? styles.episodeListEdgeToEdge : styles.episodeListInset
-                }
-              >
-                <ListItemGroup gap={kit.episodeListCardGap}>
-                  {filteredEpisodes.map((episode) => {
-                    const canManage = canManageEpisode(episode, friend.id, myselfId);
-                    const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
-                    const chips = buildParticipantChips(episode, friendNameById, {
-                      excludeFriendIds: myselfId ? [myselfId] : [],
-                      friendPhotoById,
-                    });
-                    const posterName =
-                      friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
-                    const openEpisodeDetail = () =>
-                      router.push({
-                        pathname: '/episode-detail',
-                        params: {
-                          episodeId: episode.id,
-                          ownerId: episodeOwnerId,
-                        },
-                      });
-                    const onLongPressEpisode = canManage
-                      ? () => {
-                          Alert.alert('操作を選択', 'このエピソードに対する操作を選んでください。', [
-                            { text: 'キャンセル', style: 'cancel' },
-                            { text: '編集', onPress: () => startEditEpisode(episode) },
-                            {
-                              text: '削除',
-                              style: 'destructive',
-                              onPress: () => handleDeleteEpisode(episode.id),
-                            },
-                          ]);
-                        }
-                      : undefined;
-
-                    return (
-                      <EpisodeListCard
-                        key={episode.id}
-                        embedded={listItemEmbedded}
-                        title={episode.title}
-                        date={episode.date}
-                        episodeTag={episode.tag}
-                        chips={chips}
-                        visibilityMode={canManage ? episode.visibilityMode : undefined}
-                        posterName={canManage ? null : posterName}
-                        photoUris={episodePhotoUrisById.get(episode.id) ?? []}
-                        onPress={openEpisodeDetail}
-                        onLongPress={onLongPressEpisode}
-                      />
-                    );
-                  })}
-                </ListItemGroup>
-              </View>
-            ) : (
-              filteredEpisodes.map((episode) => {
-                const canManage = canManageEpisode(episode, friend.id, myselfId);
-                const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
-                const chips = buildParticipantChips(episode, friendNameById, {
-                  excludeFriendIds: myselfId ? [myselfId] : [],
-                  friendPhotoById,
-                });
-                const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
-                const openEpisodeDetail = () =>
-                  router.push({
-                    pathname: '/episode-detail',
-                    params: {
-                      episodeId: episode.id,
-                      ownerId: episodeOwnerId,
-                    },
-                  });
-                const onLongPressEpisode = canManage
-                  ? () => {
-                      Alert.alert('操作を選択', 'このエピソードに対する操作を選んでください。', [
-                        { text: 'キャンセル', style: 'cancel' },
-                        { text: '編集', onPress: () => startEditEpisode(episode) },
-                        {
-                          text: '削除',
-                          style: 'destructive',
-                          onPress: () => handleDeleteEpisode(episode.id),
-                        },
-                      ]);
-                    }
-                  : undefined;
-
-                return (
-                  <Pressable
-                    key={episode.id}
-                    onPress={openEpisodeDetail}
-                    onLongPress={onLongPressEpisode}
-                    delayLongPress={300}
-                  >
-                    <View style={styles.episodeCard}>
-                      <View style={styles.episodeCardRow1}>
-                        <Text style={styles.episodeCardTitle} numberOfLines={1}>
-                          {episode.title || '-'}
-                        </Text>
-                        <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(episode.date)}</Text>
-                        {canManage ? (
-                          <View
-                            style={styles.visibilityModeIconWrap}
-                            accessibilityRole="image"
-                            accessibilityLabel={getVisibilityModeLabel(episode.visibilityMode)}
-                          >
-                            <Ionicons
-                              name={getVisibilityModeIconName(episode.visibilityMode)}
-                              size={16}
-                              color={getVisibilityModeIconColor(episode.visibilityMode)}
-                            />
-                          </View>
-                        ) : (
-                          <View style={styles.episodeParticipantTag}>
-                            <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
-                              {posterName || '-'}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                      {chips.length > 0 ? (
-                        <View style={styles.episodeCardRow2}>
-                          <View style={styles.episodeParticipantChipList}>
-                            <ParticipantChipList chips={chips} layout="scroll" compact />
-                          </View>
-                        </View>
-                      ) : null}
-                    </View>
-                  </Pressable>
-                );
-              })
             )}
             </View>
           )}
@@ -1682,7 +2354,10 @@ export default function DetailScreen() {
         </View>
         </View>
         </View>
-        </Animated.View>
+                  </>
+                }
+              />
+          </View>
         </View>
       </TabScreenTemplate>
       <EpisodeFormOverlay
@@ -1718,4 +2393,3 @@ export default function DetailScreen() {
     </>
   );
 }
-

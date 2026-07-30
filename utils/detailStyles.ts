@@ -8,7 +8,7 @@ export function createDetailStyles(c: DetailThemeColors) {
   return StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.screenBase,
+    backgroundColor: c.background,
   },
   scrollContent: {
     paddingHorizontal: 0,
@@ -169,7 +169,7 @@ export function createDetailStyles(c: DetailThemeColors) {
   heroStatsRow: {
     flexDirection: 'row',
     gap: 6,
-    marginTop: 14,
+    marginTop: 8,
   },
   heroStatCell: {
     flex: 1,
@@ -246,8 +246,8 @@ export function createDetailStyles(c: DetailThemeColors) {
     paddingVertical: 1.5,
     paddingHorizontal: 3,
     marginHorizontal: 12,
-    marginTop: 5,
-    marginBottom: 5,
+    marginTop: 2,
+    marginBottom: 8,
   },
   tabInner: {
     flexDirection: 'row',
@@ -321,19 +321,41 @@ export function createDetailStyles(c: DetailThemeColors) {
   },
   tabPane: {
     backgroundColor: c.tabPaneBackground,
+    marginTop: 0,
     paddingHorizontal: 12,
-    paddingTop: 10,
+    paddingTop: 0,
     paddingBottom: 10,
+  },
+  /** 情報・ステータス用。左右端を tabTrack（marginHorizontal: 12）に揃える。上余白は tabTrack.marginBottom のみ */
+  tabContentFrame: {
+    marginHorizontal: 12,
+    marginTop: 0,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: c.tabTrackBorder,
+    borderRadius: 10,
+    backgroundColor: c.tabPaneBackground,
+    paddingHorizontal: 12,
+    paddingTop: 0,
+    paddingBottom: 4,
+    overflow: 'hidden',
   },
   multiValuePlainContainer: {
     padding: 0,
     backgroundColor: c.bgBase,
   },
   multiValueCard: {
-    backgroundColor: c.heroBackground,
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    paddingBottom: 0,
+    marginHorizontal: 12,
+    marginTop: 0,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: c.tabTrackBorder,
+    borderRadius: 10,
+    backgroundColor: c.tabPaneBackground,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    overflow: 'hidden',
   },
   habitInput: {
     borderColor: c.inputBorder,
@@ -948,8 +970,8 @@ export function createDetailStyles(c: DetailThemeColors) {
   multiValueRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingBottom: 12,
-    marginBottom: 12,
+    paddingBottom: 8,
+    marginBottom: 8,
     gap: 10,
   },
   multiValueRowWithDivider: {
@@ -957,7 +979,7 @@ export function createDetailStyles(c: DetailThemeColors) {
     borderBottomColor: c.border,
   },
   multiValueRowLast: {
-    paddingBottom: 12,
+    paddingBottom: 8,
     marginBottom: 0,
   },
   multiValueLabel: {

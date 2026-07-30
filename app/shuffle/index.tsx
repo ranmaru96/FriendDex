@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Spacing } from '@/constants/theme';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { ShuffleLibraryPickerModal } from '@/components/shuffle/ShuffleLibraryPickerModal';
 import { ShuffleOrderResults } from '@/components/shuffle/ShuffleOrderResults';
@@ -106,6 +107,7 @@ function draftToActivePool(draft: ShufflePoolDraft | null): ShufflePool | null {
 
 export default function ShuffleScreen() {
   const router = useRouter();
+  const { colors: appTheme } = useAppTheme();
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pools, setPools] = useState<ShufflePool[]>([]);
   const [poolDraft, setPoolDraft] = useState<ShufflePoolDraft | null>(null);
@@ -453,7 +455,7 @@ export default function ShuffleScreen() {
             </>
           ) : (
             <>
-              <Text style={styles.sectionTitle}>メンバー</Text>
+              <Text style={[styles.sectionTitle, { color: appTheme.onScreenText }]}>メンバー</Text>
               <Text style={styles.emptyHint}>
                 参加者を選ぶか、ライブラリから引用してください。シャッフル実行時にライブラリへ保存されます。
               </Text>
@@ -698,7 +700,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#f8fafc',
   },
   poolLabel: {
     flexShrink: 1,

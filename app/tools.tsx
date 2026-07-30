@@ -14,6 +14,14 @@ type ToolEntry = {
 
 const TOOL_ENTRIES: ToolEntry[] = [
   {
+    id: 'settlement',
+    title: '清算（新・試作）',
+    description:
+      'グループ精算の UI 試作版。全員を計算に含め、片方向は相手台帳への反映のみ招待。旧機能は「従来」タブから。',
+    icon: 'calculator-outline',
+    route: '/settlement',
+  },
+  {
     id: 'money-loan',
     title: 'お金貸し借り管理',
     description: 'タイトルごとに貸し借りを登録し、貸・借タブで未返済を一覧できます。',
@@ -35,16 +43,18 @@ export default function ToolsScreen() {
   const kit = useUiKit();
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
           { paddingHorizontal: kit.listScreenPaddingHorizontal },
         ]}
       >
-        <Text style={styles.screenTitle}>ツール</Text>
+        <Text style={[styles.screenTitle, { color: kit.topBarText }]}>ツール</Text>
         {kit.toolScreenShowSubtitle ? (
-          <Text style={styles.screenSubtitle}>便利ツールをここにまとめます</Text>
+          <Text style={[styles.screenSubtitle, { color: kit.topBarText, opacity: 0.7 }]}>
+            便利ツールをここにまとめます
+          </Text>
         ) : null}
 
         {TOOL_ENTRIES.map((entry) => (
@@ -75,7 +85,6 @@ export default function ToolsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.screenBase,
   },
   scrollContent: {
     paddingTop: Spacing.sm,
@@ -85,11 +94,9 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#f8fafc',
   },
   screenSubtitle: {
     fontSize: 13,
-    color: '#cbd5e1',
     marginBottom: Spacing.xs,
   },
   toolCard: {

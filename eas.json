@@ -6,12 +6,16 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "env": { "RCT_NEW_ARCH_ENABLED": "1" }
+      "env": {
+        "RCT_NEW_ARCH_ENABLED": "1",
+        "APP_VARIANT": "development"
+      }
     },
     "preview": {
       "distribution": "internal",
       "env": {
-        "RCT_NEW_ARCH_ENABLED": "1"
+        "RCT_NEW_ARCH_ENABLED": "1",
+        "APP_VARIANT": "preview"
       }
     },
 

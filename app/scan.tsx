@@ -145,7 +145,7 @@ export default function ScanScreen() {
 
   if (!permission.granted) {
     return (
-      <ScreenShell backgroundColor={Theme.screenBase}>
+      <ScreenShell>
         <ScreenTopBar onBack={() => router.back()} title="QRスキャン" />
         <View style={styles.permissionContent}>
           {permission.canAskAgain ? (
@@ -178,6 +178,8 @@ export default function ScanScreen() {
         variant="plain"
         onBack={() => router.back()}
         title="QRスキャン"
+        backTextStyle={styles.topBarLightText}
+        titleStyle={styles.topBarLightText}
       />
       <View style={styles.cameraArea}>
         <CameraView
@@ -274,8 +276,11 @@ const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
   },
+  topBarLightText: {
+    color: '#ffffff',
+  },
   overlayTop: {
-    flex: 1,
+    flex: 0.55,
     backgroundColor: 'rgba(0,0,0,0.55)',
   },
   overlayMiddle: {
@@ -303,7 +308,7 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   overlayBottom: {
-    flex: 1,
+    flex: 1.45,
     backgroundColor: 'rgba(0,0,0,0.55)',
     alignItems: 'center',
     paddingTop: 24,

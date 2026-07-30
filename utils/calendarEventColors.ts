@@ -1,8 +1,9 @@
 import { Theme } from '@/constants/theme';
+import { getCommonItemOptionByKindAndLabel } from '@/db';
 import { normalizeEpisodeTag } from './episodeHelpers';
 
-/** エピソードタグごとのカレンダー帯色（未設定タグは accent） */
-const TAG_COLOR_PALETTE = [
+/** エピソードタグのカレンダー帯色パレット（共通項目エディタでも使用） */
+export const EPISODE_TAG_COLOR_PALETTE = [
   '#E85D75',
   '#7C5CBF',
   '#2A9D5A',
@@ -25,11 +26,20 @@ const hashTagLabel = (tag: string): number => {
   return hash;
 };
 
+/** 登録色が無いタグ向けのハッシュ色 */
+export const getHashedEpisodeTagColor = (tag: string): string => {
+  const index = hashTagLabel(tag) % EPISODE_TAG_COLOR_PALETTE.length;
+  return EPISODE_TAG_COLOR_PALETTE[index];
+};
+
 export const getEventCalendarColor = (episodeTag: string | null | undefined): string => {
   const tag = normalizeEpisodeTag(episodeTag);
   if (!tag) {
     return UNTAGGED_EVENT_COLOR;
   }
-  const index = hashTagLabel(tag) % TAG_COLOR_PALETTE.length;
-  return TAG_COLOR_PALETTE[index];
+  const option = getCommonItemOptionByKindAndLabel('episode_tag', tag);
+  if (option?.color) {
+    return option.color;
+  }
+  return getHashedEpisodeTagColor(tag);
 };

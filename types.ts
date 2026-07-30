@@ -267,6 +267,8 @@ export type CommonItemOption = {
   kind: CommonItemKind;
   label: string;
   members: string[];
+  /** エピソードタグ用。カレンダー帯色（#RRGGBB）。他 kind は null */
+  color: string | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -13,6 +13,7 @@ import {
 import { Theme, Radius, Typography } from '@/constants/theme';
 import type { Option } from '@/components/episode/types';
 import type { Friend } from '@/types';
+import { sortFriendsBySelectedIds, sortOptionsBySelectedValues } from '@/utils/selectionSortHelpers';
 
 const SELECTOR_COLUMNS = 3;
 const SELECTOR_GAP = 6;
@@ -133,29 +134,27 @@ export function EntrySelectorModal({
   }, []);
 
   const normalizedNameFilter = nameFilter.trim().toLowerCase();
-  const filteredFriends = useMemo(
-    () =>
-      friends.filter((friend) => {
-        if (normalizedNameFilter && !friend.name.toLowerCase().includes(normalizedNameFilter)) {
-          return false;
-        }
-        if (affiliationFilter && !(friend.affiliations ?? []).includes(affiliationFilter)) {
-          return false;
-        }
-        if (experienceFilter && !(friend.experiences ?? []).includes(experienceFilter)) {
-          return false;
-        }
-        return true;
-      }),
-    [friends, normalizedNameFilter, affiliationFilter, experienceFilter]
-  );
-  const filteredGroups = useMemo(
-    () =>
-      groupOptions.filter((option) =>
-        normalizedNameFilter ? option.label.toLowerCase().includes(normalizedNameFilter) : true
-      ),
-    [groupOptions, normalizedNameFilter]
-  );
+  const filteredFriends = useMemo(() => {
+    const filtered = friends.filter((friend) => {
+      if (normalizedNameFilter && !friend.name.toLowerCase().includes(normalizedNameFilter)) {
+        return false;
+      }
+      if (affiliationFilter && !(friend.affiliations ?? []).includes(affiliationFilter)) {
+        return false;
+      }
+      if (experienceFilter && !(friend.experiences ?? []).includes(experienceFilter)) {
+        return false;
+      }
+      return true;
+    });
+    return sortFriendsBySelectedIds(filtered, selectedIndividualIds);
+  }, [friends, normalizedNameFilter, affiliationFilter, experienceFilter, selectedIndividualIds]);
+  const filteredGroups = useMemo(() => {
+    const filtered = groupOptions.filter((option) =>
+      normalizedNameFilter ? option.label.toLowerCase().includes(normalizedNameFilter) : true
+    );
+    return sortOptionsBySelectedValues(filtered, selectedGroupValues);
+  }, [groupOptions, normalizedNameFilter, selectedGroupValues]);
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>

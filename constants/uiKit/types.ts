@@ -14,6 +14,9 @@ export type EpisodeListPhotoLayout = 'compactOne' | 'compactTwoSideBySide' | 'ta
 export type CalendarEventMemoDisplay = 'full' | 'twoLines' | 'oneLine';
 export type CalendarMonthLayout = 'classic' | 'scheduleGrid';
 export type CalendarEventTimeDisplay = 'badge' | 'plain' | 'column';
+export type CalendarEventCardStyle = 'current' | 'roundedCards';
+/** Detail プロフィール枠: card=影・角丸・外枠 / flat=フルブリード風 */
+export type DetailProfileCardStyle = 'card' | 'flat';
 
 export type UiKit = {
   label: string;
@@ -91,6 +94,8 @@ export type UiKit = {
   calendarEventCardGap: number;
   /** badge 表示時の予定カード角丸 */
   calendarEventCardBorderRadius: number;
+  /** 予定カードの全体スタイル（Preview override 用） */
+  calendarEventCardStyle: CalendarEventCardStyle;
   /** 共通項目画面の外パネル角丸（0 でカレンダー風フルブリード） */
   commonItemsPanelBorderRadius: number;
   /** 共通項目のタブ・タグ左右余白（区切り線インセットと揃える） */
@@ -109,6 +114,8 @@ export type UiKit = {
   subToolScreenPaddingHorizontal: number;
   /** 友達画面のカード・行・ツールバー角丸（Preview 適用） */
   friendsScreenBorderRadius: number;
+  /** Detail プロフィール＋タブのカード枠スタイル */
+  detailProfileCardStyle: DetailProfileCardStyle;
 
   textPrimary: AppTheme['textPrimary'];
   textSecondary: AppTheme['textSecondary'];

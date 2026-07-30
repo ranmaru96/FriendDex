@@ -2,7 +2,9 @@ import type { ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { Spacing } from '@/constants/theme';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 
@@ -28,9 +30,12 @@ export function TabScreenTemplate({
   header,
 }: TabScreenTemplateProps) {
   const kit = useUiKit();
+  const appTheme = useAppThemeOptional();
+  const flushTop = isMonochromeAppTheme(appTheme?.variant);
   const bottomNavClearance = useBottomNavScrollClearance();
   const horizontalPadding = useScreenPadding ? kit.screenPaddingHorizontal : 0;
   const bottomPadding = bottomNavClearance > 0 ? bottomNavClearance : Spacing.lg;
+  const topPadding = flushTop ? 0 : Spacing.sm;
 
   if (scrollable && keyboardAware) {
     return (
@@ -39,7 +44,7 @@ export function TabScreenTemplate({
         <KeyboardAwareScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingHorizontal: horizontalPadding },
+            { paddingHorizontal: horizontalPadding, paddingTop: topPadding },
             contentContainerStyle,
             { paddingBottom: bottomPadding },
           ]}
@@ -60,7 +65,7 @@ export function TabScreenTemplate({
         <ScrollView
           contentContainerStyle={[
             styles.scrollContent,
-            { paddingHorizontal: horizontalPadding },
+            { paddingHorizontal: horizontalPadding, paddingTop: topPadding },
             contentContainerStyle,
             { paddingBottom: bottomPadding },
           ]}
@@ -75,7 +80,13 @@ export function TabScreenTemplate({
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
       {header}
-      <View style={[styles.body, { paddingHorizontal: horizontalPadding }, contentContainerStyle]}>
+      <View
+        style={[
+          styles.body,
+          { paddingHorizontal: horizontalPadding, paddingTop: topPadding },
+          contentContainerStyle,
+        ]}
+      >
         {children}
       </View>
     </SafeAreaView>
@@ -88,10 +99,8 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-    paddingTop: Spacing.sm,
   },
   scrollContent: {
-    paddingTop: Spacing.sm,
     paddingBottom: Spacing.lg,
     gap: 10,
   },

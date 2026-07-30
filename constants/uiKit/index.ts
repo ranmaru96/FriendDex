@@ -1,16 +1,20 @@
 import { previewUiKit } from './preview';
 import { stableUiKit } from './stable';
 import type {
+  CalendarEventCardStyle,
   CalendarEventTimeDisplay,
+  DetailProfileCardStyle,
   EpisodeListPhotoLayout,
   UiKit,
   UiPreviewVariant,
 } from './types';
 
 export type {
+  CalendarEventCardStyle,
   CalendarEventMemoDisplay,
   CalendarEventTimeDisplay,
   CalendarMonthLayout,
+  DetailProfileCardStyle,
   EpisodeListCardLayout,
   EpisodeListPhotoLayout,
   FormContainer,
@@ -61,6 +65,23 @@ export function normalizeCalendarEventTimeDisplay(
   return null;
 }
 
+export const CALENDAR_EVENT_CARD_STYLE_OPTIONS: {
+  value: CalendarEventCardStyle;
+  label: string;
+}[] = [
+  { value: 'current', label: '現状のまま' },
+  { value: 'roundedCards', label: '各予定を丸角カード化' },
+];
+
+export function normalizeCalendarEventCardStyle(
+  value: string | null | undefined
+): CalendarEventCardStyle | null {
+  if (value === 'current' || value === 'roundedCards') {
+    return value;
+  }
+  return null;
+}
+
 export const EPISODE_LIST_PHOTO_LAYOUT_OPTIONS: {
   value: EpisodeListPhotoLayout;
   label: string;
@@ -81,4 +102,21 @@ export function normalizeEpisodeListPhotoLayout(
 
 export function episodeListPhotoSpanRowsForLayout(layout: EpisodeListPhotoLayout): number {
   return layout === 'tallOne' ? 3 : 2;
+}
+
+export const DETAIL_PROFILE_CARD_STYLE_OPTIONS: {
+  value: DetailProfileCardStyle;
+  label: string;
+}[] = [
+  { value: 'card', label: 'カード（影・角丸・外枠）' },
+  { value: 'flat', label: 'フラット（枠なし）' },
+];
+
+export function normalizeDetailProfileCardStyle(
+  value: string | null | undefined
+): DetailProfileCardStyle | null {
+  if (value === 'card' || value === 'flat') {
+    return value;
+  }
+  return null;
 }

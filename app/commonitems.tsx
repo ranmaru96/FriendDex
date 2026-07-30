@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
+import { isMonochromeAppTheme } from '@/constants/appThemes';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { createDetailStyles } from '../utils/detailStyles';
 import { TabScreenTemplate } from '@/components/screen-templates';
 import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
@@ -26,13 +28,22 @@ import {
   getDistinctExperiences,
   getMergedCommonItemLabels,
   initializeDatabase,
+  reconcileGroupOptionMembers,
   removeCommonItemLabel,
   renameCommonItemLabel,
+  setCommonItemOptionColor,
   updateGroupOption,
 } from '../db';
+import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import { CommonItemKind, Friend } from '../types';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { AddCircleButton } from '@/components/AddCircleButton';
+import {
+  EPISODE_TAG_COLOR_PALETTE,
+  getEventCalendarColor,
+  getHashedEpisodeTagColor,
+} from '@/utils/calendarEventColors';
+import { INACTIVE_TAB_COLOR_ALPHA, withAlpha } from '@/utils/colorHelpers';
 
 type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先' | 'エピソードタグ';
 type Option = { label: string; value: string };
@@ -177,6 +188,8 @@ function SelectField({ label, value, options, onValueChange }: {
 export default function CommonItemsScreen() {
   const kit = useUiKit();
   const { isPreview } = useUiPreview();
+  const appTheme = useAppThemeOptional();
+  const flushTop = isMonochromeAppTheme(appTheme?.variant);
   const { bundle } = useDetailDesign();
   const detailStyles = useMemo(() => createDetailStyles(bundle.colors), [bundle.colors]);
   const isFlatCommonItemsPanel = kit.commonItemsPanelBorderRadius === 0;
@@ -187,9 +200,10 @@ export default function CommonItemsScreen() {
             borderRadius: 0,
             borderLeftWidth: 0,
             borderRightWidth: 0,
+            ...(flushTop ? { borderTopWidth: 0 } : null),
           }
         : { borderRadius: kit.commonItemsPanelBorderRadius },
-    [isFlatCommonItemsPanel, kit.commonItemsPanelBorderRadius]
+    [flushTop, isFlatCommonItemsPanel, kit.commonItemsPanelBorderRadius]
   );
   const contentPaddingHorizontal = isFlatCommonItemsPanel
     ? kit.commonItemsContentPaddingHorizontal
@@ -200,6 +214,7 @@ export default function CommonItemsScreen() {
 
   const [editorVisible, setEditorVisible] = useState(false);
   const [editorText, setEditorText] = useState('');
+  const [editorColor, setEditorColor] = useState<string>(EPISODE_TAG_COLOR_PALETTE[0]);
   const [editingOriginalLabel, setEditingOriginalLabel] = useState<string | null>(null);
 
   const [groupEditorVisible, setGroupEditorVisible] = useState(false);
@@ -216,6 +231,7 @@ export default function CommonItemsScreen() {
 
   const activeKind = TAB_KIND_MAP[activeTab];
   const isGroupTab = GROUP_KINDS.includes(activeKind);
+  const isEpisodeTagTab = activeKind === 'episode_tag';
 
   const requireActiveKind = (): CommonItemKind => activeKind;
 
@@ -235,7 +251,7 @@ export default function CommonItemsScreen() {
   }, [refreshItems]);
 
   const filteredPersons = useMemo(() => {
-    return allPersons.filter((p) => {
+    const filtered = allPersons.filter((p) => {
       if (personNameFilter.trim() && !p.name.toLowerCase().includes(personNameFilter.trim().toLowerCase())) return false;
       if (personAffiliationFilter) {
         const match = (p.affiliations ?? []).includes(personAffiliationFilter);
@@ -247,7 +263,8 @@ export default function CommonItemsScreen() {
       }
       return true;
     });
-  }, [allPersons, personNameFilter, personAffiliationFilter, personExperienceFilter]);
+    return sortFriendsBySelectedIds(filtered, selectedMemberIds);
+  }, [allPersons, personNameFilter, personAffiliationFilter, personExperienceFilter, selectedMemberIds]);
 
   const openAddEditor = () => {
     if (isGroupTab) {
@@ -255,6 +272,7 @@ export default function CommonItemsScreen() {
     } else {
       setEditingOriginalLabel(null);
       setEditorText('');
+      setEditorColor(EPISODE_TAG_COLOR_PALETTE[0]);
       setEditorVisible(true);
     }
   };
@@ -265,6 +283,10 @@ export default function CommonItemsScreen() {
     } else {
       setEditingOriginalLabel(label);
       setEditorText(label);
+      if (activeKind === 'episode_tag') {
+        const option = getCommonItemOptionByKindAndLabel('episode_tag', label);
+        setEditorColor(option?.color ?? getHashedEpisodeTagColor(label));
+      }
       setEditorVisible(true);
     }
   };
@@ -290,11 +312,13 @@ export default function CommonItemsScreen() {
 
   const openGroupEditorForEdit = (label: string) => {
     loadGroupEditorData();
-    const option = getCommonItemOptionByKindAndLabel(requireActiveKind(), label);
+    const kind = requireActiveKind();
+    const members = reconcileGroupOptionMembers(kind, label);
+    const option = getCommonItemOptionByKindAndLabel(kind, label);
     setGroupEditingId(option?.id ?? null);
     setGroupEditingOriginalLabel(label);
     setGroupName(label);
-    setSelectedMemberIds(new Set(option?.members ?? []));
+    setSelectedMemberIds(new Set(members));
     setGroupEditorVisible(true);
   };
 
@@ -304,17 +328,25 @@ export default function CommonItemsScreen() {
       Alert.alert('入力エラー', `${activeTab}を入力してください。`);
       return;
     }
+    const kind = requireActiveKind();
     if (!editingOriginalLabel) {
-      const created = addCommonItemOption(requireActiveKind(), normalized);
+      const created = addCommonItemOption(
+        kind,
+        normalized,
+        kind === 'episode_tag' ? editorColor : null
+      );
       if (!created) {
         Alert.alert('登録失敗', '同じ項目が既に存在するか、入力値が不正です。');
         return;
       }
     } else {
-      const ok = renameCommonItemLabel(requireActiveKind(), editingOriginalLabel, normalized);
+      const ok = renameCommonItemLabel(kind, editingOriginalLabel, normalized);
       if (!ok) {
         Alert.alert('更新失敗', '同じ項目が既に存在するか、入力値が不正です。');
         return;
+      }
+      if (kind === 'episode_tag') {
+        setCommonItemOptionColor(kind, normalized, editorColor);
       }
     }
     setEditorVisible(false);
@@ -419,6 +451,34 @@ export default function CommonItemsScreen() {
 
   const simpleEditorTitle = editingOriginalLabel ? `${activeTab}を編集` : `${activeTab}を追加`;
 
+  const renderEpisodeTagColorPicker = () => {
+    if (!isEpisodeTagTab) return null;
+    return (
+      <View style={styles.colorPickerSection}>
+        <Text style={styles.colorPickerLabel}>カレンダーの色</Text>
+        <View style={styles.colorPickerRow}>
+          {EPISODE_TAG_COLOR_PALETTE.map((swatch) => {
+            const selected = editorColor.toUpperCase() === swatch.toUpperCase();
+            return (
+              <Pressable
+                key={swatch}
+                onPress={() => setEditorColor(swatch)}
+                style={[
+                  styles.colorSwatch,
+                  { backgroundColor: swatch },
+                  selected ? styles.colorSwatchSelected : null,
+                ]}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                accessibilityLabel={`色 ${swatch}`}
+              />
+            );
+          })}
+        </View>
+      </View>
+    );
+  };
+
   const activeChipStyle = bundle.infoChipStyles[activeTab] ?? DEFAULT_CHIP_STYLE;
 
   const getTabAccentColor = (tab: CommonItemTabKey) =>
@@ -438,76 +498,73 @@ export default function CommonItemsScreen() {
 
   const renderTabInner = () => (
     <View
-      style={
-        isFlatCommonItemsPanel ? { paddingHorizontal: contentPaddingHorizontal } : undefined
-      }
+      style={[
+        styles.tabAreaFrame,
+        {
+          borderColor: themeColors.tabTrackBorder,
+          backgroundColor: themeColors.tabTrackBg,
+          marginHorizontal: contentPaddingHorizontal,
+        },
+      ]}
     >
       <View style={detailStyles.tabInner}>
-      {TAB_ORDER.map((tab) => {
-        const isActive = activeTab === tab;
-        const tabColor = getTabAccentColor(tab);
-        return (
-          <Pressable
-            key={tab}
-            onPress={() => setActiveTab(tab)}
-            style={[
-              detailStyles.tabPill,
-              isActive && {
-                borderColor: tabColor,
-                backgroundColor: tabColor,
-              },
-            ]}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: isActive }}
-            accessibilityLabel={tab}
-          >
-            <View style={detailStyles.tabPillContent}>
-              <View
-                style={[
-                  detailStyles.tabPillIconCircle,
-                  isActive
-                    ? detailStyles.tabPillIconCircleActive
-                    : { backgroundColor: tabColor },
-                ]}
-              >
-                <Ionicons name={TAB_ICONS[tab]} size={16} color={themeColors.onAccent} />
+        {TAB_ORDER.map((tab) => {
+          const isActive = activeTab === tab;
+          const tabColor = getTabAccentColor(tab);
+          const inactiveIconBg = withAlpha(tabColor, INACTIVE_TAB_COLOR_ALPHA);
+          return (
+            <Pressable
+              key={tab}
+              onPress={() => setActiveTab(tab)}
+              style={[
+                detailStyles.tabPill,
+                isActive && {
+                  borderColor: tabColor,
+                  backgroundColor: tabColor,
+                },
+              ]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: isActive }}
+              accessibilityLabel={tab}
+            >
+              <View style={detailStyles.tabPillContent}>
+                <View
+                  style={[
+                    detailStyles.tabPillIconCircle,
+                    isActive
+                      ? detailStyles.tabPillIconCircleActive
+                      : { backgroundColor: inactiveIconBg },
+                  ]}
+                >
+                  <Ionicons name={TAB_ICONS[tab]} size={16} color={themeColors.onAccent} />
+                </View>
+                <Text
+                  style={[
+                    detailStyles.tabPillCaption,
+                    isActive ? detailStyles.tabPillCaptionActive : detailStyles.tabPillCaptionInactive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {tab}
+                </Text>
               </View>
-              <Text
-                style={[
-                  detailStyles.tabPillCaption,
-                  isActive ? detailStyles.tabPillCaptionActive : detailStyles.tabPillCaptionInactive,
-                ]}
-                numberOfLines={1}
-              >
-                {tab}
-              </Text>
-            </View>
-          </Pressable>
-        );
-      })}
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
 
   const renderTagsSection = () => (
     <>
-      <View style={styles.tabTagSeparator}>
-        <View
-          style={[
-            styles.tabTagDivider,
-            {
-              backgroundColor: themeColors.tabTrackBorder,
-              marginHorizontal: contentPaddingHorizontal,
-            },
-          ]}
-        />
-      </View>
       <View
         style={[
-          styles.tagsBody,
-          isFlatCommonItemsPanel
-            ? { paddingHorizontal: contentPaddingHorizontal }
-            : null,
+          styles.tagsFrame,
+          {
+            borderColor: themeColors.tabTrackBorder,
+            backgroundColor: themeColors.tabPaneBackground,
+            marginHorizontal: contentPaddingHorizontal,
+          },
         ]}
       >
         <ScrollView
@@ -516,28 +573,32 @@ export default function CommonItemsScreen() {
           showsVerticalScrollIndicator={false}
           nestedScrollEnabled
         >
-          {mergedLabels.map((label) => (
-            <Pressable
-              key={label}
-              style={[
-                styles.valueChip,
-                {
-                  backgroundColor: activeChipStyle.backgroundColor,
-                  borderColor: activeChipStyle.borderColor,
-                  borderWidth: activeChipStyle.borderWidth,
-                },
-              ]}
-              onPress={() => handlePressTag(label)}
-              onLongPress={isPreview ? undefined : () => handleLongPressTag(label)}
-              delayLongPress={isPreview ? undefined : 300}
-            >
-              <Text style={[styles.valueChipText, { color: activeChipStyle.color }]}>{label}</Text>
-            </Pressable>
-          ))}
+          {mergedLabels.map((label) => {
+            const tagColor = isEpisodeTagTab ? getEventCalendarColor(label) : null;
+            return (
+              <Pressable
+                key={label}
+                style={[
+                  styles.valueChip,
+                  {
+                    backgroundColor: activeChipStyle.backgroundColor,
+                    borderColor: tagColor ?? activeChipStyle.borderColor,
+                    borderWidth: tagColor ? 2 : activeChipStyle.borderWidth,
+                  },
+                ]}
+                onPress={() => handlePressTag(label)}
+                onLongPress={isPreview ? undefined : () => handleLongPressTag(label)}
+                delayLongPress={isPreview ? undefined : 300}
+              >
+                {tagColor ? <View style={[styles.tagColorDot, { backgroundColor: tagColor }]} /> : null}
+                <Text style={[styles.valueChipText, { color: activeChipStyle.color }]}>{label}</Text>
+              </Pressable>
+            );
+          })}
         </ScrollView>
-        <View style={styles.addButtonRow}>
-          <AddCircleButton onPress={openAddEditor} accessibilityLabel={`${activeTab}を追加`} />
-        </View>
+      </View>
+      <View style={[styles.addButtonRow, { paddingHorizontal: contentPaddingHorizontal }]}>
+        <AddCircleButton onPress={openAddEditor} accessibilityLabel={`${activeTab}を追加`} />
       </View>
     </>
   );
@@ -585,6 +646,7 @@ export default function CommonItemsScreen() {
                   autoCapitalize="none"
                   autoFocus
                 />
+                {renderEpisodeTagColorPicker()}
                 {editingOriginalLabel ? (
                   <Pressable style={styles.editorDeleteButton} onPress={handleDeleteSimpleEditor}>
                     <Text style={styles.editorDeleteText}>削除</Text>
@@ -603,6 +665,7 @@ export default function CommonItemsScreen() {
                   autoCapitalize="none"
                   autoFocus
                 />
+                {renderEpisodeTagColorPicker()}
                 <View style={styles.editorActions}>
                   <Pressable style={styles.editorCancelButton} onPress={() => setEditorVisible(false)}>
                     <Text style={styles.editorCancelText}>キャンセル</Text>
@@ -771,25 +834,30 @@ const styles = StyleSheet.create({
     marginTop: 0,
     marginBottom: 0,
     backgroundColor: Theme.card,
+    borderWidth: 0,
   },
   tabTrackFlatPreview: {
     paddingHorizontal: 0,
   },
   itemsPanel: {
     alignSelf: 'stretch',
+    paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
   },
-  tabTagSeparator: {
-    paddingTop: Spacing.sm,
-    paddingBottom: Spacing.md,
-    alignItems: 'center',
+  tabAreaFrame: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingVertical: 4,
+    paddingHorizontal: 3,
   },
-  tabTagDivider: {
-    height: 1,
-    alignSelf: 'stretch',
-  },
-  tagsBody: {
-    paddingHorizontal: Spacing.xs,
+  tagsFrame: {
+    marginTop: 8,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingTop: 8,
+    paddingBottom: 8,
+    overflow: 'hidden',
   },
   tagsScroll: {
     flexGrow: 0,
@@ -799,17 +867,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'flex-start',
-    gap: 8,
-    paddingBottom: Spacing.xs,
+    columnGap: 4,
+    rowGap: 8,
   },
   valueChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: Radius.full,
   },
+  tagColorDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
   valueChipText: {
-    fontSize: 15,
+    fontSize: Typography.sm,
     fontWeight: '500',
+  },
+  colorPickerSection: {
+    gap: 8,
+  },
+  colorPickerLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  colorPickerRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  colorSwatch: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  colorSwatchSelected: {
+    borderColor: '#0f172a',
   },
   addButtonRow: {
     alignItems: 'flex-end',

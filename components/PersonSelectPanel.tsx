@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { sortFriendsBySelectedId } from '@/utils/selectionSortHelpers';
 import type { Option } from '@/components/episode/types';
 import { Radius, Theme } from '@/constants/theme';
 import type { Friend } from '@/types';
@@ -105,7 +106,7 @@ export function PersonSelectPanel({
   }, []);
 
   const filteredFriends = useMemo(() => {
-    return friends.filter((friend) => {
+    const filtered = friends.filter((friend) => {
       if (nameFilter.trim() && !friend.name.toLowerCase().includes(nameFilter.trim().toLowerCase())) {
         return false;
       }
@@ -117,7 +118,8 @@ export function PersonSelectPanel({
       }
       return true;
     });
-  }, [affiliationFilter, experienceFilter, friends, nameFilter]);
+    return sortFriendsBySelectedId(filtered, selectedId);
+  }, [affiliationFilter, experienceFilter, friends, nameFilter, selectedId]);
 
   const toggleSelect = (friendId: string) => {
     if (blockedIds.has(friendId)) return;

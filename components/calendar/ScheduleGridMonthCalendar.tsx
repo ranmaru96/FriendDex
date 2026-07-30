@@ -1,11 +1,23 @@
-import { useMemo } from 'react';
-import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { useCallback, useMemo, useState } from 'react';
+import {
+  Dimensions,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+  type ViewStyle,
+} from 'react-native';
 import { Radius, Theme } from '@/constants/theme';
+import { isMonochromeAppTheme } from '@/constants/appThemes';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import type { Event } from '@/types';
 import {
   buildScheduleGridChipsForDate,
   buildScheduleGridWeeks,
+  getScheduleGridBarSpanWidthPx,
   getScheduleGridWeekdayLabels,
+  SCHEDULE_GRID_CELL_BLEED,
   SCHEDULE_GRID_EVENT_SLOTS,
   type ScheduleGridDay,
   type ScheduleGridEventChip,
@@ -14,8 +26,11 @@ import {
 const GRID_BORDER = Theme.inputBorder;
 const IN_MONTH_BG = Theme.card;
 const OUT_MONTH_BG = '#f1f5f9';
-const SELECTED_BG = '#e8f4f1';
-const TODAY_RING = Theme.accent;
+/** 当日セルの薄い黄オレンジ背景 */
+const TODAY_BG = '#FFF8E6';
+/** 当日日付バッジ（画像参考のオレンジ） */
+const TODAY_BADGE_BG = '#F5A623';
+const SELECTED_RING = Theme.accent;
 const SATURDAY_COLOR = '#2563eb';
 const SUNDAY_COLOR = '#dc2626';
 const CHIP_HEIGHT = 14;
@@ -23,7 +38,7 @@ const CHIP_GAP = 2;
 const DATE_ROW_HEIGHT = 18;
 const ROW_PADDING = 3;
 /** セル内 padding + 隣接セルへのバー連結用 */
-const CELL_BLEED = 3;
+const CELL_BLEED = SCHEDULE_GRID_CELL_BLEED;
 const DAY_CELL_HEIGHT =
   DATE_ROW_HEIGHT +
   ROW_PADDING * 2 +
@@ -41,16 +56,26 @@ type ScheduleGridMonthCalendarProps = {
   edgeToEdge?: boolean;
 };
 
-function getChipBarStyles(chip: ScheduleGridEventChip): ViewStyle[] {
+function getChipBarStyles(chip: ScheduleGridEventChip, barWidthPx: number | null): ViewStyle[] {
   const barStyles: ViewStyle[] = [styles.eventChip, { backgroundColor: chip.color }];
+
+  if (barWidthPx != null) {
+    barStyles.push({
+      width: barWidthPx,
+      alignSelf: 'flex-start',
+      overflow: 'hidden',
+      zIndex: 2,
+    });
+  }
 
   switch (chip.span) {
     case 'start':
-      barStyles.push(
-        styles.eventChipStart,
-        styles.eventChipConnectRight,
-        styles.eventChipRadiusLeft
-      );
+      barStyles.push(styles.eventChipStart, styles.eventChipRadiusLeft);
+      if (chip.spanDaysInWeek <= 1) {
+        barStyles.push(styles.eventChipConnectRight);
+      } else {
+        barStyles.push(styles.eventChipRadiusRight);
+      }
       break;
     case 'middle':
       barStyles.push(styles.eventChipMiddle, styles.eventChipConnectBoth);
@@ -66,9 +91,14 @@ function getChipBarStyles(chip: ScheduleGridEventChip): ViewStyle[] {
   return barStyles;
 }
 
-function EventChip({ chip }: { chip: ScheduleGridEventChip }) {
+function EventChip({ chip, cellWidth }: { chip: ScheduleGridEventChip; cellWidth: number }) {
+  const spansMultipleDays = chip.label != null && chip.spanDaysInWeek > 1;
+  const barWidthPx = spansMultipleDays
+    ? getScheduleGridBarSpanWidthPx(cellWidth, chip.spanDaysInWeek)
+    : null;
+
   return (
-    <View style={getChipBarStyles(chip)}>
+    <View style={getChipBarStyles(chip, barWidthPx)}>
       {chip.label ? (
         <Text style={styles.eventChipText} numberOfLines={1} allowFontScaling={false}>
           {chip.label}
@@ -80,6 +110,8 @@ function EventChip({ chip }: { chip: ScheduleGridEventChip }) {
 
 function DayCell({
   day,
+  week,
+  cellWidth,
   selectedDate,
   todayKey,
   events,
@@ -87,6 +119,8 @@ function DayCell({
   isLastColumn,
 }: {
   day: ScheduleGridDay;
+  week: ScheduleGridDay[];
+  cellWidth: number;
   selectedDate: string;
   todayKey: string;
   events: Event[];
@@ -96,8 +130,8 @@ function DayCell({
   const isSelected = day.dateKey === selectedDate;
   const isToday = day.dateKey === todayKey;
   const chips = useMemo(
-    () => buildScheduleGridChipsForDate(events, day.dateKey),
-    [day.dateKey, events]
+    () => buildScheduleGridChipsForDate(events, day.dateKey, week, cellWidth),
+    [cellWidth, day.dateKey, events, week]
   );
 
   const dateColor = useMemo(() => {
@@ -114,29 +148,29 @@ function DayCell({
   }, [day.dayOfWeek, day.inCurrentMonth]);
 
   const emptySlots = Math.max(0, SCHEDULE_GRID_EVENT_SLOTS - chips.length);
+  const hasSpanningLabel = chips.some((chip) => chip.label != null && chip.spanDaysInWeek > 1);
 
   return (
     <Pressable
       style={[
         styles.dayCell,
         !isLastColumn ? styles.dayCellBorderRight : null,
-        { backgroundColor: day.inCurrentMonth ? IN_MONTH_BG : OUT_MONTH_BG },
-        isSelected ? styles.dayCellSelected : null,
+        {
+          backgroundColor: isToday
+            ? TODAY_BG
+            : day.inCurrentMonth
+              ? IN_MONTH_BG
+              : OUT_MONTH_BG,
+        },
+        hasSpanningLabel ? styles.dayCellSpanningLabel : null,
       ]}
       onPress={() => onDayPress(day.dateKey)}
     >
+      {isSelected ? <View pointerEvents="none" style={styles.selectedFrame} /> : null}
       <View style={styles.dateRow}>
         {isToday ? (
-          <View style={[styles.todayCircle, isSelected ? styles.todayCircleSelected : null]}>
-            <Text
-              style={[
-                styles.dateText,
-                styles.todayDateText,
-                isSelected ? styles.selectedDateText : null,
-                { color: isSelected ? Theme.onAccent : dateColor },
-              ]}
-              allowFontScaling={false}
-            >
+          <View style={styles.todayBadge}>
+            <Text style={styles.todayBadgeText} allowFontScaling={false}>
               {day.day}
             </Text>
           </View>
@@ -156,7 +190,7 @@ function DayCell({
 
       <View style={styles.chipColumn}>
         {chips.map((chip) => (
-          <EventChip key={`${chip.eventId}-${day.dateKey}`} chip={chip} />
+          <EventChip key={`${chip.eventId}-${day.dateKey}`} chip={chip} cellWidth={cellWidth} />
         ))}
         {Array.from({ length: emptySlots }).map((_, index) => (
           <View key={`slot-${index}`} style={styles.chipPlaceholder} />
@@ -178,6 +212,18 @@ export function ScheduleGridMonthCalendar({
 }: ScheduleGridMonthCalendarProps) {
   const weeks = useMemo(() => buildScheduleGridWeeks(year, month), [month, year]);
   const weekdayLabels = getScheduleGridWeekdayLabels();
+  const [cellWidth, setCellWidth] = useState(() => Dimensions.get('window').width / 7);
+  const appTheme = useAppThemeOptional();
+  const outerBorderColor = appTheme?.colors.calendarOuterBorder ?? GRID_BORDER;
+  const bottomSeparatorColor = appTheme?.colors.tabBarBorder ?? outerBorderColor;
+  const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
+
+  const handleGridLayout = useCallback((event: LayoutChangeEvent) => {
+    const width = event.nativeEvent.layout.width;
+    if (width > 0) {
+      setCellWidth(width / 7);
+    }
+  }, []);
 
   const shiftMonth = (delta: number) => {
     const next = new Date(year, month - 1 + delta, 1);
@@ -185,7 +231,19 @@ export function ScheduleGridMonthCalendar({
   };
 
   return (
-    <View style={[styles.root, edgeToEdge ? styles.rootEdgeToEdge : null]}>
+    <View
+      style={[
+        styles.root,
+        {
+          borderColor: outerBorderColor,
+          /** モノクロ: 上はヘッダー下線と接するので不要。下は薄いセパレーターだけ残す */
+          borderTopWidth: isMonochrome ? 0 : StyleSheet.hairlineWidth,
+          borderBottomWidth: isMonochrome ? 1.5 : 0,
+          borderBottomColor: isMonochrome ? bottomSeparatorColor : outerBorderColor,
+        },
+        edgeToEdge ? styles.rootEdgeToEdge : null,
+      ]}
+    >
       <View style={styles.header}>
         <Pressable style={styles.navButton} onPress={() => shiftMonth(-1)} hitSlop={8}>
           <Text style={styles.navButtonText}>‹</Text>
@@ -215,7 +273,7 @@ export function ScheduleGridMonthCalendar({
         ))}
       </View>
 
-      <View style={styles.grid}>
+      <View style={styles.grid} onLayout={handleGridLayout}>
         {weeks.map((week, weekIndex) => (
           <View
             key={`week-${weekIndex}`}
@@ -225,6 +283,8 @@ export function ScheduleGridMonthCalendar({
               <DayCell
                 key={day.dateKey}
                 day={day}
+                week={week}
+                cellWidth={cellWidth}
                 selectedDate={selectedDate}
                 todayKey={todayKey}
                 events={events}
@@ -241,8 +301,8 @@ export function ScheduleGridMonthCalendar({
 
 const styles = StyleSheet.create({
   root: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: GRID_BORDER,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderRightWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.sm,
     overflow: 'hidden',
     backgroundColor: IN_MONTH_BG,
@@ -326,12 +386,16 @@ const styles = StyleSheet.create({
     borderRightWidth: StyleSheet.hairlineWidth,
     borderRightColor: GRID_BORDER,
   },
-  dayCellSelected: {
-    backgroundColor: SELECTED_BG,
+  selectedFrame: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: 1.5,
+    borderColor: SELECTED_RING,
+    zIndex: 4,
   },
   dateRow: {
     height: DATE_ROW_HEIGHT,
     paddingHorizontal: 2,
+    alignItems: 'flex-start',
     justifyContent: 'flex-start',
     zIndex: 1,
   },
@@ -343,27 +407,28 @@ const styles = StyleSheet.create({
   selectedDateText: {
     fontWeight: '700',
   },
-  todayCircle: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    borderWidth: 1.5,
-    borderColor: TODAY_RING,
+  todayBadge: {
+    alignSelf: 'flex-start',
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 2,
+    borderRadius: 2,
+    backgroundColor: TODAY_BADGE_BG,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  todayCircleSelected: {
-    backgroundColor: Theme.accent,
-    borderColor: Theme.accent,
-  },
-  todayDateText: {
-    fontSize: 11,
+  todayBadgeText: {
+    fontSize: 10,
     fontWeight: '700',
-    lineHeight: 14,
+    color: '#ffffff',
+    lineHeight: 12,
   },
   chipColumn: {
     gap: CHIP_GAP,
     overflow: 'visible',
+  },
+  dayCellSpanningLabel: {
+    zIndex: 3,
   },
   eventChip: {
     height: CHIP_HEIGHT,

@@ -12,6 +12,8 @@ type SubToolScreenTemplateProps = {
   title?: string;
   onBack?: () => void;
   right?: ReactNode;
+  /** 中央タイトルの右側（編集ボタンなど） */
+  titleTrailing?: ReactNode;
   /** トップバー直下（PillTabBar など） */
   header?: ReactNode;
   scrollable?: boolean;
@@ -30,6 +32,7 @@ export function SubToolScreenTemplate({
   title,
   onBack,
   right,
+  titleTrailing,
   header,
   scrollable = true,
   keyboardAware = false,
@@ -87,7 +90,7 @@ export function SubToolScreenTemplate({
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
       {useTopBar ? (
-        <ScreenTopBar title={title} onBack={onBack} right={right} />
+        <ScreenTopBar title={title} onBack={onBack} right={right} titleTrailing={titleTrailing} />
       ) : null}
       {header}
       {body}

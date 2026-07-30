@@ -11,7 +11,8 @@ import {
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Theme, Spacing, ScreenHorizontalInset } from '@/constants/theme';
-import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { moneyLoanFormStyles as formStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
@@ -400,6 +401,8 @@ export function MoneyLoanSessionEditModal({
   onClose,
   onSaved,
 }: MoneyLoanSessionEditModalProps) {
+  const { colors: appTheme } = useAppTheme();
+  const headerStyles = useSubScreenHeaderStyles();
   const [titleDraft, setTitleDraft] = useState('');
   const [batchDrafts, setBatchDrafts] = useState<BatchEditDraft[]>([]);
   const [formError, setFormError] = useState('');
@@ -611,13 +614,13 @@ export function MoneyLoanSessionEditModal({
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
-      <SafeAreaView style={styles.container}>
-        <View style={subScreenHeaderStyles.bar}>
-          <Pressable style={subScreenHeaderStyles.sideBack} onPress={onClose} hitSlop={8}>
-            <Text style={subScreenHeaderStyles.backText}>‹ 戻る</Text>
+      <SafeAreaView style={[styles.container, { backgroundColor: appTheme.screenBackground }]}>
+        <View style={headerStyles.bar}>
+          <Pressable style={headerStyles.sideBack} onPress={onClose} hitSlop={8}>
+            <Text style={headerStyles.backText}>‹ 戻る</Text>
           </Pressable>
-          <Text style={subScreenHeaderStyles.title}>編集</Text>
-          <Pressable style={subScreenHeaderStyles.side} onPress={handleSaveAll} hitSlop={8}>
+          <Text style={headerStyles.title}>編集</Text>
+          <Pressable style={headerStyles.side} onPress={handleSaveAll} hitSlop={8}>
             <Text style={styles.headerSave}>保存</Text>
           </Pressable>
         </View>
@@ -696,7 +699,6 @@ export function MoneyLoanSessionEditModal({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Theme.screenBase,
   },
   headerSave: {
     fontSize: 15,

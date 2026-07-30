@@ -5,6 +5,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { getAllFriends, getQrScannedFriends, initializeDatabase } from '../db';
 import { Friend } from '../types';
 import { formatScannedAtLabel } from '@/utils/qrScanHelpers';
+import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import { Theme } from '@/constants/theme';
 import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
 
@@ -162,7 +163,7 @@ export default function FriendsScreen() {
   }, [name, affiliation1, affiliation2]);
 
   const filteredShareProfiles = useMemo(() => {
-    return shareProfiles.filter((profile) => {
+    const filtered = shareProfiles.filter((profile) => {
       if (profileNameFilter.trim() && !profile.name.toLowerCase().includes(profileNameFilter.trim().toLowerCase())) {
         return false;
       }
@@ -174,7 +175,8 @@ export default function FriendsScreen() {
       }
       return true;
     });
-  }, [shareProfiles, profileNameFilter, profileAffiliationFilter, profileExperienceFilter]);
+    return sortFriendsBySelectedIds(filtered, new Set(selectedProfileIds));
+  }, [shareProfiles, profileNameFilter, profileAffiliationFilter, profileExperienceFilter, selectedProfileIds]);
 
   const selectedProfiles = useMemo(() => {
     const selectedSet = new Set(selectedProfileIds);
@@ -215,7 +217,7 @@ export default function FriendsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
       <View style={styles.container}>
         <View style={[styles.toolbarRow, { paddingHorizontal: listPaddingHorizontal }]}>
           <View style={styles.toolbarSpacer} />
@@ -497,7 +499,6 @@ export default function FriendsScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: Theme.screenBase,
   },
   container: {
     flex: 1,

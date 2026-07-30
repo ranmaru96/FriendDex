@@ -12,7 +12,8 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
-import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { getAllProfiles, getMyself, initializeDatabase, updateProfile } from '../db';
 import { MBTIType, Profile } from '../types';
 
@@ -89,6 +90,8 @@ const parseOptionalNumber = (value: string): number | null => {
 
 export default function MyProfileScreen() {
   const router = useRouter();
+  const { colors: appTheme } = useAppTheme();
+  const headerStyles = useSubScreenHeaderStyles();
   const [profileId, setProfileId] = useState('');
   const [form, setForm] = useState<MyProfileForm>(emptyForm);
   const [publicFields, setPublicFields] = useState<string[]>([]);
@@ -180,13 +183,13 @@ export default function MyProfileScreen() {
 
   if (!hasProfile) {
     return (
-      <SafeAreaView style={styles.safe}>
-        <View style={subScreenHeaderStyles.bar}>
-          <Pressable style={subScreenHeaderStyles.sideBack} onPress={() => router.back()}>
-            <Text style={subScreenHeaderStyles.backText}>‹ 戻る</Text>
+      <SafeAreaView style={[styles.safe, { backgroundColor: appTheme.screenBackground }]}>
+        <View style={headerStyles.bar}>
+          <Pressable style={headerStyles.sideBack} onPress={() => router.back()}>
+            <Text style={headerStyles.backText}>‹ 戻る</Text>
           </Pressable>
-          <Text style={subScreenHeaderStyles.title}>自分のプロフィール</Text>
-          <View style={subScreenHeaderStyles.side} />
+          <Text style={headerStyles.title}>自分のプロフィール</Text>
+          <View style={headerStyles.side} />
         </View>
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyMessage}>本人設定が完了していません</Text>
@@ -199,13 +202,13 @@ export default function MyProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={subScreenHeaderStyles.bar}>
-        <Pressable style={subScreenHeaderStyles.sideBack} onPress={() => router.back()}>
-          <Text style={subScreenHeaderStyles.backText}>‹ 戻る</Text>
+    <SafeAreaView style={[styles.safe, { backgroundColor: appTheme.screenBackground }]}>
+      <View style={headerStyles.bar}>
+        <Pressable style={headerStyles.sideBack} onPress={() => router.back()}>
+          <Text style={headerStyles.backText}>‹ 戻る</Text>
         </Pressable>
-        <Text style={subScreenHeaderStyles.title}>自分のプロフィール</Text>
-        <View style={subScreenHeaderStyles.side} />
+        <Text style={headerStyles.title}>自分のプロフィール</Text>
+        <View style={headerStyles.side} />
       </View>
 
       <ScrollView
@@ -255,7 +258,6 @@ export default function MyProfileScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Theme.screenBase,
   },
   scrollContent: {
     paddingHorizontal: Spacing.lg,

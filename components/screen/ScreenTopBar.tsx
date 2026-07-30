@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type TextStyle, type ViewStyle } from 'react-native';
 import { Radius, Spacing, Theme } from '@/constants/theme';
-import { subScreenHeaderStyles } from './subScreenHeaderStyles';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 
 type ScreenTopBarProps = {
   title?: string;
@@ -13,7 +13,7 @@ type ScreenTopBarProps = {
   titleLeading?: ReactNode;
   /** 中央タイトルの右側 */
   titleTrailing?: ReactNode;
-  /** subScreen: screenBase 背景＋白文字。plain: 背景なし（カメラ黒画面など） */
+  /** subScreen: screenBase 背景＋テーマ文字色。plain: 背景なし（カメラ黒画面など） */
   variant?: 'subScreen' | 'plain';
   style?: ViewStyle;
   backTextStyle?: TextStyle;
@@ -33,11 +33,16 @@ export function ScreenTopBar({
   backTextStyle,
   titleStyle,
 }: ScreenTopBarProps) {
+  const appTheme = useAppThemeOptional();
+  const screenBackground = appTheme?.colors.screenBackground ?? Theme.screenBase;
+  const topBarText = appTheme?.colors.topBarText ?? Theme.topBarText;
+  const topBarBorder = appTheme?.colors.topBarBorder ?? Theme.topBarBorder;
+
   const leftContent =
     left ??
     (onBack ? (
       <Pressable style={styles.sidePressable} onPress={onBack} hitSlop={8}>
-        <Text style={[styles.backText, backTextStyle]}>{backLabel}</Text>
+        <Text style={[styles.backText, { color: topBarText }, backTextStyle]}>{backLabel}</Text>
       </Pressable>
     ) : null);
 
@@ -45,7 +50,11 @@ export function ScreenTopBar({
     <View
       style={[
         styles.bar,
-        variant === 'subScreen' && styles.barSubScreen,
+        variant === 'subScreen' && {
+          backgroundColor: screenBackground,
+          borderBottomWidth: StyleSheet.hairlineWidth,
+          borderBottomColor: topBarBorder,
+        },
         style,
       ]}
     >
@@ -53,13 +62,13 @@ export function ScreenTopBar({
       {titleLeading != null || titleTrailing != null ? (
         <View style={styles.titleRow}>
           <View style={styles.titleSide}>{titleLeading ?? null}</View>
-          <Text style={[styles.title, titleStyle]} numberOfLines={1}>
+          <Text style={[styles.title, { color: topBarText }, titleStyle]} numberOfLines={1}>
             {title ?? ''}
           </Text>
           <View style={styles.titleSide}>{titleTrailing ?? null}</View>
         </View>
       ) : (
-        <Text style={[styles.title, titleStyle]} numberOfLines={1}>
+        <Text style={[styles.title, { color: topBarText }, titleStyle]} numberOfLines={1}>
           {title ?? ''}
         </Text>
       )}
@@ -73,14 +82,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    paddingVertical: 0,
     gap: Spacing.sm,
-    minHeight: 48,
-  },
-  barSubScreen: {
-    backgroundColor: Theme.screenBase,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Theme.topBarBorder,
+    minHeight: 44,
   },
   sideLeft: {
     minWidth: 64,
@@ -110,12 +114,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  backText: subScreenHeaderStyles.backText,
+  backText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
   title: {
     flex: 1,
     fontSize: 17,
     fontWeight: '700',
-    color: Theme.topBarText,
     textAlign: 'center',
   },
 });

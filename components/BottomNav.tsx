@@ -4,6 +4,7 @@ import { ComponentProps } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme } from '@/constants/theme';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 
 type TabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'friends';
 
@@ -27,15 +28,33 @@ const TABS: {
 
 export default function BottomNav({ active }: BottomNavProps) {
   const insets = useSafeAreaInsets();
+  const appTheme = useAppThemeOptional();
+  const tabBarBackground = appTheme?.colors.tabBarBackground ?? Theme.tabBarBase;
+  const tabBarBorder = appTheme?.colors.tabBarBorder ?? Theme.tabBarBorder;
+  const tabBarInactive = appTheme?.colors.tabBarInactive ?? Theme.tabBarInactiveIcon;
+  const tabBarActivePill = appTheme?.colors.tabBarActivePill ?? Theme.tabBarActivePill;
+  const tabBarActiveText = appTheme?.colors.tabBarActiveText ?? '#ffffff';
 
   return (
-    <View style={[styles.container, { paddingBottom: insets.bottom / 2 + 8 }]}>
+    <View
+      style={[
+        styles.container,
+        {
+          paddingBottom: insets.bottom / 2 + 8,
+          backgroundColor: tabBarBackground,
+          borderColor: tabBarBorder,
+        },
+      ]}
+    >
       {TABS.map((tab) => {
         const isActive = active === tab.key;
         return (
           <TouchableOpacity
             key={tab.key}
-            style={[styles.tabPill, isActive && styles.tabPillActive]}
+            style={[
+              styles.tabPill,
+              isActive ? { backgroundColor: tabBarActivePill } : null,
+            ]}
             onPress={() => router.replace(tab.route)}
             accessibilityRole="tab"
             accessibilityState={{ selected: isActive }}
@@ -44,9 +63,16 @@ export default function BottomNav({ active }: BottomNavProps) {
             <Ionicons
               name={tab.icon}
               size={22}
-              color={isActive ? '#ffffff' : Theme.tabBarInactiveIcon}
+              color={isActive ? tabBarActiveText : tabBarInactive}
             />
-            <Text style={[styles.label, isActive && styles.labelActive]}>{tab.label}</Text>
+            <Text
+              style={[
+                styles.label,
+                { color: isActive ? tabBarActiveText : tabBarInactive },
+              ]}
+            >
+              {tab.label}
+            </Text>
           </TouchableOpacity>
         );
       })}
@@ -57,9 +83,7 @@ export default function BottomNav({ active }: BottomNavProps) {
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    backgroundColor: Theme.tabBarBase,
     borderTopWidth: 1.5,
-    borderColor: Theme.tabBarBorder,
     paddingTop: 8,
     paddingHorizontal: 8,
   },
@@ -72,15 +96,8 @@ const styles = StyleSheet.create({
     gap: 3,
     backgroundColor: 'transparent',
   },
-  tabPillActive: {
-    backgroundColor: Theme.tabBarActivePill,
-  },
   label: {
     fontSize: 9,
     fontWeight: '500',
-    color: Theme.tabBarInactiveLabel,
-  },
-  labelActive: {
-    color: '#ffffff',
   },
 });

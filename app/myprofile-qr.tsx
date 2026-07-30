@@ -18,7 +18,8 @@ import QRCode from 'react-native-qrcode-skia';
 import Svg, { Circle, Path } from 'react-native-svg';
 import ViewShot from 'react-native-view-shot';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
-import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { getAllProfiles, ensureProfileUserId, getMyself, initializeDatabase } from '../db';
 import { Profile } from '../types';
 
@@ -123,6 +124,8 @@ function ActionButton({ icon, label, onPress }: ActionButtonProps) {
 
 export default function MyProfileQrScreen() {
   const router = useRouter();
+  const { colors: appTheme } = useAppTheme();
+  const headerStyles = useSubScreenHeaderStyles();
   const cardShotRef = useRef<ViewShot>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isReady, setIsReady] = useState(false);
@@ -224,14 +227,14 @@ export default function MyProfileQrScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <View style={subScreenHeaderStyles.bar}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: appTheme.screenBackground }]}>
+      <View style={headerStyles.bar}>
         <Pressable style={styles.headerIconButton} onPress={() => router.back()}>
-          <Ionicons name="close" size={28} color={Theme.topBarText} />
+          <Ionicons name="close" size={28} color={appTheme.topBarText} />
         </Pressable>
-        <Text style={subScreenHeaderStyles.title}>QRコード名刺</Text>
+        <Text style={headerStyles.title}>QRコード</Text>
         <Pressable style={styles.headerIconButton} onPress={() => router.push('/scan')}>
-          <Ionicons name="scan-outline" size={24} color={Theme.topBarText} />
+          <Ionicons name="scan-outline" size={24} color={appTheme.topBarText} />
         </Pressable>
       </View>
 
@@ -304,7 +307,6 @@ export default function MyProfileQrScreen() {
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: Theme.screenBase,
   },
   headerIconButton: {
     width: 44,
@@ -314,6 +316,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
     paddingBottom: 32,
     alignItems: 'center',
   },

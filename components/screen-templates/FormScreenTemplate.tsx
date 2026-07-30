@@ -4,7 +4,7 @@ import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { Spacing } from '@/constants/theme';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
-import { subScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 
 type FormScreenTemplateProps = {
@@ -31,12 +31,13 @@ export function FormScreenTemplate({
   scrollContentStyle,
 }: FormScreenTemplateProps) {
   const kit = useUiKit();
+  const headerStyles = useSubScreenHeaderStyles();
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
       {titleAlign === 'left' ? (
-        <View style={subScreenHeaderStyles.bar}>
-          <Text style={subScreenHeaderStyles.titleLeft} numberOfLines={1}>
+        <View style={headerStyles.bar}>
+          <Text style={headerStyles.titleLeft} numberOfLines={1}>
             {title ?? ''}
           </Text>
           <View style={styles.titleSideRight}>{right ?? null}</View>
