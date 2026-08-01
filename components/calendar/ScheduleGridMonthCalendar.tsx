@@ -8,6 +8,8 @@ import {
   type LayoutChangeEvent,
   type ViewStyle,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import { Radius, Theme } from '@/constants/theme';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
@@ -39,6 +41,8 @@ const DATE_ROW_HEIGHT = 18;
 const ROW_PADDING = 3;
 /** セル内 padding + 隣接セルへのバー連結用 */
 const CELL_BLEED = SCHEDULE_GRID_CELL_BLEED;
+/** 横フリックで月移動と判定する最小移動量 */
+const MONTH_SWIPE_THRESHOLD = 48;
 const DAY_CELL_HEIGHT =
   DATE_ROW_HEIGHT +
   ROW_PADDING * 2 +
@@ -230,12 +234,39 @@ export function ScheduleGridMonthCalendar({
     }
   }, []);
 
-  const shiftMonth = (delta: number) => {
-    const next = new Date(year, month - 1 + delta, 1);
-    onMonthChange(next.getFullYear(), next.getMonth() + 1);
-  };
+  const shiftMonth = useCallback(
+    (delta: number) => {
+      const next = new Date(year, month - 1 + delta, 1);
+      onMonthChange(next.getFullYear(), next.getMonth() + 1);
+    },
+    [month, onMonthChange, year]
+  );
+
+  const handleSwipeMonth = useCallback(
+    (direction: 'prev' | 'next') => {
+      shiftMonth(direction === 'next' ? 1 : -1);
+    },
+    [shiftMonth]
+  );
+
+  const monthSwipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-24, 24])
+        .failOffsetY([-20, 20])
+        .onEnd((event) => {
+          'worklet';
+          if (event.translationX <= -MONTH_SWIPE_THRESHOLD) {
+            runOnJS(handleSwipeMonth)('next');
+          } else if (event.translationX >= MONTH_SWIPE_THRESHOLD) {
+            runOnJS(handleSwipeMonth)('prev');
+          }
+        }),
+    [handleSwipeMonth]
+  );
 
   return (
+    <GestureDetector gesture={monthSwipeGesture}>
     <View
       style={[
         styles.root,
@@ -303,6 +334,7 @@ export function ScheduleGridMonthCalendar({
         ))}
       </View>
     </View>
+    </GestureDetector>
   );
 }
 

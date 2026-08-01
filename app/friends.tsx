@@ -7,7 +7,7 @@ import { Friend } from '../types';
 import { formatScannedAtLabel } from '@/utils/qrScanHelpers';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import { Theme } from '@/constants/theme';
-import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   contentInputStyle,
@@ -168,10 +168,9 @@ function SelectField({
 
 export default function FriendsScreen() {
   const kit = useUiKit();
-  const { isPreview } = useUiPreview();
   const content = useContentColors();
   const listPaddingHorizontal = kit.listScreenPaddingHorizontal;
-  const previewBorderRadius = isPreview ? kit.friendsScreenBorderRadius : undefined;
+  const friendsScreenBorderRadius = kit.friendsScreenBorderRadius;
   const router = useRouter();
   const [qrFriends, setQrFriends] = useState<Friend[]>([]);
   const [name, setName] = useState('');
@@ -276,34 +275,34 @@ export default function FriendsScreen() {
             style={[
               styles.toolbarIconButton,
               contentSurfaceStyle(content),
-              previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+              { borderRadius: friendsScreenBorderRadius },
             ]}
             onPress={() => router.push('/myprofile')}
             accessibilityLabel="QR公開項目の設定"
           >
-            <Ionicons name="person-circle-outline" size={24} color={content.contentTextSecondary} />
+            <Ionicons name="person-circle-outline" size={24} color={content.contentText} />
           </Pressable>
           <Pressable
             style={[
               styles.toolbarIconButton,
               contentSurfaceStyle(content),
-              previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+              { borderRadius: friendsScreenBorderRadius },
             ]}
             onPress={() => router.push('/myprofile-qr')}
             accessibilityLabel="QRコードを表示"
           >
-            <Ionicons name="qr-code-outline" size={24} color={content.contentTextSecondary} />
+            <Ionicons name="qr-code-outline" size={24} color={content.contentText} />
           </Pressable>
           <Pressable
             style={[
               styles.toolbarIconButton,
               contentSurfaceStyle(content),
-              previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+              { borderRadius: friendsScreenBorderRadius },
             ]}
             onPress={() => router.push('/scan')}
             accessibilityLabel="QRコードを読み取る"
           >
-            <Ionicons name="scan-outline" size={24} color={content.contentTextSecondary} />
+            <Ionicons name="scan-outline" size={24} color={content.contentText} />
           </Pressable>
         </View>
 
@@ -318,7 +317,7 @@ export default function FriendsScreen() {
             style={[
               styles.section,
               contentSurfaceStyle(content),
-              previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+              { borderRadius: friendsScreenBorderRadius },
             ]}
           >
             <Text style={[styles.sectionTitle, contentTextStyle(content)]}>QRで追加した人</Text>
@@ -331,7 +330,7 @@ export default function FriendsScreen() {
                   style={[
                     styles.qrFriendRow,
                     contentSurfaceStyle(content),
-                    previewBorderRadius != null ? { borderRadius: previewBorderRadius } : null,
+                    { borderRadius: friendsScreenBorderRadius },
                   ]}
                   onPress={() => router.push({ pathname: '/detail', params: { id: friend.id } })}
                 >

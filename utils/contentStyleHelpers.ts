@@ -1,5 +1,6 @@
 import type { TextStyle, ViewStyle } from 'react-native';
 import type { AppThemeContentColorFields } from '@/constants/appThemes/contentColors';
+import type { AppThemeVariant } from '@/constants/appThemes/types';
 
 /** カード／パネルの面 */
 export function contentSurfaceStyle(c: AppThemeContentColorFields): ViewStyle {
@@ -72,4 +73,14 @@ export function contentSwitchColors(c: AppThemeContentColorFields): {
     thumbColorOn: c.contentText,
     thumbColorOff: c.contentCard,
   };
+}
+
+/** iOS DateTimePicker のスピナー文字色（ブラックテーマ向け） */
+export function contentDateTimePickerProps(
+  variant: AppThemeVariant | null | undefined
+): { themeVariant: 'dark'; textColor: string } | Record<string, never> {
+  if (variant === 'black') {
+    return { themeVariant: 'dark', textColor: '#FFFFFF' };
+  }
+  return {};
 }

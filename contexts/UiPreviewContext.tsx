@@ -108,9 +108,6 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
       inputBg: appThemeColors.contentInputBg as UiKit['inputBg'],
       inputBorder: appThemeColors.contentSearchFieldBorder as UiKit['inputBorder'],
     };
-    if (variant !== 'preview') {
-      return next;
-    }
     const cardStyle = calendarEventCardStyle ?? next.calendarEventCardStyle;
     if (cardStyle !== next.calendarEventCardStyle) {
       next = { ...next, calendarEventCardStyle: cardStyle };

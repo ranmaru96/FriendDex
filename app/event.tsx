@@ -28,8 +28,10 @@ import {
   contentSwitchColors,
   contentTagStyle,
   contentTextStyle,
+  contentDateTimePickerProps,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import {
   createEvent,
   deleteEvent,
@@ -108,6 +110,8 @@ const addDaysToDateKey = (dateKey: string, days: number): string => {
 export default function EventScreen() {
   const router = useRouter();
   const content = useContentColors();
+  const appTheme = useAppThemeOptional();
+  const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const switchColors = contentSwitchColors(content);
   const fieldCorner = { borderRadius: 0 };
   const params = useLocalSearchParams<{ eventId?: string; date?: string }>();
@@ -666,6 +670,7 @@ export default function EventScreen() {
                 display="spinner"
                 locale="ja-JP"
                 style={styles.picker}
+                {...dateTimePickerProps}
                 minimumDate={
                   allDay && activePicker === 'endDate'
                     ? parseDateKey(startDateKey)

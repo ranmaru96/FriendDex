@@ -18,6 +18,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { DetailTabKey } from '@/constants/detailThemes';
 import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
 import { TabScreenTemplate } from '@/components/screen-templates';
@@ -31,6 +32,7 @@ import { useAppTheme } from './contexts/AppThemeContext';
 import { createDetailStyles } from './utils/detailStyles';
 import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
 import { useContentColors } from '@/utils/useContentColors';
+import { contentDateTimePickerProps } from '@/utils/contentStyleHelpers';
 import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import {
@@ -542,6 +544,7 @@ export default function DetailScreen() {
   const { colors: appTheme, variant: appThemeVariant } = useAppTheme();
   const content = useContentColors();
   const isMonochromeTheme = isMonochromeAppTheme(appThemeVariant);
+  const dateTimePickerProps = contentDateTimePickerProps(appThemeVariant);
   const bundle = useMemo(
     () =>
       bridgeDetailBundleForAppTheme(
@@ -990,6 +993,36 @@ export default function DetailScreen() {
       selectableProfiles.length,
       sinceYear,
     ]
+  );
+
+  const homeAdjacentFriendIdsRef = useRef(homeAdjacentFriendIds);
+  homeAdjacentFriendIdsRef.current = homeAdjacentFriendIds;
+  const goToAdjacentFriendRef = useRef(goToAdjacentFriend);
+  goToAdjacentFriendRef.current = goToAdjacentFriend;
+
+  const handleBodySwipeAdjacent = useCallback((direction: AdjacentDirection) => {
+    const { prevId, nextId } = homeAdjacentFriendIdsRef.current;
+    if (direction === 'next') {
+      goToAdjacentFriendRef.current(nextId, 'next');
+    } else {
+      goToAdjacentFriendRef.current(prevId, 'prev');
+    }
+  }, []);
+
+  const detailBodySwipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-28, 28])
+        .failOffsetY([-24, 24])
+        .onEnd((event) => {
+          'worklet';
+          if (event.translationX <= -56) {
+            runOnJS(handleBodySwipeAdjacent)('next');
+          } else if (event.translationX >= 56) {
+            runOnJS(handleBodySwipeAdjacent)('prev');
+          }
+        }),
+    [handleBodySwipeAdjacent]
   );
 
   useLayoutEffect(() => {
@@ -1718,6 +1751,7 @@ export default function DetailScreen() {
           />
         }
       >
+        <GestureDetector gesture={detailBodySwipeGesture}>
         <View style={{ overflow: 'hidden', width: '100%', flex: 1 }}>
           {adjacentTransition ? (
             <>
@@ -2322,9 +2356,8 @@ export default function DetailScreen() {
                       mode="date"
                       display="spinner"
                       locale="ja-JP"
-                      themeVariant="dark"
-                      textColor="#ffffff"
                       style={styles.datePickerSelf}
+                      {...dateTimePickerProps}
                       onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                         if (Platform.OS !== 'ios') setShowSayingDatePicker(false);
                         if (selected) setSayingDate(formatDateToYMD(selected));
@@ -2387,6 +2420,7 @@ export default function DetailScreen() {
               />
           </View>
         </View>
+        </GestureDetector>
       </TabScreenTemplate>
       <EpisodeFormOverlay
         visible={isEpisodeFormVisible}

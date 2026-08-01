@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import type { DateData } from 'react-native-calendars';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { CalendarDayCell } from '@/components/calendar/CalendarDayCell';
@@ -265,6 +267,46 @@ export default function CalendarScreen() {
     loadMonthEvents(year, month);
   };
 
+  const shiftVisibleMonth = useCallback(
+    (delta: number) => {
+      const next = new Date(visibleMonth.year, visibleMonth.month - 1 + delta, 1);
+      const year = next.getFullYear();
+      const month = next.getMonth() + 1;
+      setVisibleMonth({ year, month });
+      loadMonthEvents(year, month);
+    },
+    [loadMonthEvents, visibleMonth.month, visibleMonth.year]
+  );
+
+  const handleClassicCalendarSwipe = useCallback(
+    (direction: 'prev' | 'next') => {
+      shiftVisibleMonth(direction === 'next' ? 1 : -1);
+    },
+    [shiftVisibleMonth]
+  );
+
+  const classicCalendarSwipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-24, 24])
+        .failOffsetY([-20, 20])
+        .onEnd((event) => {
+          'worklet';
+          if (event.translationX <= -48) {
+            runOnJS(handleClassicCalendarSwipe)('next');
+          } else if (event.translationX >= 48) {
+            runOnJS(handleClassicCalendarSwipe)('prev');
+          }
+        }),
+    [handleClassicCalendarSwipe]
+  );
+
+  const classicCalendarCurrent = useMemo(
+    () =>
+      `${visibleMonth.year}-${String(visibleMonth.month).padStart(2, '0')}-01`,
+    [visibleMonth.month, visibleMonth.year]
+  );
+
   const handleCreateEvent = () => {
     router.push({ pathname: '/event', params: { date: selectedDate } });
   };
@@ -306,6 +348,7 @@ export default function CalendarScreen() {
             edgeToEdge={isEdgeToEdge}
           />
         ) : (
+          <GestureDetector gesture={classicCalendarSwipeGesture}>
           <View style={[styles.calendarShadow, isEdgeToEdge ? styles.calendarShadowEdgeToEdge : null]}>
             <View
               style={[
@@ -317,7 +360,8 @@ export default function CalendarScreen() {
               ]}
             >
               <Calendar
-                current={selectedDate}
+                key={classicCalendarCurrent}
+                current={classicCalendarCurrent}
                 onDayPress={handleDayPress}
                 onMonthChange={handleMonthChange}
                 markedDates={markedDates}
@@ -342,6 +386,7 @@ export default function CalendarScreen() {
               />
             </View>
           </View>
+          </GestureDetector>
         )}
 
         {useBadgeInsetEventCards ? (

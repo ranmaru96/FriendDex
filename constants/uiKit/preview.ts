@@ -1,7 +1,7 @@
 import { BorderWidth, Radius, Spacing, Theme } from '@/constants/theme';
 import type { UiKit } from './types';
 
-/** 試作中の UI ルール（Phase 0 では stable と同値。Phase 1 以降で差分を足す） */
+/** 試作中の UI ルール（現時点は stable と同値。差分実験はここだけを変える） */
 export const previewUiKit: UiKit = {
   label: 'preview（試作版）',
 

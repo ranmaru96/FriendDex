@@ -21,6 +21,7 @@ import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/compone
 import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
+  contentDateTimePickerProps,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -29,6 +30,7 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 
 import {
   createFriend,
@@ -254,6 +256,8 @@ const parseOptionalNumber = (value: string): number | null => {
 export default function EditScreen() {
   const kit = useUiKit();
   const content = useContentColors();
+  const appTheme = useAppThemeOptional();
+  const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const fieldIndent = kit.formLayout === 'horizontal' ? kit.formLabelWidth + kit.formRowGap : 0;
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -599,6 +603,7 @@ export default function EditScreen() {
                   display="spinner"
                   locale="ja-JP"
                   style={styles.datePickerSelf}
+                  {...dateTimePickerProps}
                   onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                     if (Platform.OS !== 'ios') setShowBirthdayPicker(false);
                     if (selected) updateText('birthday', formatDateToYMD(selected));

@@ -19,6 +19,7 @@ import { Theme, Radius, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
+  contentDateTimePickerProps,
   contentInputStyle,
   contentMutedTextStyle,
   contentPersonTagStyle,
@@ -29,6 +30,7 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { FormOverlayTemplate, FormScreenBody, FormScreenSection } from '@/components/screen-templates';
 import {
   formatEpisodeDateToYMD,
@@ -177,6 +179,8 @@ export function EpisodeFormOverlay({
 }: EpisodeFormOverlayProps) {
   const kit = useUiKit();
   const content = useContentColors();
+  const appTheme = useAppThemeOptional();
+  const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const fieldRadius = kit.formFieldBorderRadius;
   const fieldCorner = { borderRadius: fieldRadius };
   const tagChipRadius = fieldRadius === 0 ? 0 : 999;
@@ -236,6 +240,7 @@ export function EpisodeFormOverlay({
                   display="spinner"
                   locale="ja-JP"
                   style={styles.datePickerSelf}
+                  {...dateTimePickerProps}
                   minimumDate={form.allowedEventDateRange?.minimumDate}
                   maximumDate={form.allowedEventDateRange?.maximumDate}
                   onChange={(_event: DateTimePickerEvent, selected?: Date) => {

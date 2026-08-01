@@ -13,6 +13,12 @@ const getAppName = () => {
   return 'FriendDex';
 };
 
+const getScheme = () => {
+  if (IS_DEV) return 'frienddexdev';
+  if (IS_PREVIEW) return 'frienddexpreview';
+  return 'frienddex';
+};
+
 export default {
   expo: {
     name: getAppName(),
@@ -22,7 +28,7 @@ export default {
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     newArchEnabled: true,
-    scheme: "frienddex",
+    scheme: getScheme(),
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",

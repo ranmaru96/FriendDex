@@ -20,7 +20,7 @@ import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModa
 import type { Option } from '@/components/episode/types';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { Panel, PanelSection, SectionDivider } from '@/components/ui/Panel';
-import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
   contentMutedTextStyle,
   contentTextStyle,
@@ -64,7 +64,6 @@ const PHOTO_PEEK = 28;
 
 export default function EpisodeDetailScreen() {
   const router = useRouter();
-  const { isPreview } = useUiPreview();
   const kit = useUiKit();
   const content = useContentColors();
   const bottomNavClearance = useBottomNavScrollClearance();
@@ -100,11 +99,9 @@ export default function EpisodeDetailScreen() {
   }, [params.ownerId]);
 
   const photoContentWidth = useMemo(() => {
-    const panelWidth = isPreview
-      ? Dimensions.get('window').width
-      : Dimensions.get('window').width - LIST_HORIZONTAL_INSET * 2;
+    const panelWidth = Dimensions.get('window').width;
     return Math.max(0, panelWidth - Spacing.md * 2);
-  }, [isPreview]);
+  }, []);
 
   const loadData = useCallback(() => {
     initializeDatabase();
@@ -330,23 +327,15 @@ export default function EpisodeDetailScreen() {
           style={styles.mainScroll}
           contentContainerStyle={[
             styles.mainScrollContent,
-            isPreview
-              ? styles.mainScrollContentPreview
-              : styles.mainScrollContentStable,
-            bottomNavClearance > 0
-              ? {
-                  paddingBottom: isPreview
-                    ? bottomNavClearance
-                    : Math.max(bottomNavClearance, 32),
-                }
-              : null,
+            styles.mainScrollContentPreview,
+            bottomNavClearance > 0 ? { paddingBottom: bottomNavClearance } : null,
           ]}
           keyboardShouldPersistTaps="handled"
         >
           <Panel
             style={[
               styles.detailPanel,
-              isPreview ? styles.detailPanelPreview : null,
+              styles.detailPanelPreview,
             ]}
           >
             <EpisodeListCard
@@ -358,7 +347,7 @@ export default function EpisodeDetailScreen() {
               chips={chips}
               visibility={visibility}
               visibilityMode={episode.visibilityMode}
-              style={isPreview ? styles.episodeHeaderPreview : undefined}
+              style={styles.episodeHeaderPreview}
             />
 
             {hasDescription ? (
@@ -460,11 +449,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 0,
     paddingTop: 0,
     paddingBottom: 0,
-  },
-  mainScrollContentStable: {
-    paddingHorizontal: LIST_HORIZONTAL_INSET,
-    paddingTop: 8,
-    paddingBottom: 32,
   },
   missingContainer: {
     flex: 1,

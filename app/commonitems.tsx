@@ -19,7 +19,7 @@ import { createDetailStyles } from '../utils/detailStyles';
 import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
 import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
 import { TabScreenTemplate } from '@/components/screen-templates';
-import { useUiKit, useUiPreview } from '@/contexts/UiPreviewContext';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
   addCommonItemOption,
   createGroupOption,
@@ -211,7 +211,6 @@ function SelectField({ label, value, options, onValueChange }: {
 export default function CommonItemsScreen() {
   const kit = useUiKit();
   const content = useContentColors();
-  const { isPreview } = useUiPreview();
   const appTheme = useAppThemeOptional();
   const flushTop = isMonochromeAppTheme(appTheme?.variant);
   const { bundle: rawBundle } = useDetailDesign();
@@ -424,21 +423,6 @@ export default function CommonItemsScreen() {
     });
   };
 
-  const handleLongPressTag = (label: string) => {
-    Alert.alert('項目操作', `「${label}」をどうしますか？`, [
-      { text: 'キャンセル', style: 'cancel' },
-      {
-        text: '編集',
-        onPress: () => openEditEditor(label),
-      },
-      {
-        text: '削除',
-        style: 'destructive',
-        onPress: () => confirmDeleteLabel(label),
-      },
-    ]);
-  };
-
   const confirmDeleteLabel = (label: string, onDeleted?: () => void) => {
     Alert.alert(
       '削除確認',
@@ -478,9 +462,7 @@ export default function CommonItemsScreen() {
   };
 
   const handlePressTag = (label: string) => {
-    if (isPreview) {
-      openEditEditor(label);
-    }
+    openEditEditor(label);
   };
 
   const simpleEditorTitle = editingOriginalLabel ? `${activeTab}を編集` : `${activeTab}を追加`;
@@ -624,8 +606,6 @@ export default function CommonItemsScreen() {
                 <Pressable
                   key={label}
                   onPress={() => handlePressTag(label)}
-                  onLongPress={isPreview ? undefined : () => handleLongPressTag(label)}
-                  delayLongPress={isPreview ? undefined : 300}
                 >
                   <EpisodeTagChip
                     label={label}
@@ -649,8 +629,6 @@ export default function CommonItemsScreen() {
                   },
                 ]}
                 onPress={() => handlePressTag(label)}
-                onLongPress={isPreview ? undefined : () => handleLongPressTag(label)}
-                delayLongPress={isPreview ? undefined : 300}
               >
                 <Text style={[styles.valueChipText, { color: activeChipStyle.color }]}>{label}</Text>
               </Pressable>
@@ -687,9 +665,8 @@ export default function CommonItemsScreen() {
       {/* Simple editor（エピソードタグなど） */}
       <Modal visible={editorVisible} transparent animationType="fade" onRequestClose={() => setEditorVisible(false)}>
         <View style={styles.editorOverlay}>
-          <View style={[styles.editorCard, contentSurfaceStyle(content), isPreview ? styles.editorCardPreview : null]}>
-            {isPreview ? (
-              <>
+          <View style={[styles.editorCard, contentSurfaceStyle(content), styles.editorCardPreview]}>
+            <>
                 <View style={styles.editorHeaderPreview}>
                   <Text style={[styles.editorTitlePreview, contentTextStyle(content)]} numberOfLines={1}>
                     {simpleEditorTitle}
@@ -723,30 +700,7 @@ export default function CommonItemsScreen() {
                     <Text style={styles.editorDeleteText}>削除</Text>
                   </Pressable>
                 ) : null}
-              </>
-            ) : (
-              <>
-                <Text style={[styles.editorTitle, contentTextStyle(content)]}>{simpleEditorTitle}</Text>
-                <TextInput
-                  value={editorText}
-                  onChangeText={setEditorText}
-                  style={[styles.editorInput, contentInputStyle(content)]}
-                  placeholder={`${activeTab}を入力`}
-                  placeholderTextColor={content.contentTextSecondary}
-                  autoCapitalize="none"
-                  autoFocus
-                />
-                {renderEpisodeTagColorPicker()}
-                <View style={styles.editorActions}>
-                  <Pressable style={[styles.editorCancelButton, contentSurfaceStyle(content)]} onPress={() => setEditorVisible(false)}>
-                    <Text style={[styles.editorCancelText, contentTextStyle(content)]}>キャンセル</Text>
-                  </Pressable>
-                  <Pressable style={styles.editorSaveButton} onPress={handleSaveEditor}>
-                    <Text style={styles.editorSaveText}>保存</Text>
-                  </Pressable>
-                </View>
-              </>
-            )}
+            </>
           </View>
         </View>
       </Modal>
@@ -755,8 +709,7 @@ export default function CommonItemsScreen() {
       <Modal visible={groupEditorVisible} transparent animationType="slide" onRequestClose={() => setGroupEditorVisible(false)}>
         <View style={styles.groupEditorOverlay}>
           <View style={[styles.groupEditorCard, contentSurfaceStyle(content)]}>
-            {isPreview ? (
-              <>
+            <>
                 <View style={styles.groupHeaderRowPreview}>
                   <TextInput
                     value={groupName}
@@ -823,73 +776,7 @@ export default function CommonItemsScreen() {
                     <Text style={styles.editorDeleteText}>削除</Text>
                   </Pressable>
                 ) : null}
-              </>
-            ) : (
-              <>
-                <View style={styles.groupHeaderRow}>
-                  <TextInput
-                    value={groupName}
-                    onChangeText={setGroupName}
-                    style={[styles.groupNameInput, contentInputStyle(content)]}
-                    placeholder={`${activeTab}名`}
-                    placeholderTextColor={content.contentTextSecondary}
-                    autoCapitalize="none"
-                  />
-                  <View style={styles.groupEditButtons}>
-                    <Pressable style={[styles.groupCancelButton, contentSurfaceStyle(content)]} onPress={() => setGroupEditorVisible(false)}>
-                      <Text style={[styles.groupCancelButtonText, contentTextStyle(content)]}>キャンセル</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        groupEditingId ? styles.groupSaveButton : styles.groupCreateButton,
-                        !groupName.trim() && styles.groupButtonDisabled,
-                      ]}
-                      onPress={handleSaveGroupEditor}
-                      disabled={!groupName.trim()}
-                    >
-                      <Text style={groupEditingId ? styles.groupSaveButtonText : styles.groupCreateButtonText}>
-                        {groupEditingId ? '保存' : '作成'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                <View style={styles.filterRow}>
-                  <View style={styles.filterNameContainer}>
-                    <TextInput
-                      style={[styles.filterNameInput, contentInputStyle(content)]}
-                      value={personNameFilter}
-                      onChangeText={setPersonNameFilter}
-                      placeholder="名前"
-                      placeholderTextColor={content.contentTextSecondary}
-                      autoCapitalize="none"
-                    />
-                  </View>
-                  <SelectField
-                    label="所属"
-                    value={personAffiliationFilter}
-                    options={affiliationOptions}
-                    onValueChange={setPersonAffiliationFilter}
-                  />
-                  <SelectField
-                    label="経験"
-                    value={personExperienceFilter}
-                    options={experienceOptions}
-                    onValueChange={setPersonExperienceFilter}
-                  />
-                </View>
-
-                <FlatList
-                  data={filteredPersons}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderPersonRow}
-                  style={styles.personList}
-                  contentContainerStyle={styles.personListContent}
-                  numColumns={PERSON_COLUMNS}
-                  columnWrapperStyle={styles.personColumnWrapper}
-                />
-              </>
-            )}
+            </>
           </View>
         </View>
       </Modal>
