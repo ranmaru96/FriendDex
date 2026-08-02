@@ -11,15 +11,9 @@ import {
   type UiPreviewVariant,
 } from '@/constants/uiKit';
 import {
-  getCalendarEventCardStyleOverride,
-  getCalendarEventTimeDisplayOverride,
-  getDetailProfileCardStyleOverride,
   getEpisodeListPhotoLayoutOverride,
   getUiPreviewVariant,
   initializeDatabase,
-  setCalendarEventCardStyleOverride,
-  setCalendarEventTimeDisplayOverride,
-  setDetailProfileCardStyleOverride,
   setEpisodeListPhotoLayoutOverride,
   setUiPreviewVariant,
 } from '../db';
@@ -43,22 +37,13 @@ const UiPreviewContext = createContext<UiPreviewContextValue | null>(null);
 export function UiPreviewProvider({ children }: { children: ReactNode }) {
   const { colors: appThemeColors } = useAppTheme();
   const [variant, setVariantState] = useState<UiPreviewVariant>('stable');
-  const [calendarEventCardStyle, setCalendarEventCardStyleState] =
-    useState<CalendarEventCardStyle | null>(null);
-  const [calendarEventTimeDisplay, setCalendarEventTimeDisplayState] =
-    useState<CalendarEventTimeDisplay | null>(null);
   const [episodeListPhotoLayout, setEpisodeListPhotoLayoutState] =
     useState<EpisodeListPhotoLayout | null>(null);
-  const [detailProfileCardStyle, setDetailProfileCardStyleState] =
-    useState<DetailProfileCardStyle | null>(null);
 
   const reload = useCallback(() => {
     initializeDatabase();
     setVariantState(getUiPreviewVariant());
-    setCalendarEventCardStyleState(getCalendarEventCardStyleOverride());
-    setCalendarEventTimeDisplayState(getCalendarEventTimeDisplayOverride());
     setEpisodeListPhotoLayoutState(getEpisodeListPhotoLayoutOverride());
-    setDetailProfileCardStyleState(getDetailProfileCardStyleOverride());
   }, []);
 
   useEffect(() => {
@@ -71,16 +56,12 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
     setVariantState(next);
   }, []);
 
-  const setCalendarEventCardStyle = useCallback((style: CalendarEventCardStyle) => {
-    initializeDatabase();
-    setCalendarEventCardStyleOverride(style);
-    setCalendarEventCardStyleState(style);
+  const setCalendarEventCardStyle = useCallback((_style: CalendarEventCardStyle) => {
+    // no-op: 丸角カードに固定
   }, []);
 
-  const setCalendarEventTimeDisplay = useCallback((display: CalendarEventTimeDisplay) => {
-    initializeDatabase();
-    setCalendarEventTimeDisplayOverride(display);
-    setCalendarEventTimeDisplayState(display);
+  const setCalendarEventTimeDisplay = useCallback((_display: CalendarEventTimeDisplay) => {
+    // no-op: 固定列に固定
   }, []);
 
   const setEpisodeListPhotoLayout = useCallback((layout: EpisodeListPhotoLayout) => {
@@ -89,10 +70,8 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
     setEpisodeListPhotoLayoutState(layout);
   }, []);
 
-  const setDetailProfileCardStyle = useCallback((style: DetailProfileCardStyle) => {
-    initializeDatabase();
-    setDetailProfileCardStyleOverride(style);
-    setDetailProfileCardStyleState(style);
+  const setDetailProfileCardStyle = useCallback((_style: DetailProfileCardStyle) => {
+    // no-op: フラットに固定
   }, []);
 
   const kit = useMemo(() => {
@@ -107,15 +86,10 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
       textSecondary: appThemeColors.contentTextSecondary as UiKit['textSecondary'],
       inputBg: appThemeColors.contentInputBg as UiKit['inputBg'],
       inputBorder: appThemeColors.contentSearchFieldBorder as UiKit['inputBorder'],
+      calendarEventCardStyle: 'roundedCards',
+      calendarEventTimeDisplay: 'column',
+      detailProfileCardStyle: 'flat',
     };
-    const cardStyle = calendarEventCardStyle ?? next.calendarEventCardStyle;
-    if (cardStyle !== next.calendarEventCardStyle) {
-      next = { ...next, calendarEventCardStyle: cardStyle };
-    }
-    const timeDisplay = calendarEventTimeDisplay ?? next.calendarEventTimeDisplay;
-    if (timeDisplay !== next.calendarEventTimeDisplay) {
-      next = { ...next, calendarEventTimeDisplay: timeDisplay };
-    }
     const photoLayout = episodeListPhotoLayout ?? next.episodeListPhotoLayout;
     if (photoLayout !== next.episodeListPhotoLayout) {
       next = {
@@ -123,10 +97,6 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
         episodeListPhotoLayout: photoLayout,
         episodeListPhotoSpanRows: episodeListPhotoSpanRowsForLayout(photoLayout),
       };
-    }
-    const detailCardStyle = detailProfileCardStyle ?? next.detailProfileCardStyle;
-    if (detailCardStyle !== next.detailProfileCardStyle) {
-      next = { ...next, detailProfileCardStyle: detailCardStyle };
     }
     return next;
   }, [
@@ -139,10 +109,7 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
     appThemeColors.contentTextSecondary,
     appThemeColors.contentInputBg,
     appThemeColors.contentSearchFieldBorder,
-    calendarEventCardStyle,
-    calendarEventTimeDisplay,
     episodeListPhotoLayout,
-    detailProfileCardStyle,
   ]);
 
   const value = useMemo(

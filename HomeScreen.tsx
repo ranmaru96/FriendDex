@@ -20,7 +20,10 @@ import {
 } from '@/components/ui/SearchArea';
 import { ListScreenTemplate } from '@/components/screen-templates';
 import { AddCircleButton } from '@/components/AddCircleButton';
+import { CircleIconButton } from '@/components/CircleIconButton';
 import { PendingEpisodeReviewModal } from '@/components/episode/PendingEpisodeReviewModal';
+import { useContentColors } from '@/utils/useContentColors';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 
 import {
   deleteProfileById,
@@ -55,6 +58,9 @@ const toOptions = (values: string[]): Option[] => values.map((value) => ({ label
 export default function HomeScreen() {
   const router = useRouter();
   const kit = useUiKit();
+  const content = useContentColors();
+  const appTheme = useAppThemeOptional();
+  const isBlack = appTheme?.variant === 'black';
   const { width: screenWidth } = useWindowDimensions();
   const listPaddingHorizontal = kit.listScreenPaddingHorizontal;
   const cardGap = kit.friendHomeCardGap;
@@ -145,11 +151,36 @@ export default function HomeScreen() {
   return (
     <ListScreenTemplate
       fab={
-        <AddCircleButton
-          style={styles.fab}
-          onPress={() => router.push('/edit')}
-          accessibilityLabel="人物を追加"
-        />
+        <View
+          style={[
+            styles.fabRow,
+            {
+              backgroundColor: isBlack ? 'rgba(28, 28, 28, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+              borderColor: content.contentBorder,
+              borderWidth: 1,
+            },
+          ]}
+        >
+          <CircleIconButton
+            icon="qr-code-outline"
+            onPress={() => router.push('/myprofile-qr')}
+            accessibilityLabel="QRコードを表示"
+          />
+          <CircleIconButton
+            icon="scan-outline"
+            onPress={() => router.push('/scan')}
+            accessibilityLabel="QRコードを読み取る"
+          />
+          <CircleIconButton
+            icon="people-circle-outline"
+            onPress={() => router.push('/follows')}
+            accessibilityLabel="フォロー一覧"
+          />
+          <AddCircleButton
+            onPress={() => router.push('/edit')}
+            accessibilityLabel="人物を追加"
+          />
+        </View>
       }
     >
       <FlatList
@@ -247,10 +278,16 @@ const styles = StyleSheet.create({
     color: Theme.textSecondary,
     marginTop: 20,
   },
-  fab: {
+  fabRow: {
     position: 'absolute',
     right: 14,
-    bottom: 18,
+    bottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 28,
   },
 });
 

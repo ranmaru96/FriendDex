@@ -1,8 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import {
   Pressable,
   StyleSheet,
-  Text,
-  View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -10,21 +9,22 @@ import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useContentColors } from '@/utils/useContentColors';
 
 const BUTTON_SIZE = 36;
-const GLYPH_SIZE = 22;
 
-type AddCircleButtonProps = {
+type CircleIconButtonProps = {
+  icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
   disabled?: boolean;
-  accessibilityLabel?: string;
+  accessibilityLabel: string;
   style?: StyleProp<ViewStyle>;
 };
 
-export function AddCircleButton({
+export function CircleIconButton({
+  icon,
   onPress,
   disabled = false,
-  accessibilityLabel = '追加',
+  accessibilityLabel,
   style,
-}: AddCircleButtonProps) {
+}: CircleIconButtonProps) {
   const appTheme = useAppThemeOptional();
   const content = useContentColors();
   const isBlack = appTheme?.variant === 'black';
@@ -46,9 +46,7 @@ export function AddCircleButton({
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
     >
-      <View style={styles.glyph}>
-        <Text style={[styles.glyphText, { color: ink }]}>＋</Text>
-      </View>
+      <Ionicons name={icon} size={20} color={ink} />
     </Pressable>
   );
 }
@@ -75,16 +73,5 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 5,
-  },
-  glyph: {
-    width: BUTTON_SIZE,
-    height: BUTTON_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  glyphText: {
-    fontSize: GLYPH_SIZE,
-    fontWeight: '900',
-    includeFontPadding: false,
   },
 });

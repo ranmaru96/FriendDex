@@ -22,7 +22,7 @@ const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'calendar',
   'episode',
   'tools',
-  'friends',
+  'tasks',
 ]);
 
 function PastEventConversionScheduler() {

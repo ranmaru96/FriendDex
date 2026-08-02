@@ -475,9 +475,9 @@ export default function EditScreen() {
     ]);
   };
 
-  const topBarActions = (
+    const topBarActions = (
     <View style={styles.topBarActions}>
-      {isEditMode && (
+      {isEditMode ? (
         <IconButton
           icon="sync-outline"
           onPress={handleResyncAffiliationEpisodes}
@@ -486,14 +486,8 @@ export default function EditScreen() {
           borderColor={content.contentText}
           color={content.contentText}
         />
-      )}
-      <IconButton
-        icon="home-outline"
-        onPress={() => router.replace('/')}
-        accessibilityLabel="ホームへ戻る"
-      />
+      ) : null}
       <Pressable style={styles.saveButton} onPress={handleSave} accessibilityLabel="保存">
-        <Ionicons name="save-outline" size={18} color={Theme.btnPrimaryText} />
         <Text style={styles.saveButtonText}>保存</Text>
       </Pressable>
     </View>
@@ -502,9 +496,10 @@ export default function EditScreen() {
   return (
     <>
     <FormScreenTemplate
-      title={isEditMode ? '人物編集' : '新規登録'}
-      titleAlign="left"
+      title="人物情報の登録"
+      onBack={() => router.back()}
       right={topBarActions}
+      extraScrollHeight={140}
     >
       <FormScreenBody>
         <FormScreenSection>
@@ -694,6 +689,15 @@ export default function EditScreen() {
           onChange={(values) => setForm((prev) => ({ ...prev, dislikes: values }))}
           placeholder="記入式"
         />
+      
+        <View style={styles.formActions}>
+          <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
+            <Text style={styles.formCancelButtonText}>キャンセル</Text>
+          </Pressable>
+          <Pressable style={styles.formSaveButton} onPress={handleSave}>
+            <Text style={styles.formSaveButtonText}>保存</Text>
+          </Pressable>
+        </View>
       </FormScreenBody>
     </FormScreenTemplate>
 
@@ -726,20 +730,49 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   saveButton: {
-    flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    height: ICON_BTN,
+    justifyContent: 'center',
+    paddingVertical: 6,
     paddingHorizontal: 10,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     backgroundColor: Theme.btnPrimaryBg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: Theme.btnPrimaryBg,
   },
   saveButtonText: {
     color: Theme.btnPrimaryText,
     fontWeight: '700',
     fontSize: 13,
+  },
+  formActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: Spacing.sm,
+  },
+  formCancelButton: {
+    backgroundColor: 'transparent',
+    borderColor: Theme.btnGhostBorder,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  formCancelButtonText: {
+    color: Theme.btnGhostText,
+    fontWeight: '700',
+    fontSize: Typography.base,
+  },
+  formSaveButton: {
+    backgroundColor: Theme.btnPrimaryBg,
+    borderColor: Theme.btnPrimaryBg,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  formSaveButtonText: {
+    color: Theme.btnPrimaryText,
+    fontWeight: '700',
+    fontSize: Typography.base,
   },
   profileTopRow: {
     flexDirection: 'row',

@@ -25,18 +25,9 @@ export type HomeCardBorderStyle = {
   cardBorderWidth: number;
 };
 
-export const getHomeCardBorderStyle = (completeness: number): HomeCardBorderStyle => {
-  if (completeness >= 100) {
-    return {
-      borderColor: Theme.homeCardBorderComplete,
-      cardBorderWidth: Theme.homeCardBorderWidth,
-    };
-  }
-  if (completeness >= 80) {
-    return { borderColor: Theme.homeCardBorderHigh, cardBorderWidth: Theme.homeCardBorderWidth };
-  }
-  if (completeness >= 50) {
-    return { borderColor: Theme.homeCardBorderMid, cardBorderWidth: Theme.homeCardBorderWidth };
-  }
-  return { borderColor: Theme.homeCardBorderLow, cardBorderWidth: Theme.homeCardBorderWidth };
+export const getHomeCardBorderStyle = (_completeness?: number): HomeCardBorderStyle => {
+  return {
+    borderColor: Theme.border,
+    cardBorderWidth: Theme.homeCardBorderWidth,
+  };
 };

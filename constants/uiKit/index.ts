@@ -50,17 +50,13 @@ export function normalizeUiPreviewVariant(value: string | null | undefined): UiP
 export const CALENDAR_EVENT_TIME_DISPLAY_OPTIONS: {
   value: CalendarEventTimeDisplay;
   label: string;
-}[] = [
-  { value: 'plain', label: 'プレーン（左・背景なし）' },
-  { value: 'column', label: '固定列（左・区切り線）' },
-  { value: 'badge', label: 'バッジ（従来）' },
-];
+}[] = [{ value: 'column', label: '固定列（左・区切り線）' }];
 
 export function normalizeCalendarEventTimeDisplay(
   value: string | null | undefined
 ): CalendarEventTimeDisplay | null {
-  if (value === 'plain' || value === 'column' || value === 'badge') {
-    return value;
+  if (value === 'column' || value === 'plain' || value === 'badge') {
+    return 'column';
   }
   return null;
 }
@@ -68,16 +64,13 @@ export function normalizeCalendarEventTimeDisplay(
 export const CALENDAR_EVENT_CARD_STYLE_OPTIONS: {
   value: CalendarEventCardStyle;
   label: string;
-}[] = [
-  { value: 'current', label: '現状のまま' },
-  { value: 'roundedCards', label: '各予定を丸角カード化' },
-];
+}[] = [{ value: 'roundedCards', label: '各予定を丸角カード化' }];
 
 export function normalizeCalendarEventCardStyle(
   value: string | null | undefined
 ): CalendarEventCardStyle | null {
-  if (value === 'current' || value === 'roundedCards') {
-    return value;
+  if (value === 'roundedCards' || value === 'current') {
+    return 'roundedCards';
   }
   return null;
 }
@@ -110,16 +103,13 @@ export function episodeListPhotoSpanRowsForLayout(layout: EpisodeListPhotoLayout
 export const DETAIL_PROFILE_CARD_STYLE_OPTIONS: {
   value: DetailProfileCardStyle;
   label: string;
-}[] = [
-  { value: 'card', label: 'カード（影・角丸・外枠）' },
-  { value: 'flat', label: 'フラット（枠なし）' },
-];
+}[] = [{ value: 'flat', label: 'フラット（枠なし）' }];
 
 export function normalizeDetailProfileCardStyle(
   value: string | null | undefined
 ): DetailProfileCardStyle | null {
-  if (value === 'card' || value === 'flat') {
-    return value;
+  if (value === 'flat' || value === 'card') {
+    return 'flat';
   }
   return null;
 }

@@ -4,7 +4,6 @@ import { HomeCardElevation, Radius, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useContentColors } from '@/utils/useContentColors';
-import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
 import type { Friend } from '../../types';
 
 /** Stable 既定値（シャッフル等・UiKit 未参照の箇所用） */
@@ -33,17 +32,17 @@ export function FriendHomeCard({
   const appTheme = useAppThemeOptional();
   const content = useContentColors();
   const [imageError, setImageError] = useState(false);
-  const hasPhoto = Boolean(friend.photoUri?.trim()) && !imageError;
-  const completeness = computeProfileCompleteness(friend, hasPhoto);
-  const cardBorder = getHomeCardBorderStyle(completeness);
+  /** 予定カード（edge 区切り／EdgePanel）と同じ枠色 */
+  const cardBorderColor = content.contentTextSecondary;
+  const cardBorderWidth = 1;
   const cardElevation = appTheme?.colors.homeCardElevation ?? HomeCardElevation;
 
   const cardOuterStyle = [
     styles.cardOuter,
     {
       backgroundColor: content.contentCard,
-      borderColor: cardBorder.borderColor,
-      borderWidth: Theme.homeCardBorderWidth,
+      borderColor: cardBorderColor,
+      borderWidth: cardBorderWidth,
     },
   ];
 
@@ -54,7 +53,18 @@ export function FriendHomeCard({
           <Text style={styles.myselfBadgeText}>本人</Text>
         </View>
       ) : null}
-      <View style={[styles.photoOuterFrame, { borderColor: cardBorder.borderColor }]}>
+      <View
+        style={[
+          styles.photoOuterFrame,
+          {
+            borderColor: cardBorderColor,
+            borderWidth: cardBorderWidth,
+            marginTop: -cardBorderWidth,
+            marginLeft: -cardBorderWidth,
+            marginRight: -cardBorderWidth,
+          },
+        ]}
+      >
         <View style={[styles.photoInnerFrame, { borderColor: content.contentPhotoInnerBorder }]}>
           {friend.photoUri && !imageError ? (
             <Image
@@ -118,10 +128,6 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
   },
   photoOuterFrame: {
-    marginTop: -2,
-    marginLeft: -2,
-    marginRight: -2,
-    borderWidth: 2,
     borderRadius: Radius.md,
     overflow: 'hidden',
   },

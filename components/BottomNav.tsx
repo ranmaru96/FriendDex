@@ -7,7 +7,7 @@ import { Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { setNextTabAnimation } from '@/utils/tabTransition';
 
-type TabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'friends';
+type TabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'tasks';
 
 type BottomNavProps = {
   active: TabKey;
@@ -17,14 +17,14 @@ const TABS: {
   key: TabKey;
   label: string;
   icon: ComponentProps<typeof Ionicons>['name'];
-  route: '/' | '/commonitems' | '/calendar' | '/episode' | '/tools' | '/friends';
+  route: '/' | '/commonitems' | '/calendar' | '/episode' | '/tools' | '/tasks';
 }[] = [
   { key: 'home', label: '一覧', icon: 'people-outline', route: '/' },
-  { key: 'commonitems', label: '共通項目', icon: 'pricetag-outline', route: '/commonitems' },
   { key: 'calendar', label: 'カレンダー', icon: 'calendar-outline', route: '/calendar' },
   { key: 'episode', label: 'エピソード', icon: 'book-outline', route: '/episode' },
+  { key: 'tasks', label: 'タスク', icon: 'checkbox-outline', route: '/tasks' },
+  { key: 'commonitems', label: '共通項目', icon: 'pricetag-outline', route: '/commonitems' },
   { key: 'tools', label: 'ツール', icon: 'construct-outline', route: '/tools' },
-  { key: 'friends', label: '友達', icon: 'people-circle-outline', route: '/friends' },
 ];
 
 export default function BottomNav({ active }: BottomNavProps) {

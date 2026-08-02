@@ -1,11 +1,10 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo, type ReactNode } from 'react';
 import {
   getDetailDesignBundle,
   normalizeDetailDesignVariant,
   type DetailDesignBundle,
   type DetailDesignVariant,
 } from '@/constants/detailThemes';
-import { getDetailDesignVariant, initializeDatabase, setDetailDesignVariant } from '../db';
 
 type DetailDesignContextValue = {
   variant: DetailDesignVariant;
@@ -17,33 +16,24 @@ type DetailDesignContextValue = {
 const DetailDesignContext = createContext<DetailDesignContextValue | null>(null);
 
 export function DetailDesignProvider({ children }: { children: ReactNode }) {
-  const [variant, setVariantState] = useState<DetailDesignVariant>('main');
-
   const reload = useCallback(() => {
-    initializeDatabase();
-    setVariantState(getDetailDesignVariant());
+    // Detail デザインは main 固定（ライト ver 廃止）
   }, []);
 
-  useEffect(() => {
-    reload();
-  }, [reload]);
-
-  const setVariant = useCallback((next: DetailDesignVariant) => {
-    initializeDatabase();
-    setDetailDesignVariant(next);
-    setVariantState(next);
+  const setVariant = useCallback((_next: DetailDesignVariant) => {
+    // no-op: ライト ver 削除により切り替え不可
   }, []);
 
-  const bundle = useMemo(() => getDetailDesignBundle(variant), [variant]);
+  const bundle = useMemo(() => getDetailDesignBundle('main'), []);
 
   const value = useMemo(
     () => ({
-      variant,
+      variant: 'main' as const,
       bundle,
       setVariant,
       reload,
     }),
-    [variant, bundle, setVariant, reload]
+    [bundle, setVariant, reload]
   );
 
   return <DetailDesignContext.Provider value={value}>{children}</DetailDesignContext.Provider>;

@@ -273,6 +273,53 @@ export type CommonItemOption = {
   updatedAt: string;
 };
 
+export type TaskKind = 'recurring' | 'temporary';
+export type TaskPace = 'scheduled' | 'unpaced';
+export type TaskRecurrenceUnit = 'day' | 'week' | 'month' | 'year';
+
+export type TaskRecurrenceConfig = {
+  weekdays?: number[];
+  weekStartsOn?: number;
+  monthDay?: number;
+  monthNth?: number;
+  monthWeekday?: number;
+  yearMonth?: number;
+  yearDay?: number;
+};
+
+export type Task = {
+  id: string;
+  kind: TaskKind;
+  title: string;
+  pace: TaskPace | null;
+  recurrenceUnit: TaskRecurrenceUnit | null;
+  recurrenceConfig: TaskRecurrenceConfig | null;
+  dueDate: string | null;
+  eventId: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TaskInput = {
+  kind: TaskKind;
+  title: string;
+  pace?: TaskPace | null;
+  recurrenceUnit?: TaskRecurrenceUnit | null;
+  recurrenceConfig?: TaskRecurrenceConfig | null;
+  dueDate?: string | null;
+  eventId?: string | null;
+};
+
+export type TaskCompletion = {
+  id: string;
+  taskId: string;
+  completedOn: string;
+  createdAt: string;
+};
+
+export type CompletedTaskRetention = '1w' | '1m' | '3m' | '1y' | 'forever';
+
 export const FRIENDDEX_BACKUP_V1_TABLE_NAMES = [
   'friend_profiles',
   'app_settings',

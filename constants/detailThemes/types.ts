@@ -1,6 +1,6 @@
 import type { DetailTabKey } from './tabs';
 
-export type DetailDesignVariant = 'main' | 'light';
+export type DetailDesignVariant = 'main';
 
 export type DetailTabMode = 'perTab' | 'accentOnly';
 

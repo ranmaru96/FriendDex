@@ -9,21 +9,24 @@ import {
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { confirmAndExportBackup, confirmAndImportBackup } from '../backup';
-import { getAllProfiles, getMyself, initializeDatabase, setMyself } from '../db';
-import { Profile } from '../types';
-import { DETAIL_DESIGN_OPTIONS } from '@/constants/detailThemes';
+import {
+  getAllProfiles,
+  getCompletedTaskRetention,
+  getMyself,
+  initializeDatabase,
+  setCompletedTaskRetention,
+  setMyself,
+} from '../db';
+import { CompletedTaskRetention, Profile } from '../types';
+import { COMPLETED_TASK_RETENTION_OPTIONS } from '@/utils/taskHelpers';
 import { APP_THEME_OPTIONS, isMonochromeAppTheme } from '@/constants/appThemes';
 import {
-  CALENDAR_EVENT_CARD_STYLE_OPTIONS,
-  CALENDAR_EVENT_TIME_DISPLAY_OPTIONS,
-  DETAIL_PROFILE_CARD_STYLE_OPTIONS,
   EPISODE_LIST_PHOTO_LAYOUT_OPTIONS,
   UI_PREVIEW_OPTIONS,
 } from '@/constants/uiKit';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { useAppTheme } from '../contexts/AppThemeContext';
-import { useDetailDesign } from '../contexts/DetailDesignContext';
 import { useUiKit, useUiPreview } from '../contexts/UiPreviewContext';
 import {
   contentSelectedOptionStyle,
@@ -144,18 +147,16 @@ export default function AppSettingsScreen() {
   const { variant: appThemeVariant, setVariant: setAppThemeVariant, colors: appThemeColors } =
     useAppTheme();
   const isMonochromeTheme = isMonochromeAppTheme(appThemeVariant);
-  const { variant: detailDesignVariant, setVariant: setDetailDesignVariant } = useDetailDesign();
   const {
     variant: uiPreviewVariant,
     setVariant: setUiPreviewVariant,
-    setCalendarEventCardStyle,
-    setCalendarEventTimeDisplay,
     setEpisodeListPhotoLayout,
-    setDetailProfileCardStyle,
   } = useUiPreview();
   const kit = useUiKit();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [completedTaskRetention, setCompletedTaskRetentionState] =
+    useState<CompletedTaskRetention>('1m');
 
   const themed = useMemo(
     () =>
@@ -206,6 +207,7 @@ export default function AppSettingsScreen() {
     const loadedProfiles = getAllProfiles();
     setProfiles(loadedProfiles);
     setSelectedProfileId(resolveMyselfProfileId(loadedProfiles, getMyself()));
+    setCompletedTaskRetentionState(getCompletedTaskRetention());
   }, []);
 
   useFocusEffect(
@@ -213,6 +215,12 @@ export default function AppSettingsScreen() {
       loadMyselfSettings();
     }, [loadMyselfSettings])
   );
+
+  const handleCompletedTaskRetentionChange = (value: CompletedTaskRetention) => {
+    initializeDatabase();
+    setCompletedTaskRetention(value);
+    setCompletedTaskRetentionState(value);
+  };
 
   const handleMyselfProfileChange = (profileId: string) => {
     const profile = profiles.find((item) => item.id === profileId);
@@ -269,22 +277,6 @@ export default function AppSettingsScreen() {
           全画面のベース背景・サブ画面トップバー色を切り替えます（デフォルト / ホワイト / ブラック）
         </Text>
 
-        <Text style={[styles.sectionHeader, themed.sectionHeader]}>Detail 画面デザイン</Text>
-        <View style={[styles.group, themed.group]}>
-          {DETAIL_DESIGN_OPTIONS.map((option, index) => (
-            <View key={option.value}>
-              {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
-              <Pressable style={styles.row} onPress={() => setDetailDesignVariant(option.value)}>
-                <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
-                {detailDesignVariant === option.value ? (
-                  <Text style={styles.selectedMark}>✓</Text>
-                ) : null}
-              </Pressable>
-            </View>
-          ))}
-        </View>
-        <Text style={[styles.hint, themed.hint]}>Detail 画面の配色とタブ・タグのスタイルを切り替えます</Text>
-
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>UI プレビュー</Text>
         <View style={[styles.group, themed.group]}>
           {UI_PREVIEW_OPTIONS.map((option, index) => (
@@ -305,48 +297,6 @@ export default function AppSettingsScreen() {
 
         {uiPreviewVariant === 'preview' ? (
           <>
-            <Text style={[styles.sectionHeader, themed.sectionHeader]}>カレンダー予定カード（試作）</Text>
-            <View style={[styles.group, themed.group]}>
-              {CALENDAR_EVENT_TIME_DISPLAY_OPTIONS.map((option, index) => (
-                <View key={option.value}>
-                  {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
-                  <Pressable
-                    style={styles.row}
-                    onPress={() => setCalendarEventTimeDisplay(option.value)}
-                  >
-                    <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
-                    {kit.calendarEventTimeDisplay === option.value ? (
-                      <Text style={styles.selectedMark}>✓</Text>
-                    ) : null}
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-            <Text style={[styles.hint, themed.hint]}>
-              Preview モード時のみ。予定カード左側の時刻表示スタイルを切り替えます
-            </Text>
-
-            <Text style={[styles.sectionHeader, themed.sectionHeader]}>予定カード形状（試作）</Text>
-            <View style={[styles.group, themed.group]}>
-              {CALENDAR_EVENT_CARD_STYLE_OPTIONS.map((option, index) => (
-                <View key={option.value}>
-                  {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
-                  <Pressable
-                    style={styles.row}
-                    onPress={() => setCalendarEventCardStyle(option.value)}
-                  >
-                    <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
-                    {kit.calendarEventCardStyle === option.value ? (
-                      <Text style={styles.selectedMark}>✓</Text>
-                    ) : null}
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-            <Text style={[styles.hint, themed.hint]}>
-              Preview モード時のみ。ホワイト版などの予定一覧で、各予定を独立した丸角カードにするかを切り替えます
-            </Text>
-
             <Text style={[styles.sectionHeader, themed.sectionHeader]}>エピソードカード写真（試作）</Text>
             <View style={[styles.group, themed.group]}>
               {EPISODE_LIST_PHOTO_LAYOUT_OPTIONS.map((option, index) => (
@@ -367,29 +317,31 @@ export default function AppSettingsScreen() {
             <Text style={[styles.hint, themed.hint]}>
               Preview モード時のみ。一覧カード右側の写真の高さ・枚数レイアウトを切り替えます
             </Text>
-
-            <Text style={[styles.sectionHeader, themed.sectionHeader]}>Detail プロフィール枠（試作）</Text>
-            <View style={[styles.group, themed.group]}>
-              {DETAIL_PROFILE_CARD_STYLE_OPTIONS.map((option, index) => (
-                <View key={option.value}>
-                  {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
-                  <Pressable
-                    style={styles.row}
-                    onPress={() => setDetailProfileCardStyle(option.value)}
-                  >
-                    <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
-                    {kit.detailProfileCardStyle === option.value ? (
-                      <Text style={styles.selectedMark}>✓</Text>
-                    ) : null}
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-            <Text style={[styles.hint, themed.hint]}>
-              Preview モード時のみ。Detail の影・角丸・外枠の有無を切り替えます
-            </Text>
           </>
         ) : null}
+
+        <Text style={[styles.sectionHeader, themed.sectionHeader]}>タスク</Text>
+        <View style={[styles.group, themed.group]}>
+          {COMPLETED_TASK_RETENTION_OPTIONS.map((option, index) => (
+            <View key={option.value}>
+              {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
+              <Pressable
+                style={styles.row}
+                onPress={() => handleCompletedTaskRetentionChange(option.value)}
+              >
+                <Text style={[styles.rowLabel, themed.rowLabel]}>
+                  完了済み臨時の保持: {option.label}
+                </Text>
+                {completedTaskRetention === option.value ? (
+                  <Text style={styles.selectedMark}>✓</Text>
+                ) : null}
+              </Pressable>
+            </View>
+          ))}
+        </View>
+        <Text style={[styles.hint, themed.hint]}>
+          完了した臨時タスクを自動削除するまでの期間です（デフォルト1か月）
+        </Text>
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>バックアップ</Text>
         <View style={[styles.group, themed.group]}>

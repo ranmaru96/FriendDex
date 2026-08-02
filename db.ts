@@ -30,9 +30,14 @@ import {
   PendingReviewEpisodeRef,
   Profile,
   Saying,
+  Task,
+  TaskCompletion,
+  TaskInput,
+  CompletedTaskRetention,
 } from './types';
 import { normalizeEpisodeTag } from './utils/episodeHelpers';
 import { buildDefaultShufflePoolLabel, buildShuffleMemberSetKey, normalizeShuffleMemberIds } from './utils/shuffleHelpers';
+import { retentionToCutoffIso } from './utils/taskHelpers';
 import { mergeFriendInputWithPublicFields } from './utils/qrScanHelpers';
 import type {
   MockSettlementExpense,
@@ -185,6 +190,8 @@ const SETTLEMENT_MEMBERS_TABLE = 'settlement_members';
 const SETTLEMENT_EXPENSES_TABLE = 'settlement_expenses';
 const SETTLEMENT_TRANSFER_COMPLETIONS_TABLE = 'settlement_transfer_completions';
 const SHUFFLE_POOLS_TABLE = 'shuffle_pools';
+const TASKS_TABLE = 'tasks';
+const TASK_COMPLETIONS_TABLE = 'task_completions';
 const MYSELF_KEY = 'myself_friend_id';
 
 const db = SQLite.openDatabaseSync(DB_NAME);
@@ -791,7 +798,42 @@ export const initializeDatabase = (): void => {
     );
   `);
 
-  const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COMMON_ITEM_OPTIONS_TABLE});`);
+  
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${TASKS_TABLE} (
+      id TEXT PRIMARY KEY NOT NULL,
+      kind TEXT NOT NULL,
+      title TEXT NOT NULL,
+      pace TEXT,
+      recurrence_unit TEXT,
+      recurrence_config TEXT,
+      due_date TEXT,
+      event_id TEXT,
+      completed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.execSync(`CREATE INDEX IF NOT EXISTS idx_${TASKS_TABLE}_kind ON ${TASKS_TABLE}(kind);`);
+  db.execSync(`CREATE INDEX IF NOT EXISTS idx_${TASKS_TABLE}_event_id ON ${TASKS_TABLE}(event_id);`);
+  db.execSync(`CREATE INDEX IF NOT EXISTS idx_${TASKS_TABLE}_completed_at ON ${TASKS_TABLE}(completed_at);`);
+
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${TASK_COMPLETIONS_TABLE} (
+      id TEXT PRIMARY KEY NOT NULL,
+      task_id TEXT NOT NULL,
+      completed_on TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+  `);
+  db.execSync(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_${TASK_COMPLETIONS_TABLE}_task_day ON ${TASK_COMPLETIONS_TABLE}(task_id, completed_on);`
+  );
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${TASK_COMPLETIONS_TABLE}_task_id ON ${TASK_COMPLETIONS_TABLE}(task_id);`
+  );
+
+const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COMMON_ITEM_OPTIONS_TABLE});`);
   const commonColumns = new Set(commonTableInfo.map((c) => c.name));
   if (!commonColumns.has('members')) {
     db.execSync(`ALTER TABLE ${COMMON_ITEM_OPTIONS_TABLE} ADD COLUMN members TEXT NOT NULL DEFAULT '[]';`);
@@ -916,6 +958,8 @@ export const initializeDatabase = (): void => {
     reconcileAllGroupOptionMembers();
     setAppSetting(COMMON_ITEM_MEMBERS_RECONCILED_KEY, '1');
   }
+
+  purgeExpiredCompletedTemporaryTasks();
 };
 
 const upsertDefaultProfileFromFriend = (friendId: string, input: FriendInput, timestamp: string): void => {
@@ -1351,6 +1395,7 @@ export const UI_CALENDAR_EVENT_TIME_DISPLAY_KEY = 'ui_calendar_event_time_displa
 export const UI_CALENDAR_EVENT_CARD_STYLE_KEY = 'ui_calendar_event_card_style';
 export const UI_EPISODE_LIST_PHOTO_LAYOUT_KEY = 'ui_episode_list_photo_layout';
 export const UI_DETAIL_PROFILE_CARD_STYLE_KEY = 'ui_detail_profile_card_style';
+export const COMPLETED_TASK_RETENTION_KEY = 'completed_task_retention';
 
 export const getAppSetting = (key: string): string | null => {
   const row = db.getFirstSync<{ value: string }>(`SELECT value FROM ${SETTINGS_TABLE} WHERE key = ?;`, [key]);
@@ -1364,13 +1409,12 @@ export const setAppSetting = (key: string, value: string): void => {
   );
 };
 
-export const getDetailDesignVariant = (): 'main' | 'light' => {
-  const value = getAppSetting(DETAIL_DESIGN_VARIANT_KEY);
-  return value === 'light' ? 'light' : 'main';
+export const getDetailDesignVariant = (): 'main' => {
+  return 'main';
 };
 
-export const setDetailDesignVariant = (variant: 'main' | 'light'): void => {
-  setAppSetting(DETAIL_DESIGN_VARIANT_KEY, variant);
+export const setDetailDesignVariant = (_variant: 'main'): void => {
+  setAppSetting(DETAIL_DESIGN_VARIANT_KEY, 'main');
 };
 
 export const getUiPreviewVariant = (): 'stable' | 'preview' => {
@@ -1394,28 +1438,20 @@ export const setAppThemeVariant = (variant: 'default' | 'white' | 'black'): void
   setAppSetting(APP_THEME_VARIANT_KEY, variant);
 };
 
-export const getCalendarEventTimeDisplayOverride = (): 'plain' | 'column' | 'badge' | null => {
-  const value = getAppSetting(UI_CALENDAR_EVENT_TIME_DISPLAY_KEY);
-  if (value === 'plain' || value === 'column' || value === 'badge') {
-    return value;
-  }
-  return null;
+export const getCalendarEventTimeDisplayOverride = (): 'column' => {
+  return 'column';
 };
 
-export const setCalendarEventTimeDisplayOverride = (display: 'plain' | 'column' | 'badge'): void => {
-  setAppSetting(UI_CALENDAR_EVENT_TIME_DISPLAY_KEY, display);
+export const setCalendarEventTimeDisplayOverride = (_display: 'column'): void => {
+  setAppSetting(UI_CALENDAR_EVENT_TIME_DISPLAY_KEY, 'column');
 };
 
-export const getCalendarEventCardStyleOverride = (): 'current' | 'roundedCards' | null => {
-  const value = getAppSetting(UI_CALENDAR_EVENT_CARD_STYLE_KEY);
-  if (value === 'current' || value === 'roundedCards') {
-    return value;
-  }
-  return null;
+export const getCalendarEventCardStyleOverride = (): 'roundedCards' => {
+  return 'roundedCards';
 };
 
-export const setCalendarEventCardStyleOverride = (style: 'current' | 'roundedCards'): void => {
-  setAppSetting(UI_CALENDAR_EVENT_CARD_STYLE_KEY, style);
+export const setCalendarEventCardStyleOverride = (_style: 'roundedCards'): void => {
+  setAppSetting(UI_CALENDAR_EVENT_CARD_STYLE_KEY, 'roundedCards');
 };
 
 export const getEpisodeListPhotoLayoutOverride = ():
@@ -1438,16 +1474,26 @@ export const setEpisodeListPhotoLayoutOverride = (
   setAppSetting(UI_EPISODE_LIST_PHOTO_LAYOUT_KEY, layout);
 };
 
-export const getDetailProfileCardStyleOverride = (): 'card' | 'flat' | null => {
-  const value = getAppSetting(UI_DETAIL_PROFILE_CARD_STYLE_KEY);
-  if (value === 'card' || value === 'flat') {
-    return value;
-  }
-  return null;
+export const getDetailProfileCardStyleOverride = (): 'flat' => {
+  return 'flat';
 };
 
-export const setDetailProfileCardStyleOverride = (style: 'card' | 'flat'): void => {
-  setAppSetting(UI_DETAIL_PROFILE_CARD_STYLE_KEY, style);
+export const setDetailProfileCardStyleOverride = (_style: 'flat'): void => {
+  setAppSetting(UI_DETAIL_PROFILE_CARD_STYLE_KEY, 'flat');
+};
+
+const COMPLETED_TASK_RETENTION_VALUES: CompletedTaskRetention[] = ['1w', '1m', '3m', '1y', 'forever'];
+
+export const getCompletedTaskRetention = (): CompletedTaskRetention => {
+  const value = getAppSetting(COMPLETED_TASK_RETENTION_KEY);
+  if (value && (COMPLETED_TASK_RETENTION_VALUES as string[]).includes(value)) {
+    return value as CompletedTaskRetention;
+  }
+  return '1m';
+};
+
+export const setCompletedTaskRetention = (retention: CompletedTaskRetention): void => {
+  setAppSetting(COMPLETED_TASK_RETENTION_KEY, retention);
 };
 
 export const setMyself = (friendId: string | null): boolean => {
@@ -3035,6 +3081,13 @@ export const getEvent = (eventId: string): Event | null => {
   return row ? rowToEvent(row) : null;
 };
 
+export const getAllEvents = (): Event[] => {
+  const rows = db.getAllSync<EventRow>(
+    `SELECT * FROM ${EVENTS_TABLE} ORDER BY start_at DESC, title COLLATE NOCASE ASC;`
+  );
+  return rows.map(rowToEvent);
+};
+
 export const getEventsByDateRange = (rangeStartAt: string, rangeEndAt: string): Event[] => {
   const start = rangeStartAt.trim();
   const end = rangeEndAt.trim();
@@ -3933,3 +3986,359 @@ export const importBackupPayload = (payload: FriendDexBackup): void => {
   }
 };
 
+
+type TaskRow = {
+  id: string;
+  kind: string;
+  title: string;
+  pace: string | null;
+  recurrence_unit: string | null;
+  recurrence_config: string | null;
+  due_date: string | null;
+  event_id: string | null;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type TaskCompletionRow = {
+  id: string;
+  task_id: string;
+  completed_on: string;
+  created_at: string;
+};
+
+const parseTaskRecurrenceConfig = (raw: string | null): Task['recurrenceConfig'] => {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+};
+
+const rowToTask = (row: TaskRow): Task => ({
+  id: row.id,
+  kind: row.kind === 'temporary' ? 'temporary' : 'recurring',
+  title: row.title,
+  pace: row.pace === 'scheduled' || row.pace === 'unpaced' ? row.pace : null,
+  recurrenceUnit:
+    row.recurrence_unit === 'day' ||
+    row.recurrence_unit === 'week' ||
+    row.recurrence_unit === 'month' ||
+    row.recurrence_unit === 'year'
+      ? row.recurrence_unit
+      : null,
+  recurrenceConfig: parseTaskRecurrenceConfig(row.recurrence_config),
+  dueDate: row.due_date,
+  eventId: row.event_id,
+  completedAt: row.completed_at,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const rowToTaskCompletion = (row: TaskCompletionRow): TaskCompletion => ({
+  id: row.id,
+  taskId: row.task_id,
+  completedOn: row.completed_on,
+  createdAt: row.created_at,
+});
+
+export const getAllTasks = (): Task[] => {
+  const rows = db.getAllSync<TaskRow>(`SELECT * FROM ${TASKS_TABLE} ORDER BY updated_at DESC;`);
+  return rows.map(rowToTask);
+};
+
+export const getTask = (taskId: string): Task | null => {
+  const normalizedId = taskId.trim();
+  if (!normalizedId) {
+    return null;
+  }
+  const row = db.getFirstSync<TaskRow>(`SELECT * FROM ${TASKS_TABLE} WHERE id = ?;`, [normalizedId]);
+  return row ? rowToTask(row) : null;
+};
+
+export const getTasksByEventId = (eventId: string): Task[] => {
+  const normalizedId = eventId.trim();
+  if (!normalizedId) {
+    return [];
+  }
+  const rows = db.getAllSync<TaskRow>(
+    `SELECT * FROM ${TASKS_TABLE} WHERE event_id = ? ORDER BY created_at ASC;`,
+    [normalizedId]
+  );
+  return rows.map(rowToTask);
+};
+
+export const getOpenTemporaryTasks = (): Task[] => {
+  const rows = db.getAllSync<TaskRow>(
+    `SELECT * FROM ${TASKS_TABLE}
+     WHERE kind = 'temporary' AND completed_at IS NULL
+     ORDER BY CASE WHEN due_date IS NULL THEN 1 ELSE 0 END, due_date ASC, created_at DESC;`
+  );
+  return rows.map(rowToTask);
+};
+
+export const getCompletedTemporaryTasks = (): Task[] => {
+  const rows = db.getAllSync<TaskRow>(
+    `SELECT * FROM ${TASKS_TABLE}
+     WHERE kind = 'temporary' AND completed_at IS NOT NULL
+     ORDER BY completed_at DESC;`
+  );
+  return rows.map(rowToTask);
+};
+
+export const getRecurringTasks = (): Task[] => {
+  const rows = db.getAllSync<TaskRow>(
+    `SELECT * FROM ${TASKS_TABLE} WHERE kind = 'recurring' ORDER BY created_at DESC;`
+  );
+  return rows.map(rowToTask);
+};
+
+export const createTask = (input: TaskInput): Task | null => {
+  const title = input.title.trim();
+  if (!title) {
+    return null;
+  }
+  const timestamp = nowIso();
+  const task: Task = {
+    id: uuidv4(),
+    kind: input.kind,
+    title,
+    pace: input.kind === 'recurring' ? input.pace ?? 'unpaced' : null,
+    recurrenceUnit: input.kind === 'recurring' && input.pace === 'scheduled' ? input.recurrenceUnit ?? 'day' : null,
+    recurrenceConfig:
+      input.kind === 'recurring' && input.pace === 'scheduled' ? input.recurrenceConfig ?? {} : null,
+    dueDate: input.kind === 'temporary' ? input.dueDate?.trim() || null : null,
+    eventId: input.kind === 'temporary' ? input.eventId?.trim() || null : null,
+    completedAt: null,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  db.runSync(
+    `INSERT INTO ${TASKS_TABLE} (
+      id, kind, title, pace, recurrence_unit, recurrence_config, due_date, event_id, completed_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);`,
+    [
+      task.id,
+      task.kind,
+      task.title,
+      task.pace,
+      task.recurrenceUnit,
+      task.recurrenceConfig ? JSON.stringify(task.recurrenceConfig) : null,
+      task.dueDate,
+      task.eventId,
+      task.createdAt,
+      task.updatedAt,
+    ]
+  );
+  return task;
+};
+
+export const updateTask = (taskId: string, input: TaskInput): boolean => {
+  const normalizedId = taskId.trim();
+  const title = input.title.trim();
+  if (!normalizedId || !title) {
+    return false;
+  }
+  if (!getTask(normalizedId)) {
+    return false;
+  }
+  const pace = input.kind === 'recurring' ? input.pace ?? 'unpaced' : null;
+  const recurrenceUnit =
+    input.kind === 'recurring' && pace === 'scheduled' ? input.recurrenceUnit ?? 'day' : null;
+  const recurrenceConfig =
+    input.kind === 'recurring' && pace === 'scheduled' ? input.recurrenceConfig ?? {} : null;
+  const dueDate = input.kind === 'temporary' ? input.dueDate?.trim() || null : null;
+  const eventId = input.kind === 'temporary' ? input.eventId?.trim() || null : null;
+  const result = db.runSync(
+    `UPDATE ${TASKS_TABLE}
+     SET kind = ?, title = ?, pace = ?, recurrence_unit = ?, recurrence_config = ?,
+         due_date = ?, event_id = ?, updated_at = ?
+     WHERE id = ?;`,
+    [
+      input.kind,
+      title,
+      pace,
+      recurrenceUnit,
+      recurrenceConfig ? JSON.stringify(recurrenceConfig) : null,
+      dueDate,
+      eventId,
+      nowIso(),
+      normalizedId,
+    ]
+  );
+  return result.changes > 0;
+};
+
+export const deleteTask = (taskId: string): boolean => {
+  const normalizedId = taskId.trim();
+  if (!normalizedId) {
+    return false;
+  }
+  db.execSync('BEGIN IMMEDIATE;');
+  try {
+    db.runSync(`DELETE FROM ${TASK_COMPLETIONS_TABLE} WHERE task_id = ?;`, [normalizedId]);
+    const result = db.runSync(`DELETE FROM ${TASKS_TABLE} WHERE id = ?;`, [normalizedId]);
+    db.execSync('COMMIT;');
+    return result.changes > 0;
+  } catch {
+    db.execSync('ROLLBACK;');
+    return false;
+  }
+};
+
+export const deleteTasksByIds = (taskIds: string[]): number => {
+  const ids = taskIds.map((id) => id.trim()).filter(Boolean);
+  if (ids.length === 0) {
+    return 0;
+  }
+  let deleted = 0;
+  db.execSync('BEGIN IMMEDIATE;');
+  try {
+    ids.forEach((id) => {
+      db.runSync(`DELETE FROM ${TASK_COMPLETIONS_TABLE} WHERE task_id = ?;`, [id]);
+      const result = db.runSync(`DELETE FROM ${TASKS_TABLE} WHERE id = ?;`, [id]);
+      deleted += result.changes;
+    });
+    db.execSync('COMMIT;');
+    return deleted;
+  } catch {
+    db.execSync('ROLLBACK;');
+    return 0;
+  }
+};
+
+export const unlinkTasksFromEvent = (taskIds: string[]): number => {
+  const ids = taskIds.map((id) => id.trim()).filter(Boolean);
+  if (ids.length === 0) {
+    return 0;
+  }
+  const timestamp = nowIso();
+  let updated = 0;
+  db.execSync('BEGIN IMMEDIATE;');
+  try {
+    ids.forEach((id) => {
+      const result = db.runSync(
+        `UPDATE ${TASKS_TABLE} SET event_id = NULL, updated_at = ? WHERE id = ? AND kind = 'temporary';`,
+        [timestamp, id]
+      );
+      updated += result.changes;
+    });
+    db.execSync('COMMIT;');
+    return updated;
+  } catch {
+    db.execSync('ROLLBACK;');
+    return 0;
+  }
+};
+
+export const completeTemporaryTask = (taskId: string): boolean => {
+  const normalizedId = taskId.trim();
+  if (!normalizedId) {
+    return false;
+  }
+  const timestamp = nowIso();
+  const result = db.runSync(
+    `UPDATE ${TASKS_TABLE}
+     SET completed_at = ?, updated_at = ?
+     WHERE id = ? AND kind = 'temporary' AND completed_at IS NULL;`,
+    [timestamp, timestamp, normalizedId]
+  );
+  return result.changes > 0;
+};
+
+export const reopenTemporaryTask = (taskId: string): boolean => {
+  const normalizedId = taskId.trim();
+  if (!normalizedId) {
+    return false;
+  }
+  const result = db.runSync(
+    `UPDATE ${TASKS_TABLE}
+     SET completed_at = NULL, updated_at = ?
+     WHERE id = ? AND kind = 'temporary';`,
+    [nowIso(), normalizedId]
+  );
+  return result.changes > 0;
+};
+
+export const getTaskCompletions = (taskId: string): TaskCompletion[] => {
+  const normalizedId = taskId.trim();
+  if (!normalizedId) {
+    return [];
+  }
+  const rows = db.getAllSync<TaskCompletionRow>(
+    `SELECT * FROM ${TASK_COMPLETIONS_TABLE} WHERE task_id = ? ORDER BY completed_on DESC;`,
+    [normalizedId]
+  );
+  return rows.map(rowToTaskCompletion);
+};
+
+export const getTaskCompletionDatesSet = (taskId: string): Set<string> => {
+  return new Set(getTaskCompletions(taskId).map((item) => item.completedOn));
+};
+
+export const getTaskCompletionCount = (taskId: string): number => {
+  const normalizedId = taskId.trim();
+  if (!normalizedId) {
+    return 0;
+  }
+  const row = db.getFirstSync<{ count: number }>(
+    `SELECT COUNT(*) as count FROM ${TASK_COMPLETIONS_TABLE} WHERE task_id = ?;`,
+    [normalizedId]
+  );
+  return row?.count ?? 0;
+};
+
+export const isTaskCompletedOn = (taskId: string, ymd: string): boolean => {
+  const row = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM ${TASK_COMPLETIONS_TABLE} WHERE task_id = ? AND completed_on = ? LIMIT 1;`,
+    [taskId.trim(), ymd]
+  );
+  return Boolean(row);
+};
+
+export const setRecurringTaskCompletion = (taskId: string, ymd: string, completed: boolean): boolean => {
+  const normalizedId = taskId.trim();
+  const day = ymd.trim();
+  if (!normalizedId || !day) {
+    return false;
+  }
+  if (completed) {
+    try {
+      db.runSync(
+        `INSERT OR IGNORE INTO ${TASK_COMPLETIONS_TABLE} (id, task_id, completed_on, created_at) VALUES (?, ?, ?, ?);`,
+        [uuidv4(), normalizedId, day, nowIso()]
+      );
+      db.runSync(`UPDATE ${TASKS_TABLE} SET updated_at = ? WHERE id = ?;`, [nowIso(), normalizedId]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const result = db.runSync(
+    `DELETE FROM ${TASK_COMPLETIONS_TABLE} WHERE task_id = ? AND completed_on = ?;`,
+    [normalizedId, day]
+  );
+  return result.changes > 0;
+};
+
+export const purgeExpiredCompletedTemporaryTasks = (): number => {
+  const retention = getCompletedTaskRetention();
+  const cutoff = retentionToCutoffIso(retention);
+  if (!cutoff) {
+    return 0;
+  }
+  const rows = db.getAllSync<{ id: string }>(
+    `SELECT id FROM ${TASKS_TABLE}
+     WHERE kind = 'temporary' AND completed_at IS NOT NULL AND completed_at < ?;`,
+    [cutoff]
+  );
+  if (rows.length === 0) {
+    return 0;
+  }
+  return deleteTasksByIds(rows.map((row) => row.id));
+};

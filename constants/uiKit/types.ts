@@ -13,10 +13,10 @@ export type EpisodeListCardLayout = 'classic' | 'photoRight';
 export type EpisodeListPhotoLayout = 'compactTwoSideBySide' | 'tallOne';
 export type CalendarEventMemoDisplay = 'full' | 'twoLines' | 'oneLine';
 export type CalendarMonthLayout = 'classic' | 'scheduleGrid';
-export type CalendarEventTimeDisplay = 'badge' | 'plain' | 'column';
-export type CalendarEventCardStyle = 'current' | 'roundedCards';
-/** Detail プロフィール枠: card=影・角丸・外枠 / flat=フルブリード風 */
-export type DetailProfileCardStyle = 'card' | 'flat';
+export type CalendarEventTimeDisplay = 'column';
+export type CalendarEventCardStyle = 'roundedCards';
+/** Detail プロフィール枠: flat=フルブリード風（カード廃止・固定） */
+export type DetailProfileCardStyle = 'flat';
 
 export type UiKit = {
   label: string;
@@ -87,11 +87,11 @@ export type UiKit = {
   calendarEventTimeDisplay: CalendarEventTimeDisplay;
   /** カレンダー画面 ScrollView の左右余白（0 でフルブリード） */
   calendarScreenPaddingHorizontal: number;
-  /** badge 表示時の予定リスト左右余白（0 なら従来どおり） */
+  /** 予定リスト左右余白 */
   calendarEventListPaddingHorizontal: number;
-  /** badge 表示時の予定カード間隔 */
+  /** 予定カード間隔 */
   calendarEventCardGap: number;
-  /** badge 表示時の予定カード角丸 */
+  /** 予定カード角丸 */
   calendarEventCardBorderRadius: number;
   /** 予定カードの全体スタイル（Preview override 用） */
   calendarEventCardStyle: CalendarEventCardStyle;

@@ -10,14 +10,9 @@ import { CalendarDayCell } from '@/components/calendar/CalendarDayCell';
 import { ScheduleGridMonthCalendar } from '@/components/calendar/ScheduleGridMonthCalendar';
 import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
 import { CompactSectionHeader } from '@/components/ui/CompactSectionHeader';
-import { EdgePanelList } from '@/components/ui/EdgePanelList';
 import { MetaTitleRow, type MetaTitleRowLayout } from '@/components/ui/MetaTitleRow';
 import { HomeCardElevation, Radius, Spacing, Theme } from '@/constants/theme';
-import type {
-  CalendarEventCardStyle,
-  CalendarEventMemoDisplay,
-  CalendarEventTimeDisplay,
-} from '@/constants/uiKit/types';
+import type { CalendarEventMemoDisplay } from '@/constants/uiKit/types';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -78,16 +73,6 @@ const getCalendarMemoLineLimit = (display: CalendarEventMemoDisplay): number | u
   return undefined;
 };
 
-const toMetaTitleRowLayout = (
-  timeDisplay: CalendarEventTimeDisplay,
-  stacked: boolean
-): MetaTitleRowLayout => {
-  if (stacked) {
-    return 'stacked';
-  }
-  return timeDisplay;
-};
-
 type CalendarEventCardBodyProps = {
   event: Event;
   participants: ReturnType<typeof toEventParticipantDisplays>;
@@ -99,11 +84,6 @@ type CalendarEventCardBodyProps = {
   onOpen: () => void;
   style?: StyleProp<ViewStyle>;
 };
-
-const isRoundedCalendarEventCardStyle = (
-  style: CalendarEventCardStyle,
-  isMonochrome: boolean
-): boolean => isMonochrome && style === 'roundedCards';
 
 function CalendarEventCardBody({
   event,
@@ -172,18 +152,10 @@ export default function CalendarScreen() {
   const content = useContentColors();
   const flushTop = isMonochrome;
   const whiteCalendarSeparator = appTheme?.colors.tabBarBorder ?? Theme.border;
-  const roundedEventCards = isRoundedCalendarEventCardStyle(
-    kit.calendarEventCardStyle,
-    isMonochrome
-  );
   const isCompactEventCard = kit.calendarEventMemoDisplay === 'oneLine';
   const isScheduleGrid = kit.calendarMonthLayout === 'scheduleGrid';
   const isEdgeToEdge = kit.calendarScreenPaddingHorizontal === 0;
-  const isColumnPanelList =
-    isEdgeToEdge && isScheduleGrid && kit.calendarEventTimeDisplay === 'column';
-  const useBadgeInsetEventCards =
-    kit.calendarEventTimeDisplay === 'badge' && kit.calendarEventListPaddingHorizontal > 0;
-  const useRoundedCardEventList = roundedEventCards && !useBadgeInsetEventCards;
+  const eventMetaLayout: MetaTitleRowLayout = isScheduleGrid ? 'column' : 'stacked';
   const roundedEventCardElevation = {
     shadowColor: '#000000',
     shadowOffset: { width: 0, height: 1 },
@@ -406,136 +378,55 @@ export default function CalendarScreen() {
           </GestureDetector>
         )}
 
-        {useBadgeInsetEventCards ? (
-          <View style={{ paddingHorizontal: kit.calendarEventListPaddingHorizontal }}>
-            <CompactSectionHeader
-              title={selectedDateLabel}
-              count={eventsForSelectedDate.length}
-              variant={isScheduleGrid ? 'compact' : 'classic'}
-            />
-            {eventsForSelectedDate.length === 0 ? (
-              <View
-                style={[
-                  styles.emptyCard,
-                  contentCardSurface,
-                  { borderRadius: kit.calendarEventCardBorderRadius },
-                ]}
-              >
-                <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
-                <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
-              </View>
-            ) : (
-              <View style={{ gap: kit.calendarEventCardGap }}>
-                {eventsForSelectedDate.map((event) => {
-                  const participants = participantsByEventId.get(event.id) ?? [];
-                  return (
-                    <CalendarEventCardBody
-                      key={event.id}
-                      event={event}
-                      participants={participants}
-                      episodeCount={(episodesByEventId.get(event.id) ?? []).length}
-                      selectedDate={selectedDate}
-                      metaLayout="column"
-                      isCompactEventCard={isCompactEventCard}
-                      memoDisplay={kit.calendarEventMemoDisplay}
-                      onOpen={() => handleOpenEvent(event.id)}
-                      style={[
-                        styles.eventCard,
-                        contentCardSurface,
-                        isCompactEventCard ? styles.eventCardCompact : null,
-                        { borderRadius: kit.calendarEventCardBorderRadius },
-                      ]}
-                    />
-                  );
-                })}
-              </View>
-            )}
+        <CompactSectionHeader
+          title={selectedDateLabel}
+          count={eventsForSelectedDate.length}
+          variant={isScheduleGrid ? 'compact' : 'classic'}
+          edgeToEdge={isEdgeToEdge}
+        />
+
+        {eventsForSelectedDate.length === 0 ? (
+          <View style={[styles.eventShadow]}>
+            <View
+              style={[
+                styles.emptyCard,
+                contentCardSurface,
+                styles.roundedEventCard,
+              ]}
+            >
+              <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
+              <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
+            </View>
           </View>
         ) : (
-          <>
-            <CompactSectionHeader
-              title={selectedDateLabel}
-              count={eventsForSelectedDate.length}
-              variant={isScheduleGrid ? 'compact' : 'classic'}
-              edgeToEdge={isEdgeToEdge}
-            />
-
-            {eventsForSelectedDate.length === 0 ? (
-              <View style={[styles.eventShadow, isEdgeToEdge ? styles.eventShadowEdgeToEdge : null]}>
-                <View style={[styles.emptyCard, contentCardSurface, isEdgeToEdge ? styles.eventCardEdgeToEdge : null]}>
-                  <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
-                  <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
-                </View>
-              </View>
-            ) : isColumnPanelList && !useRoundedCardEventList ? (
-          <EdgePanelList>
+          <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
             {eventsForSelectedDate.map((event) => {
               const participants = participantsByEventId.get(event.id) ?? [];
               return (
-                <CalendarEventCardBody
+                <View
                   key={event.id}
-                  event={event}
-                  participants={participants}
-                  episodeCount={(episodesByEventId.get(event.id) ?? []).length}
-                  selectedDate={selectedDate}
-                  metaLayout={toMetaTitleRowLayout(kit.calendarEventTimeDisplay, false)}
-                  isCompactEventCard={isCompactEventCard}
-                  memoDisplay={kit.calendarEventMemoDisplay}
-                  onOpen={() => handleOpenEvent(event.id)}
-                  style={[
-                    styles.eventCard,
-                    contentCardSurface,
-                    isCompactEventCard ? styles.eventCardCompact : null,
-                    styles.eventCardPanelItem,
-                  ]}
-                />
+                  style={[styles.eventShadow, roundedEventCardElevation]}
+                >
+                  <CalendarEventCardBody
+                    event={event}
+                    participants={participants}
+                    episodeCount={(episodesByEventId.get(event.id) ?? []).length}
+                    selectedDate={selectedDate}
+                    metaLayout={eventMetaLayout}
+                    isCompactEventCard={isCompactEventCard}
+                    memoDisplay={kit.calendarEventMemoDisplay}
+                    onOpen={() => handleOpenEvent(event.id)}
+                    style={[
+                      styles.eventCard,
+                      contentCardSurface,
+                      isCompactEventCard ? styles.eventCardCompact : null,
+                      styles.roundedEventCard,
+                    ]}
+                  />
+                </View>
               );
             })}
-          </EdgePanelList>
-        ) : (
-          <View
-            style={[
-              isEdgeToEdge ? styles.eventListEdgeToEdge : undefined,
-              useRoundedCardEventList ? styles.roundedEventList : undefined,
-            ]}
-          >
-            {eventsForSelectedDate.map((event) => {
-            const participants = participantsByEventId.get(event.id) ?? [];
-            return (
-              <View
-                key={event.id}
-                style={[
-                  styles.eventShadow,
-                  isEdgeToEdge && !useRoundedCardEventList ? styles.eventShadowEdgeToEdge : null,
-                  useRoundedCardEventList ? roundedEventCardElevation : null,
-                ]}
-              >
-                <CalendarEventCardBody
-                  event={event}
-                  participants={participants}
-                  episodeCount={(episodesByEventId.get(event.id) ?? []).length}
-                  selectedDate={selectedDate}
-                  metaLayout={toMetaTitleRowLayout(
-                    kit.calendarEventTimeDisplay,
-                    !isScheduleGrid
-                  )}
-                  isCompactEventCard={isCompactEventCard}
-                  memoDisplay={kit.calendarEventMemoDisplay}
-                  onOpen={() => handleOpenEvent(event.id)}
-                  style={[
-                    styles.eventCard,
-                    contentCardSurface,
-                    isCompactEventCard ? styles.eventCardCompact : null,
-                    isEdgeToEdge && !useRoundedCardEventList ? styles.eventCardEdgeToEdge : null,
-                    useRoundedCardEventList ? styles.roundedEventCard : null,
-                  ]}
-                />
-              </View>
-            );
-          })}
           </View>
-        )}
-          </>
         )}
       </ScrollView>
 

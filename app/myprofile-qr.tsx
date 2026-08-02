@@ -243,9 +243,22 @@ export default function MyProfileQrScreen() {
           <Ionicons name="close" size={28} color={appTheme.topBarText} />
         </Pressable>
         <Text style={headerStyles.title}>QRコード</Text>
-        <Pressable style={styles.headerIconButton} onPress={() => router.push('/scan')}>
-          <Ionicons name="scan-outline" size={24} color={appTheme.topBarText} />
-        </Pressable>
+        <View style={styles.headerRight}>
+          <Pressable
+            style={styles.headerIconButton}
+            onPress={() => router.push('/myprofile')}
+            accessibilityLabel="公開項目の設定"
+          >
+            <Ionicons name="settings-outline" size={22} color={appTheme.topBarText} />
+          </Pressable>
+          <Pressable
+            style={styles.headerIconButton}
+            onPress={() => router.push('/scan')}
+            accessibilityLabel="QRコードを読み取る"
+          >
+            <Ionicons name="scan-outline" size={24} color={appTheme.topBarText} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -268,7 +281,7 @@ export default function MyProfileQrScreen() {
         ) : (
           <>
             <ViewShot ref={cardShotRef} options={{ format: 'png', quality: 1 }}>
-              <View style={[styles.designCard, { backgroundColor: content.contentCard }]} collapsable={false}>
+              <View style={styles.designCard} collapsable={false}>
                 <QRCode
                   value={qrValue}
                   size={QR_SIZE}
@@ -283,7 +296,7 @@ export default function MyProfileQrScreen() {
                   logoAreaSize={ICON_SIZE + 12}
                   logo={<FriendDexIcon size={ICON_SIZE} color={QR_COLOR} />}
                 />
-                <Text style={[styles.displayName, { color: content.contentText }]}>{displayName}</Text>
+                <Text style={styles.displayName}>{displayName}</Text>
               </View>
             </ViewShot>
 
@@ -305,7 +318,7 @@ export default function MyProfileQrScreen() {
             </View>
 
             <Pressable style={styles.textLinkButton} onPress={() => router.push('/myprofile')}>
-              <Text style={styles.textLink}>マイプロフィールを編集</Text>
+              <Text style={styles.textLink}>公開項目を設定</Text>
             </Pressable>
           </>
         )}
@@ -323,6 +336,10 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   scrollContent: {
     paddingHorizontal: Spacing.lg,

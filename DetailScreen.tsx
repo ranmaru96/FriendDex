@@ -33,7 +33,7 @@ import { createDetailStyles } from './utils/detailStyles';
 import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
 import { useContentColors } from '@/utils/useContentColors';
 import { contentDateTimePickerProps } from '@/utils/contentStyleHelpers';
-import { computeProfileCompleteness, getHomeCardBorderStyle } from '@/utils/profileCompleteness';
+import { computeProfileCompleteness } from '@/utils/profileCompleteness';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import {
   createEpisode,
@@ -311,7 +311,8 @@ function DetailAdjacentSlidePanel({
     showProfileSwitcher,
     profileByLabel,
   } = snapshot;
-  const profileCardBorder = getHomeCardBorderStyle(profileCompleteness);
+  const contentColors = useContentColors();
+  const profileCardBorderColor = contentColors.contentBorder;
   const birthdayLabel = (() => {
     if (!friend.birthday.trim()) return '';
     const formatted = formatEpisodeDateForCard(friend.birthday);
@@ -349,7 +350,7 @@ function DetailAdjacentSlidePanel({
           style={[
             styles.profileCardOuter,
             {
-              borderColor: profileCardBorder.borderColor,
+              borderColor: profileCardBorderColor,
               borderWidth: isFlatProfileCard ? 0 : Theme.homeCardBorderWidth,
               borderRadius: isFlatProfileCard ? 0 : 12,
             },
@@ -357,7 +358,7 @@ function DetailAdjacentSlidePanel({
         >
           <View style={[styles.hero, isMonochromeTheme ? { paddingTop: 8 } : null]}>
             <View style={styles.heroIdentityRow}>
-              <View style={[styles.heroPhotoOuterFrame, { borderColor: profileCardBorder.borderColor }]}>
+              <View style={[styles.heroPhotoOuterFrame, { borderColor: profileCardBorderColor }]}>
                 <View style={styles.heroPhotoInnerFrame}>
                   {showPhoto ? (
                     <Image
@@ -561,7 +562,7 @@ export default function DetailScreen() {
   const kit = useUiKit();
   const useSharedEpisodeCard = kit.episodeListCardLayout === 'photoRight';
   const listItemEmbedded = kit.listItemStyle === 'panelSections';
-  const isFlatProfileCard = kit.detailProfileCardStyle === 'flat';
+  const isFlatProfileCard = true;
   const profileChromeSideBorder = isFlatProfileCard ? 0 : Theme.homeCardBorderWidth;
   const profileCardShadowFlatStyle = isFlatProfileCard
     ? {
@@ -925,10 +926,7 @@ export default function DetailScreen() {
   }, [friend, profileImageStatus]);
   const isProfileCompletenessReady = profileImageStatus !== 'pending';
 
-  const profileCardBorder = useMemo(
-    () => getHomeCardBorderStyle(profileCompleteness),
-    [profileCompleteness]
-  );
+  const profileCardBorderColor = content.contentBorder;
 
   const sinceYear = useMemo(
     () => formatProfileSinceYear(selectedProfile?.createdAt),
@@ -1307,7 +1305,7 @@ export default function DetailScreen() {
         <View
           style={{
             backgroundColor: c.tabPaneBackground,
-            borderColor: profileCardBorder.borderColor,
+            borderColor: profileCardBorderColor,
             borderLeftWidth: profileChromeSideBorder,
             borderRightWidth: profileChromeSideBorder,
             // タブバー（tabTrack marginHorizontal: 12）と同じくカード端から 12
@@ -1359,7 +1357,7 @@ export default function DetailScreen() {
       friendPhotoById,
       listItemEmbedded,
       myselfId,
-      profileCardBorder.borderColor,
+      profileCardBorderColor,
       profileChromeSideBorder,
       router,
       startEditEpisode,
@@ -1381,7 +1379,7 @@ export default function DetailScreen() {
         <View
           style={{
             backgroundColor: c.tabPaneBackground,
-            borderColor: profileCardBorder.borderColor,
+            borderColor: profileCardBorderColor,
             borderLeftWidth: profileChromeSideBorder,
             borderRightWidth: profileChromeSideBorder,
             paddingHorizontal: 12,
@@ -1458,7 +1456,7 @@ export default function DetailScreen() {
       friendNameById,
       friendPhotoById,
       myselfId,
-      profileCardBorder.borderColor,
+      profileCardBorderColor,
       profileChromeSideBorder,
       router,
       styles,
@@ -1473,7 +1471,7 @@ export default function DetailScreen() {
         style={{
           height: kit.episodeListCardGap,
           backgroundColor: c.tabPaneBackground,
-          borderColor: profileCardBorder.borderColor,
+          borderColor: profileCardBorderColor,
           borderLeftWidth: profileChromeSideBorder,
           borderRightWidth: profileChromeSideBorder,
         }}
@@ -1482,7 +1480,7 @@ export default function DetailScreen() {
     [
       c.tabPaneBackground,
       kit.episodeListCardGap,
-      profileCardBorder.borderColor,
+      profileCardBorderColor,
       profileChromeSideBorder,
     ]
   );
@@ -1840,7 +1838,7 @@ export default function DetailScreen() {
                   <View
                     style={{
                       backgroundColor: c.tabPaneBackground,
-                      borderColor: profileCardBorder.borderColor,
+                      borderColor: profileCardBorderColor,
                       borderLeftWidth: profileChromeSideBorder,
                       borderRightWidth: profileChromeSideBorder,
                       paddingHorizontal: 12,
@@ -1858,7 +1856,7 @@ export default function DetailScreen() {
                     <View
                       style={{
                         backgroundColor: c.tabPaneBackground,
-                        borderColor: profileCardBorder.borderColor,
+                        borderColor: profileCardBorderColor,
                         borderLeftWidth: profileChromeSideBorder,
                         borderRightWidth: profileChromeSideBorder,
                         borderBottomWidth: isFlatProfileCard ? 0 : Theme.homeCardBorderWidth,
@@ -1871,7 +1869,7 @@ export default function DetailScreen() {
                     <View
                       style={{
                         backgroundColor: c.tabPaneBackground,
-                        borderColor: profileCardBorder.borderColor,
+                        borderColor: profileCardBorderColor,
                         borderLeftWidth: profileChromeSideBorder,
                         borderRightWidth: profileChromeSideBorder,
                         borderBottomWidth: isFlatProfileCard ? 0 : Theme.homeCardBorderWidth,
@@ -1899,7 +1897,7 @@ export default function DetailScreen() {
           style={[
             styles.profileCardOuter,
             {
-              borderColor: profileCardBorder.borderColor,
+              borderColor: profileCardBorderColor,
               borderWidth: Theme.homeCardBorderWidth,
               ...(isEpisodeTab
                 ? {
@@ -1923,7 +1921,7 @@ export default function DetailScreen() {
             <View
               style={[
                 styles.heroPhotoOuterFrame,
-                { borderColor: profileCardBorder.borderColor },
+                { borderColor: profileCardBorderColor },
               ]}
             >
               <View style={styles.heroPhotoInnerFrame}>
