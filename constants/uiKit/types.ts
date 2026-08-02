@@ -10,7 +10,7 @@ export type ListPanelStyle = 'roundedPanel' | 'edgeFlat';
 export type SectionDividerStyle = 'hairline' | 'bold2px';
 export type ParticipantChipStyle = 'default' | 'fitted';
 export type EpisodeListCardLayout = 'classic' | 'photoRight';
-export type EpisodeListPhotoLayout = 'compactOne' | 'compactTwoSideBySide' | 'tallOne';
+export type EpisodeListPhotoLayout = 'compactTwoSideBySide' | 'tallOne';
 export type CalendarEventMemoDisplay = 'full' | 'twoLines' | 'oneLine';
 export type CalendarMonthLayout = 'classic' | 'scheduleGrid';
 export type CalendarEventTimeDisplay = 'badge' | 'plain' | 'column';
@@ -75,9 +75,8 @@ export type UiKit = {
   episodeListCardBorderRadius: number;
   /**
    * エピソード一覧カード写真レイアウト
-   * - compactOne: タイトル+日付行の高さ・1枚
-   * - compactTwoSideBySide: 同高さ・2枚なら横並び
-   * - tallOne: 参加者行まで含む高さ・1枚
+   * - compactTwoSideBySide: タイトル+日付行の高さ・2枚なら横並び（1枚時は同高さ1枚）
+   * - tallOne: 参加者行まで含む3行分の高さ・1枚（固定）
    */
   episodeListPhotoLayout: EpisodeListPhotoLayout;
   /** @deprecated episodeListPhotoLayout から導出。互換のため残す */

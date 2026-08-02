@@ -22,8 +22,8 @@ import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useContentColors } from '@/utils/useContentColors';
-import { getEventParticipantsForEvents, getEventsByDateRange, initializeDatabase } from '../db';
-import type { Event } from '../types';
+import { getEpisodesByEventIds, getEventParticipantsForEvents, getEventsByDateRange, initializeDatabase } from '../db';
+import type { Episode, Event } from '../types';
 import { buildCalendarMarkedDates } from '../utils/calendarMarking';
 import {
   filterEventsByLocalDate,
@@ -32,6 +32,10 @@ import {
   getMonthRangeIso,
 } from '../utils/eventHelpers';
 import { toEventParticipantDisplays } from '../utils/eventParticipantHelpers';
+import {
+  contentPersonTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import {
   formatScheduleGridSelectedLabel,
   getScheduleGridMonthRangeIso,
@@ -87,6 +91,7 @@ const toMetaTitleRowLayout = (
 type CalendarEventCardBodyProps = {
   event: Event;
   participants: ReturnType<typeof toEventParticipantDisplays>;
+  episodeCount: number;
   selectedDate: string;
   metaLayout: MetaTitleRowLayout;
   isCompactEventCard: boolean;
@@ -103,6 +108,7 @@ const isRoundedCalendarEventCardStyle = (
 function CalendarEventCardBody({
   event,
   participants,
+  episodeCount,
   selectedDate,
   metaLayout,
   isCompactEventCard,
@@ -112,6 +118,14 @@ function CalendarEventCardBody({
 }: CalendarEventCardBodyProps) {
   const content = useContentColors();
   const memoLineLimit = getCalendarMemoLineLimit(memoDisplay);
+  const episodeCountTag =
+    episodeCount > 0 ? (
+      <View style={[styles.episodeCountTag, contentPersonTagStyle(content)]}>
+        <Text style={[styles.episodeCountTagText, contentTextStyle(content)]}>
+          {episodeCount} eps
+        </Text>
+      </View>
+    ) : null;
 
   return (
     <View style={style}>
@@ -120,6 +134,7 @@ function CalendarEventCardBody({
           meta={formatEventScheduleLabelForCard(event, selectedDate)}
           title={event.title}
           layout={metaLayout}
+          titleTrailing={episodeCountTag}
         />
       </Pressable>
       {participants.length > 0 ? (
@@ -198,6 +213,7 @@ export default function CalendarScreen() {
   const [participantsByEventId, setParticipantsByEventId] = useState<
     Map<string, ReturnType<typeof toEventParticipantDisplays>>
   >(new Map());
+  const [episodesByEventId, setEpisodesByEventId] = useState<Map<string, Episode[]>>(new Map());
 
   const loadMonthEvents = useCallback(
     (year: number, month: number) => {
@@ -216,6 +232,7 @@ export default function CalendarScreen() {
       });
       setMonthEvents(events);
       setParticipantsByEventId(displayMap);
+      setEpisodesByEventId(getEpisodesByEventIds(events.map((event) => event.id)));
     },
     [isScheduleGrid]
   );
@@ -416,6 +433,7 @@ export default function CalendarScreen() {
                       key={event.id}
                       event={event}
                       participants={participants}
+                      episodeCount={(episodesByEventId.get(event.id) ?? []).length}
                       selectedDate={selectedDate}
                       metaLayout="column"
                       isCompactEventCard={isCompactEventCard}
@@ -458,6 +476,7 @@ export default function CalendarScreen() {
                   key={event.id}
                   event={event}
                   participants={participants}
+                  episodeCount={(episodesByEventId.get(event.id) ?? []).length}
                   selectedDate={selectedDate}
                   metaLayout={toMetaTitleRowLayout(kit.calendarEventTimeDisplay, false)}
                   isCompactEventCard={isCompactEventCard}
@@ -494,6 +513,7 @@ export default function CalendarScreen() {
                 <CalendarEventCardBody
                   event={event}
                   participants={participants}
+                  episodeCount={(episodesByEventId.get(event.id) ?? []).length}
                   selectedDate={selectedDate}
                   metaLayout={toMetaTitleRowLayout(
                     kit.calendarEventTimeDisplay,
@@ -625,6 +645,17 @@ const styles = StyleSheet.create({
   eventCardParticipantRow: {
     alignSelf: 'stretch',
     minWidth: 0,
+  },
+  episodeCountTag: {
+    flexShrink: 0,
+    borderRadius: Radius.sm,
+    borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  episodeCountTagText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   eventMemo: {
     fontSize: 13,

@@ -5,6 +5,8 @@ import {
   deleteEpisodePhoto,
   getEpisodePhotos,
   getEvent,
+  getEventParticipants,
+  getMyself,
   insertEpisodePhoto,
 } from '@/db';
 import type {
@@ -17,7 +19,8 @@ import type {
 } from '@/types';
 import { mergeParticipantEntries, normalizeEpisodeTag } from '@/utils/episodeHelpers';
 import { getLinkedEventDateBounds } from '@/utils/eventEpisodeBidirectionalSync';
-import { getLocalDateKeysForEvent } from '@/utils/eventHelpers';
+import { formatDateKey, getLocalDateKeysForEvent } from '@/utils/eventHelpers';
+import { profileIdsToFriendIds } from '@/utils/eventParticipantHelpers';
 import {
   EpisodeParticipantDraft,
   EpisodeVisibilityDraft,
@@ -90,6 +93,20 @@ export function useEpisodeForm({
     () => getLinkedEventDateBounds(linkedEventId),
     [linkedEventId]
   );
+
+  const linkedEventDateKeys = useMemo(() => {
+    const eventId = linkedEventId?.trim();
+    if (!eventId) {
+      return null;
+    }
+    const event = getEvent(eventId);
+    if (!event) {
+      return null;
+    }
+    return getLocalDateKeysForEvent(event);
+  }, [linkedEventId]);
+
+  const isLinkedEventSingleDay = (linkedEventDateKeys?.length ?? 0) === 1;
 
   const reset = useCallback(() => {
     setFormError('');
@@ -251,14 +268,39 @@ export function useEpisodeForm({
       setDeletedPhotoIds([]);
       setFormError('');
       setShowDatePicker(false);
-      if (eventId) {
-        const event = getEvent(eventId);
-        setTag(event?.episodeTag ?? '');
-      } else {
-        setTag(episode.tag ?? '');
-      }
+      setTag(episode.tag ?? '');
     },
     [hiddenParticipantIds]
+  );
+
+  const prefillFromEvent = useCallback(
+    (eventId: string) => {
+      const normalized = eventId.trim();
+      const event = getEvent(normalized);
+      if (!event) {
+        return false;
+      }
+      reset();
+      setLinkedEventId(normalized);
+      setTitle(event.title);
+      const keys = getLocalDateKeysForEvent(event);
+      setDate(keys[0] ?? formatDateKey(new Date(event.startAt)));
+      setTag(event.episodeTag ?? '');
+      setDescription('');
+      const myselfId = getMyself();
+      const hidden = hiddenIdSet(hiddenParticipantIds);
+      const friendIds = profileIdsToFriendIds(
+        getEventParticipants(normalized).map((participant) => participant.profileId)
+      ).filter((friendId) => !hidden.has(friendId) && friendId !== myselfId);
+      setParticipants(
+        friendIds.map((friendId) => ({
+          participantType: 'individual' as const,
+          value: friendId,
+        }))
+      );
+      return true;
+    },
+    [hiddenParticipantIds, reset]
   );
 
   const buildSavePayload = useCallback((): EpisodeSavePayload | null => {
@@ -308,7 +350,22 @@ export function useEpisodeForm({
     const normalized = eventId.trim();
     setLinkedEventId(normalized.length > 0 ? normalized : null);
     if (normalized.length > 0) {
-      setTag(getEvent(normalized)?.episodeTag ?? '');
+      const event = getEvent(normalized);
+      if (!event) {
+        return;
+      }
+      const keys = getLocalDateKeysForEvent(event);
+      if (keys.length === 1) {
+        setDate(keys[0]);
+      } else if (keys.length > 1) {
+        setDate((prev) => (keys.includes(prev) ? prev : keys[0]));
+      }
+      setTag((prev) => {
+        if (prev.trim()) {
+          return prev;
+        }
+        return event.episodeTag ?? '';
+      });
     }
   }, []);
 
@@ -366,9 +423,12 @@ export function useEpisodeForm({
     linkedEventId,
     setLinkedEventId,
     linkToEvent,
+    prefillFromEvent,
     tag,
     setTag,
     allowedEventDateRange,
+    linkedEventDateKeys,
+    isLinkedEventSingleDay,
     title,
     setTitle,
     date,

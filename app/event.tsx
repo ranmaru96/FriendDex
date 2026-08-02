@@ -12,8 +12,9 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
+import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import type { Option } from '@/components/episode/types';
 import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
 import { formatEpisodeDateToYMD, parseEpisodeDateString } from '@/components/episode/types';
@@ -37,6 +38,8 @@ import {
   deleteEvent,
   getDistinctAffiliations,
   getDistinctExperiences,
+  getEpisodeListPhotoUrisMap,
+  getEpisodesByEventId,
   getEvent,
   getEventParticipants,
   getMergedEpisodeTagLabels,
@@ -47,7 +50,14 @@ import {
   updateEvent,
   updateEventNotificationId,
 } from '../db';
-import type { EventInput, Friend } from '../types';
+import type { Episode, EventInput, Friend } from '../types';
+import { buildParticipantChips } from '../utils/episodeHelpers';
+
+const buildFriendNameById = (friendList: Friend[]): Map<string, string> =>
+  new Map(friendList.map((friend) => [friend.id, friend.name]));
+
+const buildFriendPhotoById = (friendList: Friend[]): Map<string, string | null> =>
+  new Map(friendList.map((friend) => [friend.id, friend.photoUri ?? null]));
 import {
   buildAllDayEndAt,
   buildAllDayStartAt,
@@ -75,7 +85,7 @@ import {
   requestNotificationPermissionOnFirstCreate,
   scheduleEventNotification,
 } from '../utils/eventNotifications';
-import { syncLinkedEpisodesFromEvent } from '../utils/eventEpisodeBidirectionalSync';
+import { clampLinkedEpisodeDatesToEvent } from '../utils/eventEpisodeBidirectionalSync';
 
 type PickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime' | null;
 
@@ -141,6 +151,10 @@ export default function EventScreen() {
   const [selectorAffiliationFilter, setSelectorAffiliationFilter] = useState('');
   const [selectorExperienceFilter, setSelectorExperienceFilter] = useState('');
   const [notifyEnabled, setNotifyEnabled] = useState(true);
+  const [linkedEpisodes, setLinkedEpisodes] = useState<Episode[]>([]);
+  const [episodePhotoUrisById, setEpisodePhotoUrisById] = useState<Map<string, string[]>>(
+    () => new Map()
+  );
   const [notifyTimingPreset, setNotifyTimingPreset] = useState<EventNotifyTimingPreset>(
     DEFAULT_NOTIFY_TIMING_PRESET
   );
@@ -172,6 +186,33 @@ export default function EventScreen() {
     [selectedProfileIds]
   );
 
+  const friendNameById = useMemo(() => buildFriendNameById(friends), [friends]);
+  const friendPhotoById = useMemo(() => buildFriendPhotoById(friends), [friends]);
+
+  const handleOpenLinkedEpisode = useCallback(
+    (episode: Episode) => {
+      const ownerId = episode.authorFriendId.trim() || myselfId || '';
+      if (!ownerId) {
+        return;
+      }
+      router.push({
+        pathname: '/episode-detail',
+        params: { episodeId: episode.id, ownerId },
+      });
+    },
+    [myselfId, router]
+  );
+
+  const handleAddLinkedEpisode = useCallback(() => {
+    if (!isEditing) {
+      return;
+    }
+    router.push({
+      pathname: '/episode',
+      params: { createForEventId: eventId },
+    });
+  }, [eventId, isEditing, router]);
+
   const loadEvent = useCallback(() => {
     initializeDatabase();
     const currentMyselfId = getMyself();
@@ -195,6 +236,8 @@ export default function EventScreen() {
       setSelectedProfileIds([]);
       setNotifyEnabled(true);
       setNotifyTimingPreset(DEFAULT_NOTIFY_TIMING_PRESET);
+      setLinkedEpisodes([]);
+      setEpisodePhotoUrisById(new Map());
       setIsReady(true);
       return;
     }
@@ -254,9 +297,29 @@ export default function EventScreen() {
           allDay: false as const,
         };
     setNotifyTimingPreset(inferNotifyTimingPreset(event.notifyAt, timingInput));
+    const episodes = getEpisodesByEventId(eventId);
+    setLinkedEpisodes(episodes);
+    setEpisodePhotoUrisById(getEpisodeListPhotoUrisMap(episodes.map((episode) => episode.id)));
     setIsReady(true);
   }, [eventId, initialDate, isEditing, router]);
 
+  const reloadLinkedEpisodes = useCallback(() => {
+    if (!isEditing) {
+      setLinkedEpisodes([]);
+      setEpisodePhotoUrisById(new Map());
+      return;
+    }
+    initializeDatabase();
+    const episodes = getEpisodesByEventId(eventId);
+    setLinkedEpisodes(episodes);
+    setEpisodePhotoUrisById(getEpisodeListPhotoUrisMap(episodes.map((episode) => episode.id)));
+  }, [eventId, isEditing]);
+
+  useFocusEffect(
+    useCallback(() => {
+      reloadLinkedEpisodes();
+    }, [reloadLinkedEpisodes])
+  );
   useEffect(() => {
     if (allDay && notifyTimingPreset === 'one_hour_before') {
       setNotifyTimingPreset(DEFAULT_NOTIFY_TIMING_PRESET);
@@ -377,7 +440,7 @@ export default function EventScreen() {
         return;
       }
       syncEventParticipants(eventId, selectedProfileIds);
-      syncLinkedEpisodesFromEvent(eventId);
+      clampLinkedEpisodeDatesToEvent(eventId);
       await applySavedEventNotifications(eventId, previousNotificationId);
       router.back();
       return;
@@ -743,6 +806,56 @@ export default function EventScreen() {
             </Text>
           )}
         </FormScreenSection>
+
+        {isEditing ? (
+          <FormScreenSection elevated style={styles.formSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[styles.fieldLabel, contentTextStyle(content)]}>エピソード</Text>
+              <Pressable
+                style={[styles.addParticipantButton, fieldCorner, contentTagStyle(content)]}
+                onPress={handleAddLinkedEpisode}
+              >
+                <Text style={[styles.addParticipantButtonText, contentTextStyle(content)]}>追加</Text>
+              </Pressable>
+            </View>
+            {linkedEpisodes.length > 0 ? (
+              <View style={styles.linkedEpisodeList}>
+                {linkedEpisodes.map((episode) => {
+                  const chips = buildParticipantChips(episode, friendNameById, {
+                    friendPhotoById,
+                    excludeFriendIds: myselfId ? [myselfId] : [],
+                  });
+                  return (
+                    <EpisodeListCard
+                      key={episode.id}
+                      title={episode.title}
+                      date={episode.date}
+                      episodeTag={episode.tag}
+                      chips={chips}
+                      visibilityMode={episode.visibilityMode}
+                      photoUris={episodePhotoUrisById.get(episode.id)}
+                      onPress={() => handleOpenLinkedEpisode(episode)}
+                      style={styles.linkedEpisodeCard}
+                    />
+                  );
+                })}
+              </View>
+            ) : (
+              <Text style={[styles.emptyParticipantText, contentMutedTextStyle(content)]}>
+                まだエピソードがありません
+              </Text>
+            )}
+          </FormScreenSection>
+        ) : null}
+
+        <View style={styles.formActions}>
+          <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
+            <Text style={styles.formCancelButtonText}>キャンセル</Text>
+          </Pressable>
+          <Pressable style={styles.formSaveButton} onPress={handleSave}>
+            <Text style={styles.formSaveButtonText}>保存</Text>
+          </Pressable>
+        </View>
         </FormScreenBody>
 
         {isEditing ? (
@@ -906,6 +1019,38 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
+  formActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: Spacing.sm,
+  },
+  formCancelButton: {
+    backgroundColor: 'transparent',
+    borderColor: Theme.btnGhostBorder,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  formCancelButtonText: {
+    color: Theme.btnGhostText,
+    fontWeight: '700',
+    fontSize: Typography.base,
+  },
+  formSaveButton: {
+    backgroundColor: Theme.btnPrimaryBg,
+    borderColor: Theme.btnPrimaryBg,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  formSaveButtonText: {
+    color: Theme.btnPrimaryText,
+    fontWeight: '700',
+    fontSize: Typography.base,
+  },
   scrollContent: {
     paddingTop: Spacing.md,
     paddingBottom: Spacing.lg,
@@ -1021,6 +1166,12 @@ const styles = StyleSheet.create({
   emptyParticipantText: {
     fontSize: Typography.base,
     color: Theme.textSecondary,
+  },
+  linkedEpisodeList: {
+    gap: Spacing.sm,
+  },
+  linkedEpisodeCard: {
+    marginBottom: 0,
   },
   timingModalBackdrop: {
     flex: 1,

@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { EpisodeCardTitle } from '@/components/episode/EpisodeCardTitle';
@@ -26,8 +25,24 @@ import {
 
 const PHOTO_ASPECT = 4 / 3;
 const PHOTO_DUAL_GAP = 3;
-/** タイトル＋日付メタ行の固定高さ（エピソードタグあり基準） */
-const TITLE_META_BLOCK_HEIGHT = 56;
+
+/**
+ * 写真右レイアウトの行高・間隔（直近の height:56 固定前＝タグあり自然高に合わせる）
+ * タイトル: font 15 / line 18 + underline pad 4 + border 1 → 23
+ * メタ: EpisodeTagChip（pad 4*2 + border 2*2 + text line 14）→ 26
+ */
+const TITLE_ROW_HEIGHT = 23;
+const TITLE_META_GAP = 4;
+const META_ROW_HEIGHT = 26;
+const META_PARTICIPANT_GAP = 2;
+/** fitted チップ(約28) + ScrollView paddingVertical 2*2 */
+const PARTICIPANT_ROW_HEIGHT = 32;
+/** タイトル＋メタ塊（コンパクト写真の高さ基準） */
+const TITLE_META_BLOCK_HEIGHT = TITLE_ROW_HEIGHT + TITLE_META_GAP + META_ROW_HEIGHT;
+/** 縦長1枚: タイトル＋メタ＋参加者の3行分（情報量によらず固定） */
+const TALL_PHOTO_HEIGHT =
+  TITLE_META_BLOCK_HEIGHT + META_PARTICIPANT_GAP + PARTICIPANT_ROW_HEIGHT;
+const TALL_PHOTO_WIDTH = TALL_PHOTO_HEIGHT * PHOTO_ASPECT;
 /** コンパクト写真幅（高さ × 4/3） */
 const PHOTO_WIDTH = Math.round(TITLE_META_BLOCK_HEIGHT * PHOTO_ASPECT);
 
@@ -94,9 +109,8 @@ export function EpisodeListCard({
   const kit = useUiKit();
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
-  const [tallPhotoLeftHeight, setTallPhotoLeftHeight] = useState(0);
   const usePhotoLayout = kit.episodeListCardLayout === 'photoRight';
-  const photoFrameBorderColor = 'transparent';
+  const photoFrameBorderColor = content.contentText;
   const episodeCardBackgroundColor =
     appTheme?.variant === 'black' ? '#252525' : content.contentCard;
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
@@ -112,26 +126,39 @@ export function EpisodeListCard({
     )
       .map((uri) => uri.trim())
       .filter(Boolean);
-    const photoLayout = embedded ? 'compactOne' : kit.episodeListPhotoLayout;
+    // 埋め込み詳細はタイトル+日付行のコンパクト写真。一覧は kit のレイアウトに従う
+    const photoLayout = embedded ? 'compactTwoSideBySide' : kit.episodeListPhotoLayout;
     const displayPhotoUris =
-      photoLayout === 'compactTwoSideBySide'
+      !embedded && photoLayout === 'compactTwoSideBySide'
         ? resolvedPhotoUris.slice(0, 2)
         : resolvedPhotoUris.slice(0, 1);
     const hasPhoto = displayPhotoUris.length > 0;
     const hasParticipants = chips.length > 0;
 
     const cardRadius = embedded ? 0 : kit.episodeListCardBorderRadius;
-    const useTallPhoto = hasPhoto && photoLayout === 'tallOne';
-    const useDualCompact = hasPhoto && photoLayout === 'compactTwoSideBySide' && displayPhotoUris.length > 1;
-    const tallPhotoHeight = tallPhotoLeftHeight > 0 ? tallPhotoLeftHeight : PHOTO_WIDTH / PHOTO_ASPECT;
-    const tallPhotoWidth = tallPhotoHeight * PHOTO_ASPECT;
+    const useTallPhoto = hasPhoto && !embedded && kit.episodeListPhotoLayout === 'tallOne';
+    const useDualCompact =
+      hasPhoto && !embedded && kit.episodeListPhotoLayout === 'compactTwoSideBySide' && displayPhotoUris.length > 1;
 
     const photoRightMetaRow = (
       <View style={styles.photoRightMetaRow}>
-        <Text style={[styles.episodeCardDateText, { color: content.contentTextSecondary }]}>
+        <Text
+          style={[
+            styles.episodeCardDateText,
+            styles.photoRightMetaDateText,
+            { color: content.contentTextSecondary },
+          ]}
+          numberOfLines={1}
+        >
           {formatEpisodeDateForCard(date)}
         </Text>
-        {normalizedEpisodeTag ? <EpisodeTagChip label={normalizedEpisodeTag} /> : null}
+        {normalizedEpisodeTag ? (
+          <EpisodeTagChip
+            label={normalizedEpisodeTag}
+            style={styles.photoRightMetaTagChip}
+            textStyle={styles.photoRightMetaTagText}
+          />
+        ) : null}
         {visibilityMode != null ? (
           <VisibilityModeIcon mode={visibilityMode} />
         ) : showPosterName ? (
@@ -152,26 +179,30 @@ export function EpisodeListCard({
         disabled={!onPress && !onLongPress}
         style={({ pressed }) => [
           styles.photoRightTopLeft,
-          hasParticipants || useTallPhoto ? styles.photoRightTopLeftHug : null,
           titleMultiline ? styles.photoRightTopLeftMultiline : null,
           pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
         ]}
       >
-        <EpisodeCardTitle title={title} multiline={titleMultiline} fillRow={false} />
+        <View style={titleMultiline ? undefined : styles.photoRightTitleRow}>
+          <EpisodeCardTitle title={title} multiline={titleMultiline} fillRow={false} />
+        </View>
         {photoRightMetaRow}
       </Pressable>
     );
 
-    const participantBlock = hasParticipants ? (
-      <View
-        style={[
-          styles.photoRightParticipantRow,
-          useTallPhoto ? styles.photoRightParticipantRowInColumn : null,
-        ]}
-      >
-        <ParticipantChipList chips={chips} layout="scroll" compact />
-      </View>
-    ) : null;
+    const participantBlock =
+      useTallPhoto || hasParticipants ? (
+        <View
+          style={[
+            styles.photoRightParticipantRow,
+            useTallPhoto ? styles.photoRightParticipantRowInColumn : null,
+          ]}
+        >
+          {hasParticipants ? (
+            <ParticipantChipList chips={chips} layout="scroll" compact />
+          ) : null}
+        </View>
+      ) : null;
 
     const photoBlock = hasPhoto ? (
       <Pressable
@@ -189,8 +220,8 @@ export function EpisodeListCard({
             style={[
               styles.photoRightPhotoFrame,
               {
-                width: tallPhotoWidth,
-                height: tallPhotoHeight,
+                width: TALL_PHOTO_WIDTH,
+                height: TALL_PHOTO_HEIGHT,
                 borderColor: photoFrameBorderColor,
                 backgroundColor: content.contentPhotoPlaceholder,
               },
@@ -260,10 +291,6 @@ export function EpisodeListCard({
           <View style={styles.photoRightBodyRow}>
             <View
               style={styles.photoRightLeftColumn}
-              onLayout={(event) => {
-                const nextHeight = Math.round(event.nativeEvent.layout.height);
-                setTallPhotoLeftHeight((prev) => (prev === nextHeight ? prev : nextHeight));
-              }}
             >
               {titleMetaBlock}
               {participantBlock}
@@ -397,33 +424,45 @@ const styles = StyleSheet.create({
   photoRightTopLeft: {
     flex: 1,
     minWidth: 0,
-    height: TITLE_META_BLOCK_HEIGHT,
     justifyContent: 'flex-start',
-    overflow: 'hidden',
-  },
-  /** 参加者行がある／縦長写真時は固定高を外し、メタ〜参加者の空きをなくす */
-  photoRightTopLeftHug: {
-    height: undefined,
-    overflow: undefined,
   },
   photoRightTopLeftMultiline: {
     flex: undefined,
     alignSelf: 'flex-start',
     maxWidth: '100%',
-    height: undefined,
-    overflow: undefined,
+  },
+  photoRightTitleRow: {
+    height: TITLE_ROW_HEIGHT,
+    justifyContent: 'flex-start',
+    overflow: 'hidden',
   },
   photoRightMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: 6,
-    marginTop: 4,
+    marginTop: TITLE_META_GAP,
+    height: META_ROW_HEIGHT,
+    overflow: 'hidden',
+  },
+  photoRightMetaDateText: {
+    lineHeight: 14,
+  },
+  photoRightMetaTagChip: {
+    height: META_ROW_HEIGHT,
+    paddingVertical: 0,
+    justifyContent: 'center',
+  },
+  photoRightMetaTagText: {
+    lineHeight: 14,
+    fontSize: 11,
   },
   photoRightParticipantRow: {
-    marginTop: 2,
+    marginTop: META_PARTICIPANT_GAP,
     alignSelf: 'stretch',
-    minHeight: 28,
+    height: PARTICIPANT_ROW_HEIGHT,
+    justifyContent: 'center',
+    overflow: 'hidden',
   },
   photoRightParticipantRowInColumn: {
     width: '100%',
@@ -443,7 +482,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     overflow: 'hidden',
     backgroundColor: Theme.homeCardPhotoPlaceholder,
-    borderWidth: 0.5,
+    borderWidth: 1,
     borderColor: Theme.inputBorder,
   },
   photoRightPhotoFrameCompact: {

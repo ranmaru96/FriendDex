@@ -1556,6 +1556,11 @@ export default function DetailScreen() {
 
   const proceedNewEpisodeSave = useCallback(
     (payload: EpisodeSavePayload) => {
+      const linkedEventId = episodeForm.linkedEventId?.trim();
+      if (linkedEventId) {
+        finishCreateEpisode(payload, linkedEventId);
+        return;
+      }
       const linkInput = buildEpisodeEventLinkInputFromSavePayload(payload);
       runNewEpisodeEventLinkFlow(linkInput, {
         onResolved: (eventId) => finishCreateEpisode(payload, eventId),
@@ -1567,7 +1572,7 @@ export default function DetailScreen() {
         onEventCreateFailed: handleEventCreateFailed,
       });
     },
-    [finishCreateEpisode, handleEventCreateFailed]
+    [episodeForm.linkedEventId, finishCreateEpisode, handleEventCreateFailed]
   );
 
   const handleCreateLinkCancel = useCallback(() => {

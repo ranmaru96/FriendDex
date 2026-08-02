@@ -29,7 +29,11 @@ export function EpisodeCardTitle({
     >
       <View style={[styles.episodeCardTitleUnderline, { borderBottomColor: content.contentBorder }]}>
         <Text
-          style={[styles.episodeCardTitle, { color: content.contentText }]}
+          style={[
+            styles.episodeCardTitle,
+            { color: content.contentText },
+            multiline ? null : styles.episodeCardTitleSingleLine,
+          ]}
           numberOfLines={multiline ? undefined : 1}
         >
           {displayTitle}
@@ -64,5 +68,9 @@ const styles = StyleSheet.create({
   episodeCardTitle: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  /** 一覧カード: TITLE_ROW_HEIGHT(23) = line 18 + underline pad 4 + border 1 */
+  episodeCardTitleSingleLine: {
+    lineHeight: 18,
   },
 });

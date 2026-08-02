@@ -36,12 +36,13 @@ import {
   getDistinctExperiences,
   getEpisodeById,
   getEpisodePhotos,
+  getEvent,
   getMergedEpisodeTagLabels,
   getMyself,
   initializeDatabase,
   updateEpisode,
 } from '../db';
-import { Episode, EpisodePhoto, Friend } from '../types';
+import { Episode, EpisodePhoto, Event, Friend } from '../types';
 import {
   buildParticipantChips,
   canManageEpisode,
@@ -56,6 +57,7 @@ import {
   runEpisodeEventLinkFlow,
 } from '../utils/episodeEventLinking';
 import type { EpisodeEventMatch } from '../utils/eventEpisodeSync';
+import { formatEventScheduleLabel } from '../utils/eventHelpers';
 
 const LIST_HORIZONTAL_INSET = 12;
 const PHOTO_GAP = 6;
@@ -69,6 +71,7 @@ export default function EpisodeDetailScreen() {
   const bottomNavClearance = useBottomNavScrollClearance();
   const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string }>();
   const [episode, setEpisode] = useState<Episode | null>(null);
+  const [parentEvent, setParentEvent] = useState<Event | null>(null);
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
   const [friendNameById, setFriendNameById] = useState<Map<string, string>>(new Map());
@@ -116,11 +119,15 @@ export default function EpisodeDetailScreen() {
 
     if (!episodeId || !ownerId) {
       setEpisode(null);
+      setParentEvent(null);
       setPhotos([]);
       return;
     }
 
-    setEpisode(getEpisodeById(ownerId, episodeId));
+    const loaded = getEpisodeById(ownerId, episodeId);
+    setEpisode(loaded);
+    const linkedEventId = loaded?.eventId?.trim();
+    setParentEvent(linkedEventId ? getEvent(linkedEventId) : null);
     setPhotos(getEpisodePhotos(episodeId));
   }, [episodeId, ownerId]);
 
@@ -350,6 +357,34 @@ export default function EpisodeDetailScreen() {
               style={styles.episodeHeaderPreview}
             />
 
+            {parentEvent ? (
+              <>
+                <SectionDivider />
+                <PanelSection style={styles.detailSection}>
+                  <Pressable
+                    onPress={() =>
+                      router.push({
+                        pathname: '/event',
+                        params: { eventId: parentEvent.id },
+                      })
+                    }
+                    accessibilityRole="button"
+                    accessibilityLabel="所属する予定を開く"
+                  >
+                    <Text style={[styles.parentEventLabel, contentMutedTextStyle(content)]}>
+                      予定
+                    </Text>
+                    <Text style={[styles.parentEventTitle, contentTextStyle(content)]}>
+                      {parentEvent.title.trim() || '（無題）'}
+                    </Text>
+                    <Text style={[styles.parentEventMeta, contentMutedTextStyle(content)]}>
+                      {formatEventScheduleLabel(parentEvent)}
+                    </Text>
+                  </Pressable>
+                </PanelSection>
+              </>
+            ) : null}
+
             {hasDescription ? (
               <>
                 <SectionDivider />
@@ -470,6 +505,18 @@ const styles = StyleSheet.create({
   },
   episodeHeaderPreview: {
     paddingTop: 14,
+  },
+  parentEventLabel: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  parentEventTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  parentEventMeta: {
+    fontSize: 13,
+    marginTop: 4,
   },
   detailSection: {
     paddingVertical: 10,

@@ -1,71 +1,26 @@
 import {
-  getEpisodeByEventId,
-  getEpisodeParticipantFriendIds,
+  getEpisodesByEventId,
   getEvent,
-  getEventParticipants,
   getMyself,
   updateEpisode,
-  updateEvent,
   type EpisodeInput,
 } from '../db';
-import type { Episode, EpisodeParticipant } from '../types';
+import type { Episode } from '../types';
 import { formatDateKey, getLocalDateKeysForEvent, parseDateKey } from './eventHelpers';
-import { normalizeEpisodeTag } from './episodeHelpers';
-import {
-  friendIdsToProfileIds,
-  profileIdsToFriendIds,
-  syncEventParticipants,
-} from './eventParticipantHelpers';
-
-const EVENT_MEMO_MAX_LENGTH = 500;
 
 let isSyncingEventEpisode = false;
 
 export const isEventEpisodeSyncInProgress = (): boolean => isSyncingEventEpisode;
 
-const sortedFriendIds = (friendIds: string[]): string[] =>
-  [...new Set(friendIds.map((id) => id.trim()).filter((id) => id.length > 0))].sort();
-
-const participantFriendIdsFromEvent = (eventId: string): string[] => {
-  const profileIds = getEventParticipants(eventId).map((participant) => participant.profileId);
-  return sortedFriendIds(profileIdsToFriendIds(profileIds));
-};
-
-const participantFriendIdsFromEpisode = (participantEntries: EpisodeParticipant[]): string[] =>
-  sortedFriendIds(getEpisodeParticipantFriendIds({ participantEntries }));
-
-const friendIdsEqual = (left: string[], right: string[]): boolean =>
-  left.length === right.length && left.every((value, index) => value === right[index]);
-
-const toIndividualParticipantEntries = (friendIds: string[]): EpisodeParticipant[] =>
-  friendIds.map((friendId) => ({ kind: 'individual', value: friendId }));
-
-const normalizeEventMemoForCompare = (memo: string | null | undefined): string | null => {
-  const trimmed = memo?.trim() ?? '';
-  return trimmed.length > 0 ? trimmed : null;
-};
-
-const descriptionToEventMemo = (description: string): string | null => {
-  const trimmed = description.trim();
-  return trimmed.length > 0 ? trimmed.slice(0, EVENT_MEMO_MAX_LENGTH) : null;
-};
-
-const areDescriptionAndMemoSynced = (
-  description: string,
-  memo: string | null | undefined
-): boolean => descriptionToEventMemo(description) === normalizeEventMemoForCompare(memo);
-
-const eventMemoToDescription = (memo: string | null | undefined): string => memo?.trim() ?? '';
-
 const buildEpisodeInputFromEpisode = (
   episode: Episode,
-  overrides: Partial<Pick<EpisodeInput, 'date' | 'description' | 'participantEntries' | 'eventId' | 'tag'>>
+  overrides: Partial<Pick<EpisodeInput, 'date' | 'eventId' | 'tag'>>
 ): EpisodeInput => ({
   title: episode.title,
   date: overrides.date ?? episode.date,
-  description: overrides.description ?? episode.description,
+  description: episode.description,
   visibilityMode: episode.visibilityMode,
-  participantEntries: overrides.participantEntries ?? episode.participantEntries,
+  participantEntries: episode.participantEntries,
   visibilityEntries: episode.visibilityEntries,
   eventId: overrides.eventId ?? episode.eventId,
   tag: overrides.tag ?? episode.tag ?? null,
@@ -73,7 +28,11 @@ const buildEpisodeInputFromEpisode = (
   pendingReview: episode.pendingReview,
 });
 
-export const syncLinkedEpisodesFromEvent = (eventId: string): void => {
+/**
+ * 予定の期間が変わったとき、範囲外になったエピソード日付だけ開始日へクランプする。
+ * タイトル・タグ・本文・参加者は同期しない（フォルダモデル）。
+ */
+export const clampLinkedEpisodeDatesToEvent = (eventId: string): void => {
   if (isSyncingEventEpisode) {
     return;
   }
@@ -84,111 +43,48 @@ export const syncLinkedEpisodesFromEvent = (eventId: string): void => {
   }
 
   const event = getEvent(normalizedEventId);
-  const episode = getEpisodeByEventId(normalizedEventId);
-  if (!event || !episode) {
+  if (!event) {
     return;
   }
 
   const allowedDateKeys = getLocalDateKeysForEvent(event);
-  let nextDate = episode.date;
-  if (!allowedDateKeys.includes(episode.date)) {
-    nextDate = formatDateKey(new Date(event.startAt));
-  }
-
-  const nextParticipantFriendIds = participantFriendIdsFromEvent(normalizedEventId);
-  const currentParticipantFriendIds = participantFriendIdsFromEpisode(episode.participantEntries);
-  const nextTag = normalizeEpisodeTag(event.episodeTag);
-  const currentTag = normalizeEpisodeTag(episode.tag);
-  const dateChanged = nextDate !== episode.date;
-  const participantsChanged = !friendIdsEqual(currentParticipantFriendIds, nextParticipantFriendIds);
-  const tagChanged = nextTag !== currentTag;
-  const descriptionChanged = !areDescriptionAndMemoSynced(episode.description, event.memo);
-
-  if (!dateChanged && !participantsChanged && !tagChanged && !descriptionChanged) {
+  if (allowedDateKeys.length === 0) {
     return;
   }
 
-  const ownerId = episode.authorFriendId.trim() || getMyself() || '';
-  if (!ownerId) {
-    return;
-  }
-
-  const overrides: Partial<Pick<EpisodeInput, 'date' | 'description' | 'participantEntries' | 'tag'>> =
-    {};
-  if (dateChanged) {
-    overrides.date = nextDate;
-  }
-  if (participantsChanged) {
-    overrides.participantEntries = toIndividualParticipantEntries(nextParticipantFriendIds);
-  }
-  if (tagChanged) {
-    overrides.tag = nextTag;
-  }
-  if (descriptionChanged) {
-    overrides.description = eventMemoToDescription(event.memo);
-  }
+  const fallbackDate = formatDateKey(new Date(event.startAt));
+  const episodes = getEpisodesByEventId(normalizedEventId);
 
   isSyncingEventEpisode = true;
   try {
-    updateEpisode(ownerId, episode.id, buildEpisodeInputFromEpisode(episode, overrides));
+    episodes.forEach((episode) => {
+      if (allowedDateKeys.includes(episode.date)) {
+        return;
+      }
+      const ownerId = episode.authorFriendId.trim() || getMyself() || '';
+      if (!ownerId) {
+        return;
+      }
+      updateEpisode(
+        ownerId,
+        episode.id,
+        buildEpisodeInputFromEpisode(episode, { date: fallbackDate })
+      );
+    });
   } finally {
     isSyncingEventEpisode = false;
   }
 };
 
-export const syncLinkedEventFromEpisode = (episode: Episode, _authorFriendId: string): void => {
-  if (isSyncingEventEpisode) {
-    return;
-  }
+/** @deprecated 互換用。clampLinkedEpisodeDatesToEvent と同じ */
+export const syncLinkedEpisodesFromEvent = clampLinkedEpisodeDatesToEvent;
 
-  const eventId = episode.eventId?.trim();
-  if (!eventId) {
-    return;
-  }
-
-  const event = getEvent(eventId);
-  if (!event) {
-    return;
-  }
-
-  const nextProfileIds = sortedFriendIds(
-    friendIdsToProfileIds(participantFriendIdsFromEpisode(episode.participantEntries))
-  );
-  const currentProfileIds = sortedFriendIds(
-    getEventParticipants(eventId).map((participant) => participant.profileId)
-  );
-  const participantsChanged = !friendIdsEqual(nextProfileIds, currentProfileIds);
-
-  const nextTag = normalizeEpisodeTag(episode.tag);
-  const currentTag = normalizeEpisodeTag(event.episodeTag);
-  const tagChanged = nextTag !== currentTag;
-  const descriptionChanged = !areDescriptionAndMemoSynced(episode.description, event.memo);
-
-  if (!participantsChanged && !tagChanged && !descriptionChanged) {
-    return;
-  }
-
-  isSyncingEventEpisode = true;
-  try {
-    if (participantsChanged) {
-      syncEventParticipants(eventId, nextProfileIds);
-    }
-    if (tagChanged || descriptionChanged) {
-      updateEvent(eventId, {
-        title: event.title,
-        startAt: event.startAt,
-        endAt: event.endAt,
-        allDay: event.allDay,
-        memo: descriptionChanged ? descriptionToEventMemo(episode.description) : event.memo,
-        notifyAt: event.notifyAt,
-        notifyEnabled: event.notifyEnabled,
-        autoEpisodeCreated: event.autoEpisodeCreated,
-        episodeTag: tagChanged ? nextTag : event.episodeTag,
-      });
-    }
-  } finally {
-    isSyncingEventEpisode = false;
-  }
+/** エピソード保存時の予定側への書き戻しは行わない（フォルダモデル） */
+export const syncLinkedEventFromEpisode = (
+  _episode: Episode,
+  _authorFriendId: string
+): void => {
+  // no-op
 };
 
 export const getLinkedEventDateBounds = (

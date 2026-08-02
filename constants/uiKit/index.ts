@@ -86,15 +86,18 @@ export const EPISODE_LIST_PHOTO_LAYOUT_OPTIONS: {
   value: EpisodeListPhotoLayout;
   label: string;
 }[] = [
-  { value: 'compactOne', label: 'コンパクト1枚（タイトル+日付行）' },
-  { value: 'compactTwoSideBySide', label: 'コンパクト2枚横並び' },
+  { value: 'compactTwoSideBySide', label: 'コンパクト（1〜2枚・タイトル+日付行）' },
   { value: 'tallOne', label: '縦長1枚（参加者行まで）' },
 ];
 
 export function normalizeEpisodeListPhotoLayout(
   value: string | null | undefined
 ): EpisodeListPhotoLayout | null {
-  if (value === 'compactOne' || value === 'compactTwoSideBySide' || value === 'tallOne') {
+  if (value === 'compactOne') {
+    // 旧「コンパクト1枚」は縦長1枚へ寄せる
+    return 'tallOne';
+  }
+  if (value === 'compactTwoSideBySide' || value === 'tallOne') {
     return value;
   }
   return null;

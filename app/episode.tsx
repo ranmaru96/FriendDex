@@ -103,8 +103,13 @@ export default function EpisodeScreen() {
   const listItemEmbedded = kit.listItemStyle === 'panelSections';
   const isEdgeToEdge = kit.episodeListPaddingHorizontal === 0;
   const router = useRouter();
-  const params = useLocalSearchParams<{ editEpisodeId?: string; ownerId?: string }>();
+  const params = useLocalSearchParams<{
+    editEpisodeId?: string;
+    ownerId?: string;
+    createForEventId?: string;
+  }>();
   const pendingEditKeyRef = useRef<string | null>(null);
+  const pendingCreateForEventKeyRef = useRef<string | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
@@ -188,6 +193,11 @@ export default function EpisodeScreen() {
     if (Array.isArray(params.ownerId)) return params.ownerId[0] ?? '';
     return params.ownerId ?? '';
   }, [params.ownerId]);
+
+  const createForEventId = useMemo(() => {
+    if (Array.isArray(params.createForEventId)) return params.createForEventId[0] ?? '';
+    return params.createForEventId ?? '';
+  }, [params.createForEventId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -328,6 +338,23 @@ export default function EpisodeScreen() {
   };
 
   useEffect(() => {
+    if (!createForEventId || !myselfId) {
+      return;
+    }
+    if (pendingCreateForEventKeyRef.current === createForEventId) {
+      return;
+    }
+    const ok = episodeForm.prefillFromEvent(createForEventId);
+    if (!ok) {
+      Alert.alert('エラー', '予定が見つかりません。');
+      return;
+    }
+    pendingCreateForEventKeyRef.current = createForEventId;
+    setIsFormVisible(true);
+    router.setParams({ createForEventId: undefined });
+  }, [createForEventId, episodeForm, myselfId, router]);
+
+  useEffect(() => {
     if (!pendingEditEpisodeId || !pendingEditOwnerId || episodeRows.length === 0) {
       return;
     }
@@ -401,6 +428,11 @@ export default function EpisodeScreen() {
 
   const proceedNewEpisodeSave = useCallback(
     (payload: EpisodeSavePayload) => {
+      const linkedEventId = episodeForm.linkedEventId?.trim();
+      if (linkedEventId) {
+        finishCreateEpisode(payload, linkedEventId);
+        return;
+      }
       const linkInput = buildEpisodeEventLinkInputFromSavePayload(payload);
       runNewEpisodeEventLinkFlow(linkInput, {
         onResolved: (eventId) => finishCreateEpisode(payload, eventId),
@@ -412,7 +444,7 @@ export default function EpisodeScreen() {
         onEventCreateFailed: handleEventCreateFailed,
       });
     },
-    [finishCreateEpisode, handleEventCreateFailed]
+    [episodeForm.linkedEventId, finishCreateEpisode, handleEventCreateFailed]
   );
 
   const handleCreateLinkCancel = useCallback(() => {

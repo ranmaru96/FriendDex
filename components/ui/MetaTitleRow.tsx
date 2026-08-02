@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Radius, Spacing, Theme } from '@/constants/theme';
 import {
@@ -13,6 +14,8 @@ type MetaTitleRowProps = {
   title: string;
   layout: MetaTitleRowLayout;
   emptyTitle?: string;
+  /** タイトル右側（例: エピソード件数タグ） */
+  titleTrailing?: ReactNode;
 };
 
 export function MetaTitleRow({
@@ -20,6 +23,7 @@ export function MetaTitleRow({
   title,
   layout,
   emptyTitle = '（無題）',
+  titleTrailing,
 }: MetaTitleRowProps) {
   const content = useContentColors();
   const displayTitle = title || emptyTitle;
@@ -28,13 +32,22 @@ export function MetaTitleRow({
   const badgeStyle = contentPersonTagStyle(content);
   const dividerColor = { backgroundColor: content.contentTextSecondary };
 
+  const titleBlock = (numberOfLines: number, titleStyle: object) => (
+    <View style={styles.titleWithTrailing}>
+      <Text style={[titleStyle, titleColor]} numberOfLines={numberOfLines}>
+        {displayTitle}
+      </Text>
+      {titleTrailing ?? null}
+    </View>
+  );
+
   if (layout === 'stacked') {
     return (
       <>
         <View style={[styles.metaBadge, badgeStyle]}>
           <Text style={[styles.metaBadgeText, contentTextStyle(content)]}>{meta}</Text>
         </View>
-        <Text style={[styles.stackedTitle, titleColor]}>{displayTitle}</Text>
+        {titleBlock(2, styles.stackedTitle)}
       </>
     );
   }
@@ -45,9 +58,7 @@ export function MetaTitleRow({
         <Text style={[styles.metaPlain, metaAccent]} numberOfLines={2}>
           {meta}
         </Text>
-        <Text style={[styles.inlineTitle, titleColor]} numberOfLines={2}>
-          {displayTitle}
-        </Text>
+        {titleBlock(2, styles.inlineTitle)}
       </View>
     );
   }
@@ -59,9 +70,7 @@ export function MetaTitleRow({
           {meta}
         </Text>
         <View style={[styles.columnDivider, dividerColor]} />
-        <Text style={[styles.inlineTitle, titleColor]} numberOfLines={3}>
-          {displayTitle}
-        </Text>
+        {titleBlock(3, styles.inlineTitle)}
       </View>
     );
   }
@@ -73,9 +82,7 @@ export function MetaTitleRow({
           {meta}
         </Text>
       </View>
-      <Text style={[styles.inlineTitle, titleColor]} numberOfLines={1}>
-        {displayTitle}
-      </Text>
+      {titleBlock(1, styles.inlineTitle)}
     </View>
   );
 }
@@ -107,13 +114,22 @@ const styles = StyleSheet.create({
     width: Math.max(1, StyleSheet.hairlineWidth * 2),
     alignSelf: 'stretch',
   },
-  inlineTitle: {
+  titleWithTrailing: {
     flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inlineTitle: {
+    flexShrink: 1,
     minWidth: 0,
     fontSize: 15,
     fontWeight: '700',
   },
   stackedTitle: {
+    flexShrink: 1,
+    minWidth: 0,
     fontSize: 15,
     fontWeight: '700',
   },
