@@ -10,7 +10,8 @@ import { SettlementTransferRow } from '@/components/settlement';
 import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { useSettlementMock } from '@/contexts/SettlementMockContext';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
-import { getAllFriends, getMyself, initializeDatabase } from '@/db';
+import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
+import { getMyself, initializeDatabase } from '@/db';
 import type { Friend } from '@/types';
 import type { SettlementExpense, SettlementRoomMember } from '@/types/settlement';
 import { buildFriendNameById, formatYen } from '@/utils/moneyLoanHelpers';
@@ -87,7 +88,7 @@ export default function SettlementRoomDetailScreen() {
 
   const loadFriends = useCallback(() => {
     initializeDatabase();
-    setFriends(getAllFriends());
+    setFriends(getAllFriendsInDefaultOrder());
     setMyselfId(getMyself());
   }, []);
 

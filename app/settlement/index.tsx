@@ -9,6 +9,7 @@ import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import {
   SettlementGroupCard,
+  SettlementIndividualLoanPanel,
   SettlementInviteCard,
   SettlementPersonAggregateCard,
   SettlementSettledDivider,
@@ -22,16 +23,20 @@ import {
   getDistinctAffiliations,
   getDistinctExperiences,
   getEpisodeParticipantFriendIds,
+  getMoneyLoanSessions,
+  getMoneyLoans,
   getMyself,
   initializeDatabase,
+  setMoneyLoanRepaid,
 } from '@/db';
-import type { Friend } from '@/types';
+import type { Friend, MoneyLoan, MoneyLoanSession } from '@/types';
 import type { SettlementExpense, SettlementRoomMember } from '@/types/settlement';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
 import { buildMoneyLoanCounterpartyFriends, getRecentTogetherFriendIdsFromPastEvents } from '@/utils/eventRecencyHelpers';
 import {
   buildFriendNameById,
   buildMoneyLoanParticipantsFromSelectorPicks,
+  buildSessionTitleById,
 } from '@/utils/moneyLoanHelpers';
 import {
   computeMemberBalances,
@@ -44,6 +49,12 @@ import {
   partitionSettlementRooms,
   partitionTransferSections,
 } from '@/utils/settlementListPartition';
+import {
+  mergeMoneyLoansIntoPersonAggregates,
+  buildMoneyLoanTransferSections,
+  isMoneyLoanBalanceSectionId,
+  parseMoneyLoanBalanceKey,
+} from '@/utils/settlementMoneyLoanBridge';
 import { withResolvedSettlementRoomNames } from '@/utils/settlementMockHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
@@ -52,14 +63,14 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 
-type SettlementTab = 'groups' | 'balances' | 'legacy';
+type SettlementTab = 'groups' | 'balances' | 'individual';
 type BalanceViewMode = 'room' | 'person';
 type Option = { label: string; value: string };
 
 const SETTLEMENT_TABS: PillTabItem<SettlementTab>[] = [
+  { key: 'individual', caption: '個別', icon: 'cash-outline', color: '#e07a2a' },
   { key: 'groups', caption: 'グループ', icon: 'people-outline', color: Theme.accent },
   { key: 'balances', caption: '清算', icon: 'swap-horizontal-outline', color: '#4a7fd4' },
-  { key: 'legacy', caption: '従来', icon: 'cash-outline', color: '#e07a2a' },
 ];
 
 type MockRoom = ReturnType<typeof useSettlementMock>['rooms'][number];
@@ -99,10 +110,12 @@ export default function SettlementScreen() {
   const content = useContentColors();
   const { rooms, invites, createRoom, acceptInvite, declineInvite, isTransferCompleted, toggleTransferCompleted } =
     useSettlementMock();
-  const [activeTab, setActiveTab] = useState<SettlementTab>('groups');
+  const [activeTab, setActiveTab] = useState<SettlementTab>('individual');
   const [balanceViewMode, setBalanceViewMode] = useState<BalanceViewMode>('room');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
+  const [moneyLoanSessions, setMoneyLoanSessions] = useState<MoneyLoanSession[]>([]);
+  const [moneyLoans, setMoneyLoans] = useState<MoneyLoan[]>([]);
   const [title, setTitle] = useState('');
   const [participants, setParticipants] = useState<EpisodeParticipantDraft[]>([]);
   const [formError, setFormError] = useState('');
@@ -121,6 +134,8 @@ export default function SettlementScreen() {
     initializeDatabase();
     setFriends(getAllFriends());
     setMyselfId(getMyself());
+    setMoneyLoanSessions(getMoneyLoanSessions());
+    setMoneyLoans(getMoneyLoans());
     setAffiliationOptions(getDistinctAffiliations().map((value) => ({ label: value, value })));
     setExperienceOptions(getDistinctExperiences().map((value) => ({ label: value, value })));
   }, []);
@@ -279,7 +294,7 @@ export default function SettlementScreen() {
   }, [counterpartyFriendIds, createRoom, router, title]);
 
   const transferSections = useMemo(() => {
-    return roomsWithNames
+    const fromRooms = roomsWithNames
       .map((room) => {
         const { members, expenses } = mockRoomToEngine(room);
         if (members.length === 0 || expenses.length === 0) {
@@ -295,37 +310,79 @@ export default function SettlementScreen() {
         return { room, displayTransfers };
       })
       .filter((section): section is NonNullable<typeof section> => section !== null);
-  }, [roomsWithNames]);
+    const fromLoans = buildMoneyLoanTransferSections(moneyLoanSessions, moneyLoans, friendNameById);
+    return [...fromRooms, ...fromLoans];
+  }, [roomsWithNames, moneyLoanSessions, moneyLoans, friendNameById]);
 
-  const personAggregates = useMemo(
-    () => buildSettlementPersonAggregates(transferSections, myselfId, friendNameById),
-    [transferSections, myselfId, friendNameById]
+  const personAggregates = useMemo(() => {
+    const roomOnlySections = transferSections.filter(
+      (section) => !isMoneyLoanBalanceSectionId(section.room.id)
+    );
+    const base = buildSettlementPersonAggregates(roomOnlySections, myselfId, friendNameById);
+    return mergeMoneyLoansIntoPersonAggregates(
+      base,
+      moneyLoans,
+      buildSessionTitleById(moneyLoanSessions),
+      friendNameById
+    );
+  }, [transferSections, myselfId, friendNameById, moneyLoans, moneyLoanSessions]);
+
+  const moneyLoanById = useMemo(() => new Map(moneyLoans.map((loan) => [loan.id, loan])), [moneyLoans]);
+
+  const isBalanceItemCompleted = useCallback(
+    (key: string) => {
+      const loanId = parseMoneyLoanBalanceKey(key);
+      if (loanId) {
+        return moneyLoanById.get(loanId)?.isRepaid ?? false;
+      }
+      return isTransferCompleted(key);
+    },
+    [isTransferCompleted, moneyLoanById]
+  );
+
+  const toggleBalanceItem = useCallback(
+    (key: string) => {
+      const loanId = parseMoneyLoanBalanceKey(key);
+      if (loanId) {
+        const loan = moneyLoanById.get(loanId);
+        if (!loan) {
+          return;
+        }
+        const ok = setMoneyLoanRepaid(loanId, !loan.isRepaid);
+        if (ok) {
+          loadFriends();
+        }
+        return;
+      }
+      toggleTransferCompleted(key);
+    },
+    [loadFriends, moneyLoanById, toggleTransferCompleted]
   );
 
   const roomPartitions = useMemo(
-    () => partitionSettlementRooms(roomsWithNames, isTransferCompleted),
-    [roomsWithNames, isTransferCompleted]
+    () => partitionSettlementRooms(roomsWithNames, isBalanceItemCompleted),
+    [roomsWithNames, isBalanceItemCompleted]
   );
 
   const transferPartitions = useMemo(
-    () => partitionTransferSections(transferSections, isTransferCompleted),
-    [transferSections, isTransferCompleted]
+    () => partitionTransferSections(transferSections, isBalanceItemCompleted),
+    [transferSections, isBalanceItemCompleted]
   );
 
   const personPartitions = useMemo(
-    () => partitionPersonAggregates(personAggregates, isTransferCompleted),
-    [personAggregates, isTransferCompleted]
+    () => partitionPersonAggregates(personAggregates, isBalanceItemCompleted),
+    [personAggregates, isBalanceItemCompleted]
   );
 
   return (
     <>
       <SubToolScreenTemplate
-        title="清算（新）"
+        title="お金貸し借り管理"
         onBack={() => router.back()}
         header={
           <PillTabBar tabs={SETTLEMENT_TABS} activeTab={activeTab} onTabChange={setActiveTab} perTabColors />
         }
-        keyboardAware={activeTab === 'groups'}
+        keyboardAware={activeTab === 'groups' || activeTab === 'individual'}
         extraScrollHeight={24}
         scrollContentStyle={styles.scrollContent}
       >
@@ -484,8 +541,8 @@ export default function SettlementScreen() {
                             <SettlementTransferRow
                               key={transfer.key}
                               transfer={transfer}
-                              isCompleted={isTransferCompleted(transfer.key)}
-                              onToggle={() => toggleTransferCompleted(transfer.key)}
+                              isCompleted={isBalanceItemCompleted(transfer.key)}
+                              onToggle={() => toggleBalanceItem(transfer.key)}
                             />
                           ))}
                         </View>
@@ -513,8 +570,8 @@ export default function SettlementScreen() {
                             <SettlementTransferRow
                               key={transfer.key}
                               transfer={transfer}
-                              isCompleted={isTransferCompleted(transfer.key)}
-                              onToggle={() => toggleTransferCompleted(transfer.key)}
+                              isCompleted={isBalanceItemCompleted(transfer.key)}
+                              onToggle={() => toggleBalanceItem(transfer.key)}
                             />
                           ))}
                         </View>
@@ -534,8 +591,8 @@ export default function SettlementScreen() {
                       <SettlementPersonAggregateCard
                         key={aggregate.counterpartyFriendId}
                         aggregate={aggregate}
-                        isItemCompleted={isTransferCompleted}
-                        onToggleItem={toggleTransferCompleted}
+                        isItemCompleted={isBalanceItemCompleted}
+                        onToggleItem={toggleBalanceItem}
                       />
                     ))}
                   </>
@@ -550,8 +607,8 @@ export default function SettlementScreen() {
                         key={aggregate.counterpartyFriendId}
                         aggregate={aggregate}
                         settled
-                        isItemCompleted={isTransferCompleted}
-                        onToggleItem={toggleTransferCompleted}
+                        isItemCompleted={isBalanceItemCompleted}
+                        onToggleItem={toggleBalanceItem}
                       />
                     ))}
                   </>
@@ -561,18 +618,7 @@ export default function SettlementScreen() {
           </>
         ) : null}
 
-        {activeTab === 'legacy' ? (
-          <View style={formStyles.formCard}>
-            <Text style={formStyles.sectionTitleOnCard}>従来のお金貸し借り</Text>
-            <Text style={[styles.legacyBody, contentMutedTextStyle(content)]}>
-              個別の貸し借り登録・返済チェックは、引き続き既存ツールで利用できます。新清算 UI
-              が問題なければ、将来ここに統合して旧ツールを廃止する予定です。
-            </Text>
-            <Pressable style={formStyles.primaryButton} onPress={() => router.push('/money-loan')}>
-              <Text style={formStyles.primaryButtonText}>お金貸し借り管理を開く</Text>
-            </Pressable>
-          </View>
-        ) : null}
+        {activeTab === 'individual' ? <SettlementIndividualLoanPanel /> : null}
       </SubToolScreenTemplate>
 
       <EntrySelectorModal
@@ -632,9 +678,5 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     marginBottom: 4,
-  },
-  legacyBody: {
-    fontSize: 13,
-    lineHeight: 20,
   },
 });

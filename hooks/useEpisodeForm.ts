@@ -27,6 +27,8 @@ import {
   formatEpisodeDateToYMD,
 } from '@/components/episode/types';
 
+export type EpisodeEventLinkMode = 'none' | 'existing' | 'create_new';
+
 export type EpisodeSavePayload = {
   title: string;
   date: string;
@@ -35,6 +37,10 @@ export type EpisodeSavePayload = {
   participantEntries: EpisodeParticipant[];
   visibilityEntries: EpisodeVisibilityEntry[];
   tag?: string | null;
+  /** Explicit link target; null means unlinked. Ignored when createLinkedEvent is true. */
+  eventId: string | null;
+  /** Create a new calendar event from this episode on save. */
+  createLinkedEvent: boolean;
 };
 
 type UseEpisodeFormOptions = {
@@ -65,6 +71,7 @@ export function useEpisodeForm({
   const [photoCropUri, setPhotoCropUri] = useState<string | null>(null);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<number[]>([]);
   const [linkedEventId, setLinkedEventId] = useState<string | null>(null);
+  const [eventLinkMode, setEventLinkModeState] = useState<EpisodeEventLinkMode>('create_new');
   const [tag, setTag] = useState('');
 
   const [selectorVisible, setSelectorVisible] = useState(false);
@@ -90,11 +97,14 @@ export function useEpisodeForm({
     visibleExistingPhotos.length + newPhotoUris.length >= PHOTO_LIMITS.free;
 
   const allowedEventDateRange = useMemo(
-    () => getLinkedEventDateBounds(linkedEventId),
-    [linkedEventId]
+    () => (eventLinkMode === 'existing' ? getLinkedEventDateBounds(linkedEventId) : null),
+    [eventLinkMode, linkedEventId]
   );
 
   const linkedEventDateKeys = useMemo(() => {
+    if (eventLinkMode !== 'existing') {
+      return null;
+    }
     const eventId = linkedEventId?.trim();
     if (!eventId) {
       return null;
@@ -104,9 +114,16 @@ export function useEpisodeForm({
       return null;
     }
     return getLocalDateKeysForEvent(event);
-  }, [linkedEventId]);
+  }, [eventLinkMode, linkedEventId]);
 
   const isLinkedEventSingleDay = (linkedEventDateKeys?.length ?? 0) === 1;
+
+  const setEventLinkMode = useCallback((mode: EpisodeEventLinkMode) => {
+    setEventLinkModeState(mode);
+    if (mode !== 'existing') {
+      setLinkedEventId(null);
+    }
+  }, []);
 
   const reset = useCallback(() => {
     setFormError('');
@@ -123,6 +140,7 @@ export function useEpisodeForm({
     setPhotoCropUri(null);
     setDeletedPhotoIds([]);
     setLinkedEventId(null);
+    setEventLinkModeState('create_new');
     setTag('');
     setSelectorVisible(false);
     setSelectorNameFilter('');
@@ -242,6 +260,7 @@ export function useEpisodeForm({
       setTitle(episode.title);
       const eventId = episode.eventId?.trim() || null;
       setLinkedEventId(eventId);
+      setEventLinkModeState(eventId ? 'existing' : 'none');
       let nextDate = episode.date;
       if (eventId) {
         const event = getEvent(eventId);
@@ -282,6 +301,7 @@ export function useEpisodeForm({
       }
       reset();
       setLinkedEventId(normalized);
+      setEventLinkModeState('existing');
       setTitle(event.title);
       const keys = getLocalDateKeysForEvent(event);
       setDate(keys[0] ?? formatDateKey(new Date(event.startAt)));
@@ -335,6 +355,13 @@ export function useEpisodeForm({
         : [];
 
     setFormError('');
+    const createLinkedEvent = eventLinkMode === 'create_new';
+    const resolvedEventId =
+      createLinkedEvent || eventLinkMode === 'none' ? null : linkedEventId?.trim() || null;
+    if (eventLinkMode === 'existing' && !resolvedEventId) {
+      setFormError('紐づける予定を選択してください。');
+      return null;
+    }
     return {
       title: normalizedTitle,
       date: normalizedDate,
@@ -343,30 +370,47 @@ export function useEpisodeForm({
       participantEntries,
       visibilityEntries,
       tag: normalizeEpisodeTag(tag),
+      eventId: resolvedEventId,
+      createLinkedEvent,
     };
-  }, [date, description, implicitParticipantEntries, participants, tag, title, visibility, visibilityMode]);
+  }, [
+    date,
+    description,
+    eventLinkMode,
+    implicitParticipantEntries,
+    linkedEventId,
+    participants,
+    tag,
+    title,
+    visibility,
+    visibilityMode,
+  ]);
 
   const linkToEvent = useCallback((eventId: string) => {
     const normalized = eventId.trim();
-    setLinkedEventId(normalized.length > 0 ? normalized : null);
-    if (normalized.length > 0) {
-      const event = getEvent(normalized);
-      if (!event) {
-        return;
-      }
-      const keys = getLocalDateKeysForEvent(event);
-      if (keys.length === 1) {
-        setDate(keys[0]);
-      } else if (keys.length > 1) {
-        setDate((prev) => (keys.includes(prev) ? prev : keys[0]));
-      }
-      setTag((prev) => {
-        if (prev.trim()) {
-          return prev;
-        }
-        return event.episodeTag ?? '';
-      });
+    if (!normalized) {
+      setLinkedEventId(null);
+      setEventLinkModeState('none');
+      return;
     }
+    setEventLinkModeState('existing');
+    setLinkedEventId(normalized);
+    const event = getEvent(normalized);
+    if (!event) {
+      return;
+    }
+    const keys = getLocalDateKeysForEvent(event);
+    if (keys.length === 1) {
+      setDate(keys[0]);
+    } else if (keys.length > 1) {
+      setDate((prev) => (keys.includes(prev) ? prev : keys[0]));
+    }
+    setTag((prev) => {
+      if (prev.trim()) {
+        return prev;
+      }
+      return event.episodeTag ?? '';
+    });
   }, []);
 
   const pickPhoto = useCallback(async () => {
@@ -422,6 +466,8 @@ export function useEpisodeForm({
     setEditingEpisodeId,
     linkedEventId,
     setLinkedEventId,
+    eventLinkMode,
+    setEventLinkMode,
     linkToEvent,
     prefillFromEvent,
     tag,

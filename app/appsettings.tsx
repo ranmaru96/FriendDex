@@ -51,8 +51,7 @@ function ProfileSelectField({
   const { variant, colors } = useAppTheme();
   const content = useContentColors();
   const isMonochrome = isMonochromeAppTheme(variant);
-  const isBlack = variant === 'black';
-  const monoSurface = isBlack ? content.contentCard : undefined;
+  const monoSurface = isMonochrome ? content.contentCard : undefined;
   const [visible, setVisible] = useState(false);
   const displayLabel = useMemo(() => {
     if (!value) return label;
@@ -292,7 +291,9 @@ export default function AppSettingsScreen() {
           ))}
         </View>
         <Text style={[styles.hint, themed.hint]}>
-          アプリ全体のレイアウト・枠・フォームの試作版を切り替えます。Detail の配色とは別の設定です
+          アプリ全体のレイアウト・枠・フォームの試作版を切り替えます。Detail
+          の配色とは別の設定です。Home↔Detail のヘッダー枠共有は Stable /
+          Preview とも有効です
         </Text>
 
         {uiPreviewVariant === 'preview' ? (

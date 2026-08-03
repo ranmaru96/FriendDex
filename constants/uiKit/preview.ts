@@ -1,7 +1,7 @@
 import { BorderWidth, Radius, Spacing, Theme } from '@/constants/theme';
 import type { UiKit } from './types';
 
-/** 試作中の UI ルール（現時点は stable と同値。差分実験はここだけを変える） */
+/** 試作中の UI ルール（差分実験はここだけを変える） */
 export const previewUiKit: UiKit = {
   label: 'preview（試作版）',
 
@@ -63,6 +63,7 @@ export const previewUiKit: UiKit = {
   subToolScreenPaddingHorizontal: Spacing.sm,
   friendsScreenBorderRadius: Spacing.sm,
   detailProfileCardStyle: 'flat',
+  sharedHeaderChrome: true,
   textPrimary: Theme.textPrimary,
   textSecondary: Theme.textSecondary,
   inputBg: Theme.inputBg,

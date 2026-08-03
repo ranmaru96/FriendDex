@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { Spacing, Theme } from '@/constants/theme';
@@ -10,6 +11,8 @@ type CompactSectionHeaderProps = {
   countSuffix?: string;
   variant?: 'compact' | 'classic';
   edgeToEdge?: boolean;
+  /** 行の右端（例: 追加ボタン） */
+  right?: ReactNode;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -19,6 +22,7 @@ export function CompactSectionHeader({
   countSuffix = '件',
   variant = 'compact',
   edgeToEdge = false,
+  right,
   style,
 }: CompactSectionHeaderProps) {
   const appTheme = useAppThemeOptional();
@@ -30,7 +34,14 @@ export function CompactSectionHeader({
 
   if (isMonochrome) {
     return (
-      <View style={[styles.monoRow, edgeToEdge ? styles.edgeToEdge : null, style]}>
+      <View
+        style={[
+          styles.monoRow,
+          right ? styles.monoRowWithRight : null,
+          edgeToEdge ? styles.edgeToEdge : null,
+          style,
+        ]}
+      >
         <View
           style={[styles.monoChip, isBlack ? styles.monoChipBlack : styles.monoChipWhite]}
         >
@@ -50,6 +61,7 @@ export function CompactSectionHeader({
             </Text>
           ) : null}
         </View>
+        {right ? <View style={styles.rightSlot}>{right}</View> : null}
       </View>
     );
   }
@@ -72,12 +84,15 @@ export function CompactSectionHeader({
       >
         {title}
       </Text>
-      {showCount ? (
-        <Text style={[styles.count, { color: countColor }]}>
-          {count}
-          {countSuffix}
-        </Text>
-      ) : null}
+      <View style={styles.bandTrailing}>
+        {showCount ? (
+          <Text style={[styles.count, { color: countColor }]}>
+            {count}
+            {countSuffix}
+          </Text>
+        ) : null}
+        {right ? <View style={styles.rightSlot}>{right}</View> : null}
+      </View>
     </View>
   );
 }
@@ -85,12 +100,24 @@ export function CompactSectionHeader({
 const styles = StyleSheet.create({
   band: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: Spacing.sm,
   },
+  bandTrailing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    flexShrink: 0,
+  },
   monoRow: {
     alignItems: 'flex-start',
+  },
+  monoRowWithRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.sm,
   },
   monoChip: {
     flexDirection: 'row',
@@ -101,6 +128,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
   monoChipWhite: {
     backgroundColor: '#f3f4f6',
@@ -109,6 +138,10 @@ const styles = StyleSheet.create({
   monoChipBlack: {
     backgroundColor: '#2a2a2a',
     borderColor: 'rgba(255, 255, 255, 0.12)',
+  },
+  rightSlot: {
+    flexShrink: 0,
+    justifyContent: 'center',
   },
   classicHeader: {
     paddingHorizontal: 2,

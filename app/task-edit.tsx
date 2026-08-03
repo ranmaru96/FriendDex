@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import {
   Alert,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -8,35 +9,45 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import {
   FormScreenBody,
   FormScreenSection,
   FormScreenTemplate,
 } from '@/components/screen-templates';
 import { FormRow } from '@/components/ui/FormRow';
+import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
+import { DayRollPicker, MonthDayRollPicker, RollScrollLockProvider, useRollScrollLock } from '@/components/ui/RollSelect';
 import {
   createTask,
   deleteTask,
   getAllEvents,
   getEvent,
   getTask,
+  getTaskCompletions,
   initializeDatabase,
   updateTask,
 } from '../db';
-import { Event, TaskInput, TaskKind, TaskPace, TaskRecurrenceUnit } from '../types';
+import { Event, TaskCompletion, TaskInput, TaskKind, TaskPace, TaskRecurrenceUnit } from '../types';
 import {
+  MONTH_NTH_OPTIONS,
   TaskRecurrenceConfig,
   WEEKDAY_OPTIONS,
   formatRecurrenceLabel,
+  resolveMonthNths,
+  resolveMonthWeekdays,
 } from '@/utils/taskHelpers';
-import { formatDateKey, getAllDayDateKeysFromEvent } from '@/utils/eventHelpers';
+import { formatDateKey, getAllDayDateKeysFromEvent, parseDateKey } from '@/utils/eventHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
+  contentDateTimePickerProps,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
   contentSurfaceStyle,
+  contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 
@@ -47,9 +58,20 @@ function eventStartDateKey(event: Event): string {
   return formatDateKey(new Date(event.startAt));
 }
 
+function formatCompletionHistoryDate(ymd: string): string {
+  const [y, m, d] = ymd.split('-').map((part) => Number(part));
+  if (!y || !m || !d) {
+    return ymd;
+  }
+  return `${y}/${m}/${d}`;
+}
+
 export default function TaskEditScreen() {
   const router = useRouter();
   const content = useContentColors();
+  const appTheme = useAppThemeOptional();
+  const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
+  const [formScrollEnabled, setRollScrolling] = useRollScrollLock();
   const params = useLocalSearchParams<{ taskId?: string; eventId?: string; kind?: string }>();
   const taskId = typeof params.taskId === 'string' ? params.taskId : '';
   const presetEventId = typeof params.eventId === 'string' ? params.eventId : '';
@@ -61,19 +83,25 @@ export default function TaskEditScreen() {
 
   const [kind, setKind] = useState<TaskKind>(presetKind ?? 'temporary');
   const [title, setTitle] = useState('');
+  const [memo, setMemo] = useState('');
   const [pace, setPace] = useState<TaskPace>('scheduled');
   const [unit, setUnit] = useState<TaskRecurrenceUnit>('day');
+  const [weekdaysUnspecified, setWeekdaysUnspecified] = useState(false);
   const [weekdays, setWeekdays] = useState<number[]>([1]);
   const [weekStartsOn, setWeekStartsOn] = useState(1);
-  const [monthDay, setMonthDay] = useState('1');
+  const [monthDay, setMonthDay] = useState(1);
   const [monthMode, setMonthMode] = useState<'day' | 'nth'>('day');
-  const [monthNth, setMonthNth] = useState(1);
-  const [monthWeekday, setMonthWeekday] = useState(1);
-  const [yearMonth, setYearMonth] = useState('1');
-  const [yearDay, setYearDay] = useState('1');
+  const [monthNths, setMonthNths] = useState<number[]>([1]);
+  const [monthWeekdays, setMonthWeekdays] = useState<number[]>([1]);
+  const [yearMonth, setYearMonth] = useState(1);
+  const [yearDay, setYearDay] = useState(1);
   const [dueDate, setDueDate] = useState('');
+  const [showDuePicker, setShowDuePicker] = useState(false);
+  const [showMonthDayPicker, setShowMonthDayPicker] = useState(false);
+  const [showYearDatePicker, setShowYearDatePicker] = useState(false);
   const [eventId, setEventId] = useState(presetEventId);
   const [events, setEvents] = useState<Event[]>([]);
+  const [completions, setCompletions] = useState<TaskCompletion[]>([]);
   const [ready, setReady] = useState(false);
 
   useFocusEffect(
@@ -89,33 +117,44 @@ export default function TaskEditScreen() {
         }
         setKind(task.kind);
         setTitle(task.title);
+        setMemo(task.memo ?? '');
         setPace(task.pace ?? 'unpaced');
         setUnit(task.recurrenceUnit ?? 'day');
         const config = task.recurrenceConfig ?? {};
-        setWeekdays(config.weekdays?.length ? config.weekdays : [1]);
+        if (task.recurrenceUnit === 'week') {
+          const hasDays = Boolean(config.weekdays?.length);
+          setWeekdaysUnspecified(!hasDays);
+          setWeekdays(hasDays ? config.weekdays! : [1]);
+        } else {
+          setWeekdaysUnspecified(false);
+          setWeekdays(config.weekdays?.length ? config.weekdays : [1]);
+        }
         setWeekStartsOn(config.weekStartsOn ?? 1);
         if (config.monthDay != null) {
           setMonthMode('day');
-          setMonthDay(String(config.monthDay));
-        } else if (config.monthNth != null) {
+          setMonthDay(config.monthDay);
+        } else if (resolveMonthNths(config).length > 0) {
           setMonthMode('nth');
-          setMonthNth(config.monthNth);
-          setMonthWeekday(config.monthWeekday ?? 1);
+          setMonthNths(resolveMonthNths(config));
+          setMonthWeekdays(resolveMonthWeekdays(config).length ? resolveMonthWeekdays(config) : [1]);
         }
-        if (config.yearMonth != null) setYearMonth(String(config.yearMonth));
-        if (config.yearDay != null) setYearDay(String(config.yearDay));
+        if (config.yearMonth != null) setYearMonth(config.yearMonth);
+        if (config.yearDay != null) setYearDay(config.yearDay);
         setDueDate(task.dueDate ?? '');
         setEventId(task.eventId ?? '');
         setLockedToEvent(Boolean(task.eventId));
+        setCompletions(task.kind === 'recurring' ? getTaskCompletions(taskId) : []);
       } else if (presetEventId) {
         setKind('temporary');
         setEventId(presetEventId);
         setLockedToEvent(true);
         const event = getEvent(presetEventId);
         setDueDate(event ? eventStartDateKey(event) : '');
+        setCompletions([]);
       } else {
         setLockedToEvent(false);
         setKind(presetKind ?? 'temporary');
+        setCompletions([]);
       }
       setReady(true);
     }, [presetEventId, presetKind, router, taskId])
@@ -123,22 +162,27 @@ export default function TaskEditScreen() {
 
   const buildConfig = (): TaskRecurrenceConfig => {
     if (unit === 'week') {
-      return { weekdays: weekdays.slice().sort((a, b) => a - b), weekStartsOn };
+      if (weekdaysUnspecified) {
+        return { weekdays: [], weekStartsOn };
+      }
+      return { weekdays: weekdays.slice().sort((a, b) => a - b) };
     }
     if (unit === 'month') {
       if (monthMode === 'nth') {
-        return { monthNth, monthWeekday, weekStartsOn };
+        return {
+          monthNths: monthNths.slice().sort((a, b) => a - b),
+          monthWeekdays: monthWeekdays.slice().sort((a, b) => a - b),
+        };
       }
-      return { monthDay: Math.min(31, Math.max(1, Number(monthDay) || 1)), weekStartsOn };
+      return { monthDay: Math.min(31, Math.max(1, monthDay || 1)) };
     }
     if (unit === 'year') {
       return {
-        yearMonth: Math.min(12, Math.max(1, Number(yearMonth) || 1)),
-        yearDay: Math.min(31, Math.max(1, Number(yearDay) || 1)),
-        weekStartsOn,
+        yearMonth: Math.min(12, Math.max(1, yearMonth || 1)),
+        yearDay: Math.min(31, Math.max(1, yearDay || 1)),
       };
     }
-    return { weekStartsOn };
+    return {};
   };
 
   const handleSave = () => {
@@ -148,14 +192,23 @@ export default function TaskEditScreen() {
       return;
     }
     const effectiveKind: TaskKind = lockedToEvent ? 'temporary' : kind;
-    if (effectiveKind === 'recurring' && pace === 'scheduled' && unit === 'week' && weekdays.length === 0) {
-      Alert.alert('入力エラー', '曜日を1つ以上選んでください');
-      return;
+    if (effectiveKind === 'recurring' && pace === 'scheduled' && unit === 'week') {
+      if (!weekdaysUnspecified && weekdays.length === 0) {
+        Alert.alert('入力エラー', '曜日を選ぶか、指定なしを選んでください');
+        return;
+      }
+    }
+    if (effectiveKind === 'recurring' && pace === 'scheduled' && unit === 'month' && monthMode === 'nth') {
+      if (monthNths.length === 0 || monthWeekdays.length === 0) {
+        Alert.alert('入力エラー', '第Nと曜日をそれぞれ1つ以上選んでください');
+        return;
+      }
     }
 
     const input: TaskInput = {
       kind: effectiveKind,
       title: trimmed,
+      memo,
       pace: effectiveKind === 'recurring' ? pace : null,
       recurrenceUnit: effectiveKind === 'recurring' && pace === 'scheduled' ? unit : null,
       recurrenceConfig: effectiveKind === 'recurring' && pace === 'scheduled' ? buildConfig() : null,
@@ -199,12 +252,54 @@ export default function TaskEditScreen() {
     if (kind !== 'recurring') return '';
     return formatRecurrenceLabel(pace, pace === 'scheduled' ? unit : null, buildConfig());
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind, pace, unit, weekdays, weekStartsOn, monthDay, monthMode, monthNth, monthWeekday, yearMonth, yearDay]);
+  }, [
+    kind,
+    pace,
+    unit,
+    weekdaysUnspecified,
+    weekdays,
+    weekStartsOn,
+    monthDay,
+    monthMode,
+    monthNths,
+    monthWeekdays,
+    yearMonth,
+    yearDay,
+  ]);
+
+  const selectWeekdaysUnspecified = () => {
+    setWeekdaysUnspecified(true);
+  };
 
   const toggleWeekday = (value: number) => {
-    setWeekdays((prev) =>
-      prev.includes(value) ? prev.filter((d) => d !== value) : [...prev, value].sort((a, b) => a - b)
-    );
+    setWeekdaysUnspecified(false);
+    setWeekdays((prev) => {
+      if (prev.includes(value)) {
+        const next = prev.filter((d) => d !== value);
+        return next.length === 0 ? prev : next;
+      }
+      return [...prev, value].sort((a, b) => a - b);
+    });
+  };
+
+  const toggleMonthNth = (value: number) => {
+    setMonthNths((prev) => {
+      if (prev.includes(value)) {
+        const next = prev.filter((n) => n !== value);
+        return next.length === 0 ? prev : next;
+      }
+      return [...prev, value].sort((a, b) => a - b);
+    });
+  };
+
+  const toggleMonthWeekday = (value: number) => {
+    setMonthWeekdays((prev) => {
+      if (prev.includes(value)) {
+        const next = prev.filter((d) => d !== value);
+        return next.length === 0 ? prev : next;
+      }
+      return [...prev, value].sort((a, b) => a - b);
+    });
   };
 
   if (!ready) {
@@ -215,12 +310,14 @@ export default function TaskEditScreen() {
     <FormScreenTemplate
       title={isEditing ? 'タスク編集' : 'タスク追加'}
       onBack={() => router.back()}
+      scrollEnabled={formScrollEnabled}
       right={
         <Pressable onPress={handleSave} hitSlop={8}>
           <Text style={[styles.saveText, contentTextStyle(content)]}>保存</Text>
         </Pressable>
       }
     >
+      <RollScrollLockProvider setRollScrolling={setRollScrolling}>
       <FormScreenBody>
         {!lockedToEvent ? (
           <FormScreenSection>
@@ -257,6 +354,16 @@ export default function TaskEditScreen() {
               onChangeText={setTitle}
               placeholder="タスク内容"
               placeholderTextColor={content.contentTextSecondary}
+            />
+          </FormRow>
+          <FormRow label="メモ" style={styles.memoRow}>
+            <ViewportCappedMultilineTextInput
+              style={[styles.input, styles.memoInput, contentInputStyle(content)]}
+              value={memo}
+              onChangeText={setMemo}
+              placeholder="メモ（任意）"
+              placeholderTextColor={content.contentTextSecondary}
+              minHeight={88}
             />
           </FormRow>
         </FormScreenSection>
@@ -325,40 +432,65 @@ export default function TaskEditScreen() {
 
                 {unit === 'week' ? (
                   <FormScreenSection>
-                    <Text style={[styles.label, contentTextStyle(content)]}>曜日（複数可）</Text>
-                    <View style={styles.chipRow}>
+                    <Text style={[styles.label, contentTextStyle(content)]}>曜日（必須）</Text>
+                    <View style={styles.weekdayChipRow}>
+                      <Pressable
+                        style={[
+                          styles.weekdayChip,
+                          styles.weekdayChipAny,
+                          contentSurfaceStyle(content),
+                          { borderWidth: 1 },
+                          weekdaysUnspecified ? contentSelectedOptionStyle(content) : null,
+                        ]}
+                        onPress={selectWeekdaysUnspecified}
+                      >
+                        <Text
+                          style={[styles.weekdayChipText, contentTextStyle(content)]}
+                          numberOfLines={1}
+                        >
+                          指定なし
+                        </Text>
+                      </Pressable>
                       {WEEKDAY_OPTIONS.map((day) => (
                         <Pressable
                           key={day.value}
                           style={[
-                            styles.chip,
+                            styles.weekdayChip,
                             contentSurfaceStyle(content),
                             { borderWidth: 1 },
-                            weekdays.includes(day.value) ? contentSelectedOptionStyle(content) : null,
+                            !weekdaysUnspecified && weekdays.includes(day.value)
+                              ? contentSelectedOptionStyle(content)
+                              : null,
                           ]}
                           onPress={() => toggleWeekday(day.value)}
                         >
-                          <Text style={contentTextStyle(content)}>{day.label}</Text>
+                          <Text style={[styles.weekdayChipText, contentTextStyle(content)]}>{day.label}</Text>
                         </Pressable>
                       ))}
                     </View>
-                    <Text style={[styles.label, contentTextStyle(content)]}>週の起点</Text>
-                    <View style={styles.chipRow}>
-                      {WEEKDAY_OPTIONS.map((day) => (
-                        <Pressable
-                          key={`start-${day.value}`}
-                          style={[
-                            styles.chip,
-                            contentSurfaceStyle(content),
-                            { borderWidth: 1 },
-                            weekStartsOn === day.value ? contentSelectedOptionStyle(content) : null,
-                          ]}
-                          onPress={() => setWeekStartsOn(day.value)}
-                        >
-                          <Text style={contentTextStyle(content)}>{day.label}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
+                    {weekdaysUnspecified ? (
+                      <>
+                        <Text style={[styles.label, contentTextStyle(content)]}>週の起点</Text>
+                        <View style={styles.weekdayChipRow}>
+                          {WEEKDAY_OPTIONS.map((day) => (
+                            <Pressable
+                              key={`start-${day.value}`}
+                              style={[
+                                styles.weekdayChip,
+                                contentSurfaceStyle(content),
+                                { borderWidth: 1 },
+                                weekStartsOn === day.value ? contentSelectedOptionStyle(content) : null,
+                              ]}
+                              onPress={() => setWeekStartsOn(day.value)}
+                            >
+                              <Text style={[styles.weekdayChipText, contentTextStyle(content)]}>
+                                {day.label}
+                              </Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </>
+                    ) : null}
                   </FormScreenSection>
                 ) : null}
 
@@ -372,7 +504,10 @@ export default function TaskEditScreen() {
                           { borderWidth: 1 },
                           monthMode === 'day' ? contentSelectedOptionStyle(content) : null,
                         ]}
-                        onPress={() => setMonthMode('day')}
+                        onPress={() => {
+                          setMonthMode('day');
+                          setShowMonthDayPicker(false);
+                        }}
                       >
                         <Text style={contentTextStyle(content)}>日付指定</Text>
                       </Pressable>
@@ -383,38 +518,58 @@ export default function TaskEditScreen() {
                           { borderWidth: 1 },
                           monthMode === 'nth' ? contentSelectedOptionStyle(content) : null,
                         ]}
-                        onPress={() => setMonthMode('nth')}
+                        onPress={() => {
+                          setMonthMode('nth');
+                          setShowMonthDayPicker(false);
+                        }}
                       >
                         <Text style={contentTextStyle(content)}>第N曜日</Text>
                       </Pressable>
                     </View>
                     {monthMode === 'day' ? (
-                      <FormRow label="日">
-                        <TextInput
-                          style={[styles.input, contentInputStyle(content)]}
-                          value={monthDay}
-                          onChangeText={setMonthDay}
-                          keyboardType="number-pad"
-                        />
-                      </FormRow>
+                      <View style={styles.monthModeBody}>
+                        <FormRow label="日">
+                          <Pressable
+                            style={[styles.pickerButton, contentInputStyle(content)]}
+                            onPress={() => setShowMonthDayPicker(true)}
+                          >
+                            <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>
+                              {monthDay}日
+                            </Text>
+                          </Pressable>
+                        </FormRow>
+                        {showMonthDayPicker ? (
+                          <View style={styles.pickerWrap}>
+                            <DayRollPicker day={monthDay} onChange={setMonthDay} />
+                            <Pressable
+                              style={[styles.pickerDoneButton, contentTagStyle(content)]}
+                              onPress={() => setShowMonthDayPicker(false)}
+                            >
+                              <Text style={[styles.pickerDoneText, contentTextStyle(content)]}>完了</Text>
+                            </Pressable>
+                          </View>
+                        ) : null}
+                      </View>
                     ) : (
                       <>
+                        <Text style={[styles.label, contentTextStyle(content)]}>第N（複数可）</Text>
                         <View style={styles.chipRow}>
-                          {[1, 2, 3, 4, 5].map((n) => (
+                          {MONTH_NTH_OPTIONS.map((item) => (
                             <Pressable
-                              key={n}
+                              key={item.value}
                               style={[
                                 styles.chip,
                                 contentSurfaceStyle(content),
                                 { borderWidth: 1 },
-                                monthNth === n ? contentSelectedOptionStyle(content) : null,
+                                monthNths.includes(item.value) ? contentSelectedOptionStyle(content) : null,
                               ]}
-                              onPress={() => setMonthNth(n)}
+                              onPress={() => toggleMonthNth(item.value)}
                             >
-                              <Text style={contentTextStyle(content)}>{n === 5 ? '最終' : `第${n}`}</Text>
+                              <Text style={contentTextStyle(content)}>{item.label}</Text>
                             </Pressable>
                           ))}
                         </View>
+                        <Text style={[styles.label, contentTextStyle(content)]}>曜日（複数可）</Text>
                         <View style={styles.chipRow}>
                           {WEEKDAY_OPTIONS.map((day) => (
                             <Pressable
@@ -423,9 +578,9 @@ export default function TaskEditScreen() {
                                 styles.chip,
                                 contentSurfaceStyle(content),
                                 { borderWidth: 1 },
-                                monthWeekday === day.value ? contentSelectedOptionStyle(content) : null,
+                                monthWeekdays.includes(day.value) ? contentSelectedOptionStyle(content) : null,
                               ]}
-                              onPress={() => setMonthWeekday(day.value)}
+                              onPress={() => toggleMonthWeekday(day.value)}
                             >
                               <Text style={contentTextStyle(content)}>{day.label}</Text>
                             </Pressable>
@@ -438,22 +593,34 @@ export default function TaskEditScreen() {
 
                 {unit === 'year' ? (
                   <FormScreenSection>
-                    <FormRow label="月">
-                      <TextInput
-                        style={[styles.input, contentInputStyle(content)]}
-                        value={yearMonth}
-                        onChangeText={setYearMonth}
-                        keyboardType="number-pad"
-                      />
+                    <FormRow label="月日">
+                      <Pressable
+                        style={[styles.pickerButton, contentInputStyle(content)]}
+                        onPress={() => setShowYearDatePicker(true)}
+                      >
+                        <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>
+                          {`${String(yearMonth).padStart(2, '0')}-${String(yearDay).padStart(2, '0')}`}
+                        </Text>
+                      </Pressable>
                     </FormRow>
-                    <FormRow label="日">
-                      <TextInput
-                        style={[styles.input, contentInputStyle(content)]}
-                        value={yearDay}
-                        onChangeText={setYearDay}
-                        keyboardType="number-pad"
-                      />
-                    </FormRow>
+                    {showYearDatePicker ? (
+                      <View style={styles.pickerWrap}>
+                        <MonthDayRollPicker
+                          month={yearMonth}
+                          day={yearDay}
+                          onChange={({ month, day }) => {
+                            setYearMonth(month);
+                            setYearDay(day);
+                          }}
+                        />
+                        <Pressable
+                          style={[styles.pickerDoneButton, contentTagStyle(content)]}
+                          onPress={() => setShowYearDatePicker(false)}
+                        >
+                          <Text style={[styles.pickerDoneText, contentTextStyle(content)]}>完了</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
                   </FormScreenSection>
                 ) : null}
               </>
@@ -462,16 +629,62 @@ export default function TaskEditScreen() {
         ) : (
           <>
             <FormScreenSection>
-              <FormRow label="期限 (YYYY-MM-DD)">
-                <TextInput
-                  style={[styles.input, contentInputStyle(content)]}
-                  value={dueDate}
-                  onChangeText={setDueDate}
-                  placeholder="空欄で期限なし"
-                  placeholderTextColor={content.contentTextSecondary}
-                  autoCapitalize="none"
-                />
+              <FormRow label="期限">
+                <View style={styles.dueRow}>
+                  <Pressable
+                    style={[styles.pickerButton, contentInputStyle(content)]}
+                    onPress={() => setShowDuePicker(true)}
+                  >
+                    <Text
+                      style={
+                        dueDate
+                          ? [styles.pickerButtonText, contentTextStyle(content)]
+                          : [styles.pickerPlaceholder, contentMutedTextStyle(content)]
+                      }
+                    >
+                      {dueDate || 'yyyy-mm-dd'}
+                    </Text>
+                  </Pressable>
+                  {dueDate ? (
+                    <Pressable
+                      style={[styles.clearDueButton, contentTagStyle(content)]}
+                      onPress={() => {
+                        setDueDate('');
+                        setShowDuePicker(false);
+                      }}
+                    >
+                      <Text style={contentTextStyle(content)}>クリア</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
               </FormRow>
+              {showDuePicker ? (
+                <View style={styles.pickerWrap}>
+                  <DateTimePicker
+                    value={dueDate ? parseDateKey(dueDate) : new Date()}
+                    mode="date"
+                    display="spinner"
+                    locale="ja-JP"
+                    style={styles.picker}
+                    {...dateTimePickerProps}
+                    onChange={(_event: DateTimePickerEvent, selected?: Date) => {
+                      if (!selected) {
+                        return;
+                      }
+                      if (Platform.OS !== 'ios') {
+                        setShowDuePicker(false);
+                      }
+                      setDueDate(formatDateKey(selected));
+                    }}
+                  />
+                  <Pressable
+                    style={[styles.pickerDoneButton, contentTagStyle(content)]}
+                    onPress={() => setShowDuePicker(false)}
+                  >
+                    <Text style={[styles.pickerDoneText, contentTextStyle(content)]}>完了</Text>
+                  </Pressable>
+                </View>
+              ) : null}
             </FormScreenSection>
             <FormScreenSection>
               <Text style={[styles.label, contentTextStyle(content)]}>
@@ -519,12 +732,39 @@ export default function TaskEditScreen() {
           </>
         )}
 
+        {isEditing && kind === 'recurring' ? (
+          <FormScreenSection>
+            <Text style={[styles.label, contentTextStyle(content)]}>
+              実施履歴{completions.length > 0 ? `（${completions.length}回）` : ''}
+            </Text>
+            {completions.length === 0 ? (
+              <Text style={[styles.hint, contentMutedTextStyle(content), styles.historyEmpty]}>
+                まだ記録がありません
+              </Text>
+            ) : (
+              <View style={styles.historyList}>
+                {completions.map((item) => (
+                  <View
+                    key={item.id}
+                    style={[styles.historyRow, contentSurfaceStyle(content), { borderWidth: 1 }]}
+                  >
+                    <Text style={[styles.historyDate, contentTextStyle(content)]}>
+                      {formatCompletionHistoryDate(item.completedOn)}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            )}
+          </FormScreenSection>
+        ) : null}
+
         {isEditing ? (
           <Pressable style={styles.deleteButton} onPress={handleDelete}>
             <Text style={styles.deleteText}>タスクを削除</Text>
           </Pressable>
         ) : null}
       </FormScreenBody>
+      </RollScrollLockProvider>
     </FormScreenTemplate>
   );
 }
@@ -545,6 +785,33 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  monthModeBody: {
+    marginTop: 12,
+    gap: 8,
+  },
+  weekdayChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    alignItems: 'center',
+    gap: 4,
+  },
+  weekdayChip: {
+    flex: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    paddingHorizontal: 2,
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekdayChipAny: {
+    flex: 1.7,
+  },
+  weekdayChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
   chip: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -556,6 +823,70 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     fontSize: 15,
+  },
+  memoInput: {
+    minHeight: 88,
+  },
+  memoRow: {
+    marginTop: 12,
+  },
+  dueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  pickerButton: {
+    flex: 1,
+    minHeight: 40,
+    borderWidth: 1,
+    borderRadius: 8,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  pickerButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  pickerPlaceholder: {
+    fontSize: 15,
+  },
+  clearDueButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  pickerWrap: {
+    marginTop: 8,
+    gap: 8,
+  },
+  picker: {
+    alignSelf: 'stretch',
+  },
+  pickerDoneButton: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  pickerDoneText: {
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  historyEmpty: {
+    marginTop: 0,
+  },
+  historyList: {
+    gap: 6,
+  },
+  historyRow: {
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  historyDate: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   deleteButton: {
     marginTop: 16,

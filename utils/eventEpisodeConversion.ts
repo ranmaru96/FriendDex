@@ -25,10 +25,6 @@ export const convertPastEventsToAutoEpisodes = (): void => {
     }
 
     const participantProfileIds = getEventParticipants(event.id).map((participant) => participant.profileId);
-    if (participantProfileIds.length === 0) {
-      return;
-    }
-
     const participantFriendIds = profileIdsToFriendIds(participantProfileIds);
     const participantEntries: EpisodeParticipant[] = participantFriendIds.map((friendId) => ({
       kind: 'individual',

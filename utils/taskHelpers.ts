@@ -21,14 +21,18 @@ export function addDays(date: Date, days: number): Date {
 export type TaskRecurrenceUnit = 'day' | 'week' | 'month' | 'year';
 
 export type TaskRecurrenceConfig = {
-  /** JS getDay(): 0=Sun … 6=Sat */
+  /** JS getDay(): 0=Sun … 6=Sat. Empty = 曜日指定無（毎週・毎日出現） */
   weekdays?: number[];
-  /** Week boundary start. Default 1 (Mon) */
+  /** Week boundary start. Default 1 (Mon). Unused when weekdays is empty. */
   weekStartsOn?: number;
   monthDay?: number;
-  /** 1–4, or 5 = last */
+  /** @deprecated use monthNths */
   monthNth?: number;
+  /** @deprecated use monthWeekdays */
   monthWeekday?: number;
+  /** 1–4, or 5 = last */
+  monthNths?: number[];
+  monthWeekdays?: number[];
   yearMonth?: number;
   yearDay?: number;
 };
@@ -62,6 +66,26 @@ function nthWeekdayOfMonth(year: number, monthIndex: number, weekday: number, nt
   return null;
 }
 
+export function resolveMonthNths(config: TaskRecurrenceConfig): number[] {
+  if (config.monthNths?.length) {
+    return config.monthNths;
+  }
+  if (config.monthNth != null) {
+    return [config.monthNth];
+  }
+  return [];
+}
+
+export function resolveMonthWeekdays(config: TaskRecurrenceConfig): number[] {
+  if (config.monthWeekdays?.length) {
+    return config.monthWeekdays;
+  }
+  if (config.monthWeekday != null) {
+    return [config.monthWeekday];
+  }
+  return [];
+}
+
 /** Whether this recurring task should appear on the given calendar day */
 export function isRecurringDueOnDate(task: TaskScheduleLike, date: Date): boolean {
   if (task.pace === 'unpaced') {
@@ -79,6 +103,10 @@ export function isRecurringDueOnDate(task: TaskScheduleLike, date: Date): boolea
 
   if (unit === 'week') {
     const weekdays = config.weekdays ?? [];
+    // 曜日指定無 → 毎日出現
+    if (weekdays.length === 0) {
+      return true;
+    }
     return weekdays.includes(date.getDay());
   }
 
@@ -88,14 +116,18 @@ export function isRecurringDueOnDate(task: TaskScheduleLike, date: Date): boolea
       const target = Math.min(config.monthDay, lastDay);
       return date.getDate() === target;
     }
-    if (config.monthNth != null && config.monthWeekday != null) {
-      const day = nthWeekdayOfMonth(
-        date.getFullYear(),
-        date.getMonth(),
-        config.monthWeekday,
-        config.monthNth
-      );
-      return day != null && date.getDate() === day;
+    const nths = resolveMonthNths(config);
+    const weekdays = resolveMonthWeekdays(config);
+    if (nths.length === 0 || weekdays.length === 0) {
+      return false;
+    }
+    for (const nth of nths) {
+      for (const weekday of weekdays) {
+        const day = nthWeekdayOfMonth(date.getFullYear(), date.getMonth(), weekday, nth);
+        if (day != null && date.getDate() === day) {
+          return true;
+        }
+      }
     }
     return false;
   }
@@ -166,13 +198,56 @@ export function calculateScheduledStreak(
   return streak;
 }
 
+/** Latest completion YYYY-MM-DD in the set, or null if empty */
+export function getLastCompletionYmd(completedOnSet: Set<string>): string | null {
+  let latest: string | null = null;
+  for (const ymd of completedOnSet) {
+    if (latest == null || ymd > latest) {
+      latest = ymd;
+    }
+  }
+  return latest;
+}
+
+/** Calendar-day difference: asOfYmd - pastYmd (non-negative when asOf >= past) */
+export function daysBetweenYmd(pastYmd: string, asOfYmd: string): number {
+  const past = parseYmd(pastYmd);
+  const asOf = parseYmd(asOfYmd);
+  const ms = asOf.getTime() - past.getTime();
+  return Math.round(ms / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * Recurring list meta: show streak while consecutive; otherwise days since last completion.
+ * Examples: "連続3" / "5日前" / "今日" / ""
+ */
+export function formatRecurringActivityLabel(
+  task: TaskScheduleLike,
+  completedOnSet: Set<string>,
+  asOf: Date = new Date()
+): string {
+  const streak = calculateScheduledStreak(task, completedOnSet, asOf);
+  if (streak > 0) {
+    return `連続${streak}`;
+  }
+  const lastYmd = getLastCompletionYmd(completedOnSet);
+  if (!lastYmd) {
+    return '';
+  }
+  const daysAgo = daysBetweenYmd(lastYmd, toYmd(asOf));
+  if (daysAgo <= 0) {
+    return '今日';
+  }
+  return `${daysAgo}日前`;
+}
+
 export function formatRecurrenceLabel(
   pace: 'scheduled' | 'unpaced' | null,
   unit: TaskRecurrenceUnit | null,
   config: TaskRecurrenceConfig | null
 ): string {
   if (pace === 'unpaced') {
-    return 'ペースなし';
+    return '';
   }
   if (pace !== 'scheduled' || !unit) {
     return '定期';
@@ -193,9 +268,20 @@ export function formatRecurrenceLabel(
     if (c.monthDay != null) {
       return `毎月${c.monthDay}日`;
     }
-    if (c.monthNth != null && c.monthWeekday != null) {
-      const nthLabel = c.monthNth === 5 ? '最終' : `第${c.monthNth}`;
-      return `毎月${nthLabel}${weekdayLabels[c.monthWeekday] ?? '?'}`;
+    const nths = resolveMonthNths(c);
+    const weekdays = resolveMonthWeekdays(c);
+    if (nths.length > 0 && weekdays.length > 0) {
+      const nthPart = nths
+        .slice()
+        .sort((a, b) => a - b)
+        .map((n) => (n === 5 ? '最終' : `第${n}`))
+        .join('・');
+      const dayPart = weekdays
+        .slice()
+        .sort((a, b) => a - b)
+        .map((d) => weekdayLabels[d] ?? '?')
+        .join('・');
+      return `毎月${nthPart}${dayPart}`;
     }
     return '毎月';
   }
@@ -213,6 +299,14 @@ export const WEEKDAY_OPTIONS: { label: string; value: number }[] = [
   { label: '木', value: 4 },
   { label: '金', value: 5 },
   { label: '土', value: 6 },
+];
+
+export const MONTH_NTH_OPTIONS: { label: string; value: number }[] = [
+  { label: '第1', value: 1 },
+  { label: '第2', value: 2 },
+  { label: '第3', value: 3 },
+  { label: '第4', value: 4 },
+  { label: '最終', value: 5 },
 ];
 
 export type CompletedTaskRetention = '1w' | '1m' | '3m' | '1y' | 'forever';

@@ -11,7 +11,6 @@ const HIDE_HEADER_PATHS = [
   'myprofile-qr',
   'scan',
   'qr-import',
-  'money-loan',
   'shuffle',
   'follows',
   'friends',
@@ -45,7 +44,7 @@ export function getBottomNavScrollClearance(pathname: string): number {
 export function getActiveTab(pathname: string): BottomNavTabKey {
   if (pathname.includes('/commonitems')) return 'commonitems';
   if (pathname.includes('/calendar')) return 'calendar';
-  if (pathname.includes('/money-loan') || pathname.includes('/shuffle')) return 'tools';
+  if (pathname.includes('/shuffle') || pathname.includes('/settlement')) return 'tools';
   if (pathname.includes('/episode')) return 'episode';
   if (pathname.includes('/tools')) return 'tools';
   if (pathname.includes('/tasks') || pathname.includes('/task-edit')) return 'tasks';

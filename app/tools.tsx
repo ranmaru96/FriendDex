@@ -22,18 +22,11 @@ type ToolEntry = {
 const TOOL_ENTRIES: ToolEntry[] = [
   {
     id: 'settlement',
-    title: '清算（新・試作）',
-    description:
-      'グループ精算の UI 試作版。全員を計算に含め、片方向は相手台帳への反映のみ招待。旧機能は「従来」タブから。',
-    icon: 'calculator-outline',
-    route: '/settlement',
-  },
-  {
-    id: 'money-loan',
     title: 'お金貸し借り管理',
-    description: 'タイトルごとに貸し借りを登録し、貸・借タブで未返済を一覧できます。',
+    description:
+      'グループ精算と、グループ不要の個別貸し借り登録。清算タブで会ごと・人ごとの精算を確認できます。',
     icon: 'cash-outline',
-    route: '/money-loan',
+    route: '/settlement',
   },
   {
     id: 'shuffle',
@@ -58,9 +51,9 @@ export default function ToolsScreen() {
           { paddingHorizontal: kit.listScreenPaddingHorizontal },
         ]}
       >
-        <Text style={[styles.screenTitle, { color: kit.topBarText }]}>ツール</Text>
+        <Text style={[styles.screenTitle, contentTextStyle(content)]}>ツール</Text>
         {kit.toolScreenShowSubtitle ? (
-          <Text style={[styles.screenSubtitle, { color: kit.topBarText, opacity: 0.7 }]}>
+          <Text style={[styles.screenSubtitle, contentMutedTextStyle(content)]}>
             便利ツールをここにまとめます
           </Text>
         ) : null}

@@ -7,13 +7,42 @@ import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 
 const SIDE_WIDTH = 44;
 
-export default function AppHeader() {
+type AppHeaderProps = {
+  /** SharedHeaderFrame 内に置くとき、safe area / 下線は親に任せる */
+  embedded?: boolean;
+};
+
+export default function AppHeader({ embedded = false }: AppHeaderProps) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const appTheme = useAppThemeOptional();
   const headerBackground = appTheme?.colors.headerBackground ?? Theme.surface;
   const headerBorder = appTheme?.colors.headerBorder ?? Theme.border;
   const headerText = appTheme?.colors.headerText ?? Theme.heading;
+
+  const row = (
+    <View style={styles.row}>
+      <View style={styles.side} />
+      <View style={styles.center}>
+        <Ionicons name="people" size={22} color={headerText} />
+        <Text style={[styles.title, { color: headerText }]}>FriendDex</Text>
+      </View>
+      <View style={styles.side}>
+        <Pressable
+          style={styles.gearButton}
+          onPress={() => router.push('/appsettings')}
+          accessibilityLabel="アプリ設定"
+          hitSlop={8}
+        >
+          <Ionicons name="settings-outline" size={24} color={headerText} />
+        </Pressable>
+      </View>
+    </View>
+  );
+
+  if (embedded) {
+    return row;
+  }
 
   return (
     <View
@@ -26,23 +55,7 @@ export default function AppHeader() {
         },
       ]}
     >
-      <View style={styles.row}>
-        <View style={styles.side} />
-        <View style={styles.center}>
-          <Ionicons name="people" size={22} color={headerText} />
-          <Text style={[styles.title, { color: headerText }]}>FriendDex</Text>
-        </View>
-        <View style={styles.side}>
-          <Pressable
-            style={styles.gearButton}
-            onPress={() => router.push('/appsettings')}
-            accessibilityLabel="アプリ設定"
-            hitSlop={8}
-          >
-            <Ionicons name="settings-outline" size={24} color={headerText} />
-          </Pressable>
-        </View>
-      </View>
+      {row}
     </View>
   );
 }

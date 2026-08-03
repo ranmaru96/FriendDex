@@ -5,7 +5,11 @@ import type { AppThemeBundle, AppThemeVariant } from './types';
 
 export type { AppThemeBundle, AppThemeCardElevation, AppThemeColors, AppThemeVariant } from './types';
 export type { AppThemeContentColorFields } from './contentColors';
-export { darkContentColors, lightContentColors } from './contentColors';
+export {
+  darkContentColors,
+  lightContentColors,
+  whiteContentColors,
+} from './contentColors';
 export { defaultAppTheme, whiteAppTheme, blackAppTheme };
 
 

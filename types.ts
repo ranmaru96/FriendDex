@@ -281,8 +281,12 @@ export type TaskRecurrenceConfig = {
   weekdays?: number[];
   weekStartsOn?: number;
   monthDay?: number;
+  /** @deprecated use monthNths */
   monthNth?: number;
+  /** @deprecated use monthWeekdays */
   monthWeekday?: number;
+  monthNths?: number[];
+  monthWeekdays?: number[];
   yearMonth?: number;
   yearDay?: number;
 };
@@ -291,6 +295,7 @@ export type Task = {
   id: string;
   kind: TaskKind;
   title: string;
+  memo: string;
   pace: TaskPace | null;
   recurrenceUnit: TaskRecurrenceUnit | null;
   recurrenceConfig: TaskRecurrenceConfig | null;
@@ -304,6 +309,7 @@ export type Task = {
 export type TaskInput = {
   kind: TaskKind;
   title: string;
+  memo?: string;
   pace?: TaskPace | null;
   recurrenceUnit?: TaskRecurrenceUnit | null;
   recurrenceConfig?: TaskRecurrenceConfig | null;

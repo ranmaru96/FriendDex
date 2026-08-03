@@ -25,6 +25,7 @@ import {
   formatDateKey,
   formatEventScheduleLabelForCard,
   getMonthRangeIso,
+  parseDateKey,
 } from '../utils/eventHelpers';
 import { toEventParticipantDisplays } from '../utils/eventParticipantHelpers';
 import {
@@ -239,11 +240,6 @@ export default function CalendarScreen() {
 
   const handleScheduleGridDayPress = (dateKey: string) => {
     setSelectedDate(dateKey);
-    const { year, month } = parseMonthFromDateKey(dateKey);
-    if (year !== visibleMonth.year || month !== visibleMonth.month) {
-      setVisibleMonth({ year, month });
-      loadMonthEvents(year, month);
-    }
   };
 
   const handleMonthChange = (month: DateData) => {
@@ -290,6 +286,44 @@ export default function CalendarScreen() {
     [handleClassicCalendarSwipe]
   );
 
+  const shiftSelectedDate = useCallback(
+    (delta: number) => {
+      const next = parseDateKey(selectedDate);
+      next.setDate(next.getDate() + delta);
+      const nextKey = formatDateKey(next);
+      setSelectedDate(nextKey);
+      const { year, month } = parseMonthFromDateKey(nextKey);
+      if (year !== visibleMonth.year || month !== visibleMonth.month) {
+        setVisibleMonth({ year, month });
+        loadMonthEvents(year, month);
+      }
+    },
+    [loadMonthEvents, selectedDate, visibleMonth.month, visibleMonth.year]
+  );
+
+  const handleEventAreaSwipe = useCallback(
+    (direction: 'prev' | 'next') => {
+      shiftSelectedDate(direction === 'next' ? 1 : -1);
+    },
+    [shiftSelectedDate]
+  );
+
+  const eventAreaSwipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-24, 24])
+        .failOffsetY([-20, 20])
+        .onEnd((event) => {
+          'worklet';
+          if (event.translationX <= -48) {
+            runOnJS(handleEventAreaSwipe)('next');
+          } else if (event.translationX >= 48) {
+            runOnJS(handleEventAreaSwipe)('prev');
+          }
+        }),
+    [handleEventAreaSwipe]
+  );
+
   const classicCalendarCurrent = useMemo(
     () =>
       `${visibleMonth.year}-${String(visibleMonth.month).padStart(2, '0')}-01`,
@@ -315,6 +349,7 @@ export default function CalendarScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
       <ScrollView
+        style={styles.scrollView}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
@@ -378,63 +413,75 @@ export default function CalendarScreen() {
           </GestureDetector>
         )}
 
-        <CompactSectionHeader
-          title={selectedDateLabel}
-          count={eventsForSelectedDate.length}
-          variant={isScheduleGrid ? 'compact' : 'classic'}
-          edgeToEdge={isEdgeToEdge}
-        />
+        <GestureDetector gesture={eventAreaSwipeGesture}>
+          <View
+            style={[
+              styles.eventArea,
+              isEdgeToEdge || isCompactEventCard ? styles.eventAreaTight : null,
+            ]}
+          >
+            <CompactSectionHeader
+              title={selectedDateLabel}
+              count={eventsForSelectedDate.length}
+              variant={isScheduleGrid ? 'compact' : 'classic'}
+              edgeToEdge={isEdgeToEdge}
+              right={
+                <AddCircleButton
+                  size={28}
+                  onPress={handleCreateEvent}
+                  accessibilityLabel="予定を追加"
+                />
+              }
+            />
 
-        {eventsForSelectedDate.length === 0 ? (
-          <View style={[styles.eventShadow]}>
-            <View
-              style={[
-                styles.emptyCard,
-                contentCardSurface,
-                styles.roundedEventCard,
-              ]}
-            >
-              <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
-              <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
-            </View>
-          </View>
-        ) : (
-          <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
-            {eventsForSelectedDate.map((event) => {
-              const participants = participantsByEventId.get(event.id) ?? [];
-              return (
-                <View
-                  key={event.id}
-                  style={[styles.eventShadow, roundedEventCardElevation]}
-                >
-                  <CalendarEventCardBody
-                    event={event}
-                    participants={participants}
-                    episodeCount={(episodesByEventId.get(event.id) ?? []).length}
-                    selectedDate={selectedDate}
-                    metaLayout={eventMetaLayout}
-                    isCompactEventCard={isCompactEventCard}
-                    memoDisplay={kit.calendarEventMemoDisplay}
-                    onOpen={() => handleOpenEvent(event.id)}
+            {eventsForSelectedDate.length === 0 ? (
+              <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
+                <View style={[styles.eventShadow, roundedEventCardElevation]}>
+                  <View
                     style={[
-                      styles.eventCard,
+                      styles.emptyCard,
                       contentCardSurface,
-                      isCompactEventCard ? styles.eventCardCompact : null,
                       styles.roundedEventCard,
                     ]}
-                  />
+                  >
+                    <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
+                    <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
+                  </View>
                 </View>
-              );
-            })}
+              </View>
+            ) : (
+              <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
+                {eventsForSelectedDate.map((event) => {
+                  const participants = participantsByEventId.get(event.id) ?? [];
+                  return (
+                    <View
+                      key={event.id}
+                      style={[styles.eventShadow, roundedEventCardElevation]}
+                    >
+                      <CalendarEventCardBody
+                        event={event}
+                        participants={participants}
+                        episodeCount={(episodesByEventId.get(event.id) ?? []).length}
+                        selectedDate={selectedDate}
+                        metaLayout={eventMetaLayout}
+                        isCompactEventCard={isCompactEventCard}
+                        memoDisplay={kit.calendarEventMemoDisplay}
+                        onOpen={() => handleOpenEvent(event.id)}
+                        style={[
+                          styles.eventCard,
+                          contentCardSurface,
+                          isCompactEventCard ? styles.eventCardCompact : null,
+                          styles.roundedEventCard,
+                        ]}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
-        )}
+        </GestureDetector>
       </ScrollView>
-
-      <AddCircleButton
-        style={styles.fab}
-        onPress={handleCreateEvent}
-        accessibilityLabel="予定を追加"
-      />
     </SafeAreaView>
   );
 }
@@ -443,9 +490,13 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
   },
+  scrollView: {
+    flex: 1,
+  },
   scrollContent: {
+    flexGrow: 1,
     paddingTop: Spacing.sm,
-    paddingBottom: 100,
+    paddingBottom: Spacing.lg,
     gap: Spacing.md,
   },
   scrollContentFlushTop: {
@@ -455,6 +506,13 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   scrollContentEdgeToEdge: {
+    gap: Spacing.sm,
+  },
+  eventArea: {
+    flex: 1,
+    gap: Spacing.md,
+  },
+  eventAreaTight: {
     gap: Spacing.sm,
   },
   calendarShadow: {
@@ -574,10 +632,5 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Theme.textSecondary,
     textAlign: 'center',
-  },
-  fab: {
-    position: 'absolute',
-    right: 14,
-    bottom: 18,
   },
 });

@@ -34,7 +34,8 @@ export function ScreenTopBar({
   titleStyle,
 }: ScreenTopBarProps) {
   const appTheme = useAppThemeOptional();
-  const screenBackground = appTheme?.colors.screenBackground ?? Theme.screenBase;
+  const barBackground =
+    appTheme?.colors.headerBackground ?? appTheme?.colors.screenBackground ?? Theme.screenBase;
   const topBarText = appTheme?.colors.topBarText ?? Theme.topBarText;
   const topBarBorder = appTheme?.colors.topBarBorder ?? Theme.topBarBorder;
 
@@ -51,7 +52,7 @@ export function ScreenTopBar({
       style={[
         styles.bar,
         variant === 'subScreen' && {
-          backgroundColor: screenBackground,
+          backgroundColor: barBackground,
           borderBottomWidth: StyleSheet.hairlineWidth,
           borderBottomColor: topBarBorder,
         },

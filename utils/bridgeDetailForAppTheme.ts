@@ -97,9 +97,55 @@ const BLACK_TAB_COLORS: Record<string, string> = {
   メモ: '#a88aef',
 };
 
+function bridgeDetailColorsForWhite(
+  colors: DetailThemeColors,
+  content: AppThemeContentColorFields,
+  screenBackground: string
+): DetailThemeColors {
+  return {
+    ...colors,
+    background: screenBackground,
+    card: content.contentCard,
+    bgBase: screenBackground,
+    bgSurface: content.contentCard,
+    bgElevated: content.contentInputBg,
+    border: content.contentBorder,
+    textPrimary: content.contentText,
+    textSecondary: content.contentTextSecondary,
+    textMuted: content.contentTextSecondary,
+    accent: content.contentText,
+    inputBg: content.contentInputBg,
+    inputBorder: content.contentSearchFieldBorder,
+    inputText: content.contentText,
+    inputPlaceholder: content.contentTextSecondary,
+    btnGhostBorder: content.contentBorder,
+    btnGhostText: content.contentTextSecondary,
+    heroBackground: content.contentCard,
+    tabPaneBackground: content.contentCard,
+    /** タスクバーは強めの白 */
+    tabTrackBg: content.contentInputBg,
+    tabTrackBorder: content.contentBorder,
+    tabInactive: content.contentTextSecondary,
+    tagChipBg: content.contentPersonTagBg,
+    episodeBg: content.contentCard,
+    episodeBorder: content.contentBorder,
+    episodeTitle: content.contentText,
+    episodeDate: content.contentTextSecondary,
+    multiValueCardBackground: content.contentCard,
+    traitBg: content.contentCard,
+    traitBorder: content.contentBorder,
+    traitText: content.contentText,
+    quoteText: content.contentText,
+    quoteDateText: content.contentTextSecondary,
+    statBg: content.contentInputBg,
+    statBorder: content.contentBorder,
+    profileCardBorderColor: content.contentBorder,
+  };
+}
+
 /**
- * App ブラック時、Detail / 共通項目の面・文字・人物タグ色をコンテンツ反転に揃える。
- * ホワイト／デフォルトでは bundle をそのまま返す。
+ * App モノクロ時、Detail / 共通項目の面・文字を AppTheme に揃える。
+ * ブラックは人物タグ色も反転。ホワイトは面色のみ（カテゴリ色は維持）。
  */
 export function bridgeDetailBundleForAppTheme(
   bundle: DetailDesignBundle,
@@ -107,6 +153,13 @@ export function bridgeDetailBundleForAppTheme(
   content: AppThemeContentColorFields,
   screenBackground: string
 ): DetailDesignBundle {
+  if (appVariant === 'white') {
+    return {
+      ...bundle,
+      colors: bridgeDetailColorsForWhite(bundle.colors, content, screenBackground),
+    };
+  }
+
   if (appVariant !== 'black') {
     return bundle;
   }

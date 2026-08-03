@@ -13,6 +13,8 @@ type SettlementPersonAggregateCardProps = {
   aggregate: SettlementPersonAggregate;
   isItemCompleted: (key: string) => boolean;
   onToggleItem: (key: string) => void;
+  /** 行テキスト側タップで編集（チェックは清算済トグルのまま） */
+  onEditItem?: (key: string) => void;
   settled?: boolean;
 };
 
@@ -20,6 +22,7 @@ export function SettlementPersonAggregateCard({
   aggregate,
   isItemCompleted,
   onToggleItem,
+  onEditItem,
   settled = false,
 }: SettlementPersonAggregateCardProps) {
   const content = useContentColors();
@@ -52,9 +55,29 @@ export function SettlementPersonAggregateCard({
       ) : null}
       {aggregate.items.map((item) => {
         const completed = isItemCompleted(item.key);
+        const body = (
+          <View style={styles.breakdownBody}>
+            <Text
+              style={[
+                styles.breakdownTitle,
+                contentTextStyle(content),
+                completed && styles.breakdownTitleCompleted,
+                completed && contentMutedTextStyle(content),
+              ]}
+              numberOfLines={1}
+            >
+              {item.roomTitle}
+            </Text>
+            <Text style={[styles.breakdownMeta, contentMutedTextStyle(content)]}>{item.lineLabel}</Text>
+            {onEditItem ? (
+              <Text style={[styles.editHint, contentMutedTextStyle(content)]}>タップで編集</Text>
+            ) : null}
+          </View>
+        );
+
         return (
-          <Pressable key={item.key} style={styles.breakdownRow} onPress={() => onToggleItem(item.key)}>
-            <View
+          <View key={item.key} style={styles.breakdownRow}>
+            <Pressable
               style={[
                 styles.check,
                 { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
@@ -65,6 +88,8 @@ export function SettlementPersonAggregateCard({
                     }
                   : null,
               ]}
+              onPress={() => onToggleItem(item.key)}
+              hitSlop={6}
             >
               <Text
                 style={[
@@ -75,22 +100,17 @@ export function SettlementPersonAggregateCard({
               >
                 済
               </Text>
-            </View>
-            <View style={styles.breakdownBody}>
-              <Text
-                style={[
-                  styles.breakdownTitle,
-                  contentTextStyle(content),
-                  completed && styles.breakdownTitleCompleted,
-                  completed && contentMutedTextStyle(content),
-                ]}
-                numberOfLines={1}
-              >
-                {item.roomTitle}
-              </Text>
-              <Text style={[styles.breakdownMeta, contentMutedTextStyle(content)]}>{item.lineLabel}</Text>
-            </View>
-          </Pressable>
+            </Pressable>
+            {onEditItem ? (
+              <Pressable style={styles.breakdownBodyPressable} onPress={() => onEditItem(item.key)}>
+                {body}
+              </Pressable>
+            ) : (
+              <Pressable style={styles.breakdownBodyPressable} onPress={() => onToggleItem(item.key)}>
+                {body}
+              </Pressable>
+            )}
+          </View>
         );
       })}
     </View>
@@ -145,6 +165,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
+  breakdownBodyPressable: {
+    flex: 1,
+    minWidth: 0,
+  },
   breakdownBody: {
     flex: 1,
     minWidth: 0,
@@ -159,5 +183,9 @@ const styles = StyleSheet.create({
   },
   breakdownMeta: {
     fontSize: 12,
+  },
+  editHint: {
+    fontSize: 10,
+    marginTop: 1,
   },
 });

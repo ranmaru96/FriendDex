@@ -25,6 +25,8 @@ import { TabScreenTemplate } from '@/components/screen-templates';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
+import { setNextStackAnimation } from '@/utils/tabTransition';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 import { useDetailDesign } from './contexts/DetailDesignContext';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
@@ -36,15 +38,17 @@ import { contentDateTimePickerProps } from '@/utils/contentStyleHelpers';
 import { computeProfileCompleteness } from '@/utils/profileCompleteness';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import {
+  getAllFriendsInDefaultOrder,
+  sortFriendsByDefaultOrder,
+} from '@/utils/friendDefaultSort';
+import {
   createEpisode,
   createSayings,
   deleteSaying,
   deleteEpisode,
-  getAllFriends,
   getDistinctAffiliations,
   getDistinctExperiences,
   getMergedEpisodeTagLabels,
-  getEpisodeById,
   getEpisodeListPhotoUrisMap,
   getEpisodeParticipantFriendIds,
   getFriendById,
@@ -73,9 +77,8 @@ import {
   resolveEpisodeRecordOwnerId,
 } from './utils/episodeHelpers';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
-import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModal';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
-import { useEpisodeForm, type EpisodeSavePayload } from '@/hooks/useEpisodeForm';
+import { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import { usePersistedFilter, FILTER_KEYS } from '@/hooks/usePersistedFilter';
 import {
   DEFAULT_DETAIL_EPISODE_FILTER,
@@ -85,16 +88,9 @@ import {
   isHomeFilterState,
 } from '@/utils/persistedFilterTypes';
 import {
-  applyEventIdToEpisode,
-  buildEpisodeEventLinkInput,
-  buildEpisodeEventLinkInputFromSavePayload,
-  createEventAndLinkEpisode,
-  createEventIdForEpisodeInput,
   EVENT_CREATE_FAILED_MESSAGE,
-  runEpisodeEventLinkFlow,
-  runNewEpisodeEventLinkFlow,
+  resolveEpisodeSaveEventId,
 } from './utils/episodeEventLinking';
-import type { EpisodeEventMatch } from './utils/eventEpisodeSync';
 
 const EPISODE_PICKER_COLUMNS = 3;
 const EPISODE_PICKER_GAP = 6;
@@ -312,7 +308,19 @@ function DetailAdjacentSlidePanel({
     profileByLabel,
   } = snapshot;
   const contentColors = useContentColors();
+  const { variant: appThemeVariant } = useAppTheme();
   const profileCardBorderColor = contentColors.contentBorder;
+  const heroPhotoOuterStyle =
+    appThemeVariant === 'white'
+      ? {
+          borderColor: contentColors.contentTextSecondary,
+          borderWidth: 1 as const,
+        }
+      : { borderColor: profileCardBorderColor };
+  const heroPhotoInnerStyle =
+    appThemeVariant === 'white'
+      ? { borderColor: contentColors.contentPhotoInnerBorder }
+      : null;
   const birthdayLabel = (() => {
     if (!friend.birthday.trim()) return '';
     const formatted = formatEpisodeDateForCard(friend.birthday);
@@ -358,8 +366,8 @@ function DetailAdjacentSlidePanel({
         >
           <View style={[styles.hero, isMonochromeTheme ? { paddingTop: 8 } : null]}>
             <View style={styles.heroIdentityRow}>
-              <View style={[styles.heroPhotoOuterFrame, { borderColor: profileCardBorderColor }]}>
-                <View style={styles.heroPhotoInnerFrame}>
+              <View style={[styles.heroPhotoOuterFrame, heroPhotoOuterStyle]}>
+                <View style={[styles.heroPhotoInnerFrame, heroPhotoInnerStyle]}>
                   {showPhoto ? (
                     <Image
                       source={{ uri: photoUri }}
@@ -560,6 +568,10 @@ export default function DetailScreen() {
   const styles = useMemo(() => createDetailStyles(c), [c]);
   const detailTabs = bundle.detailTabs;
   const kit = useUiKit();
+  const sharedHeaderApi = useSharedHeaderChromeOptional();
+  const setSharedDetailHeader = sharedHeaderApi?.setDetailHeader;
+  const useSharedHeaderChrome = Boolean(kit.sharedHeaderChrome && setSharedDetailHeader);
+  const showLocalDetailHeader = !useSharedHeaderChrome;
   const useSharedEpisodeCard = kit.episodeListCardLayout === 'photoRight';
   const listItemEmbedded = kit.listItemStyle === 'panelSections';
   const isFlatProfileCard = true;
@@ -592,6 +604,7 @@ export default function DetailScreen() {
   const pendingAdjacentDirectionRef = useRef<AdjacentDirection | null>(null);
   const [adjacentTransition, setAdjacentTransition] = useState<AdjacentTransition | null>(null);
   const [friend, setFriend] = useState<Friend | null>(null);
+  const [hasAttemptedFriendLoad, setHasAttemptedFriendLoad] = useState(false);
   const [episodePhotoUrisById, setEpisodePhotoUrisById] = useState<Map<string, string[]>>(
     () => new Map()
   );
@@ -615,14 +628,6 @@ export default function DetailScreen() {
   const [episodePickerGridWidth, setEpisodePickerGridWidth] = useState(0);
   const [episodeTitleDraft, setEpisodeTitleDraft] = useState('');
   const [isEpisodeFormVisible, setIsEpisodeFormVisible] = useState(false);
-  const [editLinkModalVisible, setEditLinkModalVisible] = useState(false);
-  const [editLinkCandidates, setEditLinkCandidates] = useState<EpisodeEventMatch[]>([]);
-  const [editLinkTarget, setEditLinkTarget] = useState<{ episode: Episode; authorId: string } | null>(
-    null
-  );
-  const [createLinkModalVisible, setCreateLinkModalVisible] = useState(false);
-  const [createLinkCandidates, setCreateLinkCandidates] = useState<EpisodeEventMatch[]>([]);
-  const [pendingCreatePayload, setPendingCreatePayload] = useState<EpisodeSavePayload | null>(null);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
@@ -647,7 +652,13 @@ export default function DetailScreen() {
 
   const homeAdjacentFriendIds = useMemo(() => {
     initializeDatabase();
-    const orderedIds = searchFriends(homeFilterToSearchFilters(homeFilter)).map((friend) => friend.id);
+    const filters = homeFilterToSearchFilters(homeFilter);
+    const searched = searchFriends(filters);
+    const ordered =
+      filters.birthMonth && filters.birthMonth >= 1 && filters.birthMonth <= 12
+        ? searched
+        : sortFriendsByDefaultOrder(searched);
+    const orderedIds = ordered.map((friend) => friend.id);
     const index = friendId ? orderedIds.indexOf(friendId) : -1;
     return {
       prevId: index > 0 ? orderedIds[index - 1] ?? null : null,
@@ -709,6 +720,11 @@ export default function DetailScreen() {
     }, [reloadDetailDesign])
   );
 
+  const navigateHome = useCallback(() => {
+    setNextStackAnimation('slide_from_right');
+    router.replace('/');
+  }, [router]);
+
   const loadFriend = useCallback((idOverride?: string) => {
     initializeDatabase();
     const id = (idOverride ?? friendId).trim();
@@ -718,6 +734,7 @@ export default function DetailScreen() {
       setMyselfId(null);
       setAllFriends([]);
       setProfileImageStatus('none');
+      setHasAttemptedFriendLoad(true);
       return;
     }
     const loadedProfiles = getProfilesByFriendId(id);
@@ -741,16 +758,28 @@ export default function DetailScreen() {
     setProfileImageStatus(loaded?.photoUri?.trim() ? 'pending' : 'none');
     const loadedTraits = loaded?.traits ?? [];
     setHabitNotes(loadedTraits);
-    setAllFriends(getAllFriends());
+    setAllFriends(getAllFriendsInDefaultOrder());
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
+    setHasAttemptedFriendLoad(true);
   }, [friendId]);
 
   loadFriendRef.current = loadFriend;
 
+  const skipNextFocusReloadRef = useRef(true);
+
+  useLayoutEffect(() => {
+    skipNextFocusReloadRef.current = true;
+    loadFriend();
+  }, [friendId, loadFriend]);
+
   useFocusEffect(
     useCallback(() => {
+      if (skipNextFocusReloadRef.current) {
+        skipNextFocusReloadRef.current = false;
+        return;
+      }
       loadFriend();
     }, [loadFriend])
   );
@@ -927,6 +956,17 @@ export default function DetailScreen() {
   const isProfileCompletenessReady = profileImageStatus !== 'pending';
 
   const profileCardBorderColor = content.contentBorder;
+  const heroPhotoOuterStyle =
+    appThemeVariant === 'white'
+      ? {
+          borderColor: content.contentTextSecondary,
+          borderWidth: 1 as const,
+        }
+      : { borderColor: profileCardBorderColor };
+  const heroPhotoInnerStyle =
+    appThemeVariant === 'white'
+      ? { borderColor: content.contentPhotoInnerBorder }
+      : null;
 
   const sinceYear = useMemo(
     () => formatProfileSinceYear(selectedProfile?.createdAt),
@@ -997,6 +1037,33 @@ export default function DetailScreen() {
   homeAdjacentFriendIdsRef.current = homeAdjacentFriendIds;
   const goToAdjacentFriendRef = useRef(goToAdjacentFriend);
   goToAdjacentFriendRef.current = goToAdjacentFriend;
+
+  useLayoutEffect(() => {
+    if (!useSharedHeaderChrome || !setSharedDetailHeader) {
+      return;
+    }
+    setSharedDetailHeader({
+      onBack: navigateHome,
+      prevEnabled: Boolean(homeAdjacentFriendIds.prevId),
+      nextEnabled: Boolean(homeAdjacentFriendIds.nextId),
+      onPrev: () => goToAdjacentFriend(homeAdjacentFriendIds.prevId, 'prev'),
+      onNext: () => goToAdjacentFriend(homeAdjacentFriendIds.nextId, 'next'),
+      activeIconColor: appTheme.topBarText,
+      mutedIconColor: appTheme.topBarTextMuted,
+    });
+    return () => {
+      setSharedDetailHeader(null);
+    };
+  }, [
+    useSharedHeaderChrome,
+    setSharedDetailHeader,
+    navigateHome,
+    homeAdjacentFriendIds.prevId,
+    homeAdjacentFriendIds.nextId,
+    goToAdjacentFriend,
+    appTheme.topBarText,
+    appTheme.topBarTextMuted,
+  ]);
 
   const handleBodySwipeAdjacent = useCallback((direction: AdjacentDirection) => {
     const { prevId, nextId } = homeAdjacentFriendIdsRef.current;
@@ -1485,154 +1552,6 @@ export default function DetailScreen() {
     ]
   );
 
-  const finishEditEpisodeLink = useCallback(
-    (eventId: string) => {
-      if (!editLinkTarget) {
-        return;
-      }
-      const ok = applyEventIdToEpisode(editLinkTarget.episode, editLinkTarget.authorId, eventId);
-      if (!ok) {
-        Alert.alert('エラー', '予定への紐づけに失敗しました。');
-        return;
-      }
-      episodeForm.linkToEvent(eventId);
-      setEditLinkModalVisible(false);
-      setEditLinkCandidates([]);
-      setEditLinkTarget(null);
-      loadFriend();
-    },
-    [editLinkTarget, episodeForm, loadFriend]
-  );
-
-  const handleEditLinkCancel = useCallback(() => {
-    setEditLinkModalVisible(false);
-    setEditLinkCandidates([]);
-    setEditLinkTarget(null);
-  }, []);
-
-  const handleEditLinkCreateNew = useCallback(() => {
-    if (!editLinkTarget) {
-      return;
-    }
-    createEventAndLinkEpisode(
-      buildEpisodeEventLinkInput(editLinkTarget.episode),
-      finishEditEpisodeLink,
-      () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE)
-    );
-  }, [editLinkTarget, finishEditEpisodeLink]);
-
-  const finishCreateEpisode = useCallback(
-    (payload: EpisodeSavePayload, eventId: string) => {
-      const normalizedEventId = eventId.trim();
-      if (!normalizedEventId) {
-        episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
-        return;
-      }
-      const created = createEpisode({
-        ...payload,
-        eventId: normalizedEventId,
-      });
-      if (!created) {
-        episodeForm.setFormError('エピソードの追加に失敗しました。');
-        return;
-      }
-      episodeForm.persistPhotos(created.id, false);
-      episodeForm.reset();
-      setIsEpisodeFormVisible(false);
-      setCreateLinkModalVisible(false);
-      setCreateLinkCandidates([]);
-      setPendingCreatePayload(null);
-      loadFriend();
-    },
-    [episodeForm, loadFriend]
-  );
-
-  const handleEventCreateFailed = useCallback(() => {
-    Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE);
-    episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
-  }, [episodeForm]);
-
-  const proceedNewEpisodeSave = useCallback(
-    (payload: EpisodeSavePayload) => {
-      const linkedEventId = episodeForm.linkedEventId?.trim();
-      if (linkedEventId) {
-        finishCreateEpisode(payload, linkedEventId);
-        return;
-      }
-      const linkInput = buildEpisodeEventLinkInputFromSavePayload(payload);
-      runNewEpisodeEventLinkFlow(linkInput, {
-        onResolved: (eventId) => finishCreateEpisode(payload, eventId),
-        onMultipleMatches: (matches) => {
-          setPendingCreatePayload(payload);
-          setCreateLinkCandidates(matches);
-          setCreateLinkModalVisible(true);
-        },
-        onEventCreateFailed: handleEventCreateFailed,
-      });
-    },
-    [episodeForm.linkedEventId, finishCreateEpisode, handleEventCreateFailed]
-  );
-
-  const handleCreateLinkCancel = useCallback(() => {
-    setCreateLinkModalVisible(false);
-    setCreateLinkCandidates([]);
-    setPendingCreatePayload(null);
-  }, []);
-
-  const handleCreateLinkCreateNew = useCallback(() => {
-    if (!pendingCreatePayload) {
-      return;
-    }
-    const eventId = createEventIdForEpisodeInput(
-      buildEpisodeEventLinkInputFromSavePayload(pendingCreatePayload)
-    );
-    if (!eventId) {
-      handleEventCreateFailed();
-      return;
-    }
-    finishCreateEpisode(pendingCreatePayload, eventId);
-  }, [finishCreateEpisode, handleEventCreateFailed, pendingCreatePayload]);
-
-  const handleCreateLinkSelect = useCallback(
-    (eventId: string) => {
-      if (!pendingCreatePayload) {
-        return;
-      }
-      finishCreateEpisode(pendingCreatePayload, eventId);
-    },
-    [finishCreateEpisode, pendingCreatePayload]
-  );
-
-  const handleLinkExistingEpisodeToEvent = () => {
-    const episodeId = episodeForm.editingEpisodeId;
-    if (!episodeId || !myselfId) {
-      return;
-    }
-    const episode = getEpisodeById(myselfId, episodeId);
-    if (!episode) {
-      Alert.alert('エラー', 'エピソードが見つかりません。');
-      return;
-    }
-    const authorId = resolveEpisodeRecordOwnerId(episode, myselfId);
-    runEpisodeEventLinkFlow(buildEpisodeEventLinkInput(episode), {
-      onLinked: (eventId) => {
-        const ok = applyEventIdToEpisode(episode, authorId, eventId);
-        if (!ok) {
-          Alert.alert('エラー', '予定への紐づけに失敗しました。');
-          return;
-        }
-        episodeForm.linkToEvent(eventId);
-        loadFriend();
-      },
-      onMultipleMatches: (matches) => {
-        setEditLinkTarget({ episode, authorId });
-        setEditLinkCandidates(matches);
-        setEditLinkModalVisible(true);
-      },
-      onEventCreateFailed: () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE),
-    });
-  };
-
   const handleSaveEpisode = () => {
     if (!friend) {
       episodeForm.setFormError('人物データが見つかりません。');
@@ -1646,16 +1565,34 @@ export default function DetailScreen() {
     if (!payload) {
       return;
     }
+    const resolved = resolveEpisodeSaveEventId(payload, () => {
+      Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE);
+      episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
+    });
+    if (!resolved.ok) {
+      return;
+    }
+    const { createLinkedEvent: _createLinkedEvent, eventId: _formEventId, ...episodeFields } =
+      payload;
+    const episodeInput = {
+      ...episodeFields,
+      eventId: resolved.eventId,
+    };
+
     if (episodeForm.editingEpisodeId) {
-      const updated = updateEpisode(myselfId, episodeForm.editingEpisodeId, payload);
+      const updated = updateEpisode(myselfId, episodeForm.editingEpisodeId, episodeInput);
       if (!updated) {
         episodeForm.setFormError('エピソードの更新に失敗しました。');
         return;
       }
       episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
     } else {
-      proceedNewEpisodeSave(payload);
-      return;
+      const created = createEpisode(episodeInput);
+      if (!created) {
+        episodeForm.setFormError('エピソードの追加に失敗しました。');
+        return;
+      }
+      episodeForm.persistPhotos(created.id, false);
     }
     episodeForm.reset();
     setIsEpisodeFormVisible(false);
@@ -1666,11 +1603,24 @@ export default function DetailScreen() {
     return (
       <TabScreenTemplate
         contentContainerStyle={{ flex: 1 }}
-        header={<ScreenTopBar title="詳細" onBack={() => router.back()} />}
+        safeAreaEdges={
+          useSharedHeaderChrome || !showLocalDetailHeader
+            ? ['right', 'left']
+            : ['top', 'right', 'left']
+        }
+        header={
+          showLocalDetailHeader ? (
+            <ScreenTopBar title="詳細" onBack={navigateHome} />
+          ) : undefined
+        }
       >
-        <View style={styles.missingContainer}>
-          <Text style={styles.missingText}>人物データが見つかりませんでした。</Text>
-        </View>
+        {hasAttemptedFriendLoad ? (
+          <View style={styles.missingContainer}>
+            <Text style={styles.missingText}>人物データが見つかりませんでした。</Text>
+          </View>
+        ) : (
+          <View style={{ flex: 1, backgroundColor: appTheme.screenBackground }} />
+        )}
       </TabScreenTemplate>
     );
   }
@@ -1707,6 +1657,11 @@ export default function DetailScreen() {
       <TabScreenTemplate
         scrollable={false}
         useScreenPadding={false}
+        safeAreaEdges={
+          useSharedHeaderChrome || !showLocalDetailHeader
+            ? ['right', 'left']
+            : ['top', 'right', 'left']
+        }
         contentContainerStyle={[
           styles.scrollContent,
           { flex: 1, paddingBottom: 0 },
@@ -1714,9 +1669,10 @@ export default function DetailScreen() {
         ]}
         extraScrollHeight={18}
         header={
+          showLocalDetailHeader ? (
           <ScreenTopBar
             title="Profile"
-            onBack={() => router.back()}
+            onBack={navigateHome}
             titleLeading={
               <Pressable
                 onPress={() => goToAdjacentFriend(homeAdjacentFriendIds.prevId, 'prev')}
@@ -1752,6 +1708,7 @@ export default function DetailScreen() {
               </Pressable>
             }
           />
+          ) : undefined
         }
       >
         <GestureDetector gesture={detailBodySwipeGesture}>
@@ -1921,10 +1878,10 @@ export default function DetailScreen() {
             <View
               style={[
                 styles.heroPhotoOuterFrame,
-                { borderColor: profileCardBorderColor },
+                heroPhotoOuterStyle,
               ]}
             >
-              <View style={styles.heroPhotoInnerFrame}>
+              <View style={[styles.heroPhotoInnerFrame, heroPhotoInnerStyle]}>
                 {friend.photoUri && profileImageStatus !== 'failed' ? (
                   <Image
                     source={{ uri: friend.photoUri }}
@@ -2437,23 +2394,6 @@ export default function DetailScreen() {
           setIsEpisodeFormVisible(false);
         }}
         onSave={handleSaveEpisode}
-        onLinkToEvent={handleLinkExistingEpisodeToEvent}
-      />
-      <EpisodeEventLinkModal
-        visible={createLinkModalVisible}
-        dateKey={pendingCreatePayload?.date ?? ''}
-        candidates={createLinkCandidates}
-        onSelect={handleCreateLinkSelect}
-        onCreateNew={handleCreateLinkCreateNew}
-        onCancel={handleCreateLinkCancel}
-      />
-      <EpisodeEventLinkModal
-        visible={editLinkModalVisible}
-        dateKey={editLinkTarget?.episode.date ?? ''}
-        candidates={editLinkCandidates}
-        onSelect={finishEditEpisodeLink}
-        onCreateNew={handleEditLinkCreateNew}
-        onCancel={handleEditLinkCancel}
       />
     </>
   );

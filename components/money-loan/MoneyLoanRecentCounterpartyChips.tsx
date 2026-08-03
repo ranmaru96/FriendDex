@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { Text, View } from 'react-native';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
-import { moneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
+import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
 
 type MoneyLoanRecentCounterpartyChipsProps = {
@@ -19,6 +19,7 @@ export function MoneyLoanRecentCounterpartyChips({
   friendPhotoById,
   onAdd,
 }: MoneyLoanRecentCounterpartyChipsProps) {
+  const formStyles = useMoneyLoanFormStyles();
   const addableFriendIds = useMemo(
     () => friendIds.filter((friendId) => !selectedFriendIds.has(friendId)),
     [friendIds, selectedFriendIds]
@@ -39,8 +40,8 @@ export function MoneyLoanRecentCounterpartyChips({
   }
 
   return (
-    <View style={moneyLoanFormStyles.recentCounterpartySection}>
-      <Text style={moneyLoanFormStyles.recentCounterpartyLabel}>最近の相手</Text>
+    <View style={formStyles.recentCounterpartySection}>
+      <Text style={formStyles.recentCounterpartyLabel}>最近の相手</Text>
       <ParticipantChipList
         chips={chips}
         compact

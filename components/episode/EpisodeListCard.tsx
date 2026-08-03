@@ -7,6 +7,7 @@ import { Radius, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useContentColors } from '@/utils/useContentColors';
+import { getEventCalendarColor } from '@/utils/calendarEventColors';
 import {
   contentMutedTextStyle,
   contentPersonTagStyle,
@@ -75,6 +76,11 @@ export type EpisodeListCardProps = {
   coverPhotoUri?: string | null;
   /** 一覧カード用写真（最大2枚想定） */
   photoUris?: string[];
+  /** 紐づく予定タイトル（日付・エピソードタグ行の右端タグ） */
+  eventTitle?: string | null;
+  /** 予定のカレンダー色用タグ（省略時は未設定色） */
+  eventEpisodeTag?: string | null;
+  onEventPress?: () => void;
   onPress?: () => void;
   onLongPress?: () => void;
   delayLongPress?: number;
@@ -97,6 +103,9 @@ export function EpisodeListCard({
   posterName,
   coverPhotoUri,
   photoUris,
+  eventTitle,
+  eventEpisodeTag,
+  onEventPress,
   onPress,
   onLongPress,
   delayLongPress = 300,
@@ -112,10 +121,14 @@ export function EpisodeListCard({
   const usePhotoLayout = kit.episodeListCardLayout === 'photoRight';
   const photoFrameBorderColor = content.contentText;
   const episodeCardBackgroundColor =
-    appTheme?.variant === 'black' ? '#252525' : content.contentCard;
+    appTheme?.variant === 'black' || appTheme?.variant === 'white'
+      ? content.contentInputBg
+      : content.contentCard;
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
   const normalizedPosterName = posterName?.trim() ? posterName.trim() : null;
   const showPosterName = visibilityMode == null && normalizedPosterName != null;
+  const normalizedEventTitle = eventTitle?.trim() ? eventTitle.trim() : null;
+  const eventChipColor = getEventCalendarColor(eventEpisodeTag);
 
   if (usePhotoLayout) {
     const resolvedPhotoUris = (photoUris?.length
@@ -167,6 +180,26 @@ export function EpisodeListCard({
               {normalizedPosterName}
             </Text>
           </View>
+        ) : null}
+        {normalizedEventTitle != null ? (
+          <Pressable
+            onPress={onEventPress}
+            disabled={!onEventPress}
+            style={styles.photoRightMetaEventPressable}
+            accessibilityRole={onEventPress ? 'button' : undefined}
+            accessibilityLabel={onEventPress ? '所属する予定を開く' : undefined}
+          >
+            <View
+              style={[
+                styles.photoRightMetaEventTag,
+                { backgroundColor: eventChipColor },
+              ]}
+            >
+              <Text style={styles.photoRightMetaEventTagText} numberOfLines={1}>
+                {normalizedEventTitle}
+              </Text>
+            </View>
+          </Pressable>
         ) : null}
       </View>
     );
@@ -352,6 +385,26 @@ export function EpisodeListCard({
             </Text>
           </View>
         ) : null}
+        {normalizedEventTitle != null ? (
+          <Pressable
+            onPress={onEventPress}
+            disabled={!onEventPress}
+            style={styles.classicMetaEventPressable}
+            accessibilityRole={onEventPress ? 'button' : undefined}
+            accessibilityLabel={onEventPress ? '所属する予定を開く' : undefined}
+          >
+            <View
+              style={[
+                styles.photoRightMetaEventTag,
+                { backgroundColor: eventChipColor },
+              ]}
+            >
+              <Text style={styles.photoRightMetaEventTagText} numberOfLines={1}>
+                {normalizedEventTitle}
+              </Text>
+            </View>
+          </Pressable>
+        ) : null}
         {onEdit && onDelete ? (
           <View style={styles.episodeCardActions}>
             <Pressable style={[styles.episodeCardEditButton, contentTagStyle(content)]} onPress={onEdit} accessibilityLabel="編集">
@@ -456,6 +509,31 @@ const styles = StyleSheet.create({
   photoRightMetaTagText: {
     lineHeight: 14,
     fontSize: 11,
+  },
+  photoRightMetaEventPressable: {
+    flexShrink: 1,
+    maxWidth: '42%',
+    marginLeft: 'auto',
+  },
+  classicMetaEventPressable: {
+    flexShrink: 1,
+    maxWidth: 120,
+    marginLeft: 'auto',
+  },
+  photoRightMetaEventTag: {
+    height: META_ROW_HEIGHT,
+    paddingHorizontal: 6,
+    paddingVertical: 0,
+    borderRadius: 2,
+    justifyContent: 'center',
+    maxWidth: '100%',
+    overflow: 'hidden',
+  },
+  photoRightMetaEventTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    lineHeight: 14,
+    color: '#ffffff',
   },
   photoRightParticipantRow: {
     marginTop: META_PARTICIPANT_GAP,

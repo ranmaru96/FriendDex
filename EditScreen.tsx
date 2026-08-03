@@ -17,6 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
+import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -36,11 +37,13 @@ import {
   createFriend,
   createFriendFromQrScan,
   getFriendById,
+  getMergedCommonItemLabels,
   initializeDatabase,
   resyncEpisodesForFriendAffiliationChange,
   updateFriend,
 } from './db';
 import { FriendInput, MBTIType, MBTI_TYPES } from './types';
+import { filterLabelSuggestions, findMatchingRegisteredLabel } from '@/utils/labelSuggestions';
 
 const PHOTO_SIZE = 80;
 const INPUT_H = 36;
@@ -61,6 +64,10 @@ type DynamicInputListProps = {
   values: string[];
   onChange: (values: string[]) => void;
   placeholder: string;
+  /** Registered labels for autocomplete (partial match; prefix first) */
+  suggestionCandidates?: readonly string[];
+  /** Remount/reset locks when friend form reloads */
+  resetKey?: string;
 };
 
 type IconButtonProps = {
@@ -194,16 +201,165 @@ function SelectField({ label, value, options, placeholder = '選択', onChange }
   );
 }
 
-function DynamicInputList({ title, values, onChange, placeholder }: DynamicInputListProps) {
+function DynamicInputList({
+  title,
+  values,
+  onChange,
+  placeholder,
+  suggestionCandidates = [],
+  resetKey = '',
+}: DynamicInputListProps) {
   const content = useContentColors();
+  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
+  const [lockedIndices, setLockedIndices] = useState<Set<number>>(() => new Set());
+  const blurClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inputRefs = useRef<Array<TextInput | null>>([]);
+  const pendingFocusIndexRef = useRef<number | null>(null);
+  const valuesRef = useRef(values);
+  const lockedIndicesRef = useRef(lockedIndices);
+  const candidatesRef = useRef(suggestionCandidates);
+  valuesRef.current = values;
+  lockedIndicesRef.current = lockedIndices;
+  candidatesRef.current = suggestionCandidates;
+
+  const clearBlurTimer = () => {
+    if (blurClearTimerRef.current) {
+      clearTimeout(blurClearTimerRef.current);
+      blurClearTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => () => clearBlurTimer(), []);
+
+  useEffect(() => {
+    setLockedIndices(new Set());
+    setFocusedIndex(null);
+    pendingFocusIndexRef.current = null;
+  }, [resetKey]);
+
+  useEffect(() => {
+    setLockedIndices((prev) => {
+      const next = new Set(prev);
+      let changed = false;
+      values.forEach((value, index) => {
+        if (next.has(index)) {
+          return;
+        }
+        if (findMatchingRegisteredLabel(value, suggestionCandidates)) {
+          next.add(index);
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [values, suggestionCandidates]);
+
+  useEffect(() => {
+    const focusIndex = pendingFocusIndexRef.current;
+    if (focusIndex == null) {
+      return;
+    }
+    pendingFocusIndexRef.current = null;
+    const frame = requestAnimationFrame(() => {
+      inputRefs.current[focusIndex]?.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [values]);
+
   const updateItem = (index: number, text: string) => {
-    const next = [...values];
+    if (lockedIndicesRef.current.has(index)) {
+      return;
+    }
+    const next = [...valuesRef.current];
     next[index] = text;
     onChange(next);
   };
 
-  const addItem = () => onChange([...values, '']);
-  const removeItem = (index: number) => onChange(values.filter((_, itemIndex) => itemIndex !== index));
+  const addItem = () => onChange([...valuesRef.current, '']);
+
+  const removeItem = (index: number) => {
+    clearBlurTimer();
+    const currentValues = valuesRef.current;
+    const currentLocked = lockedIndicesRef.current;
+    if (currentValues.length <= 1) {
+      onChange(['']);
+      setLockedIndices(new Set());
+      setFocusedIndex(null);
+      return;
+    }
+    const nextLocked = new Set<number>();
+    currentLocked.forEach((lockedIndex) => {
+      if (lockedIndex < index) {
+        nextLocked.add(lockedIndex);
+      } else if (lockedIndex > index) {
+        nextLocked.add(lockedIndex - 1);
+      }
+    });
+    setLockedIndices(nextLocked);
+    setFocusedIndex((current) => {
+      if (current == null) {
+        return null;
+      }
+      if (current === index) {
+        return null;
+      }
+      return current > index ? current - 1 : current;
+    });
+    onChange(currentValues.filter((_, itemIndex) => itemIndex !== index));
+  };
+
+  const commitLockedLabel = (index: number, label: string) => {
+    clearBlurTimer();
+    const currentValues = valuesRef.current;
+    const currentLocked = lockedIndicesRef.current;
+    const next = [...currentValues];
+    next[index] = label;
+
+    let focusIndex = index + 1;
+    let didInsert = false;
+    if (focusIndex >= next.length || next[focusIndex].trim() !== '') {
+      next.splice(focusIndex, 0, '');
+      didInsert = true;
+    }
+
+    const nextLocked = new Set<number>();
+    currentLocked.forEach((lockedIndex) => {
+      if (didInsert && lockedIndex >= focusIndex) {
+        nextLocked.add(lockedIndex + 1);
+      } else {
+        nextLocked.add(lockedIndex);
+      }
+    });
+    nextLocked.add(index);
+
+    pendingFocusIndexRef.current = focusIndex;
+    setLockedIndices(nextLocked);
+    setFocusedIndex(focusIndex);
+    onChange(next);
+  };
+
+  const selectSuggestion = (index: number, label: string) => {
+    commitLockedLabel(index, label);
+  };
+
+  const handleBlur = (index: number) => {
+    clearBlurTimer();
+    blurClearTimerRef.current = setTimeout(() => {
+      if (lockedIndicesRef.current.has(index)) {
+        setFocusedIndex((current) => (current === index ? null : current));
+        return;
+      }
+      const match = findMatchingRegisteredLabel(
+        valuesRef.current[index] ?? '',
+        candidatesRef.current
+      );
+      if (match) {
+        commitLockedLabel(index, match);
+        return;
+      }
+      setFocusedIndex((current) => (current === index ? null : current));
+    }, 180);
+  };
 
   return (
     <FormScreenSection>
@@ -218,26 +374,89 @@ function DynamicInputList({ title, values, onChange, placeholder }: DynamicInput
         </Pressable>
       </View>
 
-      {values.map((value, index) => (
-        <View key={`${title}-${index}`} style={styles.multiRow}>
-          <TextInput
-            value={value}
-            onChangeText={(text) => updateItem(index, text)}
-            placeholder={placeholder}
-            placeholderTextColor={content.contentTextSecondary}
-            style={[styles.multiInput, contentInputStyle(content)]}
-          />
-          {values.length > 1 && (
-            <Pressable
-              style={styles.removeIconButton}
-              onPress={() => removeItem(index)}
-              accessibilityLabel="削除"
-            >
-              <Ionicons name="close" size={16} color="#f87171" />
-            </Pressable>
-          )}
-        </View>
-      ))}
+      {values.map((value, index) => {
+        const locked = lockedIndices.has(index);
+        const exclude = new Set(
+          values
+            .map((item, itemIndex) => (itemIndex === index ? '' : item.trim()))
+            .filter(Boolean)
+        );
+        const suggestions =
+          !locked && focusedIndex === index
+            ? filterLabelSuggestions(value, suggestionCandidates, { exclude })
+            : [];
+
+        return (
+          <View key={`${title}-${index}`} style={styles.multiFieldBlock}>
+            <View style={styles.multiRow}>
+              <TextInput
+                ref={(node) => {
+                  inputRefs.current[index] = node;
+                }}
+                value={value}
+                editable={!locked}
+                onChangeText={(text) => updateItem(index, text)}
+                onFocus={() => {
+                  if (locked) {
+                    return;
+                  }
+                  clearBlurTimer();
+                  setFocusedIndex(index);
+                }}
+                onBlur={() => handleBlur(index)}
+                placeholder={placeholder}
+                placeholderTextColor={content.contentTextSecondary}
+                style={[
+                  styles.multiInput,
+                  contentInputStyle(content),
+                  locked ? styles.multiInputLocked : null,
+                ]}
+              />
+              <Pressable
+                style={styles.removeIconButton}
+                onPress={() => removeItem(index)}
+                accessibilityLabel="削除"
+              >
+                <Ionicons name="close" size={16} color="#f87171" />
+              </Pressable>
+            </View>
+            {suggestions.length > 0 ? (
+              <View
+                style={[
+                  styles.suggestionList,
+                  contentSurfaceStyle(content),
+                  {
+                    borderColor: content.contentBorder,
+                    marginRight: ICON_BTN + 6,
+                  },
+                ]}
+              >
+                {suggestions.map((suggestionLabel, suggestionIndex) => (
+                  <Pressable
+                    key={suggestionLabel}
+                    style={[
+                      styles.suggestionRow,
+                      suggestionIndex < suggestions.length - 1
+                        ? {
+                            borderBottomColor: content.contentDivider,
+                            borderBottomWidth: StyleSheet.hairlineWidth,
+                          }
+                        : null,
+                    ]}
+                    onPress={() => selectSuggestion(index, suggestionLabel)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${suggestionLabel}を選択`}
+                  >
+                    <Text style={[styles.suggestionText, contentTextStyle(content)]} numberOfLines={1}>
+                      {suggestionLabel}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+          </View>
+        );
+      })}
     </FormScreenSection>
   );
 }
@@ -288,6 +507,11 @@ export default function EditScreen() {
   const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
   const [nameSaveAttempted, setNameSaveAttempted] = useState(false);
   const [cropSourceUri, setCropSourceUri] = useState<string | null>(null);
+  const [affiliationSuggestions, setAffiliationSuggestions] = useState<string[]>([]);
+  const [personalitySuggestions, setPersonalitySuggestions] = useState<string[]>([]);
+  const [experienceSuggestions, setExperienceSuggestions] = useState<string[]>([]);
+  const [likeSuggestions, setLikeSuggestions] = useState<string[]>([]);
+  const [dislikeSuggestions, setDislikeSuggestions] = useState<string[]>([]);
   const prevFriendIdRef = useRef(friendId);
 
   useEffect(() => {
@@ -299,6 +523,11 @@ export default function EditScreen() {
 
   const loadFriend = useCallback(() => {
     initializeDatabase();
+    setAffiliationSuggestions(getMergedCommonItemLabels('affiliation'));
+    setPersonalitySuggestions(getMergedCommonItemLabels('personality'));
+    setExperienceSuggestions(getMergedCommonItemLabels('experience'));
+    setLikeSuggestions(getMergedCommonItemLabels('like'));
+    setDislikeSuggestions(getMergedCommonItemLabels('dislike'));
     if (!friendId) {
       if (fromScan) {
         setForm({
@@ -648,14 +877,13 @@ export default function EditScreen() {
 
         <FormScreenSection>
           <Text style={[styles.sectionCaption, contentMutedTextStyle(content)]}>説明</Text>
-          <TextInput
+          <ViewportCappedMultilineTextInput
             value={form.description}
             onChangeText={(text) => updateText('description', text)}
             style={[styles.descriptionInput, contentInputStyle(content)]}
             placeholder="複数行で入力"
             placeholderTextColor={content.contentTextSecondary}
-            multiline
-            textAlignVertical="top"
+            minHeight={72}
           />
         </FormScreenSection>
 
@@ -664,30 +892,40 @@ export default function EditScreen() {
           values={form.affiliations}
           onChange={(values) => setForm((prev) => ({ ...prev, affiliations: values }))}
           placeholder="記入式"
+          suggestionCandidates={affiliationSuggestions}
+          resetKey={friendId || 'new'}
         />
         <DynamicInputList
           title="性格"
           values={form.personalities}
           onChange={(values) => setForm((prev) => ({ ...prev, personalities: values }))}
           placeholder="記入式"
+          suggestionCandidates={personalitySuggestions}
+          resetKey={friendId || 'new'}
         />
         <DynamicInputList
           title="経験"
           values={form.experiences}
           onChange={(values) => setForm((prev) => ({ ...prev, experiences: values }))}
           placeholder="記入式"
+          suggestionCandidates={experienceSuggestions}
+          resetKey={friendId || 'new'}
         />
         <DynamicInputList
           title="好きなこと"
           values={form.likes}
           onChange={(values) => setForm((prev) => ({ ...prev, likes: values }))}
           placeholder="記入式"
+          suggestionCandidates={likeSuggestions}
+          resetKey={friendId || 'new'}
         />
         <DynamicInputList
           title="苦手なこと"
           values={form.dislikes}
           onChange={(values) => setForm((prev) => ({ ...prev, dislikes: values }))}
           placeholder="記入式"
+          suggestionCandidates={dislikeSuggestions}
+          resetKey={friendId || 'new'}
         />
       
         <View style={styles.formActions}>
@@ -936,6 +1174,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
   },
+  multiFieldBlock: {
+    gap: 4,
+  },
   multiInput: {
     flex: 1,
     height: INPUT_H,
@@ -944,6 +1185,21 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 0,
+  },
+  multiInputLocked: {
+    opacity: 0.72,
+  },
+  suggestionList: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.sm,
+    overflow: 'hidden',
+  },
+  suggestionRow: {
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 8,
+  },
+  suggestionText: {
+    fontSize: Typography.sm,
   },
   removeIconButton: {
     width: 28,

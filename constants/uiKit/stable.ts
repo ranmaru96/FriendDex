@@ -63,6 +63,7 @@ export const stableUiKit: UiKit = {
   subToolScreenPaddingHorizontal: Spacing.sm,
   friendsScreenBorderRadius: Spacing.sm,
   detailProfileCardStyle: 'flat',
+  sharedHeaderChrome: true,
   textPrimary: Theme.textPrimary,
   textSecondary: Theme.textSecondary,
   inputBg: Theme.inputBg,

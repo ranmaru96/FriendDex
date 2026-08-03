@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
-import { SafeAreaView, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
+import { SafeAreaView, type Edge } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { Spacing } from '@/constants/theme';
@@ -18,6 +19,8 @@ type TabScreenTemplateProps = {
   extraScrollHeight?: number;
   /** SafeArea 内・スクロール外に置くヘッダー（ScreenTopBar など） */
   header?: ReactNode;
+  /** AppHeader 下では top を付けない（二重余白防止）。未指定時は左右のみ。 */
+  safeAreaEdges?: readonly Edge[];
 };
 
 export function TabScreenTemplate({
@@ -28,6 +31,7 @@ export function TabScreenTemplate({
   contentContainerStyle,
   extraScrollHeight = 18,
   header,
+  safeAreaEdges,
 }: TabScreenTemplateProps) {
   const kit = useUiKit();
   const appTheme = useAppThemeOptional();
@@ -36,10 +40,15 @@ export function TabScreenTemplate({
   const horizontalPadding = useScreenPadding ? kit.screenPaddingHorizontal : 0;
   const bottomPadding = bottomNavClearance > 0 ? bottomNavClearance : Spacing.lg;
   const topPadding = flushTop ? 0 : Spacing.sm;
+  /** AppHeader / BottomNav が外枠を担う画面向け。top/bottom はデフォルトで取らない。 */
+  const edges = safeAreaEdges ?? (['right', 'left'] as const);
 
   if (scrollable && keyboardAware) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
+      <SafeAreaView
+        edges={edges}
+        style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}
+      >
         {header}
         <KeyboardAwareScrollView
           contentContainerStyle={[
@@ -60,7 +69,10 @@ export function TabScreenTemplate({
 
   if (scrollable) {
     return (
-      <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
+      <SafeAreaView
+        edges={edges}
+        style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}
+      >
         {header}
         <ScrollView
           contentContainerStyle={[
@@ -78,7 +90,10 @@ export function TabScreenTemplate({
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
+    <SafeAreaView
+      edges={edges}
+      style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}
+    >
       {header}
       <View
         style={[

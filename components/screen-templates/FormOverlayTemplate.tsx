@@ -6,6 +6,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spacing, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
 
 const TOP_CONTENT_PADDING = 12;
 
@@ -27,31 +28,35 @@ export function FormOverlayTemplate({
   const kit = useUiKit();
   const appTheme = useAppThemeOptional();
   const insets = useSafeAreaInsets();
+  const keyboardBottomInset = useKeyboardBottomInset();
   const screenBackground = appTheme?.colors.screenBackground ?? Theme.background;
   const titleColor = appTheme?.colors.onScreenText ?? Theme.textPrimary;
 
   return (
     <View style={[styles.overlay, { backgroundColor: screenBackground }]}>
-      <KeyboardAwareScrollView
-        style={[
-          styles.scroll,
-          {
-            paddingTop: insets.top + TOP_CONTENT_PADDING,
-            paddingHorizontal: kit.screenPaddingHorizontal,
-          },
-        ]}
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingBottom: Math.max(Spacing.lg, insets.bottom + Spacing.md) },
-          scrollContentStyle,
-        ]}
-        keyboardShouldPersistTaps="handled"
-        enableOnAndroid
-        extraScrollHeight={extraScrollHeight}
-      >
-        <Text style={[styles.title, { color: titleColor }, titleStyle]}>{title}</Text>
-        {children}
-      </KeyboardAwareScrollView>
+      <View style={[styles.body, { paddingBottom: keyboardBottomInset }]}>
+        <KeyboardAwareScrollView
+          style={[
+            styles.scroll,
+            {
+              paddingTop: insets.top + TOP_CONTENT_PADDING,
+              paddingHorizontal: kit.screenPaddingHorizontal,
+            },
+          ]}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: Math.max(Spacing.lg, insets.bottom + Spacing.md) },
+            scrollContentStyle,
+          ]}
+          keyboardShouldPersistTaps="handled"
+          enableOnAndroid={false}
+          contentInset={{ bottom: 0 }}
+          extraScrollHeight={extraScrollHeight}
+        >
+          <Text style={[styles.title, { color: titleColor }, titleStyle]}>{title}</Text>
+          {children}
+        </KeyboardAwareScrollView>
+      </View>
     </View>
   );
 }
@@ -66,6 +71,9 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.background,
     zIndex: 100,
     elevation: 100,
+  },
+  body: {
+    flex: 1,
   },
   scroll: {
     flex: 1,

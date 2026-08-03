@@ -58,6 +58,12 @@ export default {
       favicon: "./assets/favicon.png"
     },
     plugins: [
+      [
+        "expo-dev-client",
+        {
+          addGeneratedScheme: !!IS_DEV,
+        },
+      ],
       "expo-sqlite",
       "expo-router",
       "@react-native-community/datetimepicker",

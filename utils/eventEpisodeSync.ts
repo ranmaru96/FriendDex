@@ -1,11 +1,12 @@
 import {
   createEvent,
+  getAllEvents,
   getEpisodeParticipantFriendIds,
   getEventParticipants,
   getEventsByDateRange,
 } from '../db';
 import type { EpisodeParticipant, Event } from '../types';
-import { buildAllDayEndAt, buildAllDayStartAt, eventOccursOnLocalDate, parseDateKey } from './eventHelpers';
+import { buildAllDayEndAt, buildAllDayStartAt, eventOccursOnLocalDate, getLocalDateKeysForEvent, parseDateKey } from './eventHelpers';
 import { normalizeEpisodeTag } from './episodeHelpers';
 import { friendIdsToProfileIds, syncEventParticipants } from './eventParticipantHelpers';
 
@@ -96,6 +97,61 @@ export const findMatchingEventsForEpisode = (
     }
     return left.event.title.localeCompare(right.event.title, 'ja');
   });
+};
+
+/** Same calendar date as the episode (all events that day; no participant filter). */
+export const findEventsOnEpisodeDate = (episodeDate: string): Event[] => {
+  const dateKey = episodeDate.trim();
+  const range = getDayRangeIso(dateKey);
+  if (!range) {
+    return [];
+  }
+
+  return getEventsByDateRange(range.rangeStartAt, range.rangeEndAt)
+    .filter((event) => eventOccursOnLocalDate(event, dateKey))
+    .sort((left, right) => {
+      const startCmp = left.startAt.localeCompare(right.startAt);
+      if (startCmp !== 0) {
+        return startCmp;
+      }
+      return left.title.localeCompare(right.title, 'ja');
+    });
+};
+
+export type EventSearchHit = {
+  event: Event;
+  dateKeys: string[];
+};
+
+/**
+ * Search events by title / memo. Empty query returns recent events (newest first).
+ */
+export const searchEventsForEpisodeLink = (
+  query: string,
+  options?: { limit?: number }
+): EventSearchHit[] => {
+  const limit = Math.max(1, options?.limit ?? 40);
+  const normalizedQuery = query.trim().toLocaleLowerCase('ja');
+  const events = getAllEvents();
+
+  const hits: EventSearchHit[] = [];
+  for (const event of events) {
+    if (normalizedQuery) {
+      const title = event.title.toLocaleLowerCase('ja');
+      const memo = (event.memo ?? '').toLocaleLowerCase('ja');
+      if (!title.includes(normalizedQuery) && !memo.includes(normalizedQuery)) {
+        continue;
+      }
+    }
+    hits.push({
+      event,
+      dateKeys: getLocalDateKeysForEvent(event),
+    });
+    if (hits.length >= limit) {
+      break;
+    }
+  }
+  return hits;
 };
 
 export const createEventFromEpisode = (input: EpisodeEventSyncInput): Event | null => {

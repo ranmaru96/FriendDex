@@ -115,6 +115,10 @@ export type UiKit = {
   friendsScreenBorderRadius: number;
   /** Detail プロフィール＋タブのカード枠スタイル */
   detailProfileCardStyle: DetailProfileCardStyle;
+  /**
+   * Home↔Detail で上ヘッダー枠の高さを固定し、中身だけ切り替える
+   */
+  sharedHeaderChrome: boolean;
 
   textPrimary: AppTheme['textPrimary'];
   textSecondary: AppTheme['textSecondary'];

@@ -27,10 +27,7 @@ import {
 } from '@/utils/scheduleGridCalendar';
 
 const GRID_BORDER = Theme.inputBorder;
-/** 当日セル背景（ライト）／ブラックは濃面 */
-const TODAY_BG_LIGHT = '#FFF8E6';
-const TODAY_BG_BLACK = '#2a2a2a';
-/** 当日日付バッジ（画像参考のオレンジ） */
+/** 当日日付バッジ（オレンジ） */
 const TODAY_BADGE_BG = '#F5A623';
 const SELECTED_RING = Theme.accent;
 const SATURDAY_COLOR = '#2563eb';
@@ -121,6 +118,8 @@ function DayCell({
   events,
   onDayPress,
   isLastColumn,
+  gridLineColor,
+  gridLineWidth,
 }: {
   day: ScheduleGridDay;
   week: ScheduleGridDay[];
@@ -130,6 +129,8 @@ function DayCell({
   events: Event[];
   onDayPress: (dateKey: string) => void;
   isLastColumn: boolean;
+  gridLineColor: string;
+  gridLineWidth: number;
 }) {
   const isSelected = day.dateKey === selectedDate;
   const isToday = day.dateKey === todayKey;
@@ -139,9 +140,6 @@ function DayCell({
   );
 
   const content = useContentColors();
-  const appTheme = useAppThemeOptional();
-  const todayBackground =
-    appTheme?.variant === 'black' ? TODAY_BG_BLACK : TODAY_BG_LIGHT;
   const dateColor = useMemo(() => {
     if (!day.inCurrentMonth) {
       return content.contentTextSecondary;
@@ -162,13 +160,13 @@ function DayCell({
     <Pressable
       style={[
         styles.dayCell,
-        !isLastColumn ? styles.dayCellBorderRight : null,
+        !isLastColumn
+          ? { borderRightWidth: gridLineWidth, borderRightColor: gridLineColor }
+          : null,
         {
-          backgroundColor: isToday
-            ? todayBackground
-            : day.inCurrentMonth
-              ? content.contentCalendarInMonth
-              : content.contentCalendarOutMonth,
+          backgroundColor: day.inCurrentMonth
+            ? content.contentCalendarInMonth
+            : content.contentCalendarOutMonth,
         },
         hasSpanningLabel ? styles.dayCellSpanningLabel : null,
       ]}
@@ -226,6 +224,8 @@ export function ScheduleGridMonthCalendar({
   const outerBorderColor = appTheme?.colors.calendarOuterBorder ?? GRID_BORDER;
   const bottomSeparatorColor = appTheme?.colors.tabBarBorder ?? outerBorderColor;
   const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
+  const gridLineColor = content.contentBorder;
+  const gridLineWidth = isMonochrome ? 1 : StyleSheet.hairlineWidth;
 
   const handleGridLayout = useCallback((event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
@@ -281,7 +281,16 @@ export function ScheduleGridMonthCalendar({
         edgeToEdge ? styles.rootEdgeToEdge : null,
       ]}
     >
-      <View style={[styles.header, { backgroundColor: content.contentCalendarInMonth }]}>
+      <View
+        style={[
+          styles.header,
+          {
+            backgroundColor: content.contentCalendarInMonth,
+            borderBottomWidth: gridLineWidth,
+            borderBottomColor: gridLineColor,
+          },
+        ]}
+      >
         <Pressable style={styles.navButton} onPress={() => shiftMonth(-1)} hitSlop={8}>
           <Text style={[styles.navButtonText, { color: content.contentText }]}>‹</Text>
         </Pressable>
@@ -293,9 +302,26 @@ export function ScheduleGridMonthCalendar({
         </Pressable>
       </View>
 
-      <View style={[styles.weekdayRow, { backgroundColor: content.contentCalendarInMonth }]}>
+      <View
+        style={[
+          styles.weekdayRow,
+          {
+            backgroundColor: content.contentCalendarInMonth,
+            borderBottomWidth: gridLineWidth,
+            borderBottomColor: gridLineColor,
+          },
+        ]}
+      >
         {weekdayLabels.map((label, index) => (
-          <View key={label} style={[styles.weekdayCell, index < 6 ? styles.dayCellBorderRight : null]}>
+          <View
+            key={label}
+            style={[
+              styles.weekdayCell,
+              index < 6
+                ? { borderRightWidth: gridLineWidth, borderRightColor: gridLineColor }
+                : null,
+            ]}
+          >
             <Text
               style={[
                 styles.weekdayText,
@@ -311,11 +337,17 @@ export function ScheduleGridMonthCalendar({
         ))}
       </View>
 
-      <View style={styles.grid} onLayout={handleGridLayout}>
+      <View style={[styles.grid, { backgroundColor: gridLineColor }]} onLayout={handleGridLayout}>
         {weeks.map((week, weekIndex) => (
           <View
             key={`week-${weekIndex}`}
-            style={[styles.weekRow, weekIndex < weeks.length - 1 ? styles.weekRowBorderBottom : null]}
+            style={[
+              styles.weekRow,
+              { backgroundColor: gridLineColor },
+              weekIndex < weeks.length - 1
+                ? { borderBottomWidth: gridLineWidth, borderBottomColor: gridLineColor }
+                : null,
+            ]}
           >
             {week.map((day, dayIndex) => (
               <DayCell
@@ -328,6 +360,8 @@ export function ScheduleGridMonthCalendar({
                 events={events}
                 onDayPress={onDayPress}
                 isLastColumn={dayIndex === 6}
+                gridLineColor={gridLineColor}
+                gridLineWidth={gridLineWidth}
               />
             ))}
           </View>
@@ -356,8 +390,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 8,
     paddingVertical: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: GRID_BORDER,
   },
   headerTitle: {
     fontSize: 16,
@@ -376,8 +408,6 @@ const styles = StyleSheet.create({
   },
   weekdayRow: {
     flexDirection: 'row',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: GRID_BORDER,
   },
   weekdayCell: {
     flex: 1,
@@ -396,17 +426,11 @@ const styles = StyleSheet.create({
     color: SATURDAY_COLOR,
   },
   grid: {
-    backgroundColor: GRID_BORDER,
     overflow: 'visible',
   },
   weekRow: {
     flexDirection: 'row',
-    backgroundColor: GRID_BORDER,
     overflow: 'visible',
-  },
-  weekRowBorderBottom: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: GRID_BORDER,
   },
   dayCell: {
     flex: 1,
@@ -415,10 +439,6 @@ const styles = StyleSheet.create({
     paddingTop: ROW_PADDING,
     paddingBottom: ROW_PADDING,
     overflow: 'visible',
-  },
-  dayCellBorderRight: {
-    borderRightWidth: StyleSheet.hairlineWidth,
-    borderRightColor: GRID_BORDER,
   },
   selectedFrame: {
     ...StyleSheet.absoluteFillObject,

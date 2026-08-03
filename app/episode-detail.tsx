@@ -16,11 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
-import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModal';
 import type { Option } from '@/components/episode/types';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { Panel, PanelSection, SectionDivider } from '@/components/ui/Panel';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import {
   contentMutedTextStyle,
   contentTextStyle,
@@ -31,7 +31,6 @@ import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance
 
 import {
   deleteEpisode,
-  getAllFriends,
   getDistinctAffiliations,
   getDistinctExperiences,
   getEpisodeById,
@@ -50,14 +49,10 @@ import {
   visibilityDisplayLabels,
 } from '../utils/episodeHelpers';
 import {
-  applyEventIdToEpisode,
-  buildEpisodeEventLinkInput,
-  createEventAndLinkEpisode,
   EVENT_CREATE_FAILED_MESSAGE,
-  runEpisodeEventLinkFlow,
+  resolveEpisodeSaveEventId,
 } from '../utils/episodeEventLinking';
-import type { EpisodeEventMatch } from '../utils/eventEpisodeSync';
-import { formatEventScheduleLabel } from '../utils/eventHelpers';
+import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 
 const LIST_HORIZONTAL_INSET = 12;
 const PHOTO_GAP = 6;
@@ -67,8 +62,11 @@ const PHOTO_PEEK = 28;
 export default function EpisodeDetailScreen() {
   const router = useRouter();
   const kit = useUiKit();
+  const appTheme = useAppThemeOptional();
   const content = useContentColors();
   const bottomNavClearance = useBottomNavScrollClearance();
+  const editButtonBorderColor =
+    appTheme?.colors.topBarBorder ?? Theme.topBarBorder;
   const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string }>();
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [parentEvent, setParentEvent] = useState<Event | null>(null);
@@ -82,14 +80,16 @@ export default function EpisodeDetailScreen() {
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
   const [isEditVisible, setIsEditVisible] = useState(false);
-  const [editLinkModalVisible, setEditLinkModalVisible] = useState(false);
-  const [editLinkCandidates, setEditLinkCandidates] = useState<EpisodeEventMatch[]>([]);
-  const [editLinkTarget, setEditLinkTarget] = useState<{ episode: Episode; authorId: string } | null>(
-    null
-  );
 
   const hiddenParticipantIds = useMemo(() => (myselfId ? [myselfId] : []), [myselfId]);
   const episodeForm = useEpisodeForm({ friends, hiddenParticipantIds });
+  const sectionDividerStyle = useMemo(
+    () => ({
+      height: 1,
+      backgroundColor: content.contentDivider,
+    }),
+    [content.contentDivider]
+  );
 
   const episodeId = useMemo(() => {
     if (Array.isArray(params.episodeId)) return params.episodeId[0] ?? '';
@@ -109,7 +109,7 @@ export default function EpisodeDetailScreen() {
   const loadData = useCallback(() => {
     initializeDatabase();
     setMyselfId(getMyself());
-    const allFriends = getAllFriends();
+    const allFriends = getAllFriendsInDefaultOrder();
     setFriends(allFriends);
     setFriendNameById(new Map(allFriends.map((f) => [f.id, f.name])));
     setFriendPhotoById(new Map(allFriends.map((f) => [f.id, f.photoUri ?? null])));
@@ -205,7 +205,19 @@ export default function EpisodeDetailScreen() {
     if (!payload) {
       return;
     }
-    const updated = updateEpisode(myselfId, editingId, payload);
+    const resolved = resolveEpisodeSaveEventId(payload, () => {
+      Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE);
+      episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
+    });
+    if (!resolved.ok) {
+      return;
+    }
+    const { createLinkedEvent: _createLinkedEvent, eventId: _formEventId, ...episodeFields } =
+      payload;
+    const updated = updateEpisode(myselfId, editingId, {
+      ...episodeFields,
+      eventId: resolved.eventId,
+    });
     if (!updated) {
       episodeForm.setFormError('エピソードの更新に失敗しました。');
       return;
@@ -214,72 +226,6 @@ export default function EpisodeDetailScreen() {
     episodeForm.reset();
     setIsEditVisible(false);
     loadData();
-  }, [episodeForm, loadData, myselfId]);
-
-  const finishEditEpisodeLink = useCallback(
-    (eventId: string) => {
-      if (!editLinkTarget) {
-        return;
-      }
-      const ok = applyEventIdToEpisode(editLinkTarget.episode, editLinkTarget.authorId, eventId);
-      if (!ok) {
-        Alert.alert('エラー', '予定への紐づけに失敗しました。');
-        return;
-      }
-      episodeForm.linkToEvent(eventId);
-      setEditLinkModalVisible(false);
-      setEditLinkCandidates([]);
-      setEditLinkTarget(null);
-      loadData();
-    },
-    [editLinkTarget, episodeForm, loadData]
-  );
-
-  const handleEditLinkCancel = useCallback(() => {
-    setEditLinkModalVisible(false);
-    setEditLinkCandidates([]);
-    setEditLinkTarget(null);
-  }, []);
-
-  const handleEditLinkCreateNew = useCallback(() => {
-    if (!editLinkTarget) {
-      return;
-    }
-    createEventAndLinkEpisode(
-      buildEpisodeEventLinkInput(editLinkTarget.episode),
-      finishEditEpisodeLink,
-      () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE)
-    );
-  }, [editLinkTarget, finishEditEpisodeLink]);
-
-  const handleLinkToEvent = useCallback(() => {
-    const editingId = episodeForm.editingEpisodeId;
-    if (!editingId || !myselfId) {
-      return;
-    }
-    const target = getEpisodeById(myselfId, editingId);
-    if (!target) {
-      Alert.alert('エラー', 'エピソードが見つかりません。');
-      return;
-    }
-    const authorId = resolveEpisodeRecordOwnerId(target, myselfId);
-    runEpisodeEventLinkFlow(buildEpisodeEventLinkInput(target), {
-      onLinked: (eventId) => {
-        const ok = applyEventIdToEpisode(target, authorId, eventId);
-        if (!ok) {
-          Alert.alert('エラー', '予定への紐づけに失敗しました。');
-          return;
-        }
-        episodeForm.linkToEvent(eventId);
-        loadData();
-      },
-      onMultipleMatches: (matches) => {
-        setEditLinkTarget({ episode: target, authorId });
-        setEditLinkCandidates(matches);
-        setEditLinkModalVisible(true);
-      },
-      onEventCreateFailed: () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE),
-    });
   }, [episodeForm, loadData, myselfId]);
 
   const handleDelete = () => {
@@ -320,7 +266,10 @@ export default function EpisodeDetailScreen() {
           right={
             canManage ? (
               <Pressable
-                style={episodeDetailTopBarButtonStyles.button}
+                style={[
+                  episodeDetailTopBarButtonStyles.button,
+                  { borderColor: editButtonBorderColor },
+                ]}
                 onPress={handleEdit}
                 accessibilityLabel="編集"
                 hitSlop={8}
@@ -354,40 +303,23 @@ export default function EpisodeDetailScreen() {
               chips={chips}
               visibility={visibility}
               visibilityMode={episode.visibilityMode}
-              style={styles.episodeHeaderPreview}
-            />
-
-            {parentEvent ? (
-              <>
-                <SectionDivider />
-                <PanelSection style={styles.detailSection}>
-                  <Pressable
-                    onPress={() =>
+              eventTitle={parentEvent?.title.trim() || null}
+              eventEpisodeTag={parentEvent?.episodeTag}
+              onEventPress={
+                parentEvent
+                  ? () =>
                       router.push({
                         pathname: '/event',
                         params: { eventId: parentEvent.id },
                       })
-                    }
-                    accessibilityRole="button"
-                    accessibilityLabel="所属する予定を開く"
-                  >
-                    <Text style={[styles.parentEventLabel, contentMutedTextStyle(content)]}>
-                      予定
-                    </Text>
-                    <Text style={[styles.parentEventTitle, contentTextStyle(content)]}>
-                      {parentEvent.title.trim() || '（無題）'}
-                    </Text>
-                    <Text style={[styles.parentEventMeta, contentMutedTextStyle(content)]}>
-                      {formatEventScheduleLabel(parentEvent)}
-                    </Text>
-                  </Pressable>
-                </PanelSection>
-              </>
-            ) : null}
+                  : undefined
+              }
+              style={styles.episodeHeaderPreview}
+            />
 
             {hasDescription ? (
               <>
-                <SectionDivider />
+                <SectionDivider style={sectionDividerStyle} />
                 <PanelSection style={styles.detailSection}>
                   <Text style={[styles.descriptionText, contentTextStyle(content)]}>{episode.description}</Text>
                 </PanelSection>
@@ -396,7 +328,7 @@ export default function EpisodeDetailScreen() {
 
             {hasPhotos ? (
               <>
-                <SectionDivider />
+                <SectionDivider style={sectionDividerStyle} />
                 <PanelSection style={styles.detailSection}>
                   <View style={[styles.photoViewport, { height: photoFrameHeight }]}>
                     <ScrollView
@@ -411,7 +343,7 @@ export default function EpisodeDetailScreen() {
               </>
             ) : null}
 
-            <SectionDivider />
+            <SectionDivider style={sectionDividerStyle} />
             <PanelSection style={styles.detailSection}>
               <Text style={[styles.privateMemoLabel, contentTextStyle(content)]}>非公開メモ</Text>
               <Text style={[styles.privateMemoPlaceholder, contentMutedTextStyle(content)]}>非公開メモ（近日実装予定）</Text>
@@ -457,16 +389,6 @@ export default function EpisodeDetailScreen() {
         episodeTagOptions={episodeTagOptions}
         onClose={handleCloseEdit}
         onSave={handleSaveEdit}
-        onLinkToEvent={handleLinkToEvent}
-      />
-
-      <EpisodeEventLinkModal
-        visible={editLinkModalVisible}
-        dateKey={editLinkTarget?.episode.date ?? ''}
-        candidates={editLinkCandidates}
-        onSelect={finishEditEpisodeLink}
-        onCreateNew={handleEditLinkCreateNew}
-        onCancel={handleEditLinkCancel}
       />
     </>
   );
@@ -505,18 +427,6 @@ const styles = StyleSheet.create({
   },
   episodeHeaderPreview: {
     paddingTop: 14,
-  },
-  parentEventLabel: {
-    fontSize: 12,
-    marginBottom: 4,
-  },
-  parentEventTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  parentEventMeta: {
-    fontSize: 13,
-    marginTop: 4,
   },
   detailSection: {
     paddingVertical: 10,

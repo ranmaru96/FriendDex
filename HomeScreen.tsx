@@ -41,12 +41,22 @@ import {
   homeFilterToSearchFilters,
   isHomeFilterState,
 } from '@/utils/persistedFilterTypes';
-import { Friend, MBTI_TYPES, PendingReviewEpisodeRef } from './types';
+import { Friend, FriendSearchFilters, MBTI_TYPES, PendingReviewEpisodeRef } from './types';
+import { sortFriendsByDefaultOrder } from '@/utils/friendDefaultSort';
 
 type Option = {
   label: string;
   value: string;
 };
+
+/** Birthday-month filter keeps day-of-month order from DB; otherwise ⓪–⑥ default. */
+function loadHomeFriends(filters: FriendSearchFilters): Friend[] {
+  const results = searchFriends(filters);
+  if (filters.birthMonth && filters.birthMonth >= 1 && filters.birthMonth <= 12) {
+    return results;
+  }
+  return sortFriendsByDefaultOrder(results);
+}
 
 const birthMonthOptions: Option[] = Array.from({ length: 12 }, (_, index) => ({
   label: String(index + 1),
@@ -101,13 +111,13 @@ export default function HomeScreen() {
 
   useEffect(() => {
     initializeDatabase();
-    setFriends(searchFriends(filters));
+    setFriends(loadHomeFriends(filters));
   }, [filters]);
 
   useFocusEffect(
     useCallback(() => {
       loadInitialData();
-      setFriends(searchFriends(filtersRef.current));
+      setFriends(loadHomeFriends(filtersRef.current));
     }, [loadInitialData])
   );
 
@@ -127,7 +137,7 @@ export default function HomeScreen() {
         return;
       }
       setMyselfId(getMyself());
-      setFriends(searchFriends(filtersRef.current));
+      setFriends(loadHomeFriends(filtersRef.current));
     };
 
     Alert.alert('プロフィールを削除しますか？', 'この操作は元に戻せません。', [

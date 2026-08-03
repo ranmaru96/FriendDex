@@ -26,8 +26,8 @@ import {
 } from '../db';
 import { Task } from '../types';
 import {
-  calculateScheduledStreak,
   formatRecurrenceLabel,
+  formatRecurringActivityLabel,
   isRecurringDueOnDate,
   toYmd,
 } from '@/utils/taskHelpers';
@@ -97,8 +97,9 @@ export default function TasksScreen() {
     const doneToday = isTaskCompletedOn(task.id, todayYmd);
     const count = getTaskCompletionCount(task.id);
     const dates = getTaskCompletionDatesSet(task.id);
-    const streak = calculateScheduledStreak(task, dates, new Date());
     const label = formatRecurrenceLabel(task.pace, task.recurrenceUnit, task.recurrenceConfig);
+    const activity = formatRecurringActivityLabel(task, dates, new Date());
+    const metaParts = [label, activity, `計${count}回`].filter(Boolean);
 
     return (
       <Pressable
@@ -126,8 +127,13 @@ export default function TasksScreen() {
         <View style={styles.rowMain}>
           <Text style={[styles.rowTitle, contentTextStyle(content)]}>{task.title}</Text>
           <Text style={[styles.rowMeta, contentMutedTextStyle(content)]}>
-            {label} · 連続{streak} · 計{count}回
+            {metaParts.join(' · ')}
           </Text>
+          {task.memo.trim() ? (
+            <Text style={[styles.rowMemo, contentMutedTextStyle(content)]} numberOfLines={2}>
+              {task.memo.trim()}
+            </Text>
+          ) : null}
         </View>
       </Pressable>
     );
@@ -155,6 +161,11 @@ export default function TasksScreen() {
             {task.dueDate ? `期限 ${task.dueDate}` : '期限なし'}
             {eventTitle ? ` · ${eventTitle}` : ''}
           </Text>
+          {task.memo.trim() ? (
+            <Text style={[styles.rowMemo, contentMutedTextStyle(content)]} numberOfLines={2}>
+              {task.memo.trim()}
+            </Text>
+          ) : null}
         </View>
       </Pressable>
     );
@@ -310,6 +321,11 @@ const styles = StyleSheet.create({
   rowTitle: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  rowMemo: {
+    fontSize: 12,
+    marginTop: 2,
+    lineHeight: 16,
   },
   rowMeta: {
     fontSize: 12,

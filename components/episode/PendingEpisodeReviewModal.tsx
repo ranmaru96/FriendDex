@@ -20,7 +20,9 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
 import { PhotoCropModal, EPISODE_PHOTO_ASPECT } from '@/components/photo/PhotoCropModal';
+import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
 import {
   deleteEpisode,
   getEpisodePhotos,
@@ -46,6 +48,7 @@ export function PendingEpisodeReviewModal({
   onChanged,
 }: PendingEpisodeReviewModalProps) {
   const content = useContentColors();
+  const keyboardBottomInset = useKeyboardBottomInset();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
@@ -198,7 +201,7 @@ export function PendingEpisodeReviewModal({
   return (
     <>
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
-      <View style={styles.backdrop}>
+      <View style={[styles.backdrop, { paddingBottom: keyboardBottomInset }]}>
         <View style={[styles.card, contentSurfaceStyle(content)]}>
           <Text style={[styles.heading, contentTextStyle(content)]}>予定からエピソードが作成されました</Text>
           {progressLabel ? <Text style={[styles.progress, contentMutedTextStyle(content)]}>{progressLabel}</Text> : null}
@@ -216,14 +219,13 @@ export function PendingEpisodeReviewModal({
             />
 
             <Text style={[styles.label, contentTextStyle(content)]}>説明文</Text>
-            <TextInput
+            <ViewportCappedMultilineTextInput
               style={[styles.textInput, styles.descriptionInput, contentInputStyle(content)]}
               value={description}
               onChangeText={setDescription}
               placeholder="説明文"
               placeholderTextColor={content.contentTextSecondary}
-              multiline
-              textAlignVertical="top"
+              minHeight={96}
             />
 
             <Text style={[styles.label, contentTextStyle(content)]}>写真</Text>

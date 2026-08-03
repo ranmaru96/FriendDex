@@ -23,13 +23,12 @@ import {
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
-import { EpisodeEventLinkModal } from '@/components/episode/EpisodeEventLinkModal';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import type { Option } from '@/components/episode/types';
-import { useEpisodeForm, type EpisodeSavePayload } from '@/hooks/useEpisodeForm';
+import { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import { usePersistedFilter, FILTER_KEYS } from '@/hooks/usePersistedFilter';
 import {
   DEFAULT_EPISODE_LIST_FILTER,
@@ -38,10 +37,8 @@ import {
 import {
   createEpisode,
   deleteEpisode,
-  getAllFriends,
   getDistinctAffiliations,
   getDistinctExperiences,
-  getEpisodeById,
   getEpisodeListPhotoUrisMap,
   getEpisodeParticipantFriendIds,
   getMergedEpisodeTagLabels,
@@ -57,16 +54,10 @@ import {
   resolveEpisodeRecordOwnerId,
 } from '../utils/episodeHelpers';
 import {
-  applyEventIdToEpisode,
-  buildEpisodeEventLinkInput,
-  buildEpisodeEventLinkInputFromSavePayload,
-  createEventAndLinkEpisode,
-  createEventIdForEpisodeInput,
   EVENT_CREATE_FAILED_MESSAGE,
-  runEpisodeEventLinkFlow,
-  runNewEpisodeEventLinkFlow,
+  resolveEpisodeSaveEventId,
 } from '../utils/episodeEventLinking';
-import type { EpisodeEventMatch } from '../utils/eventEpisodeSync';
+import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 
 type EpisodeRow = { episode: Episode; recordOwnerId: string };
 
@@ -152,15 +143,6 @@ export default function EpisodeScreen() {
   const [filterSelectorAffiliationFilter, setFilterSelectorAffiliationFilter] = useState('');
   const [filterSelectorExperienceFilter, setFilterSelectorExperienceFilter] = useState('');
 
-  const [createLinkModalVisible, setCreateLinkModalVisible] = useState(false);
-  const [createLinkCandidates, setCreateLinkCandidates] = useState<EpisodeEventMatch[]>([]);
-  const [editLinkModalVisible, setEditLinkModalVisible] = useState(false);
-  const [editLinkCandidates, setEditLinkCandidates] = useState<EpisodeEventMatch[]>([]);
-  const [editLinkTarget, setEditLinkTarget] = useState<{ episode: Episode; authorId: string } | null>(
-    null
-  );
-  const [pendingCreatePayload, setPendingCreatePayload] = useState<EpisodeSavePayload | null>(null);
-
   const hiddenParticipantIds = useMemo(
     () => (myselfId ? [myselfId] : []),
     [myselfId]
@@ -173,7 +155,7 @@ export default function EpisodeScreen() {
 
   const loadData = useCallback(() => {
     initializeDatabase();
-    const nextFriends = getAllFriends();
+    const nextFriends = getAllFriendsInDefaultOrder();
     setFriends(nextFriends);
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
@@ -395,154 +377,6 @@ export default function EpisodeScreen() {
     ]);
   };
 
-  const finishCreateEpisode = useCallback(
-    (payload: EpisodeSavePayload, eventId: string) => {
-      const normalizedEventId = eventId.trim();
-      if (!normalizedEventId) {
-        episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
-        return;
-      }
-      const created = createEpisode({
-        ...payload,
-        eventId: normalizedEventId,
-      });
-      if (!created) {
-        episodeForm.setFormError('エピソードの追加に失敗しました。');
-        return;
-      }
-      episodeForm.persistPhotos(created.id, false);
-      episodeForm.reset();
-      setIsFormVisible(false);
-      setCreateLinkModalVisible(false);
-      setCreateLinkCandidates([]);
-      setPendingCreatePayload(null);
-      loadData();
-    },
-    [episodeForm, loadData]
-  );
-
-  const handleEventCreateFailed = useCallback(() => {
-    Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE);
-    episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
-  }, [episodeForm]);
-
-  const proceedNewEpisodeSave = useCallback(
-    (payload: EpisodeSavePayload) => {
-      const linkedEventId = episodeForm.linkedEventId?.trim();
-      if (linkedEventId) {
-        finishCreateEpisode(payload, linkedEventId);
-        return;
-      }
-      const linkInput = buildEpisodeEventLinkInputFromSavePayload(payload);
-      runNewEpisodeEventLinkFlow(linkInput, {
-        onResolved: (eventId) => finishCreateEpisode(payload, eventId),
-        onMultipleMatches: (matches) => {
-          setPendingCreatePayload(payload);
-          setCreateLinkCandidates(matches);
-          setCreateLinkModalVisible(true);
-        },
-        onEventCreateFailed: handleEventCreateFailed,
-      });
-    },
-    [episodeForm.linkedEventId, finishCreateEpisode, handleEventCreateFailed]
-  );
-
-  const handleCreateLinkCancel = useCallback(() => {
-    setCreateLinkModalVisible(false);
-    setCreateLinkCandidates([]);
-    setPendingCreatePayload(null);
-  }, []);
-
-  const handleCreateLinkCreateNew = useCallback(() => {
-    if (!pendingCreatePayload) {
-      return;
-    }
-    const eventId = createEventIdForEpisodeInput(
-      buildEpisodeEventLinkInputFromSavePayload(pendingCreatePayload)
-    );
-    if (!eventId) {
-      handleEventCreateFailed();
-      return;
-    }
-    finishCreateEpisode(pendingCreatePayload, eventId);
-  }, [finishCreateEpisode, handleEventCreateFailed, pendingCreatePayload]);
-
-  const handleCreateLinkSelect = useCallback(
-    (eventId: string) => {
-      if (!pendingCreatePayload) {
-        return;
-      }
-      finishCreateEpisode(pendingCreatePayload, eventId);
-    },
-    [finishCreateEpisode, pendingCreatePayload]
-  );
-
-  const finishEditEpisodeLink = useCallback(
-    (eventId: string) => {
-      if (!editLinkTarget) {
-        return;
-      }
-      const ok = applyEventIdToEpisode(editLinkTarget.episode, editLinkTarget.authorId, eventId);
-      if (!ok) {
-        Alert.alert('エラー', '予定への紐づけに失敗しました。');
-        return;
-      }
-      episodeForm.linkToEvent(eventId);
-      setEditLinkModalVisible(false);
-      setEditLinkCandidates([]);
-      setEditLinkTarget(null);
-      loadData();
-    },
-    [editLinkTarget, episodeForm, loadData]
-  );
-
-  const handleEditLinkCancel = useCallback(() => {
-    setEditLinkModalVisible(false);
-    setEditLinkCandidates([]);
-    setEditLinkTarget(null);
-  }, []);
-
-  const handleEditLinkCreateNew = useCallback(() => {
-    if (!editLinkTarget) {
-      return;
-    }
-    createEventAndLinkEpisode(
-      buildEpisodeEventLinkInput(editLinkTarget.episode),
-      finishEditEpisodeLink,
-      () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE)
-    );
-  }, [editLinkTarget, finishEditEpisodeLink]);
-
-  const handleLinkExistingEpisodeToEvent = useCallback(() => {
-    const episodeId = episodeForm.editingEpisodeId;
-    if (!episodeId || !myselfId) {
-      return;
-    }
-    const episode = getEpisodeById(myselfId, episodeId);
-    if (!episode) {
-      Alert.alert('エラー', 'エピソードが見つかりません。');
-      return;
-    }
-    const authorId = resolveEpisodeRecordOwnerId(episode, myselfId);
-    runEpisodeEventLinkFlow(buildEpisodeEventLinkInput(episode), {
-      onLinked: (eventId) => {
-        const ok = applyEventIdToEpisode(episode, authorId, eventId);
-        if (!ok) {
-          Alert.alert('エラー', '予定への紐づけに失敗しました。');
-          return;
-        }
-        episodeForm.linkToEvent(eventId);
-        loadData();
-      },
-      onMultipleMatches: (matches) => {
-        setEditLinkTarget({ episode, authorId });
-        setEditLinkCandidates(matches);
-        setEditLinkModalVisible(true);
-      },
-      onEventCreateFailed: () => Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE),
-    });
-  }, [episodeForm, loadData, myselfId]);
-
   const handleSaveEpisode = () => {
     if (!myselfId) {
       episodeForm.setFormError('本人が設定されていません。');
@@ -552,8 +386,22 @@ export default function EpisodeScreen() {
     if (!payload) {
       return;
     }
+    const resolved = resolveEpisodeSaveEventId(payload, () => {
+      Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE);
+      episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
+    });
+    if (!resolved.ok) {
+      return;
+    }
+    const { createLinkedEvent: _createLinkedEvent, eventId: _formEventId, ...episodeFields } =
+      payload;
+    const episodeInput = {
+      ...episodeFields,
+      eventId: resolved.eventId,
+    };
+
     if (episodeForm.editingEpisodeId) {
-      const updated = updateEpisode(myselfId, episodeForm.editingEpisodeId, payload);
+      const updated = updateEpisode(myselfId, episodeForm.editingEpisodeId, episodeInput);
       if (!updated) {
         episodeForm.setFormError('エピソードの更新に失敗しました。');
         return;
@@ -564,7 +412,16 @@ export default function EpisodeScreen() {
       loadData();
       return;
     }
-    proceedNewEpisodeSave(payload);
+
+    const created = createEpisode(episodeInput);
+    if (!created) {
+      episodeForm.setFormError('エピソードの追加に失敗しました。');
+      return;
+    }
+    episodeForm.persistPhotos(created.id, false);
+    episodeForm.reset();
+    setIsFormVisible(false);
+    loadData();
   };
 
   return (
@@ -668,25 +525,6 @@ export default function EpisodeScreen() {
           setIsFormVisible(false);
         }}
         onSave={handleSaveEpisode}
-        onLinkToEvent={handleLinkExistingEpisodeToEvent}
-      />
-
-      <EpisodeEventLinkModal
-        visible={createLinkModalVisible}
-        dateKey={pendingCreatePayload?.date ?? ''}
-        candidates={createLinkCandidates}
-        onSelect={handleCreateLinkSelect}
-        onCreateNew={handleCreateLinkCreateNew}
-        onCancel={handleCreateLinkCancel}
-      />
-
-      <EpisodeEventLinkModal
-        visible={editLinkModalVisible}
-        dateKey={editLinkTarget?.episode.date ?? ''}
-        candidates={editLinkCandidates}
-        onSelect={finishEditEpisodeLink}
-        onCreateNew={handleEditLinkCreateNew}
-        onCancel={handleEditLinkCancel}
       />
 
       <EntrySelectorModal

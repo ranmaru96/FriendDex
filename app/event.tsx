@@ -20,6 +20,7 @@ import { EventParticipantChipList } from '@/components/event/EventParticipantChi
 import { formatEpisodeDateToYMD, parseEpisodeDateString } from '@/components/episode/types';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
+import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
   contentInputStyle,
@@ -44,7 +45,6 @@ import {
   getEvent,
   getEventParticipants,
   getMergedEpisodeTagLabels,
-  getAllFriends,
   getDefaultProfile,
   getMyself,
   getTasksByEventId,
@@ -70,6 +70,7 @@ import {
   getAllDayDateKeysFromEvent,
   parseDateKey,
 } from '../utils/eventHelpers';
+import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import {
   friendIdsToProfileIds,
   profileIdsToFriendIds,
@@ -223,7 +224,7 @@ export default function EventScreen() {
     initializeDatabase();
     const currentMyselfId = getMyself();
     setMyselfId(currentMyselfId);
-    setFriends(getAllFriends());
+    setFriends(getAllFriendsInDefaultOrder());
     setAffiliationOptions(getDistinctAffiliations().map((value) => ({ label: value, value })));
     setExperienceOptions(getDistinctExperiences().map((value) => ({ label: value, value })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((value) => ({ label: value, value })));
@@ -814,14 +815,13 @@ export default function EventScreen() {
           ) : null}
 
           <FormRow label="メモ" contentStyle={styles.memoField}>
-            <TextInput
+            <ViewportCappedMultilineTextInput
               style={[styles.textInput, styles.memoInput, fieldCorner, contentInputStyle(content)]}
               placeholder="メモ（任意）"
               placeholderTextColor={content.contentTextSecondary}
               value={memo}
               onChangeText={setMemo}
-              multiline
-              textAlignVertical="top"
+              minHeight={96}
             />
           </FormRow>
         </FormScreenSection>
@@ -898,6 +898,7 @@ export default function EventScreen() {
                     <Text style={[styles.linkedTaskTitle, contentTextStyle(content)]}>{task.title}</Text>
                     <Text style={[styles.linkedTaskMeta, contentMutedTextStyle(content)]}>
                       {task.completedAt ? '完了' : task.dueDate ? `期限 ${task.dueDate}` : '期限なし'}
+                      {task.memo.trim() ? ` · ${task.memo.trim()}` : ''}
                     </Text>
                   </Pressable>
                 ))}

@@ -20,7 +20,6 @@ import { useContentColors } from '@/utils/useContentColors';
 import {
   applyQrLinkToFriend,
   findFriendByScannedUserId,
-  getAllFriends,
   getDistinctAffiliations,
   getDistinctExperiences,
   getMyself,
@@ -34,6 +33,7 @@ import {
   qrPayloadToRouteParams,
   routeParamsToQrPayload,
 } from '@/utils/qrScanHelpers';
+import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 
 type ImportMode = 'new' | 'overwrite';
 
@@ -61,7 +61,7 @@ export default function QrImportScreen() {
   const friends = useMemo(() => {
     initializeDatabase();
     const myselfId = getMyself();
-    return getAllFriends().filter((friend) => friend.id !== myselfId);
+    return getAllFriendsInDefaultOrder().filter((friend) => friend.id !== myselfId);
   }, []);
 
   const linkedFriend = useMemo(() => {

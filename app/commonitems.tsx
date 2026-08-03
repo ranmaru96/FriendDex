@@ -24,7 +24,6 @@ import {
   addCommonItemOption,
   createGroupOption,
   deleteCommonItemOption,
-  getAllFriends,
   getCommonItemOptionByKindAndLabel,
   getDistinctAffiliations,
   getDistinctExperiences,
@@ -37,6 +36,7 @@ import {
   updateGroupOption,
 } from '../db';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
+import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import { CommonItemKind, Friend } from '../types';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { AddCircleButton } from '@/components/AddCircleButton';
@@ -326,7 +326,7 @@ export default function CommonItemsScreen() {
 
   const loadGroupEditorData = () => {
     initializeDatabase();
-    setAllPersons(getAllFriends());
+    setAllPersons(getAllFriendsInDefaultOrder());
     setAffiliationOptions(toOptions(getDistinctAffiliations()));
     setExperienceOptions(toOptions(getDistinctExperiences()));
     setPersonNameFilter('');
@@ -613,6 +613,8 @@ export default function CommonItemsScreen() {
                       backgroundColor: 'transparent',
                       color: activeChipStyle.color,
                     }}
+                    style={styles.commonItemTagChip}
+                    textStyle={styles.commonItemTagText}
                   />
                 </Pressable>
               );
@@ -840,14 +842,23 @@ const styles = StyleSheet.create({
   valueChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
     borderRadius: Radius.full,
   },
   valueChipText: {
-    fontSize: Typography.sm,
+    fontSize: 12,
     fontWeight: '500',
+  },
+  /** 約1.1倍（共通項目一覧のみ。EpisodeTagChip 既定は他画面用に据え置き） */
+  commonItemTagChip: {
+    gap: 5,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+  },
+  commonItemTagText: {
+    fontSize: 12,
   },
   colorPickerSection: {
     gap: 8,

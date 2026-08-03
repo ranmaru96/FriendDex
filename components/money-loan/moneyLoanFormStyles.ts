@@ -122,6 +122,7 @@ export function createMoneyLoanFormStyles(
       fontWeight: '700',
     },
     selectedEntryTagArea: {
+      marginLeft: MONEY_LOAN_FORM_LABEL_WIDTH + 8,
       borderColor: c.contentSearchFieldBorder,
       borderWidth: 1,
       borderRadius: Radius.md,
@@ -218,6 +219,7 @@ export function createMoneyLoanFormStyles(
     recentCounterpartySection: {
       gap: 6,
       marginTop: 2,
+      marginLeft: MONEY_LOAN_FORM_LABEL_WIDTH + 8,
     },
     recentCounterpartyLabel: {
       fontSize: 12,
@@ -241,8 +243,8 @@ export const moneyLoanFormStyles = createMoneyLoanFormStyles(
     contentPhotoPlaceholder: Theme.homeCardPhotoPlaceholder,
     contentPhotoPlaceholderText: Theme.homeCardPhotoPlaceholderText,
     contentCardName: Theme.homeCardName,
-    contentCalendarInMonth: Theme.card,
-    contentCalendarOutMonth: '#f1f5f9',
+    contentCalendarInMonth: '#f1f5f9',
+    contentCalendarOutMonth: Theme.card,
     contentDivider: Theme.border,
   },
   Theme.topBarText

@@ -14,6 +14,7 @@ type FormRowProps = {
   /** fill=入力欄いっぱい / compact=内容幅に合わせる / action=右寄せボタン */
   contentLayout?: FormRowContentLayout;
   labelWidth?: number;
+  labelNumberOfLines?: number;
 };
 
 export function FormRow({
@@ -24,6 +25,7 @@ export function FormRow({
   contentStyle,
   contentLayout = 'fill',
   labelWidth,
+  labelNumberOfLines = 1,
 }: FormRowProps) {
   const kit = useUiKit();
   const isHorizontal = kit.formLayout === 'horizontal';
@@ -40,7 +42,7 @@ export function FormRow({
       ]}
     >
       <Text
-        numberOfLines={1}
+        numberOfLines={labelNumberOfLines}
         style={[
           styles.label,
           {

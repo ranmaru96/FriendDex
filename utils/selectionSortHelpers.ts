@@ -1,3 +1,7 @@
+import type { Friend } from '@/types';
+import { getMyself } from '@/db';
+import { compareFriendsByDailyOrder } from '@/utils/friendDefaultSort';
+
 const compareSelectedFirst = (aSelected: boolean, bSelected: boolean): number => {
   if (aSelected !== bSelected) {
     return aSelected ? -1 : 1;
@@ -6,31 +10,48 @@ const compareSelectedFirst = (aSelected: boolean, bSelected: boolean): number =>
 };
 
 const compareName = (a: string, b: string): number =>
-  a.localeCompare(b, undefined, { sensitivity: 'base' });
+  a.localeCompare(b, 'ja', { sensitivity: 'base' });
 
-/** 選択済みを上、各グループ内は名前順 */
-export function sortFriendsBySelectedIds<T extends { id: string; name: string }>(
+type FriendSortOptions = {
+  myselfId?: string | null;
+};
+
+function resolveMyselfId(options?: FriendSortOptions): string | null {
+  return options?.myselfId !== undefined ? options.myselfId : getMyself();
+}
+
+/** 本人最優先 → 選択済み優先 → 当日固定のデフォルト人物並び */
+export function sortFriendsBySelectedIds<T extends Friend>(
   items: readonly T[],
-  selectedIds: ReadonlySet<string>
+  selectedIds: ReadonlySet<string>,
+  options?: FriendSortOptions
 ): T[] {
+  const myselfId = resolveMyselfId(options);
   return [...items].sort((a, b) => {
+    const aMe = Boolean(myselfId && a.id === myselfId);
+    const bMe = Boolean(myselfId && b.id === myselfId);
+    if (aMe !== bMe) {
+      return aMe ? -1 : 1;
+    }
     const bySelection = compareSelectedFirst(selectedIds.has(a.id), selectedIds.has(b.id));
     if (bySelection !== 0) {
       return bySelection;
     }
-    return compareName(a.name, b.name);
+    return compareFriendsByDailyOrder(a, b, myselfId);
   });
 }
 
-/** 単一選択: 選択中を上、それ以外は名前順 */
-export function sortFriendsBySelectedId<T extends { id: string; name: string }>(
+/** 単一選択: 本人 → 選択中 → 当日固定デフォルト並び */
+export function sortFriendsBySelectedId<T extends Friend>(
   items: readonly T[],
-  selectedId: string | null
+  selectedId: string | null,
+  options?: FriendSortOptions
 ): T[] {
+  const myselfId = resolveMyselfId(options);
   if (!selectedId) {
-    return [...items].sort((a, b) => compareName(a.name, b.name));
+    return [...items].sort((a, b) => compareFriendsByDailyOrder(a, b, myselfId));
   }
-  return sortFriendsBySelectedIds(items, new Set([selectedId]));
+  return sortFriendsBySelectedIds(items, new Set([selectedId]), { myselfId });
 }
 
 /** 所属グループ等: 選択済み value を上、各グループ内はラベル順 */

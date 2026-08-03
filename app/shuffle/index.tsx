@@ -24,7 +24,6 @@ import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import {
   deleteShufflePool,
-  getAllFriends,
   getDistinctAffiliations,
   getDistinctExperiences,
   getEpisodeParticipantFriendIds,
@@ -53,6 +52,7 @@ import {
   pickRandomMembers,
   shuffleAllMemberIds,
 } from '../../utils/shuffleHelpers';
+import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 
 type Option = { label: string; value: string };
 type ShuffleMode = 'random' | 'order' | 'role' | 'team';
@@ -189,7 +189,7 @@ export default function ShuffleScreen() {
 
   const loadData = useCallback(() => {
     initializeDatabase();
-    setFriends(getAllFriends());
+    setFriends(getAllFriendsInDefaultOrder());
     setMyselfId(getMyself());
     setPools(getShufflePools());
     setAffiliationOptions(getDistinctAffiliations().map((value) => ({ label: value, value })));

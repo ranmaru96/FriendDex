@@ -85,6 +85,40 @@ export const createEventIdForEpisodeInput = (input: EpisodeEventLinkInput): stri
   return event?.id?.trim() || null;
 };
 
+export type ResolveEpisodeSaveEventIdResult =
+  | { ok: true; eventId: string | null }
+  | { ok: false };
+
+/** Resolve calendar event id from form choice (none / existing / create new). */
+export const resolveEpisodeSaveEventId = (
+  payload: {
+    title: string;
+    date: string;
+    description: string;
+    participantEntries: EpisodeParticipant[];
+    tag?: string | null;
+    eventId: string | null;
+    createLinkedEvent: boolean;
+  },
+  onEventCreateFailed?: () => void
+): ResolveEpisodeSaveEventIdResult => {
+  if (payload.createLinkedEvent) {
+    const eventId = createEventIdForEpisodeInput(
+      buildEpisodeEventLinkInputFromSavePayload(payload)
+    );
+    if (!eventId) {
+      if (onEventCreateFailed) {
+        onEventCreateFailed();
+      } else {
+        showEventCreateFailedAlert();
+      }
+      return { ok: false };
+    }
+    return { ok: true, eventId };
+  }
+  return { ok: true, eventId: payload.eventId?.trim() || null };
+};
+
 const showEventCreateFailedAlert = (): void => {
   Alert.alert('エラー', EVENT_CREATE_FAILED_MESSAGE);
 };

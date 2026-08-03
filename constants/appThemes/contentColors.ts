@@ -19,7 +19,7 @@ export type AppThemeContentColorFields = {
   contentDivider: string;
 };
 
-/** デフォルト / ホワイト用（現行 Theme と同等） */
+/** デフォルト用（現行 Theme と同等） */
 export const lightContentColors: AppThemeContentColorFields = {
   contentCard: Theme.card,
   contentBorder: Theme.border,
@@ -33,9 +33,31 @@ export const lightContentColors: AppThemeContentColorFields = {
   contentPhotoPlaceholder: Theme.homeCardPhotoPlaceholder,
   contentPhotoPlaceholderText: Theme.homeCardPhotoPlaceholderText,
   contentCardName: Theme.homeCardName,
-  contentCalendarInMonth: Theme.card,
-  contentCalendarOutMonth: '#f1f5f9',
+  contentCalendarInMonth: '#f1f5f9',
+  contentCalendarOutMonth: Theme.card,
   contentDivider: Theme.border,
+};
+
+/**
+ * ホワイト用。画面(#F2) より手前の面は強めの白(#FFF)。
+ * カレンダーのみ当月=強め・前後月=弱め（ブラックの明暗反転とは別の読みやすさ優先）。
+ */
+export const whiteContentColors: AppThemeContentColorFields = {
+  contentCard: '#FFFFFF',
+  contentBorder: 'rgba(0, 0, 0, 0.18)',
+  contentText: '#111111',
+  contentTextSecondary: '#666666',
+  contentPersonTagBg: '#FFFFFF',
+  contentSearchArea: '#FFFFFF',
+  contentSearchFieldBorder: 'rgba(0, 0, 0, 0.28)',
+  contentInputBg: '#FFFFFF',
+  contentPhotoInnerBorder: '#F2F2F2',
+  contentPhotoPlaceholder: '#FFFFFF',
+  contentPhotoPlaceholderText: '#666666',
+  contentCardName: '#111111',
+  contentCalendarInMonth: '#FFFFFF',
+  contentCalendarOutMonth: '#EBEBEB',
+  contentDivider: 'rgba(0, 0, 0, 0.14)',
 };
 
 /** ブラック用（ホワイト形状を保った色反転） */
@@ -52,7 +74,7 @@ export const darkContentColors: AppThemeContentColorFields = {
   contentPhotoPlaceholder: '#2a2a2a',
   contentPhotoPlaceholderText: '#cccccc',
   contentCardName: '#F2F2F2',
-  contentCalendarInMonth: '#1c1c1c',
-  contentCalendarOutMonth: '#141414',
+  contentCalendarInMonth: '#141414',
+  contentCalendarOutMonth: '#1c1c1c',
   contentDivider: 'rgba(255, 255, 255, 0.14)',
 };
