@@ -35,6 +35,7 @@ import {
   TaskGroup,
   TaskGroupInput,
   TaskInput,
+  TASK_GROUP_MEMBER_LIMIT,
   CompletedTaskRetention,
 } from './types';
 import { normalizeEpisodeTag } from './utils/episodeHelpers';
@@ -194,6 +195,7 @@ const SETTLEMENT_TRANSFER_COMPLETIONS_TABLE = 'settlement_transfer_completions';
 const SHUFFLE_POOLS_TABLE = 'shuffle_pools';
 const TASKS_TABLE = 'tasks';
 const TASK_COMPLETIONS_TABLE = 'task_completions';
+const TASK_SOFT_DONES_TABLE = 'task_soft_dones';
 const TASK_GROUPS_TABLE = 'task_groups';
 const MYSELF_KEY = 'myself_friend_id';
 
@@ -831,6 +833,11 @@ export const initializeDatabase = (): void => {
   if (!taskColumns.has('group_id')) {
     db.execSync(`ALTER TABLE ${TASKS_TABLE} ADD COLUMN group_id TEXT;`);
   }
+  if (!taskColumns.has('track_completions')) {
+    db.execSync(
+      `ALTER TABLE ${TASKS_TABLE} ADD COLUMN track_completions INTEGER NOT NULL DEFAULT 1;`
+    );
+  }
   db.execSync(`CREATE INDEX IF NOT EXISTS idx_${TASKS_TABLE}_group_id ON ${TASKS_TABLE}(group_id);`);
 
   db.execSync(`
@@ -857,6 +864,15 @@ export const initializeDatabase = (): void => {
   db.execSync(
     `CREATE INDEX IF NOT EXISTS idx_${TASK_COMPLETIONS_TABLE}_task_id ON ${TASK_COMPLETIONS_TABLE}(task_id);`
   );
+
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${TASK_SOFT_DONES_TABLE} (
+      task_id TEXT NOT NULL,
+      done_on TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (task_id, done_on)
+    );
+  `);
 
 const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COMMON_ITEM_OPTIONS_TABLE});`);
   const commonColumns = new Set(commonTableInfo.map((c) => c.name));
@@ -4109,6 +4125,7 @@ type TaskRow = {
   due_date: string | null;
   event_id: string | null;
   group_id: string | null;
+  track_completions: number | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -4158,6 +4175,7 @@ const rowToTask = (row: TaskRow): Task => ({
   dueDate: row.due_date,
   eventId: row.event_id,
   groupId: row.group_id?.trim() || null,
+  trackCompletions: row.track_completions == null ? true : Boolean(row.track_completions),
   completedAt: row.completed_at,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
@@ -4336,6 +4354,13 @@ export const createTask = (input: TaskInput): Task | null => {
   const memo = input.memo?.trim() ?? '';
   const groupId =
     input.kind === 'recurring' ? input.groupId?.trim() || null : null;
+  if (groupId) {
+    const existing = getRecurringTasksByGroupId(groupId);
+    if (existing.length >= TASK_GROUP_MEMBER_LIMIT) {
+      return null;
+    }
+  }
+  const trackCompletions = input.kind === 'recurring' ? input.trackCompletions !== false : true;
   const task: Task = {
     id: uuidv4(),
     kind: input.kind,
@@ -4348,14 +4373,16 @@ export const createTask = (input: TaskInput): Task | null => {
     dueDate: input.kind === 'temporary' ? input.dueDate?.trim() || null : null,
     eventId: input.kind === 'temporary' ? input.eventId?.trim() || null : null,
     groupId,
+    trackCompletions,
     completedAt: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
   db.runSync(
     `INSERT INTO ${TASKS_TABLE} (
-      id, kind, title, memo, pace, recurrence_unit, recurrence_config, due_date, event_id, group_id, completed_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);`,
+      id, kind, title, memo, pace, recurrence_unit, recurrence_config, due_date, event_id, group_id,
+      track_completions, completed_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);`,
     [
       task.id,
       task.kind,
@@ -4367,6 +4394,7 @@ export const createTask = (input: TaskInput): Task | null => {
       task.dueDate,
       task.eventId,
       task.groupId,
+      task.trackCompletions ? 1 : 0,
       task.createdAt,
       task.updatedAt,
     ]
@@ -4392,10 +4420,18 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
   const dueDate = input.kind === 'temporary' ? input.dueDate?.trim() || null : null;
   const eventId = input.kind === 'temporary' ? input.eventId?.trim() || null : null;
   const groupId = input.kind === 'recurring' ? input.groupId?.trim() || null : null;
+  if (groupId) {
+    const existing = getRecurringTasksByGroupId(groupId);
+    const others = existing.filter((item) => item.id !== normalizedId);
+    if (others.length >= TASK_GROUP_MEMBER_LIMIT) {
+      return false;
+    }
+  }
+  const trackCompletions = input.kind === 'recurring' ? input.trackCompletions !== false : true;
   const result = db.runSync(
     `UPDATE ${TASKS_TABLE}
      SET kind = ?, title = ?, memo = ?, pace = ?, recurrence_unit = ?, recurrence_config = ?,
-         due_date = ?, event_id = ?, group_id = ?, updated_at = ?
+         due_date = ?, event_id = ?, group_id = ?, track_completions = ?, updated_at = ?
      WHERE id = ?;`,
     [
       input.kind,
@@ -4407,6 +4443,7 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
       dueDate,
       eventId,
       groupId,
+      trackCompletions ? 1 : 0,
       nowIso(),
       normalizedId,
     ]
@@ -4427,6 +4464,12 @@ export const setTaskGroupId = (taskId: string, groupId: string | null): boolean 
   const nextGroupId = groupId?.trim() || null;
   if ((task.groupId ?? null) === nextGroupId) {
     return true;
+  }
+  if (nextGroupId) {
+    const existing = getRecurringTasksByGroupId(nextGroupId);
+    if (existing.length >= TASK_GROUP_MEMBER_LIMIT) {
+      return false;
+    }
   }
   const result = db.runSync(
     `UPDATE ${TASKS_TABLE} SET group_id = ?, updated_at = ? WHERE id = ? AND kind = 'recurring';`,
@@ -4600,6 +4643,69 @@ export const setRecurringTaskCompletion = (taskId: string, ymd: string, complete
     [normalizedId, day]
   );
   return result.changes > 0;
+};
+
+export const deleteAllTaskCompletions = (taskId: string): number => {
+  const normalizedId = taskId.trim();
+  if (!normalizedId) {
+    return 0;
+  }
+  const result = db.runSync(`DELETE FROM ${TASK_COMPLETIONS_TABLE} WHERE task_id = ?;`, [normalizedId]);
+  db.runSync(`DELETE FROM ${TASK_SOFT_DONES_TABLE} WHERE task_id = ?;`, [normalizedId]);
+  return result.changes;
+};
+
+export const isTaskSoftDoneOn = (taskId: string, ymd: string): boolean => {
+  const row = db.getFirstSync<{ task_id: string }>(
+    `SELECT task_id FROM ${TASK_SOFT_DONES_TABLE} WHERE task_id = ? AND done_on = ? LIMIT 1;`,
+    [taskId.trim(), ymd]
+  );
+  return Boolean(row);
+};
+
+export const setTaskSoftDoneOn = (taskId: string, ymd: string, done: boolean): boolean => {
+  const normalizedId = taskId.trim();
+  const day = ymd.trim();
+  if (!normalizedId || !day) {
+    return false;
+  }
+  if (done) {
+    try {
+      db.runSync(
+        `INSERT OR IGNORE INTO ${TASK_SOFT_DONES_TABLE} (task_id, done_on, created_at) VALUES (?, ?, ?);`,
+        [normalizedId, day, nowIso()]
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  const result = db.runSync(
+    `DELETE FROM ${TASK_SOFT_DONES_TABLE} WHERE task_id = ? AND done_on = ?;`,
+    [normalizedId, day]
+  );
+  return result.changes > 0;
+};
+
+/** 記録ONなら履歴、OFFならソフト完了で「今日やった」を判定 */
+export const isRecurringDoneOn = (task: Task, ymd: string): boolean => {
+  if (task.kind !== 'recurring') {
+    return false;
+  }
+  if (task.trackCompletions) {
+    return isTaskCompletedOn(task.id, ymd);
+  }
+  return isTaskSoftDoneOn(task.id, ymd);
+};
+
+export const setRecurringDoneOn = (task: Task, ymd: string, done: boolean): boolean => {
+  if (task.kind !== 'recurring') {
+    return false;
+  }
+  if (task.trackCompletions) {
+    return setRecurringTaskCompletion(task.id, ymd, done);
+  }
+  return setTaskSoftDoneOn(task.id, ymd, done);
 };
 
 export const purgeExpiredCompletedTemporaryTasks = (): number => {

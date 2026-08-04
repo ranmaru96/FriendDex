@@ -21,11 +21,12 @@ import {
   getTaskGroup,
   getTasksCompletionDatesUnion,
   initializeDatabase,
-  isTaskCompletedOn,
-  setRecurringTaskCompletion,
+  isRecurringDoneOn,
+  setRecurringDoneOn,
   updateTaskGroup,
 } from '../db';
 import type { Task, TaskGroup } from '../types';
+import { TASK_GROUP_MEMBER_LIMIT } from '../types';
 import {
   formatRecurrenceLabel,
   isRecurringDueOnDate,
@@ -35,6 +36,8 @@ import {
   countGroupDueProgress,
   formatGroupActivityLabel,
   formatGroupListMeta,
+  groupTracksCompletions,
+  trackingMembers,
 } from '@/utils/taskGroupHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
@@ -96,20 +99,23 @@ export default function TaskGroupScreen() {
   );
 
   const completionDates = useMemo(() => {
-    return getTasksCompletionDatesUnion(members.map((task) => task.id));
+    void tick;
+    return getTasksCompletionDatesUnion(trackingMembers(members).map((task) => task.id));
   }, [members, tick]);
 
   const historyDates = useMemo(() => {
     return Array.from(completionDates).sort((a, b) => (a < b ? 1 : -1));
   }, [completionDates]);
 
+  const tracks = useMemo(() => groupTracksCompletions(members), [members]);
+
   const activityLabel = useMemo(
-    () => formatGroupActivityLabel(completionDates, new Date()),
-    [completionDates]
+    () => (tracks ? formatGroupActivityLabel(completionDates, new Date()) : ''),
+    [completionDates, tracks]
   );
 
   const progress = useMemo(
-    () => countGroupDueProgress(members, new Date(), isTaskCompletedOn),
+    () => countGroupDueProgress(members, new Date(), isRecurringDoneOn),
     [members, tick]
   );
 
@@ -166,8 +172,8 @@ export default function TaskGroupScreen() {
   };
 
   const toggleTask = (task: Task) => {
-    const done = isTaskCompletedOn(task.id, todayYmd);
-    setRecurringTaskCompletion(task.id, todayYmd, !done);
+    const done = isRecurringDoneOn(task, todayYmd);
+    setRecurringDoneOn(task, todayYmd, !done);
     reload();
   };
 
@@ -181,12 +187,19 @@ export default function TaskGroupScreen() {
       onBack={() => router.back()}
       right={
         <Pressable
-          onPress={() =>
+          onPress={() => {
+            if (members.length >= TASK_GROUP_MEMBER_LIMIT) {
+              Alert.alert(
+                'グループ上限',
+                `1つのグループに入れられるタスクは${TASK_GROUP_MEMBER_LIMIT}個までです。`
+              );
+              return;
+            }
             router.push({
               pathname: '/task-edit',
               params: { kind: 'recurring', groupId: group.id },
-            })
-          }
+            });
+          }}
           hitSlop={8}
           accessibilityLabel="タスクを追加"
         >
@@ -256,7 +269,7 @@ export default function TaskGroupScreen() {
             <View style={styles.memberList}>
               {members.map((task) => {
                 const dueToday = isRecurringDueOnDate(task, new Date());
-                const doneToday = isTaskCompletedOn(task.id, todayYmd);
+                const doneToday = isRecurringDoneOn(task, todayYmd);
                 const label = formatRecurrenceLabel(
                   task.pace,
                   task.recurrenceUnit,
@@ -316,42 +329,44 @@ export default function TaskGroupScreen() {
           )}
         </FormScreenSection>
 
-        <FormScreenSection>
-          <Text style={[styles.sectionLabel, contentTextStyle(content)]}>
-            グループ実施履歴
-            {historyDates.length > 0 ? `（${historyDates.length}日）` : ''}
-          </Text>
-          {activityLabel ? (
-            <Text style={[styles.historyActivity, contentMutedTextStyle(content)]}>
-              いま: {activityLabel}
+        {tracks ? (
+          <FormScreenSection>
+            <Text style={[styles.sectionLabel, contentTextStyle(content)]}>
+              グループ実施履歴
+              {historyDates.length > 0 ? `（${historyDates.length}日）` : ''}
             </Text>
-          ) : null}
-          {historyDates.length === 0 ? (
-            <Text style={[styles.empty, contentMutedTextStyle(content)]}>
-              まだグループとしての実施日がありません
-            </Text>
-          ) : (
-            <View style={styles.historyList}>
-              {historyDates.map((ymd) => (
-                <View
-                  key={ymd}
-                  style={[
-                    styles.historyRow,
-                    contentSurfaceStyle(content),
-                    { borderColor: content.contentBorder },
-                  ]}
-                >
-                  <Text style={[styles.historyDate, contentTextStyle(content)]}>
-                    {formatHistoryDate(ymd)}
-                  </Text>
-                  {ymd === todayYmd ? (
-                    <Text style={[styles.historyBadge, contentMutedTextStyle(content)]}>今日</Text>
-                  ) : null}
-                </View>
-              ))}
-            </View>
-          )}
-        </FormScreenSection>
+            {activityLabel ? (
+              <Text style={[styles.historyActivity, contentMutedTextStyle(content)]}>
+                いま: {activityLabel}
+              </Text>
+            ) : null}
+            {historyDates.length === 0 ? (
+              <Text style={[styles.empty, contentMutedTextStyle(content)]}>
+                まだグループとしての実施日がありません
+              </Text>
+            ) : (
+              <View style={styles.historyList}>
+                {historyDates.map((ymd) => (
+                  <View
+                    key={ymd}
+                    style={[
+                      styles.historyRow,
+                      contentSurfaceStyle(content),
+                      { borderColor: content.contentBorder },
+                    ]}
+                  >
+                    <Text style={[styles.historyDate, contentTextStyle(content)]}>
+                      {formatHistoryDate(ymd)}
+                    </Text>
+                    {ymd === todayYmd ? (
+                      <Text style={[styles.historyBadge, contentMutedTextStyle(content)]}>今日</Text>
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+            )}
+          </FormScreenSection>
+        ) : null}
 
         <Pressable style={styles.deleteButton} onPress={handleDeleteGroup}>
           <Text style={styles.deleteText}>グループを解除</Text>

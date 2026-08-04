@@ -108,12 +108,12 @@ const EMPTY_FORM: FriendInput = {
   category: '',
   description: '',
   photoUri: null,
-  affiliations: [''],
-  personalities: [''],
-  experiences: [''],
-  traits: [''],
-  likes: [''],
-  dislikes: [''],
+  affiliations: [],
+  personalities: [],
+  experiences: [],
+  traits: [],
+  likes: [],
+  dislikes: [],
 };
 
 const cleanArray = (values: string[]): string[] => values.map((item) => item.trim()).filter(Boolean);
@@ -210,17 +210,17 @@ function DynamicInputList({
   resetKey = '',
 }: DynamicInputListProps) {
   const content = useContentColors();
-  const [focusedIndex, setFocusedIndex] = useState<number | null>(null);
-  const [lockedIndices, setLockedIndices] = useState<Set<number>>(() => new Set());
+  const [draft, setDraft] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
   const blurClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const inputRefs = useRef<Array<TextInput | null>>([]);
-  const pendingFocusIndexRef = useRef<number | null>(null);
+  const inputRef = useRef<TextInput | null>(null);
   const valuesRef = useRef(values);
-  const lockedIndicesRef = useRef(lockedIndices);
   const candidatesRef = useRef(suggestionCandidates);
+  const selectingSuggestionRef = useRef(false);
   valuesRef.current = values;
-  lockedIndicesRef.current = lockedIndices;
   candidatesRef.current = suggestionCandidates;
+
+  const tags = useMemo(() => values.map((item) => item.trim()).filter(Boolean), [values]);
 
   const clearBlurTimer = () => {
     if (blurClearTimerRef.current) {
@@ -232,202 +232,79 @@ function DynamicInputList({
   useEffect(() => () => clearBlurTimer(), []);
 
   useEffect(() => {
-    setLockedIndices(new Set());
-    setFocusedIndex(null);
-    pendingFocusIndexRef.current = null;
+    setDraft('');
+    setMenuOpen(false);
   }, [resetKey]);
 
-  useEffect(() => {
-    setLockedIndices((prev) => {
-      const next = new Set(prev);
-      let changed = false;
-      values.forEach((value, index) => {
-        if (next.has(index)) {
-          return;
-        }
-        if (findMatchingRegisteredLabel(value, suggestionCandidates)) {
-          next.add(index);
-          changed = true;
-        }
-      });
-      return changed ? next : prev;
-    });
-  }, [values, suggestionCandidates]);
-
-  useEffect(() => {
-    const focusIndex = pendingFocusIndexRef.current;
-    if (focusIndex == null) {
+  const commitDraft = (raw: string) => {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      setDraft('');
       return;
     }
-    pendingFocusIndexRef.current = null;
-    const frame = requestAnimationFrame(() => {
-      inputRefs.current[focusIndex]?.focus();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [values]);
-
-  const updateItem = (index: number, text: string) => {
-    if (lockedIndicesRef.current.has(index)) {
+    const label =
+      findMatchingRegisteredLabel(trimmed, candidatesRef.current) ?? trimmed;
+    const existing = valuesRef.current.map((item) => item.trim()).filter(Boolean);
+    if (existing.some((item) => item === label)) {
+      setDraft('');
       return;
     }
-    const next = [...valuesRef.current];
-    next[index] = text;
-    onChange(next);
+    onChange([...existing, label]);
+    setDraft('');
   };
 
-  const addItem = () => onChange([...valuesRef.current, '']);
-
-  const removeItem = (index: number) => {
-    clearBlurTimer();
-    const currentValues = valuesRef.current;
-    const currentLocked = lockedIndicesRef.current;
-    if (currentValues.length <= 1) {
-      onChange(['']);
-      setLockedIndices(new Set());
-      setFocusedIndex(null);
-      return;
-    }
-    const nextLocked = new Set<number>();
-    currentLocked.forEach((lockedIndex) => {
-      if (lockedIndex < index) {
-        nextLocked.add(lockedIndex);
-      } else if (lockedIndex > index) {
-        nextLocked.add(lockedIndex - 1);
-      }
-    });
-    setLockedIndices(nextLocked);
-    setFocusedIndex((current) => {
-      if (current == null) {
-        return null;
-      }
-      if (current === index) {
-        return null;
-      }
-      return current > index ? current - 1 : current;
-    });
-    onChange(currentValues.filter((_, itemIndex) => itemIndex !== index));
+  const removeTag = (index: number) => {
+    const existing = valuesRef.current.map((item) => item.trim()).filter(Boolean);
+    onChange(existing.filter((_, itemIndex) => itemIndex !== index));
   };
 
-  const commitLockedLabel = (index: number, label: string) => {
-    clearBlurTimer();
-    const currentValues = valuesRef.current;
-    const currentLocked = lockedIndicesRef.current;
-    const next = [...currentValues];
-    next[index] = label;
-
-    let focusIndex = index + 1;
-    let didInsert = false;
-    if (focusIndex >= next.length || next[focusIndex].trim() !== '') {
-      next.splice(focusIndex, 0, '');
-      didInsert = true;
-    }
-
-    const nextLocked = new Set<number>();
-    currentLocked.forEach((lockedIndex) => {
-      if (didInsert && lockedIndex >= focusIndex) {
-        nextLocked.add(lockedIndex + 1);
-      } else {
-        nextLocked.add(lockedIndex);
-      }
-    });
-    nextLocked.add(index);
-
-    pendingFocusIndexRef.current = focusIndex;
-    setLockedIndices(nextLocked);
-    setFocusedIndex(focusIndex);
-    onChange(next);
-  };
-
-  const selectSuggestion = (index: number, label: string) => {
-    commitLockedLabel(index, label);
-  };
-
-  const handleBlur = (index: number) => {
-    clearBlurTimer();
-    blurClearTimerRef.current = setTimeout(() => {
-      if (lockedIndicesRef.current.has(index)) {
-        setFocusedIndex((current) => (current === index ? null : current));
-        return;
-      }
-      const match = findMatchingRegisteredLabel(
-        valuesRef.current[index] ?? '',
-        candidatesRef.current
-      );
-      if (match) {
-        commitLockedLabel(index, match);
-        return;
-      }
-      setFocusedIndex((current) => (current === index ? null : current));
-    }, 180);
-  };
+  const exclude = useMemo(() => new Set(tags), [tags]);
+  const suggestions =
+    menuOpen && draft.trim()
+      ? filterLabelSuggestions(draft, suggestionCandidates, { exclude })
+      : [];
 
   return (
     <FormScreenSection>
-      <View style={styles.multiSectionHeader}>
-        <Text style={[styles.sectionCaption, contentMutedTextStyle(content)]}>{title}</Text>
-        <Pressable
-          style={[styles.addIconButton, contentTagStyle(content)]}
-          onPress={addItem}
-          accessibilityLabel={`${title}を追加`}
-        >
-          <Ionicons name="add" size={18} color={content.contentText} />
-        </Pressable>
-      </View>
-
-      {values.map((value, index) => {
-        const locked = lockedIndices.has(index);
-        const exclude = new Set(
-          values
-            .map((item, itemIndex) => (itemIndex === index ? '' : item.trim()))
-            .filter(Boolean)
-        );
-        const suggestions =
-          !locked && focusedIndex === index
-            ? filterLabelSuggestions(value, suggestionCandidates, { exclude })
-            : [];
-
-        return (
-          <View key={`${title}-${index}`} style={styles.multiFieldBlock}>
-            <View style={styles.multiRow}>
-              <TextInput
-                ref={(node) => {
-                  inputRefs.current[index] = node;
-                }}
-                value={value}
-                editable={!locked}
-                onChangeText={(text) => updateItem(index, text)}
-                onFocus={() => {
-                  if (locked) {
-                    return;
-                  }
-                  clearBlurTimer();
-                  setFocusedIndex(index);
-                }}
-                onBlur={() => handleBlur(index)}
-                placeholder={placeholder}
-                placeholderTextColor={content.contentTextSecondary}
-                style={[
-                  styles.multiInput,
-                  contentInputStyle(content),
-                  locked ? styles.multiInputLocked : null,
-                ]}
-              />
-              <Pressable
-                style={styles.removeIconButton}
-                onPress={() => removeItem(index)}
-                accessibilityLabel="削除"
-              >
-                <Ionicons name="close" size={16} color="#f87171" />
-              </Pressable>
-            </View>
+      <FormRow label={title}>
+        <View style={styles.tagAddRow}>
+          <View style={styles.tagAddField}>
+            <TextInput
+              ref={inputRef}
+              value={draft}
+              onChangeText={(text) => {
+                setDraft(text);
+                if (text.trim()) setMenuOpen(true);
+              }}
+              onFocus={() => {
+                clearBlurTimer();
+                selectingSuggestionRef.current = false;
+                setMenuOpen(true);
+              }}
+              onBlur={() => {
+                if (selectingSuggestionRef.current) {
+                  selectingSuggestionRef.current = false;
+                  return;
+                }
+                clearBlurTimer();
+                blurClearTimerRef.current = setTimeout(() => {
+                  setMenuOpen(false);
+                }, 180);
+              }}
+              onSubmitEditing={() => commitDraft(draft)}
+              placeholder={placeholder}
+              placeholderTextColor={content.contentTextSecondary}
+              style={[styles.tagAddInput, contentInputStyle(content)]}
+              returnKeyType="done"
+              blurOnSubmit={false}
+            />
             {suggestions.length > 0 ? (
               <View
                 style={[
                   styles.suggestionList,
-                  contentSurfaceStyle(content),
                   {
-                    borderColor: content.contentBorder,
-                    marginRight: ICON_BTN + 6,
+                    backgroundColor: content.contentCard,
+                    borderColor: content.contentSearchFieldBorder,
                   },
                 ]}
               >
@@ -443,7 +320,20 @@ function DynamicInputList({
                           }
                         : null,
                     ]}
-                    onPress={() => selectSuggestion(index, suggestionLabel)}
+                    onPressIn={() => {
+                      selectingSuggestionRef.current = true;
+                      clearBlurTimer();
+                    }}
+                    onPress={() => {
+                      selectingSuggestionRef.current = true;
+                      clearBlurTimer();
+                      commitDraft(suggestionLabel);
+                      setMenuOpen(true);
+                      requestAnimationFrame(() => {
+                        inputRef.current?.focus();
+                        selectingSuggestionRef.current = false;
+                      });
+                    }}
                     accessibilityRole="button"
                     accessibilityLabel={`${suggestionLabel}を選択`}
                   >
@@ -455,8 +345,55 @@ function DynamicInputList({
               </View>
             ) : null}
           </View>
-        );
-      })}
+          <Pressable
+            style={[
+              styles.tagAddButton,
+              contentTagStyle(content),
+              { borderColor: content.contentBorder },
+              !draft.trim() ? styles.tagAddButtonDisabled : null,
+            ]}
+            onPress={() => {
+              clearBlurTimer();
+              commitDraft(draft);
+              requestAnimationFrame(() => inputRef.current?.focus());
+            }}
+            disabled={!draft.trim()}
+            accessibilityRole="button"
+            accessibilityLabel={`${title}を追加`}
+          >
+            <Text
+              style={[
+                styles.tagAddButtonText,
+                contentTextStyle(content),
+                !draft.trim() ? { color: content.contentTextSecondary } : null,
+              ]}
+            >
+              追加
+            </Text>
+          </Pressable>
+        </View>
+      </FormRow>
+      {tags.length > 0 ? (
+        <View style={styles.tagChipWrap}>
+          {tags.map((tag, index) => (
+            <View
+              key={`${tag}-${index}`}
+              style={[styles.tagChip, contentTagStyle(content), { borderColor: content.contentBorder }]}
+            >
+              <Text style={[styles.tagChipText, contentTextStyle(content)]} numberOfLines={1}>
+                {tag}
+              </Text>
+              <Pressable
+                onPress={() => removeTag(index)}
+                hitSlop={6}
+                accessibilityLabel={`${tag}を削除`}
+              >
+                <Ionicons name="close" size={14} color={content.contentTextSecondary} />
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      ) : null}
     </FormScreenSection>
   );
 }
@@ -512,12 +449,15 @@ export default function EditScreen() {
   const [experienceSuggestions, setExperienceSuggestions] = useState<string[]>([]);
   const [likeSuggestions, setLikeSuggestions] = useState<string[]>([]);
   const [dislikeSuggestions, setDislikeSuggestions] = useState<string[]>([]);
+  const [basicInfoExpanded, setBasicInfoExpanded] = useState(!isEditMode);
   const prevFriendIdRef = useRef(friendId);
 
   useEffect(() => {
     if (prevFriendIdRef.current !== friendId) {
       prevFriendIdRef.current = friendId;
       setNameSaveAttempted(false);
+      // 新規は開く／既存編集は閉じる
+      setBasicInfoExpanded(!friendId);
     }
   }, [friendId]);
 
@@ -564,12 +504,12 @@ export default function EditScreen() {
       category: friend.category,
       description: friend.description,
       photoUri: friend.photoUri,
-      affiliations: friend.affiliations.length > 0 ? friend.affiliations : [''],
-      personalities: friend.personalities.length > 0 ? friend.personalities : [''],
-      experiences: friend.experiences.length > 0 ? friend.experiences : [''],
-      traits: friend.traits.length > 0 ? friend.traits : [''],
-      likes: friend.likes.length > 0 ? friend.likes : [''],
-      dislikes: friend.dislikes.length > 0 ? friend.dislikes : [''],
+      affiliations: friend.affiliations.length > 0 ? friend.affiliations : [],
+      personalities: friend.personalities.length > 0 ? friend.personalities : [],
+      experiences: friend.experiences.length > 0 ? friend.experiences : [],
+      traits: friend.traits.length > 0 ? friend.traits : [],
+      likes: friend.likes.length > 0 ? friend.likes : [],
+      dislikes: friend.dislikes.length > 0 ? friend.dislikes : [],
       episodes: friend.episodes,
       sayings: friend.sayings,
     });
@@ -728,10 +668,40 @@ export default function EditScreen() {
       title="人物情報の登録"
       onBack={() => router.back()}
       right={topBarActions}
-      extraScrollHeight={140}
+      extraScrollHeight={180}
     >
       <FormScreenBody>
         <FormScreenSection>
+          <Pressable
+            style={styles.basicInfoToggle}
+            onPress={() => setBasicInfoExpanded((open) => !open)}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: basicInfoExpanded }}
+            accessibilityLabel="基本情報"
+          >
+            <View style={styles.basicInfoToggleMain}>
+              <Text style={[styles.basicInfoToggleTitle, contentTextStyle(content)]}>基本情報</Text>
+              {!basicInfoExpanded ? (
+                <Text style={[styles.basicInfoToggleSummary, contentMutedTextStyle(content)]} numberOfLines={1}>
+                  {[form.name.trim() || '名前未設定', form.nickname.trim(), form.category.trim()]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
+              ) : (
+                <Text style={[styles.basicInfoToggleHint, contentMutedTextStyle(content)]}>
+                  名前・出身・分類など
+                </Text>
+              )}
+            </View>
+            <Ionicons
+              name={basicInfoExpanded ? 'chevron-up' : 'chevron-down'}
+              size={18}
+              color={content.contentTextSecondary}
+            />
+          </Pressable>
+
+          {basicInfoExpanded ? (
+            <>
           <View style={styles.profileTopRow}>
             <View style={styles.photoColumn}>
               <Pressable
@@ -873,6 +843,8 @@ export default function EditScreen() {
               />
             </FormRow>
           </View>
+            </>
+          ) : null}
         </FormScreenSection>
 
         <FormScreenSection>
@@ -928,14 +900,16 @@ export default function EditScreen() {
           resetKey={friendId || 'new'}
         />
       
-        <View style={styles.formActions}>
-          <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
-            <Text style={styles.formCancelButtonText}>キャンセル</Text>
-          </Pressable>
-          <Pressable style={styles.formSaveButton} onPress={handleSave}>
-            <Text style={styles.formSaveButtonText}>保存</Text>
-          </Pressable>
-        </View>
+        <FormScreenSection>
+          <View style={styles.formActions}>
+            <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
+              <Text style={styles.formCancelButtonText}>キャンセル</Text>
+            </Pressable>
+            <Pressable style={styles.formSaveButton} onPress={handleSave}>
+              <Text style={styles.formSaveButtonText}>保存</Text>
+            </Pressable>
+          </View>
+        </FormScreenSection>
       </FormScreenBody>
     </FormScreenTemplate>
 
@@ -983,8 +957,11 @@ const styles = StyleSheet.create({
   formActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    flexWrap: 'wrap',
     gap: 8,
-    marginTop: Spacing.sm,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.sm,
+    paddingRight: 2,
   },
   formCancelButton: {
     backgroundColor: 'transparent',
@@ -1144,6 +1121,30 @@ const styles = StyleSheet.create({
     color: Theme.textMuted,
     marginBottom: 2,
   },
+  basicInfoToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+    marginBottom: 4,
+  },
+  basicInfoToggleMain: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  basicInfoToggleTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  basicInfoToggleSummary: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  basicInfoToggleHint: {
+    fontSize: 12,
+    lineHeight: 16,
+  },
   descriptionInput: {
     minHeight: 72,
     borderColor: Theme.inputBorder,
@@ -1161,24 +1162,41 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  addIconButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  multiRow: {
+  tagChipWrap: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 6,
+    marginTop: 8,
   },
-  multiFieldBlock: {
+  tagChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    maxWidth: '100%',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.full,
+    paddingLeft: 10,
+    paddingRight: 6,
+    paddingVertical: 5,
+  },
+  tagChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  tagAddRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  tagAddField: {
+    flex: 1,
+    minWidth: 0,
     gap: 4,
   },
-  multiInput: {
-    flex: 1,
+  tagAddInput: {
+    width: '100%',
     height: INPUT_H,
     borderWidth: StyleSheet.hairlineWidth,
     borderRadius: Radius.sm,
@@ -1186,8 +1204,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.sm,
     paddingVertical: 0,
   },
-  multiInputLocked: {
-    opacity: 0.72,
+  tagAddButton: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minHeight: INPUT_H,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tagAddButtonDisabled: {
+    opacity: 0.55,
+  },
+  tagAddButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   suggestionList: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -1200,16 +1231,6 @@ const styles = StyleSheet.create({
   },
   suggestionText: {
     fontSize: Typography.sm,
-  },
-  removeIconButton: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: 'rgba(248, 113, 113, 0.18)',
-    borderColor: 'rgba(248, 113, 113, 0.45)',
-    borderWidth: StyleSheet.hairlineWidth,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   modalBackdrop: {
     flex: 1,

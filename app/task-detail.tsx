@@ -16,6 +16,7 @@ import {
   daysBetweenYmd,
   formatRecurrenceLabel,
   getLastCompletionYmd,
+  getRecentScheduledDotItems,
   toYmd,
 } from '@/utils/taskHelpers';
 import { useContentColors } from '@/utils/useContentColors';
@@ -79,8 +80,16 @@ export default function TaskDetailScreen() {
     [completions]
   );
   const completionSet = useMemo(() => new Set(completionDates), [completionDates]);
-  const streak = useMemo(() => (task ? calculateScheduledStreak(task, completionSet, new Date()) : 0), [completionSet, task]);
+  const streak = useMemo(
+    () => (task?.trackCompletions ? calculateScheduledStreak(task, completionSet, new Date()) : 0),
+    [completionSet, task]
+  );
   const lastYmd = useMemo(() => getLastCompletionYmd(completionSet), [completionSet]);
+  const scheduledDays = useMemo(
+    () =>
+      task?.trackCompletions ? getRecentScheduledDotItems(task, completionSet, new Date()) : [],
+    [completionSet, task]
+  );
 
   const historyByYear = useMemo(() => {
     const map = new Map<string, string[]>();
@@ -165,44 +174,53 @@ export default function TaskDetailScreen() {
           </View>
         </FormScreenSection>
 
-        <FormScreenSection>
-          <View style={styles.topSummaryRow}>
-            <View
-              style={[
-                styles.streakBadge,
-                contentSurfaceStyle(content),
-                {
-                  borderColor: streak > 0 ? content.contentText : content.contentBorder,
-                  borderWidth: streak > 0 ? 2 : 1,
-                },
-              ]}
-            >
-              {streak > 0 ? (
-                <View style={styles.streakActiveWrap}>
-                  <StreakFlameIcon color={content.contentText} size={46} />
-                  <Text style={[styles.streakActiveValue, contentTextStyle(content)]}>{streak}</Text>
-                </View>
-              ) : (
-                <View style={styles.streakIdleWrap}>
-                  <Ionicons name="time-outline" size={32} color={content.contentTextSecondary} />
-                  <Text style={[styles.streakIdleValue, contentMutedTextStyle(content)]}>
-                    {lastYmd ? formatDaysAgo(lastYmd) : '-'}
-                  </Text>
-                </View>
-              )}
+        {task.trackCompletions ? (
+          <FormScreenSection>
+            <View style={styles.topSummaryRow}>
+              <View
+                style={[
+                  styles.streakBadge,
+                  contentSurfaceStyle(content),
+                  {
+                    borderColor: streak > 0 ? content.contentText : content.contentBorder,
+                    borderWidth: streak > 0 ? 2 : 1,
+                  },
+                ]}
+              >
+                {streak > 0 ? (
+                  <View style={styles.streakActiveWrap}>
+                    <StreakFlameIcon color={content.contentText} size={46} />
+                    <Text style={[styles.streakActiveValue, contentTextStyle(content)]}>{streak}</Text>
+                  </View>
+                ) : (
+                  <View style={styles.streakIdleWrap}>
+                    <Ionicons name="time-outline" size={32} color={content.contentTextSecondary} />
+                    <Text style={[styles.streakIdleValue, contentMutedTextStyle(content)]}>
+                      {lastYmd ? formatDaysAgo(lastYmd) : '-'}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.sevenDayBlock}>
+                <Text style={[styles.sevenDayLabel, contentMutedTextStyle(content)]}>直近7回</Text>
+                <TaskRecentSevenDayDots
+                  days={scheduledDays}
+                  content={content}
+                  compact={false}
+                  showCaptions
+                />
+              </View>
             </View>
-            <View style={styles.sevenDayBlock}>
-              <Text style={[styles.sevenDayLabel, contentMutedTextStyle(content)]}>直近7日</Text>
-              <TaskRecentSevenDayDots
-                completedOnSet={completionSet}
-                content={content}
-                compact={false}
-                showCaptions
-              />
-            </View>
-          </View>
-        </FormScreenSection>
+          </FormScreenSection>
+        ) : (
+          <FormScreenSection>
+            <Text style={[styles.empty, contentMutedTextStyle(content)]}>
+              このタスクは実施記録を残していません
+            </Text>
+          </FormScreenSection>
+        )}
 
+        {task.trackCompletions ? (
         <FormScreenSection>
           <View style={styles.historyHeaderRow}>
             <Text style={[styles.sectionTitle, styles.historyTitle, contentTextStyle(content)]}>過去の実施日</Text>
@@ -237,6 +255,7 @@ export default function TaskDetailScreen() {
             </View>
           )}
         </FormScreenSection>
+        ) : null}
 
         <FormScreenSection>
           <Text style={[styles.sectionTitle, contentTextStyle(content)]}>詳細</Text>
@@ -405,23 +424,23 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   deleteButtonWrap: {
-    marginTop: 4,
-    marginBottom: 24,
+    marginTop: 28,
+    marginBottom: 32,
     alignItems: 'center',
   },
   deleteButton: {
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'center',
-    minWidth: 160,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: Radius.md,
-    borderWidth: 1.5,
+    minWidth: 120,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
   },
   deleteText: {
     color: '#dc2626',
-    fontWeight: '800',
-    fontSize: 14,
+    fontWeight: '700',
+    fontSize: 13,
   },
 });

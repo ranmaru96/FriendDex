@@ -3,7 +3,7 @@ import type { AppThemeBundle } from './types';
 
 /**
  * ブラックと同区分のモノクロライト。
- * 画面・タブは弱めの白、ヘッダーとカード／入力は強めの白。
+ * 画面は弱めの灰、カード／パネルは白、入力欄は画面と同系の灰で面を分ける。
  */
 export const whiteAppTheme: AppThemeBundle = {
   variant: 'white',

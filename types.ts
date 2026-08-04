@@ -304,6 +304,11 @@ export type Task = {
   eventId: string | null;
   /** 定期タスクのくくり（グループ）。臨時は通常 null */
   groupId: string | null;
+  /**
+   * 実施履歴・連続・ドットを残すか（定期）。デフォルト true。
+   * false の日次チェックはソフト完了のみ（履歴に残さない）。
+   */
+  trackCompletions: boolean;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -319,7 +324,11 @@ export type TaskInput = {
   dueDate?: string | null;
   eventId?: string | null;
   groupId?: string | null;
+  trackCompletions?: boolean;
 };
+
+/** 1グループに入れられる定期タスクの上限 */
+export const TASK_GROUP_MEMBER_LIMIT = 10;
 
 export type TaskGroup = {
   id: string;

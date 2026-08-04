@@ -39,20 +39,20 @@ export const lightContentColors: AppThemeContentColorFields = {
 };
 
 /**
- * ホワイト用。画面(#F2) より手前の面は強めの白(#FFF)。
- * カレンダーのみ当月=強め・前後月=弱め（ブラックの明暗反転とは別の読みやすさ優先）。
+ * ホワイト用。画面(#F2) → カード(#FFF) → 入力(#F2) と段階を分け、
+ * ブラック（画面 #111 → カード #1c → 入力 #25）のコントラスト構造に揃える。
  */
 export const whiteContentColors: AppThemeContentColorFields = {
   contentCard: '#FFFFFF',
   contentBorder: 'rgba(0, 0, 0, 0.18)',
   contentText: '#111111',
   contentTextSecondary: '#666666',
-  contentPersonTagBg: '#FFFFFF',
+  contentPersonTagBg: '#F2F2F2',
   contentSearchArea: '#FFFFFF',
   contentSearchFieldBorder: 'rgba(0, 0, 0, 0.28)',
-  contentInputBg: '#FFFFFF',
-  contentPhotoInnerBorder: '#F2F2F2',
-  contentPhotoPlaceholder: '#FFFFFF',
+  contentInputBg: '#F2F2F2',
+  contentPhotoInnerBorder: '#FFFFFF',
+  contentPhotoPlaceholder: '#F2F2F2',
   contentPhotoPlaceholderText: '#666666',
   contentCardName: '#111111',
   contentCalendarInMonth: '#FFFFFF',

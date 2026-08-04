@@ -18,6 +18,7 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import { Theme, Radius, Typography } from '@/constants/theme';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
@@ -233,17 +234,43 @@ export function EntrySelectorModal({
   const sheetDefaultHeight = windowHeight * SHEET_DEFAULT_RATIO;
   const sheetHeight = useSharedValue(sheetDefaultHeight);
   const sheetDragStart = useSharedValue(sheetDefaultHeight);
+  const sheetTranslateY = useSharedValue(0);
+  const backdropOpacity = useSharedValue(1);
+  const isDismissing = useSharedValue(false);
 
   useEffect(() => {
     if (visible) {
+      isDismissing.value = false;
       sheetHeight.value = sheetDefaultHeight;
+      sheetTranslateY.value = 0;
+      backdropOpacity.value = 1;
     }
-  }, [sheetDefaultHeight, sheetHeight, visible]);
+  }, [backdropOpacity, isDismissing, sheetDefaultHeight, sheetHeight, sheetTranslateY, visible]);
 
   const itemWidth = useMemo(() => {
     const totalGap = SELECTOR_GAP * (SELECTOR_COLUMNS - 1);
     return (screenWidth - SELECTOR_CARD_PADDING * 2 - totalGap) / SELECTOR_COLUMNS;
   }, [screenWidth]);
+
+  const finishDismiss = useMemo(() => {
+    return () => {
+      onCancel();
+    };
+  }, [onCancel]);
+
+  const animateDismiss = useMemo(() => {
+    return () => {
+      if (isDismissing.value) return;
+      isDismissing.value = true;
+      const slideDistance = Math.max(sheetHeight.value + sheetTranslateY.value + 32, windowHeight * 0.35);
+      backdropOpacity.value = withTiming(0, { duration: 200 });
+      sheetTranslateY.value = withTiming(slideDistance, { duration: 260 }, (finished) => {
+        if (finished) {
+          runOnJS(finishDismiss)();
+        }
+      });
+    };
+  }, [backdropOpacity, finishDismiss, isDismissing, sheetHeight, sheetTranslateY, windowHeight]);
 
   const handlePanGesture = useMemo(
     () =>
@@ -253,17 +280,40 @@ export function EntrySelectorModal({
           sheetDragStart.value = sheetHeight.value;
         })
         .onUpdate((event) => {
+          if (isDismissing.value) return;
           const next = sheetDragStart.value - event.translationY;
-          const dismissFloor = sheetMinHeight * 0.35;
-          sheetHeight.value = Math.min(sheetMaxHeight, Math.max(dismissFloor, next));
-        })
-        .onEnd((event) => {
-          const dismissByDistance = sheetHeight.value < sheetMinHeight * 0.82;
-          const dismissByFling = event.velocityY > 900;
-          if (dismissByDistance || dismissByFling) {
-            runOnJS(onCancel)();
+          if (next >= sheetMinHeight) {
+            sheetHeight.value = Math.min(sheetMaxHeight, next);
+            sheetTranslateY.value = 0;
             return;
           }
+          // Below min height: keep sheet size and slide it down instead of collapsing.
+          sheetHeight.value = sheetMinHeight;
+          sheetTranslateY.value = Math.max(0, sheetMinHeight - next);
+        })
+        .onEnd((event) => {
+          if (isDismissing.value) return;
+          const dismissByDistance = sheetTranslateY.value > sheetMinHeight * 0.22;
+          const dismissByFling = event.velocityY > 900;
+          if (dismissByDistance || dismissByFling) {
+            isDismissing.value = true;
+            const slideDistance = Math.max(
+              sheetHeight.value + sheetTranslateY.value + 32,
+              windowHeight * 0.35
+            );
+            backdropOpacity.value = withTiming(0, { duration: 200 });
+            sheetTranslateY.value = withTiming(slideDistance, { duration: 260 }, (finished) => {
+              if (finished) {
+                runOnJS(finishDismiss)();
+              }
+            });
+            return;
+          }
+          sheetTranslateY.value = withSpring(0, {
+            damping: 28,
+            stiffness: 180,
+            overshootClamping: true,
+          });
           const mid = (sheetMinHeight + sheetMaxHeight) / 2;
           const flickedUp = event.velocityY < -400;
           const flickedDown = event.velocityY > 400;
@@ -276,11 +326,26 @@ export function EntrySelectorModal({
             restSpeedThreshold: 0.5,
           });
         }),
-    [onCancel, sheetDragStart, sheetHeight, sheetMaxHeight, sheetMinHeight]
+    [
+      backdropOpacity,
+      finishDismiss,
+      isDismissing,
+      sheetDragStart,
+      sheetHeight,
+      sheetMaxHeight,
+      sheetMinHeight,
+      sheetTranslateY,
+      windowHeight,
+    ]
   );
 
   const sheetAnimatedStyle = useAnimatedStyle(() => ({
     height: sheetHeight.value,
+    transform: [{ translateY: sheetTranslateY.value }],
+  }));
+
+  const backdropAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: backdropOpacity.value,
   }));
 
   const normalizedNameFilter = nameFilter.trim().toLowerCase();
@@ -341,7 +406,7 @@ export function EntrySelectorModal({
             borderColor: content.contentBorder,
           },
         ]}
-        onPress={onCancel}
+        onPress={animateDismiss}
       >
         <Text style={[styles.selectorCancelButtonText, contentTextStyle(content)]}>
           キャンセル
@@ -363,10 +428,14 @@ export function EntrySelectorModal({
   );
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    <Modal visible={visible} transparent animationType="none" onRequestClose={animateDismiss}>
       <GestureHandlerRootView style={styles.gestureRoot}>
         <View style={styles.selectorOverlay}>
-          <Pressable style={styles.selectorBackdrop} onPress={onCancel} />
+          <Animated.View
+            pointerEvents="none"
+            style={[styles.selectorBackdropFill, backdropAnimatedStyle]}
+          />
+          <Pressable style={styles.selectorBackdrop} onPress={animateDismiss} />
           <Animated.View
             style={[styles.selectorCard, contentSurfaceStyle(content), sheetAnimatedStyle]}
           >
@@ -558,8 +627,11 @@ const styles = StyleSheet.create({
   },
   selectorOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'flex-end',
+  },
+  selectorBackdropFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
   },
   selectorBackdrop: {
     ...StyleSheet.absoluteFillObject,

@@ -5,6 +5,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -23,17 +24,21 @@ import { DayRollPicker, MonthDayRollPicker, RollScrollLockProvider, useRollScrol
 import {
   createTask,
   createTaskGroup,
+  deleteAllTaskCompletions,
   deleteTask,
   getAllEvents,
   getAllTaskGroups,
   getEvent,
+  getRecurringTasksByGroupId,
   getTask,
+  getTaskCompletionCount,
   getTaskCompletions,
   initializeDatabase,
   updateTask,
 } from '../db';
 import {
   Event,
+  TASK_GROUP_MEMBER_LIMIT,
   TaskCompletion,
   TaskGroup,
   TaskInput,
@@ -130,6 +135,8 @@ export default function TaskEditScreen() {
   const [groupSelect, setGroupSelect] = useState(GROUP_NONE);
   const [newGroupTitle, setNewGroupTitle] = useState('');
   const [groupPickerVisible, setGroupPickerVisible] = useState(false);
+  const [trackCompletions, setTrackCompletions] = useState(true);
+  const [initialTrackCompletions, setInitialTrackCompletions] = useState(true);
   const [ready, setReady] = useState(false);
 
   useFocusEffect(
@@ -174,6 +181,8 @@ export default function TaskEditScreen() {
         setLockedToEvent(Boolean(task.eventId));
         setGroupSelect(task.groupId ?? GROUP_NONE);
         setNewGroupTitle('');
+        setTrackCompletions(task.trackCompletions);
+        setInitialTrackCompletions(task.trackCompletions);
         setCompletions(task.kind === 'recurring' ? getTaskCompletions(taskId) : []);
       } else if (presetEventId) {
         setKind('temporary');
@@ -220,25 +229,9 @@ export default function TaskEditScreen() {
     return {};
   };
 
-  const handleSave = () => {
+  const persistTask = (nextTrack: boolean) => {
     const trimmed = title.trim();
-    if (!trimmed) {
-      Alert.alert('入力エラー', 'タイトルを入力してください');
-      return;
-    }
     const effectiveKind: TaskKind = lockedToEvent ? 'temporary' : kind;
-    if (effectiveKind === 'recurring' && pace === 'scheduled' && unit === 'week') {
-      if (!weekdaysUnspecified && weekdays.length === 0) {
-        Alert.alert('入力エラー', '曜日を選ぶか、指定なしを選んでください');
-        return;
-      }
-    }
-    if (effectiveKind === 'recurring' && pace === 'scheduled' && unit === 'month' && monthMode === 'nth') {
-      if (monthNths.length === 0 || monthWeekdays.length === 0) {
-        Alert.alert('入力エラー', '第Nと曜日をそれぞれ1つ以上選んでください');
-        return;
-      }
-    }
 
     initializeDatabase();
 
@@ -261,6 +254,17 @@ export default function TaskEditScreen() {
       }
     }
 
+    if (resolvedGroupId && (!isEditing || getTask(taskId)?.groupId !== resolvedGroupId)) {
+      const existing = getRecurringTasksByGroupId(resolvedGroupId);
+      const count = isEditing
+        ? existing.filter((item) => item.id !== taskId).length
+        : existing.length;
+      if (count >= TASK_GROUP_MEMBER_LIMIT) {
+        Alert.alert('グループ上限', `1つのグループに入れられるタスクは${TASK_GROUP_MEMBER_LIMIT}個までです。`);
+        return;
+      }
+    }
+
     const input: TaskInput = {
       kind: effectiveKind,
       title: trimmed,
@@ -271,7 +275,12 @@ export default function TaskEditScreen() {
       dueDate: effectiveKind === 'temporary' ? dueDate.trim() || null : null,
       eventId: effectiveKind === 'temporary' ? eventId.trim() || null : null,
       groupId: resolvedGroupId,
+      trackCompletions: effectiveKind === 'recurring' ? nextTrack : true,
     };
+
+    if (isEditing && initialTrackCompletions && !nextTrack && effectiveKind === 'recurring') {
+      deleteAllTaskCompletions(taskId);
+    }
 
     if (isEditing) {
       const ok = updateTask(taskId, input);
@@ -287,6 +296,78 @@ export default function TaskEditScreen() {
       }
     }
     router.back();
+  };
+
+  const handleSave = () => {
+    const trimmed = title.trim();
+    if (!trimmed) {
+      Alert.alert('入力エラー', 'タイトルを入力してください');
+      return;
+    }
+    const effectiveKind: TaskKind = lockedToEvent ? 'temporary' : kind;
+    if (effectiveKind === 'recurring' && pace === 'scheduled' && unit === 'week') {
+      if (!weekdaysUnspecified && weekdays.length === 0) {
+        Alert.alert('入力エラー', '曜日を選ぶか、指定なしを選んでください');
+        return;
+      }
+    }
+    if (effectiveKind === 'recurring' && pace === 'scheduled' && unit === 'month' && monthMode === 'nth') {
+      if (monthNths.length === 0 || monthWeekdays.length === 0) {
+        Alert.alert('入力エラー', '第Nと曜日をそれぞれ1つ以上選んでください');
+        return;
+      }
+    }
+
+    const turningOffTrack =
+      isEditing &&
+      effectiveKind === 'recurring' &&
+      initialTrackCompletions &&
+      !trackCompletions;
+    const historyCount = turningOffTrack ? getTaskCompletionCount(taskId) : 0;
+
+    if (turningOffTrack && historyCount > 0) {
+      Alert.alert(
+        '実施記録をやめる',
+        `これまでの実施履歴（${historyCount}件）がすべて削除されます。この操作は取り消せません。`,
+        [
+          { text: 'キャンセル', style: 'cancel' },
+          {
+            text: '次へ',
+            style: 'destructive',
+            onPress: () => {
+              Alert.alert(
+                '本当に履歴を消しますか？',
+                '連続記録・過去の実施日もすべて消えます。',
+                [
+                  { text: 'キャンセル', style: 'cancel' },
+                  {
+                    text: '理解した',
+                    style: 'destructive',
+                    onPress: () => {
+                      Alert.alert(
+                        '最終確認',
+                        '実施記録をオフにして、履歴を完全に削除します。',
+                        [
+                          { text: 'キャンセル', style: 'cancel' },
+                          {
+                            text: '削除してオフにする',
+                            style: 'destructive',
+                            onPress: () => persistTask(false),
+                          },
+                        ]
+                      );
+                    },
+                  },
+                ]
+              );
+            },
+          },
+        ]
+      );
+      return;
+    }
+
+    persistTask(trackCompletions);
   };
 
   const confirmDeleteFinally = () => {
@@ -413,28 +494,53 @@ export default function TaskEditScreen() {
       <FormScreenBody>
         {!lockedToEvent ? (
           <FormScreenSection>
-            <Text style={[styles.label, contentTextStyle(content)]}>種類</Text>
-            <View style={styles.chipRow}>
-              {(
-                [
-                  { key: 'recurring' as const, label: '定期' },
-                  { key: 'temporary' as const, label: '臨時' },
-                ] as const
-              ).map((item) => (
-                <Pressable
-                  key={item.key}
-                  style={[
-                    styles.chip,
-                    contentSurfaceStyle(content),
-                    { borderWidth: 1 },
-                    kind === item.key ? contentSelectedOptionStyle(content) : null,
-                  ]}
-                  onPress={() => setKind(item.key)}
-                >
-                  <Text style={contentTextStyle(content)}>{item.label}</Text>
-                </Pressable>
-              ))}
-            </View>
+            <FormRow label="タスク種別" contentLayout="action" labelWidth={96}>
+              <View
+                style={[
+                  styles.kindSegment,
+                  contentSurfaceStyle(content),
+                  { borderColor: content.contentBorder },
+                ]}
+              >
+                {(
+                  [
+                    { key: 'recurring' as const, label: '定期' },
+                    { key: 'temporary' as const, label: '臨時' },
+                  ] as const
+                ).map((item) => {
+                  const selected = kind === item.key;
+                  return (
+                    <Pressable
+                      key={item.key}
+                      style={[
+                        styles.kindSegmentItem,
+                        selected
+                          ? {
+                              backgroundColor: content.contentText,
+                            }
+                          : null,
+                      ]}
+                      onPress={() => setKind(item.key)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected }}
+                      accessibilityLabel={item.label}
+                    >
+                      <Text
+                        style={[
+                          styles.kindSegmentText,
+                          {
+                            color: selected ? content.contentCard : content.contentTextSecondary,
+                            fontWeight: selected ? '700' : '600',
+                          },
+                        ]}
+                      >
+                        {item.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </FormRow>
           </FormScreenSection>
         ) : null}
 
@@ -492,6 +598,22 @@ export default function TaskEditScreen() {
               ) : null}
               <Text style={[styles.hint, contentMutedTextStyle(content)]}>
                 くくり用です。中のどれかを実行するとグループもその日「実施」になります
+              </Text>
+            </FormScreenSection>
+
+            <FormScreenSection>
+              <FormRow label="実施を記録">
+                <View style={styles.trackRow}>
+                  <Switch
+                    value={trackCompletions}
+                    onValueChange={setTrackCompletions}
+                    trackColor={{ false: content.contentBorder, true: content.contentText }}
+                    thumbColor="#ffffff"
+                  />
+                </View>
+              </FormRow>
+              <Text style={[styles.hint, contentMutedTextStyle(content)]}>
+                オフにすると連続・ドット・履歴を残しません。チェックは今日の見た目だけ変わります。
               </Text>
             </FormScreenSection>
 
@@ -857,7 +979,7 @@ export default function TaskEditScreen() {
           </>
         )}
 
-        {isEditing && kind === 'recurring' ? (
+        {isEditing && kind === 'recurring' && trackCompletions ? (
           <FormScreenSection>
             <Text style={[styles.label, contentTextStyle(content)]}>
               実施履歴{completions.length > 0 ? `（${completions.length}回）` : ''}
@@ -884,14 +1006,16 @@ export default function TaskEditScreen() {
         ) : null}
 
         {isEditing ? (
-          <Pressable
-            style={[styles.deleteButton, { borderColor: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.1)' }]}
-            onPress={handleDelete}
-            accessibilityRole="button"
-            accessibilityLabel="タスクを削除"
-          >
-            <Text style={styles.deleteText}>タスクを削除</Text>
-          </Pressable>
+          <View style={styles.deleteButtonWrap}>
+            <Pressable
+              style={[styles.deleteButton, { borderColor: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.1)' }]}
+              onPress={handleDelete}
+              accessibilityRole="button"
+              accessibilityLabel="タスクを削除"
+            >
+              <Text style={styles.deleteText}>タスクを削除</Text>
+            </Pressable>
+          </View>
         ) : null}
       </FormScreenBody>
       </RollScrollLockProvider>
@@ -929,6 +1053,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+  },
+  kindSegment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 3,
+    gap: 2,
+  },
+  kindSegmentItem: {
+    minWidth: 56,
+    paddingVertical: 7,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  kindSegmentText: {
+    fontSize: 13,
   },
   monthModeBody: {
     marginTop: 12,
@@ -999,6 +1142,12 @@ const styles = StyleSheet.create({
     fontSize: 10,
     marginLeft: 4,
   },
+  trackRow: {
+    flex: 1,
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    minHeight: 44,
+  },
   pickerPlaceholder: {
     fontSize: 15,
   },
@@ -1039,20 +1188,25 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
+  deleteButtonWrap: {
+    marginTop: 28,
+    marginBottom: 32,
+    alignItems: 'center',
+  },
   deleteButton: {
-    marginTop: 16,
-    marginBottom: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1.5,
+    alignSelf: 'center',
+    minWidth: 120,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
   },
   deleteText: {
     color: '#dc2626',
-    fontWeight: '800',
-    fontSize: 15,
+    fontWeight: '700',
+    fontSize: 13,
   },
   saveText: {
     fontSize: 16,

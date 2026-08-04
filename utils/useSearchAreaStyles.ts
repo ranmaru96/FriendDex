@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { StyleSheet } from 'react-native';
 import { BorderWidth, Radius, Spacing, Typography } from '@/constants/theme';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useContentColors } from '@/utils/useContentColors';
 
@@ -8,13 +9,19 @@ import { useContentColors } from '@/utils/useContentColors';
 export function useSearchAreaStyles() {
   const kit = useUiKit();
   const content = useContentColors();
+  const appTheme = useAppThemeOptional();
 
   return useMemo(() => {
     const isFlat = kit.searchAreaStyle === 'singleBorder';
+    // ホワイトは画面(#F2)の上でカード／絞り込みを真っ白に寄せる
+    const fieldBg =
+      appTheme?.variant === 'white' ? content.contentCard : content.contentInputBg;
+    const searchAreaBg =
+      appTheme?.variant === 'white' ? content.contentCard : content.contentSearchArea;
 
     return StyleSheet.create({
       area: {
-        backgroundColor: isFlat ? 'transparent' : content.contentSearchArea,
+        backgroundColor: isFlat ? 'transparent' : searchAreaBg,
         borderColor: content.contentBorder,
         borderWidth: isFlat ? 0 : 1,
         borderRadius: isFlat ? 0 : Radius.md,
@@ -53,7 +60,7 @@ export function useSearchAreaStyles() {
         marginBottom: 4,
       },
       textInput: {
-        backgroundColor: content.contentInputBg,
+        backgroundColor: fieldBg,
         borderColor: content.contentSearchFieldBorder,
         borderWidth: BorderWidth.input,
         borderRadius: kit.searchAreaFieldBorderRadius,
@@ -65,11 +72,11 @@ export function useSearchAreaStyles() {
       },
       textInputActive: {
         borderColor: content.contentText,
-        backgroundColor: content.contentInputBg,
+        backgroundColor: fieldBg,
       },
       selectButton: {
         flex: 1,
-        backgroundColor: content.contentInputBg,
+        backgroundColor: fieldBg,
         borderColor: content.contentSearchFieldBorder,
         borderWidth: BorderWidth.input,
         borderRadius: kit.searchAreaFieldBorderRadius,
@@ -82,7 +89,7 @@ export function useSearchAreaStyles() {
       },
       selectButtonActive: {
         borderColor: content.contentText,
-        backgroundColor: content.contentInputBg,
+        backgroundColor: fieldBg,
       },
       selectValue: {
         fontSize: Typography.base,
@@ -101,7 +108,7 @@ export function useSearchAreaStyles() {
         borderColor: content.contentSearchFieldBorder,
         borderWidth: BorderWidth.input,
         borderRadius: kit.searchAreaFieldBorderRadius,
-        backgroundColor: content.contentInputBg,
+        backgroundColor: fieldBg,
         paddingHorizontal: Spacing.sm,
         paddingVertical: kit.searchAreaShowFieldLabels ? 6 : Spacing.sm,
         minHeight: kit.searchAreaShowFieldLabels ? 34 : 38,
@@ -112,5 +119,5 @@ export function useSearchAreaStyles() {
         color: content.contentTextSecondary,
       },
     });
-  }, [content, kit]);
+  }, [appTheme?.variant, content, kit]);
 }

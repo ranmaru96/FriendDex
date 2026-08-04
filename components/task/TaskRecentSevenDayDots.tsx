@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
-import { getRecentSevenDayItems } from '@/utils/taskHelpers';
+import type { RecentSevenDayItem } from '@/utils/taskHelpers';
 import type { AppThemeContentColorFields } from '@/constants/appThemes/contentColors';
 
 /** 完了塗り: ホワイト=オレンジ / ブラック=緑 */
@@ -14,16 +14,16 @@ function todayAccentColor(isBlack: boolean): string {
 }
 
 type TaskRecentSevenDayDotsProps = {
-  completedOnSet: Set<string>;
+  days: RecentSevenDayItem[];
   content: AppThemeContentColorFields;
   /** 一覧向けは小さく、詳細向けは通常 */
   compact?: boolean;
   showCaptions?: boolean;
 };
 
-/** 案3: 完了はテーマ色で塗り、当日は二重丸（未完了でも外リング） */
+/** 完了はテーマ色で塗り、当日スロットだけ二重丸（未完了は薄い外リング） */
 export function TaskRecentSevenDayDots({
-  completedOnSet,
+  days,
   content,
   compact = true,
   showCaptions = false,
@@ -31,9 +31,12 @@ export function TaskRecentSevenDayDots({
   const isBlack = useAppThemeOptional()?.variant === 'black';
   const fill = taskCompletionFillColor(Boolean(isBlack));
   const todayAccent = todayAccentColor(Boolean(isBlack));
-  const days = getRecentSevenDayItems(completedOnSet);
   const size = compact ? 12 : 28;
   const outerSize = size + (compact ? 6 : 8);
+
+  if (days.length === 0) {
+    return null;
+  }
 
   return (
     <View style={[styles.row, compact ? styles.rowCompact : styles.rowDetail]}>
@@ -93,7 +96,7 @@ const styles = StyleSheet.create({
   rowCompact: {
     justifyContent: 'flex-start',
     gap: 5,
-    marginTop: 4,
+    marginTop: 0,
   },
   rowDetail: {
     justifyContent: 'space-between',

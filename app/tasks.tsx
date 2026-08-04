@@ -29,16 +29,20 @@ import {
   getEvent,
   getOpenTemporaryTasks,
   getRecurringTasks,
+  getRecurringTasksByGroupId,
   getTaskCompletionDatesSet,
   getTasksCompletionDatesUnion,
   initializeDatabase,
-  isTaskCompletedOn,
-  setRecurringTaskCompletion,
+  isRecurringDoneOn,
+  setRecurringDoneOn,
   setTaskGroupId,
 } from '../db';
 import type { Task, TaskGroup } from '../types';
+import { TASK_GROUP_MEMBER_LIMIT } from '../types';
 import {
   formatRecurrenceLabel,
+  getRecentGroupScheduledDotItems,
+  getRecentScheduledDotItems,
   isRecurringDueOnDate,
   toYmd,
 } from '@/utils/taskHelpers';
@@ -47,7 +51,9 @@ import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import {
   countGroupDueProgress,
   formatGroupListMeta,
+  groupTracksCompletions,
   partitionRecurringByGroup,
+  trackingMembers,
 } from '@/utils/taskGroupHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
@@ -82,6 +88,7 @@ type RecurringTaskRowProps = {
   task: Task;
   showCheckbox: boolean;
   indented?: boolean;
+  muted?: boolean;
   todayYmd: string;
   content: AppThemeContentColorFields;
   dragEnabled: boolean;
@@ -97,6 +104,7 @@ function RecurringTaskRow({
   task,
   showCheckbox,
   indented = false,
+  muted = false,
   todayYmd,
   content,
   dragEnabled,
@@ -107,11 +115,15 @@ function RecurringTaskRow({
   onDragMove,
   onDragEnd,
 }: RecurringTaskRowProps) {
-  const doneToday = isTaskCompletedOn(task.id, todayYmd);
-  const dates = getTaskCompletionDatesSet(task.id);
+  const doneToday = isRecurringDoneOn(task, todayYmd);
+  const dates = task.trackCompletions ? getTaskCompletionDatesSet(task.id) : new Set<string>();
   const label = formatRecurrenceLabel(task.pace, task.recurrenceUnit, task.recurrenceConfig);
   const isBlack = useAppThemeOptional()?.variant === 'black';
   const checkedColor = taskCompletionFillColor(Boolean(isBlack));
+  const scheduledDays = task.trackCompletions
+    ? getRecentScheduledDotItems(task, dates, new Date())
+    : [];
+  const softDoneLook = !task.trackCompletions && doneToday;
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -185,6 +197,7 @@ function RecurringTaskRow({
         contentSurfaceStyle(content),
         { borderWidth: 1, borderRadius: 10 },
         indented ? styles.rowIndented : null,
+        muted || softDoneLook ? styles.mutedBlock : null,
         animatedStyle,
       ]}
     >
@@ -211,11 +224,27 @@ function RecurringTaskRow({
         ) : null
       )}
       <Pressable style={styles.rowMain} onPress={onOpen} onLongPress={dragEnabled ? undefined : onLongPressDelete}>
-        <Text style={[styles.rowTitle, contentTextStyle(content)]}>{task.title}</Text>
-        {label ? (
-          <Text style={[styles.rowMeta, contentMutedTextStyle(content)]}>{label}</Text>
-        ) : null}
-        <TaskRecentSevenDayDots completedOnSet={dates} content={content} compact />
+        <Text
+          style={[
+            styles.rowTitle,
+            contentTextStyle(content),
+            softDoneLook ? styles.completedTemporaryTitle : null,
+          ]}
+        >
+          {task.title}
+        </Text>
+        <View style={styles.dotsMetaRow}>
+          <View style={styles.dotsMetaDots}>
+            {scheduledDays.length > 0 ? (
+              <TaskRecentSevenDayDots days={scheduledDays} content={content} compact />
+            ) : null}
+          </View>
+          {label ? (
+            <Text style={[styles.rowMetaEnd, contentMutedTextStyle(content)]} numberOfLines={1}>
+              {label}
+            </Text>
+          ) : null}
+        </View>
       </Pressable>
     </Animated.View>
   );
@@ -283,9 +312,40 @@ export default function TasksScreen() {
       .map((bundle) => ({
         ...bundle,
         dueMembers: bundle.members.filter((task) => isRecurringDueOnDate(task, today)),
+        offMembers: bundle.members.filter((task) => !isRecurringDueOnDate(task, today)),
       }))
       .filter((bundle) => bundle.dueMembers.length > 0);
   }, [bundles, completionTick]);
+
+  const recurringDueBundles = useMemo(() => {
+    const today = new Date();
+    return bundles
+      .map((bundle) => ({
+        ...bundle,
+        dueMembers: bundle.members.filter((task) => isRecurringDueOnDate(task, today)),
+      }))
+      .filter((bundle) => bundle.dueMembers.length > 0);
+  }, [bundles, completionTick]);
+
+  const recurringOffBundles = useMemo(() => {
+    const today = new Date();
+    return bundles
+      .map((bundle) => ({
+        ...bundle,
+        offMembers: bundle.members.filter((task) => !isRecurringDueOnDate(task, today)),
+      }))
+      .filter((bundle) => bundle.offMembers.length > 0);
+  }, [bundles, completionTick]);
+
+  const recurringDueUngrouped = useMemo(() => {
+    const today = new Date();
+    return ungrouped.filter((task) => isRecurringDueOnDate(task, today));
+  }, [ungrouped, completionTick]);
+
+  const recurringOffUngrouped = useMemo(() => {
+    const today = new Date();
+    return ungrouped.filter((task) => !isRecurringDueOnDate(task, today));
+  }, [ungrouped, completionTick]);
 
   const toggleExpanded = (groupId: string) => {
     setExpandedGroupIds((prev) => {
@@ -300,8 +360,8 @@ export default function TasksScreen() {
   };
 
   const toggleRecurring = (task: Task) => {
-    const done = isTaskCompletedOn(task.id, todayYmd);
-    setRecurringTaskCompletion(task.id, todayYmd, !done);
+    const done = isRecurringDoneOn(task, todayYmd);
+    setRecurringDoneOn(task, todayYmd, !done);
     reload();
   };
 
@@ -405,7 +465,18 @@ export default function TasksScreen() {
         if ((task.groupId ?? null) === nextGroupId) {
           return;
         }
-        setTaskGroupId(taskId, nextGroupId);
+        if (nextGroupId) {
+          const members = getRecurringTasksByGroupId(nextGroupId);
+          if (members.length >= TASK_GROUP_MEMBER_LIMIT) {
+            Alert.alert('グループ上限', `1つのグループに入れられるタスクは${TASK_GROUP_MEMBER_LIMIT}個までです。`);
+            return;
+          }
+        }
+        const ok = setTaskGroupId(taskId, nextGroupId);
+        if (!ok) {
+          Alert.alert('グループ上限', `1つのグループに入れられるタスクは${TASK_GROUP_MEMBER_LIMIT}個までです。`);
+          return;
+        }
         setExpandedGroupIds((prev) => new Set(prev).add(nextGroupId));
         reload();
       });
@@ -413,12 +484,18 @@ export default function TasksScreen() {
     [refreshDropZones, reload]
   );
 
-  const renderRecurringRow = (task: Task, showCheckbox: boolean, indented = false) => (
+  const renderRecurringRow = (
+    task: Task,
+    showCheckbox: boolean,
+    indented = false,
+    muted = false
+  ) => (
     <RecurringTaskRow
-      key={task.id}
+      key={`${task.id}${muted ? '-off' : ''}`}
       task={task}
       showCheckbox={showCheckbox}
       indented={indented}
+      muted={muted}
       todayYmd={todayYmd}
       content={content}
       dragEnabled={segment === 'recurring'}
@@ -434,22 +511,44 @@ export default function TasksScreen() {
   const renderGroupHeader = (
     group: TaskGroup,
     members: Task[],
-    options: { expanded: boolean; childSource?: Task[] }
+    options: {
+      expanded: boolean;
+      childSource?: Task[];
+      muted?: boolean;
+      keySuffix?: string;
+      registerDropZone?: boolean;
+    }
   ) => {
-    const dates = getTasksCompletionDatesUnion(members.map((m) => m.id));
-    const progress = countGroupDueProgress(members, new Date(), isTaskCompletedOn);
-    const meta = formatGroupListMeta(dates, progress, new Date());
+    const muted = options.muted === true;
+    const trackers = trackingMembers(members);
+    const dates = getTasksCompletionDatesUnion(trackers.map((m) => m.id));
+    const progress = countGroupDueProgress(members, new Date(), isRecurringDoneOn);
+    const meta = muted ? '' : formatGroupListMeta(dates, progress, new Date());
     const children = options.childSource ?? members;
     const showChildren = options.expanded;
     const isHover = draggingTaskId != null && hoverDropId === group.id;
+    const registerDropZone = options.registerDropZone !== false;
+    const showDots = groupTracksCompletions(members);
+    const groupDays = showDots
+      ? getRecentGroupScheduledDotItems(trackers, dates, new Date())
+      : [];
 
     return (
       <View
-        key={group.id}
-        ref={(node) => setDropZoneHost(group.id, node)}
-        onLayout={() => refreshDropZones()}
+        key={`${group.id}${options.keySuffix ?? ''}`}
+        ref={(node) => {
+          if (registerDropZone) {
+            setDropZoneHost(group.id, node);
+          }
+        }}
+        onLayout={() => {
+          if (registerDropZone) {
+            refreshDropZones();
+          }
+        }}
         style={[
           styles.groupBlock,
+          muted ? styles.mutedBlock : null,
           isHover
             ? {
                 borderRadius: 12,
@@ -480,10 +579,18 @@ export default function TasksScreen() {
           </View>
           <View style={styles.rowMain}>
             <Text style={[styles.rowTitle, contentTextStyle(content)]}>{group.title}</Text>
-            {meta ? (
-              <Text style={[styles.rowMeta, contentMutedTextStyle(content)]}>{meta}</Text>
-            ) : null}
-            <TaskRecentSevenDayDots completedOnSet={dates} content={content} compact />
+            <View style={styles.dotsMetaRowNear}>
+              <View style={styles.dotsMetaDots}>
+                {groupDays.length > 0 ? (
+                  <TaskRecentSevenDayDots days={groupDays} content={content} compact />
+                ) : null}
+              </View>
+              {meta ? (
+                <Text style={[styles.rowMetaNear, contentMutedTextStyle(content)]} numberOfLines={1}>
+                  {meta}
+                </Text>
+              ) : null}
+            </View>
             {isHover ? (
               <Text style={[styles.dropHint, contentTextStyle(content)]}>ここにドロップ</Text>
             ) : null}
@@ -498,7 +605,12 @@ export default function TasksScreen() {
         </Pressable>
         {showChildren
           ? children.map((task) =>
-              renderRecurringRow(task, isRecurringDueOnDate(task, new Date()), true)
+              renderRecurringRow(
+                task,
+                isRecurringDueOnDate(task, new Date()),
+                true,
+                muted
+              )
             )
           : null}
       </View>
@@ -665,14 +777,44 @@ export default function TasksScreen() {
               <Text style={[styles.empty, contentMutedTextStyle(content)]}>定期タスクがありません</Text>
             ) : (
               <>
-                {bundles.map((bundle) =>
-                  renderGroupHeader(bundle.group, bundle.members, {
-                    expanded: expandedGroupIds.has(bundle.group.id) || draggingTaskId != null,
-                  })
+                {recurringDueBundles.length === 0 && recurringDueUngrouped.length === 0 ? (
+                  <Text style={[styles.empty, contentMutedTextStyle(content)]}>
+                    本日対象の定期タスクはありません
+                  </Text>
+                ) : (
+                  <>
+                    {recurringDueBundles.map((bundle) =>
+                      renderGroupHeader(bundle.group, bundle.members, {
+                        expanded: expandedGroupIds.has(bundle.group.id) || draggingTaskId != null,
+                        childSource: bundle.dueMembers,
+                        keySuffix: '-due',
+                        registerDropZone: true,
+                      })
+                    )}
+                    {recurringDueUngrouped.map((task) => renderRecurringRow(task, true))}
+                  </>
                 )}
-                {ungrouped.map((task) =>
-                  renderRecurringRow(task, isRecurringDueOnDate(task, new Date()))
-                )}
+                {recurringOffBundles.length > 0 || recurringOffUngrouped.length > 0 ? (
+                  <>
+                    <View style={[styles.completedDivider, { backgroundColor: content.contentBorder }]} />
+                    <Text
+                      style={[styles.sectionTitle, styles.completedSectionTitle, contentMutedTextStyle(content)]}
+                    >
+                      本日対象外
+                    </Text>
+                    {recurringOffBundles.map((bundle) =>
+                      renderGroupHeader(bundle.group, bundle.members, {
+                        expanded: expandedGroupIds.has(bundle.group.id) || draggingTaskId != null,
+                        childSource: bundle.offMembers,
+                        muted: true,
+                        keySuffix: '-off',
+                        // 本日対象側に同じグループがある場合はドロップゾーンはそちら優先
+                        registerDropZone: !recurringDueBundles.some((b) => b.group.id === bundle.group.id),
+                      })
+                    )}
+                    {recurringOffUngrouped.map((task) => renderRecurringRow(task, false, false, true))}
+                  </>
+                ) : null}
               </>
             )}
           </View>
@@ -783,6 +925,9 @@ const styles = StyleSheet.create({
   groupBlock: {
     gap: 6,
   },
+  mutedBlock: {
+    opacity: 0.62,
+  },
   groupHeaderRow: {
     borderWidth: 2.5,
     borderRadius: 10,
@@ -814,6 +959,36 @@ const styles = StyleSheet.create({
   rowTitle: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  dotsMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 2,
+  },
+  dotsMetaRowNear: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 6,
+    marginTop: 2,
+  },
+  dotsMetaDots: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  rowMetaEnd: {
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'right',
+    marginLeft: 'auto',
+  },
+  rowMetaNear: {
+    flexShrink: 1,
+    fontSize: 11,
+    fontWeight: '600',
   },
   rowMeta: {
     fontSize: 12,

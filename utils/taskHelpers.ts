@@ -22,10 +22,11 @@ export type RecentSevenDayItem = {
   ymd: string;
   label: string;
   done: boolean;
+  /** 右端スロットの日付が「今日」のとき true（わっか表示） */
   isToday: boolean;
 };
 
-/** 左が古く、右が今日の直近7日 */
+/** 左が古く、右が今日の直近7暦日（フォールバック） */
 export function getRecentSevenDayItems(
   completedOnSet: Set<string>,
   asOf: Date = new Date()
@@ -39,6 +40,72 @@ export function getRecentSevenDayItems(
       label: `${date.getMonth() + 1}/${date.getDate()}`,
       done: completedOnSet.has(ymd),
       isToday: offset === 0,
+    };
+  });
+}
+
+/**
+ * 予定出現日ベースの直近7スロット。
+ * 右端＝今日以前の最新予定日。わっかはその日が今日のときだけ。
+ */
+export function getRecentScheduledDotItems(
+  task: TaskScheduleLike,
+  completedOnSet: Set<string>,
+  asOf: Date = new Date(),
+  count = 7
+): RecentSevenDayItem[] {
+  const newestFirst = collectPastDueDates(task, asOf, count);
+  const chronological = [...newestFirst].reverse();
+  const todayYmd = toYmd(asOf);
+  return chronological.map((ymd) => {
+    const date = parseYmd(ymd);
+    return {
+      ymd,
+      label: `${date.getMonth() + 1}/${date.getDate()}`,
+      done: completedOnSet.has(ymd),
+      isToday: ymd === todayYmd,
+    };
+  });
+}
+
+/** グループ: メンバ予定日の和集合で直近 maxCount 日（新しい順） */
+export function collectPastGroupDueDates(
+  members: TaskScheduleLike[],
+  asOf: Date,
+  maxCount: number
+): string[] {
+  if (members.length === 0) {
+    return [];
+  }
+  const dates: string[] = [];
+  let cursor = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
+  let guard = 0;
+  while (dates.length < maxCount && guard < 800) {
+    if (members.some((member) => isRecurringDueOnDate(member, cursor))) {
+      dates.push(toYmd(cursor));
+    }
+    cursor = addDays(cursor, -1);
+    guard += 1;
+  }
+  return dates;
+}
+
+export function getRecentGroupScheduledDotItems(
+  members: TaskScheduleLike[],
+  completedOnSet: Set<string>,
+  asOf: Date = new Date(),
+  count = 7
+): RecentSevenDayItem[] {
+  const newestFirst = collectPastGroupDueDates(members, asOf, count);
+  const chronological = [...newestFirst].reverse();
+  const todayYmd = toYmd(asOf);
+  return chronological.map((ymd) => {
+    const date = parseYmd(ymd);
+    return {
+      ymd,
+      label: `${date.getMonth() + 1}/${date.getDate()}`,
+      done: completedOnSet.has(ymd),
+      isToday: ymd === todayYmd,
     };
   });
 }

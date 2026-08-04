@@ -9,6 +9,19 @@ export const PARTICIPANT_CHIP_HEIGHT = 34;
 export const PARTICIPANT_CHIP_COMPACT_HEIGHT = 30;
 export const PARTICIPANT_CHIP_FITTED_HEIGHT = 28;
 
+/** チップ表示用の名前最大文字数（コードポイント）。表示のみ。 */
+export const PARTICIPANT_CHIP_LABEL_MAX_CHARS = 8;
+
+/** 先頭 N 文字 + 省略記号。データは変更しない。 */
+export function truncateParticipantChipLabel(
+  label: string,
+  maxChars: number = PARTICIPANT_CHIP_LABEL_MAX_CHARS
+): string {
+  const chars = Array.from(label);
+  if (chars.length <= maxChars) return label;
+  return `${chars.slice(0, maxChars).join('')}…`;
+}
+
 export const participantChipStyles = StyleSheet.create({
   scroll: {
     flexGrow: 0,
@@ -130,7 +143,7 @@ export const participantChipStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: Theme.textPrimary,
-    flexShrink: 0,
+    flexShrink: 1,
   },
   nameCompact: {
     fontSize: 11,

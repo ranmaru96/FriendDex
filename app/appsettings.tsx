@@ -397,6 +397,25 @@ export default function AppSettingsScreen() {
               ・注意: グループメンバー変更後は「保存時スナップショット」か「都度再展開」かを決める。
             </Text>
           </View>
+          <View style={[styles.separator, themed.separator]} />
+          <View style={styles.roadmapBlock}>
+            <Text style={[styles.roadmapTitle, themed.rowLabel]}>ウィジェット機能追加</Text>
+            <Text style={[styles.roadmapBody, themed.hint]}>
+              ・ver001以降の構想。ホーム画面ウィジェット対応。
+            </Text>
+          </View>
+          <View style={[styles.separator, themed.separator]} />
+          <View style={styles.roadmapBlock}>
+            <Text style={[styles.roadmapTitle, themed.rowLabel]}>サーバー化</Text>
+            <Text style={[styles.roadmapBody, themed.hint]}>
+              ・ver001以降の構想。{'\n'}
+              ・エピソード公開{'\n'}
+              ・共通の予定の共有{'\n'}
+              ・人物カードの共有{'\n'}
+              ・お金貸し借り管理の共有{'\n'}
+              ・シャッフル結果共有
+            </Text>
+          </View>
         </View>
         <Text style={[styles.hint, themed.hint]}>
           実装優先度や仕様が固まり次第、ここから着手予定のメモです

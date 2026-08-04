@@ -6,6 +6,7 @@ import {
   PARTICIPANT_CHIP_FITTED_BORDER_RADIUS,
   PARTICIPANT_CHIP_FITTED_PHOTO_SIZE,
   participantChipStyles as styles,
+  truncateParticipantChipLabel,
 } from '@/utils/participantChipStyles';
 import type { ParticipantChipDisplay } from '@/utils/episodeHelpers';
 import { useContentColors } from '@/utils/useContentColors';
@@ -57,6 +58,7 @@ export function ParticipantChip({
   const photoUri = chip.photoUri?.trim() || undefined;
   const fittedRadius = isFitted ? PARTICIPANT_CHIP_FITTED_BORDER_RADIUS : undefined;
   const groupIconSize = isFitted ? 14 : compact ? 14 : 16;
+  const displayLabel = truncateParticipantChipLabel(chip.label);
 
   return (
     <View
@@ -97,8 +99,12 @@ export function ParticipantChip({
             />
           )
         ) : null}
-        <Text style={[styles.name, compact && styles.nameCompact, contentTagTextStyle(content)]}>
-          {chip.label}
+        <Text
+          style={[styles.name, compact && styles.nameCompact, contentTagTextStyle(content)]}
+          numberOfLines={1}
+          accessibilityLabel={displayLabel !== chip.label ? chip.label : undefined}
+        >
+          {displayLabel}
         </Text>
       </Pressable>
       {onRemove ? (

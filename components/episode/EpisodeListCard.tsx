@@ -123,9 +123,7 @@ export function EpisodeListCard({
   const usePhotoLayout = kit.episodeListCardLayout === 'photoRight';
   const photoFrameBorderColor = content.contentText;
   const episodeCardBackgroundColor =
-    appTheme?.variant === 'black' || appTheme?.variant === 'white'
-      ? content.contentInputBg
-      : content.contentCard;
+    appTheme?.variant === 'black' ? content.contentInputBg : content.contentCard;
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
   const normalizedPosterName = posterName?.trim() ? posterName.trim() : null;
   const showPosterName = visibilityMode == null && normalizedPosterName != null;

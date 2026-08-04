@@ -58,16 +58,27 @@ export function isGroupDoneOn(completedOnSet: Set<string>, ymd: string): boolean
   return completedOnSet.has(ymd);
 }
 
-/** 指定日に due なメンバーのうち完了数 */
+/** 指定日に due な「記録ON」メンバのうち完了数 */
 export function countGroupDueProgress(
   members: Task[],
   date: Date,
-  isCompletedOn: (taskId: string, ymd: string) => boolean
+  isDoneOn: (task: Task, ymd: string) => boolean
 ): { done: number; total: number } {
   const ymd = toYmd(date);
-  const dueMembers = members.filter((task) => isRecurringDueOnDate(task, date));
-  const done = dueMembers.filter((task) => isCompletedOn(task.id, ymd)).length;
+  const dueMembers = members.filter(
+    (task) => task.trackCompletions && isRecurringDueOnDate(task, date)
+  );
+  const done = dueMembers.filter((task) => isDoneOn(task, ymd)).length;
   return { done, total: dueMembers.length };
+}
+
+/** グループにドット／履歴を出すか（記録ONメンバが1人以上） */
+export function groupTracksCompletions(members: Task[]): boolean {
+  return members.some((task) => task.trackCompletions);
+}
+
+export function trackingMembers(members: Task[]): Task[] {
+  return members.filter((task) => task.trackCompletions);
 }
 
 export function formatGroupListMeta(
