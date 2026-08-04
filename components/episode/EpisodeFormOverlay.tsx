@@ -419,7 +419,7 @@ export function EpisodeFormOverlay({
 
               <ViewportCappedMultilineTextInput
                 style={[styles.episodeDescriptionInput, fieldCorner, contentInputStyle(content)]}
-                placeholder="説明文の記入（記入式）"
+                placeholder="説明文"
                 placeholderTextColor={content.contentTextSecondary}
                 value={form.description}
                 onChangeText={form.setDescription}

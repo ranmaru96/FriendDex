@@ -746,7 +746,7 @@ export default function EditScreen() {
                   value={form.nickname}
                   onChangeText={(text) => updateText('nickname', text)}
                   style={[styles.input, contentInputStyle(content)]}
-                  placeholder="記入式"
+                  placeholder="通称を登録する"
                   placeholderTextColor={content.contentTextSecondary}
                 />
               </FormRow>
@@ -759,7 +759,7 @@ export default function EditScreen() {
                 value={form.origin}
                 onChangeText={(text) => updateText('origin', text)}
                 style={[styles.input, contentInputStyle(content)]}
-                placeholder="記入式"
+                placeholder="出身を登録する"
                 placeholderTextColor={content.contentTextSecondary}
               />
             </FormRow>
@@ -768,7 +768,7 @@ export default function EditScreen() {
                 value={form.residence}
                 onChangeText={(text) => updateText('residence', text)}
                 style={[styles.input, contentInputStyle(content)]}
-                placeholder="記入式"
+                placeholder="居住地を登録する"
                 placeholderTextColor={content.contentTextSecondary}
               />
             </FormRow>
@@ -838,7 +838,7 @@ export default function EditScreen() {
                 value={form.category}
                 onChangeText={(text) => updateText('category', text)}
                 style={[styles.input, contentInputStyle(content)]}
-                placeholder="記入式"
+                placeholder="分類を登録する"
                 placeholderTextColor={content.contentTextSecondary}
               />
             </FormRow>
@@ -853,7 +853,7 @@ export default function EditScreen() {
             value={form.description}
             onChangeText={(text) => updateText('description', text)}
             style={[styles.descriptionInput, contentInputStyle(content)]}
-            placeholder="複数行で入力"
+            placeholder="説明文を登録する"
             placeholderTextColor={content.contentTextSecondary}
             minHeight={72}
           />
@@ -863,7 +863,7 @@ export default function EditScreen() {
           title="所属"
           values={form.affiliations}
           onChange={(values) => setForm((prev) => ({ ...prev, affiliations: values }))}
-          placeholder="記入式"
+          placeholder="所属を登録する"
           suggestionCandidates={affiliationSuggestions}
           resetKey={friendId || 'new'}
         />
@@ -871,7 +871,7 @@ export default function EditScreen() {
           title="性格"
           values={form.personalities}
           onChange={(values) => setForm((prev) => ({ ...prev, personalities: values }))}
-          placeholder="記入式"
+          placeholder="性格を登録する"
           suggestionCandidates={personalitySuggestions}
           resetKey={friendId || 'new'}
         />
@@ -879,7 +879,7 @@ export default function EditScreen() {
           title="経験"
           values={form.experiences}
           onChange={(values) => setForm((prev) => ({ ...prev, experiences: values }))}
-          placeholder="記入式"
+          placeholder="経験を登録する"
           suggestionCandidates={experienceSuggestions}
           resetKey={friendId || 'new'}
         />
@@ -887,7 +887,7 @@ export default function EditScreen() {
           title="好きなこと"
           values={form.likes}
           onChange={(values) => setForm((prev) => ({ ...prev, likes: values }))}
-          placeholder="記入式"
+          placeholder="好きなことを登録する"
           suggestionCandidates={likeSuggestions}
           resetKey={friendId || 'new'}
         />
@@ -895,7 +895,7 @@ export default function EditScreen() {
           title="苦手なこと"
           values={form.dislikes}
           onChange={(values) => setForm((prev) => ({ ...prev, dislikes: values }))}
-          placeholder="記入式"
+          placeholder="苦手なことを登録する"
           suggestionCandidates={dislikeSuggestions}
           resetKey={friendId || 'new'}
         />
