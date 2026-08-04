@@ -16,6 +16,7 @@ import type { CalendarEventMemoDisplay } from '@/constants/uiKit/types';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useTapUnlessHorizontalScroll } from '@/hooks/useTapUnlessHorizontalScroll';
 import { useContentColors } from '@/utils/useContentColors';
 import { getEpisodesByEventIds, getEventParticipantsForEvents, getEventsByDateRange, initializeDatabase } from '../db';
 import type { Episode, Event } from '../types';
@@ -99,6 +100,8 @@ function CalendarEventCardBody({
 }: CalendarEventCardBodyProps) {
   const content = useContentColors();
   const memoLineLimit = getCalendarMemoLineLimit(memoDisplay);
+  const participantTap = useTapUnlessHorizontalScroll(onOpen);
+
   const episodeCountTag =
     episodeCount > 0 ? (
       <View style={[styles.episodeCountTag, contentPersonTagStyle(content)]}>
@@ -119,13 +122,20 @@ function CalendarEventCardBody({
         />
       </Pressable>
       {participants.length > 0 ? (
-        <View style={styles.eventCardParticipantRow}>
+        <Pressable
+          style={styles.eventCardParticipantRow}
+          onPress={participantTap.onPress}
+        >
           <EventParticipantChipList
             participants={participants}
             compact
             layout="scroll"
+            onChipPress={participantTap.onChipPress}
+            onScrollBeginDrag={participantTap.onScrollBeginDrag}
+            onScrollEndDrag={participantTap.onScrollEndDrag}
+            onMomentumScrollEnd={participantTap.onMomentumScrollEnd}
           />
-        </View>
+        </Pressable>
       ) : null}
       {event.memo ? (
         <Pressable onPress={onOpen}>

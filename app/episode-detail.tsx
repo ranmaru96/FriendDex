@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Dimensions,
@@ -67,7 +67,7 @@ export default function EpisodeDetailScreen() {
   const bottomNavClearance = useBottomNavScrollClearance();
   const editButtonBorderColor =
     appTheme?.colors.topBarBorder ?? Theme.topBarBorder;
-  const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string }>();
+  const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string; edit?: string }>();
   const [episode, setEpisode] = useState<Episode | null>(null);
   const [parentEvent, setParentEvent] = useState<Event | null>(null);
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
@@ -80,6 +80,7 @@ export default function EpisodeDetailScreen() {
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
   const [isEditVisible, setIsEditVisible] = useState(false);
+  const openedEditFromParamRef = useRef(false);
 
   const hiddenParticipantIds = useMemo(() => (myselfId ? [myselfId] : []), [myselfId]);
   const episodeForm = useEpisodeForm({ friends, hiddenParticipantIds });
@@ -100,6 +101,11 @@ export default function EpisodeDetailScreen() {
     if (Array.isArray(params.ownerId)) return params.ownerId[0] ?? '';
     return params.ownerId ?? '';
   }, [params.ownerId]);
+
+  const shouldOpenEdit = useMemo(() => {
+    const raw = Array.isArray(params.edit) ? params.edit[0] : params.edit;
+    return raw === '1' || raw === 'true';
+  }, [params.edit]);
 
   const photoContentWidth = useMemo(() => {
     const panelWidth = Dimensions.get('window').width;
@@ -136,6 +142,20 @@ export default function EpisodeDetailScreen() {
       loadData();
     }, [loadData])
   );
+
+  useEffect(() => {
+    openedEditFromParamRef.current = false;
+  }, [episodeId]);
+
+  useEffect(() => {
+    if (!episode || !shouldOpenEdit || openedEditFromParamRef.current) {
+      return;
+    }
+    openedEditFromParamRef.current = true;
+    episodeForm.loadFromEpisode(episode);
+    setIsEditVisible(true);
+    router.setParams({ edit: undefined });
+  }, [episode, episodeForm.loadFromEpisode, router, shouldOpenEdit]);
 
   const chips = useMemo(
     () =>
@@ -217,6 +237,7 @@ export default function EpisodeDetailScreen() {
     const updated = updateEpisode(myselfId, editingId, {
       ...episodeFields,
       eventId: resolved.eventId,
+      pendingReview: false,
     });
     if (!updated) {
       episodeForm.setFormError('エピソードの更新に失敗しました。');

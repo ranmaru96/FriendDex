@@ -161,7 +161,6 @@ export default function AppSettingsScreen() {
     () =>
       isMonochromeTheme
         ? {
-            backText: { color: appThemeColors.onScreenText },
             sectionHeader: { color: appThemeColors.onScreenText },
             hint: { color: appThemeColors.onScreenTextSecondary },
             emptyText: { color: appThemeColors.onScreenTextSecondary },
@@ -178,7 +177,6 @@ export default function AppSettingsScreen() {
             },
           }
         : {
-            backText: { color: kit.topBarText },
             sectionHeader: null,
             hint: null,
             emptyText: null,
@@ -192,7 +190,6 @@ export default function AppSettingsScreen() {
       appThemeColors.onScreenTextSecondary,
       appThemeVariant,
       isMonochromeTheme,
-      kit.topBarText,
     ]
   );
 
@@ -235,11 +232,12 @@ export default function AppSettingsScreen() {
   };
 
   return (
-    <SubToolScreenTemplate useTopBar={false} useScreenPadding={false} scrollContentStyle={styles.scrollContent}>
-        <Pressable style={styles.backRow} onPress={() => router.back()}>
-          <Text style={[styles.backText, themed.backText]}>‹ 戻る</Text>
-        </Pressable>
-
+    <SubToolScreenTemplate
+      title="設定"
+      onBack={() => router.back()}
+      useScreenPadding={false}
+      scrollContentStyle={styles.scrollContent}
+    >
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>本人設定</Text>
         <View style={[styles.group, themed.group]}>
           {profiles.length === 0 ? (
@@ -273,7 +271,7 @@ export default function AppSettingsScreen() {
           ))}
         </View>
         <Text style={[styles.hint, themed.hint]}>
-          全画面のベース背景・サブ画面トップバー色を切り替えます（デフォルト / ホワイト / ブラック）
+          全画面のベース背景・サブ画面トップバー色を切り替えます（ホワイト / ブラック）
         </Text>
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>UI プレビュー</Text>
@@ -344,6 +342,17 @@ export default function AppSettingsScreen() {
           完了した臨時タスクを自動削除するまでの期間です（デフォルト1か月）
         </Text>
 
+        <Text style={[styles.sectionHeader, themed.sectionHeader]}>フォロー</Text>
+        <View style={[styles.group, themed.group]}>
+          <Pressable style={styles.row} onPress={() => router.push('/follows')}>
+            <Text style={[styles.rowLabel, themed.rowLabel]}>フォロー一覧</Text>
+            <Text style={[styles.rowChevron, themed.hint]}>›</Text>
+          </Pressable>
+        </View>
+        <Text style={[styles.hint, themed.hint]}>
+          QRコードで追加した人など、フォロー関連の確認はここから開きます
+        </Text>
+
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>バックアップ</Text>
         <View style={[styles.group, themed.group]}>
           <Pressable style={styles.row} onPress={confirmAndExportBackup}>
@@ -355,6 +364,43 @@ export default function AppSettingsScreen() {
           </Pressable>
         </View>
         <Text style={[styles.hint, themed.hint]}>自動バックアップは起動時に自動実行されます</Text>
+
+        <Text style={[styles.sectionHeader, themed.sectionHeader]}>今後の構想</Text>
+        <View style={[styles.group, themed.group]}>
+          <View style={styles.roadmapBlock}>
+            <Text style={[styles.roadmapTitle, themed.rowLabel]}>一覧FABのフォローアイコン</Text>
+            <Text style={[styles.roadmapBody, themed.hint]}>
+              ・現状: 入り口は設定「フォロー一覧」のみ。Home FAB のフォローボタンは一旦削除。{'\n'}
+              ・概念・画面（/follows）はそのまま。{'\n'}
+              ・復活時: HomeScreen の fabRow に CircleIconButton
+              （icon="people-circle-outline" → /follows、accessibilityLabel="フォロー一覧"）を戻す。
+            </Text>
+          </View>
+          <View style={[styles.separator, themed.separator]} />
+          <View style={styles.roadmapBlock}>
+            <Text style={[styles.roadmapTitle, themed.rowLabel]}>予定完了後のフォロー</Text>
+            <Text style={[styles.roadmapBody, themed.hint]}>
+              ・参加者について知ったことがあれば追記するポップ（小さな人物カード）{'\n'}
+              ・1人記載したら、残り参加者だけで再度表示
+            </Text>
+          </View>
+          <View style={[styles.separator, themed.separator]} />
+          <View style={styles.roadmapBlock}>
+            <Text style={[styles.roadmapTitle, themed.rowLabel]}>グループ名タグ（参加者）</Text>
+            <Text style={[styles.roadmapBody, themed.hint]}>
+              ・現状: 予定・エピソード・精算・シャッフル等の参加者選択は個人 ID
+              のみ（所属タブなし。絞り込みの所属は個人一覧用）。{'\n'}
+              ・型は EpisodeParticipant.kind に group
+              が残っており、EntrySelectorModal の enableGroupTab
+              で所属タブを再度出せる（公開先選択では利用中）。{'\n'}
+              ・再実装時: 表示用にグループ名タグを保存しつつ、実参加者は個人へ展開して同期。{'\n'}
+              ・注意: グループメンバー変更後は「保存時スナップショット」か「都度再展開」かを決める。
+            </Text>
+          </View>
+        </View>
+        <Text style={[styles.hint, themed.hint]}>
+          実装優先度や仕様が固まり次第、ここから着手予定のメモです
+        </Text>
     </SubToolScreenTemplate>
   );
 }
@@ -362,14 +408,6 @@ export default function AppSettingsScreen() {
 const styles = StyleSheet.create({
   scrollContent: {
     paddingBottom: 32,
-  },
-  backRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-  },
-  backText: {
-    fontSize: 17,
-    fontWeight: '600',
   },
   sectionHeader: {
     paddingHorizontal: 16,
@@ -426,6 +464,21 @@ const styles = StyleSheet.create({
     fontSize: Typography.base,
     color: Theme.textSecondary,
     lineHeight: 18,
+  },
+  roadmapBlock: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  roadmapTitle: {
+    fontSize: 16,
+    color: '#0f172a',
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  roadmapBody: {
+    fontSize: Typography.sm,
+    color: Theme.textSecondary,
+    lineHeight: 20,
   },
   selectButton: {
     borderWidth: 1,

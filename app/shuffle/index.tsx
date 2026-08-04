@@ -644,6 +644,7 @@ export default function ShuffleScreen() {
         onToggleGroup={toggleSelectorGroup}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        enableGroupTab={false}
       />
 
       <ShuffleLibraryPickerModal

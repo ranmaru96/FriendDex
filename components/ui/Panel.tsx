@@ -66,8 +66,9 @@ export function SectionDivider({ style }: SectionDividerProps) {
       style={[
         isBold ? styles.boldDivider : styles.hairlineDivider,
         {
-          backgroundColor: isBold ? kit.textSecondary : kit.inputBorder,
+          backgroundColor: kit.inputBorder,
           marginHorizontal: isBold ? Spacing.sm : kit.sectionDividerInset,
+          opacity: isBold ? 0.7 : 1,
         },
         style,
       ]}
@@ -83,6 +84,6 @@ const styles = StyleSheet.create({
     height: StyleSheet.hairlineWidth,
   },
   boldDivider: {
-    height: 2,
+    height: 1,
   },
 });

@@ -1,17 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  Alert,
-  Image,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { PHOTO_LIMITS } from '@/constants';
+import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import {
   contentInputStyle,
@@ -20,18 +7,8 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
-import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
-import { PhotoCropModal, EPISODE_PHOTO_ASPECT } from '@/components/photo/PhotoCropModal';
-import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
-import {
-  deleteEpisode,
-  getEpisodePhotos,
-  getMyself,
-  initializeDatabase,
-  insertEpisodePhoto,
-  updateEpisode,
-} from '@/db';
-import type { EpisodePhoto, PendingReviewEpisodeRef } from '@/types';
+import { deleteEpisode, getMyself, initializeDatabase } from '@/db';
+import type { PendingReviewEpisodeRef } from '@/types';
 import { resolveEpisodeRecordOwnerId } from '@/utils/episodeHelpers';
 
 type PendingEpisodeReviewModalProps = {
@@ -39,6 +16,7 @@ type PendingEpisodeReviewModalProps = {
   items: PendingReviewEpisodeRef[];
   onClose: () => void;
   onChanged: () => void;
+  onWrite: (item: PendingReviewEpisodeRef) => void;
 };
 
 export function PendingEpisodeReviewModal({
@@ -46,142 +24,30 @@ export function PendingEpisodeReviewModal({
   items,
   onClose,
   onChanged,
+  onWrite,
 }: PendingEpisodeReviewModalProps) {
   const content = useContentColors();
-  const keyboardBottomInset = useKeyboardBottomInset();
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
-  const [newPhotoUris, setNewPhotoUris] = useState<string[]>([]);
-  const [photoCropUri, setPhotoCropUri] = useState<string | null>(null);
-
   const currentItem = items[0] ?? null;
 
-  const resetFormFromItem = useCallback((item: PendingReviewEpisodeRef | null) => {
-    if (!item) {
-      setTitle('');
-      setDescription('');
-      setPhotos([]);
-      setNewPhotoUris([]);
-      setPhotoCropUri(null);
-      return;
-    }
-    setTitle(item.episode.title);
-    setDescription(item.episode.description);
-    setPhotos(getEpisodePhotos(item.episode.id));
-    setNewPhotoUris([]);
-    setPhotoCropUri(null);
-  }, []);
+  if (!visible || !currentItem) {
+    return null;
+  }
 
-  useEffect(() => {
-    if (!visible) {
-      resetFormFromItem(null);
-      return;
-    }
-    resetFormFromItem(items[0] ?? null);
-  }, [items, resetFormFromItem, visible]);
-
-  const photoCount = photos.length + newPhotoUris.length;
-  const isPhotoLimitReached = photoCount >= PHOTO_LIMITS.free;
-
-  const progressLabel = useMemo(() => {
-    if (items.length <= 1) {
-      return '';
-    }
-    return `残り ${items.length} 件`;
-  }, [items.length]);
-
-  const participantLabel = useMemo(() => {
-    if (!currentItem) {
-      return '';
-    }
-    const myselfId = getMyself();
-    const entries = currentItem.episode.participantEntries.filter(
-      (entry) =>
-        entry.kind === 'individual' &&
-        entry.value.trim().length > 0 &&
-        entry.value !== myselfId
-    );
-    if (entries.length === 0) {
-      return '参加者なし';
-    }
-    return `${entries.length}人の予定`;
-  }, [currentItem]);
-
-  const pickPhoto = async () => {
-    if (isPhotoLimitReached) {
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 1,
-      allowsEditing: false,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setPhotoCropUri(result.assets[0].uri);
-    }
-  };
-
-  const removeNewPhoto = (index: number) => {
-    setNewPhotoUris((prev) => prev.filter((_, photoIndex) => photoIndex !== index));
-  };
-
-  const handleSave = () => {
-    if (!currentItem) {
-      onClose();
-      return;
-    }
-    const normalizedTitle = title.trim();
-    if (!normalizedTitle) {
-      Alert.alert('入力エラー', 'タイトルを入力してください。');
-      return;
-    }
-
-    const myselfId = getMyself();
-    if (!myselfId) {
-      Alert.alert('エラー', '本人が設定されていません。');
-      return;
-    }
-
-    initializeDatabase();
-    const ownerId = resolveEpisodeRecordOwnerId(currentItem.episode, currentItem.friendId);
-    const updated = updateEpisode(ownerId, currentItem.episode.id, {
-      title: normalizedTitle,
-      date: currentItem.episode.date,
-      description: description.trim(),
-      visibilityMode: currentItem.episode.visibilityMode,
-      participantEntries: currentItem.episode.participantEntries,
-      visibilityEntries: currentItem.episode.visibilityEntries,
-      eventId: currentItem.episode.eventId,
-      tag: currentItem.episode.tag ?? null,
-      isAutoGenerated: true,
-      pendingReview: false,
-    });
-    if (!updated) {
-      Alert.alert('エラー', 'エピソードの保存に失敗しました。');
-      return;
-    }
-
-    const existingCount = photos.length;
-    newPhotoUris.forEach((uri, index) => {
-      insertEpisodePhoto(currentItem.episode.id, uri, existingCount + index);
-    });
-
-    onChanged();
-  };
+  const progressLabel = items.length > 1 ? `残り ${items.length} 件` : '';
 
   const handleDelete = () => {
-    if (!currentItem) {
-      onClose();
-      return;
-    }
-    Alert.alert('エピソードを削除', 'この自動生成エピソードを削除しますか？', [
+    Alert.alert('本当に削除しますか？', 'この自動生成エピソードを削除します。', [
       { text: 'キャンセル', style: 'cancel' },
       {
         text: '削除',
         style: 'destructive',
         onPress: () => {
           initializeDatabase();
+          const myselfId = getMyself();
+          if (!myselfId) {
+            Alert.alert('エラー', '本人が設定されていません。');
+            return;
+          }
           const ownerId = resolveEpisodeRecordOwnerId(currentItem.episode, currentItem.friendId);
           const deleted = deleteEpisode(ownerId, currentItem.episode.id);
           if (!deleted) {
@@ -194,96 +60,35 @@ export function PendingEpisodeReviewModal({
     ]);
   };
 
-  if (!visible || !currentItem) {
-    return null;
-  }
-
   return (
-    <>
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
-      <View style={[styles.backdrop, { paddingBottom: keyboardBottomInset }]}>
+      <View style={styles.backdrop}>
         <View style={[styles.card, contentSurfaceStyle(content)]}>
-          <Text style={[styles.heading, contentTextStyle(content)]}>予定からエピソードが作成されました</Text>
-          {progressLabel ? <Text style={[styles.progress, contentMutedTextStyle(content)]}>{progressLabel}</Text> : null}
-          <Text style={[styles.subheading, contentTextStyle(content)]}>{participantLabel}</Text>
+          <Text style={[styles.heading, contentTextStyle(content)]}>
+            エピソードが自動生成されました
+          </Text>
+          {progressLabel ? (
+            <Text style={[styles.progress, contentMutedTextStyle(content)]}>{progressLabel}</Text>
+          ) : null}
+          <Text style={[styles.title, contentTextStyle(content)]} numberOfLines={2}>
+            {currentItem.episode.title}
+          </Text>
           <Text style={[styles.meta, contentMutedTextStyle(content)]}>{currentItem.episode.date}</Text>
-
-          <ScrollView style={styles.formScroll} keyboardShouldPersistTaps="handled">
-            <Text style={[styles.label, contentTextStyle(content)]}>タイトル</Text>
-            <TextInput
-              style={[styles.textInput, contentInputStyle(content)]}
-              value={title}
-              onChangeText={setTitle}
-              placeholder="タイトル"
-              placeholderTextColor={content.contentTextSecondary}
-            />
-
-            <Text style={[styles.label, contentTextStyle(content)]}>説明文</Text>
-            <ViewportCappedMultilineTextInput
-              style={[styles.textInput, styles.descriptionInput, contentInputStyle(content)]}
-              value={description}
-              onChangeText={setDescription}
-              placeholder="説明文"
-              placeholderTextColor={content.contentTextSecondary}
-              minHeight={96}
-            />
-
-            <Text style={[styles.label, contentTextStyle(content)]}>写真</Text>
-            {(photos.length > 0 || newPhotoUris.length > 0) && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.photoScroll}
-                contentContainerStyle={styles.photoRow}
-              >
-                {photos.map((photo) => (
-                  <Image key={`existing-${photo.id}`} source={{ uri: photo.photoUri }} style={styles.photoThumb} />
-                ))}
-                {newPhotoUris.map((uri, index) => (
-                  <View key={`new-${index}-${uri}`} style={styles.photoThumbWrap}>
-                    <Image source={{ uri }} style={styles.photoThumb} />
-                    <Pressable style={styles.photoRemoveButton} onPress={() => removeNewPhoto(index)}>
-                      <Text style={styles.photoRemoveButtonText}>×</Text>
-                    </Pressable>
-                  </View>
-                ))}
-              </ScrollView>
-            )}
-            <Pressable
-              style={[styles.photoAddButton, contentInputStyle(content), isPhotoLimitReached && styles.photoAddButtonDisabled]}
-              onPress={() => void pickPhoto()}
-              disabled={isPhotoLimitReached}
-            >
-              <Text style={[styles.photoAddButtonText, contentTextStyle(content)]}>写真を追加</Text>
-            </Pressable>
-          </ScrollView>
 
           <View style={styles.actions}>
             <Pressable style={[styles.secondaryButton, contentInputStyle(content)]} onPress={onClose}>
               <Text style={[styles.secondaryButtonText, contentTextStyle(content)]}>後で</Text>
             </Pressable>
             <Pressable style={styles.dangerButton} onPress={handleDelete}>
-              <Text style={styles.dangerButtonText}>削除</Text>
+              <Text style={styles.dangerButtonText}>削除する</Text>
             </Pressable>
-            <Pressable style={styles.primaryButton} onPress={handleSave}>
-              <Text style={styles.primaryButtonText}>保存</Text>
+            <Pressable style={styles.primaryButton} onPress={() => onWrite(currentItem)}>
+              <Text style={styles.primaryButtonText}>記載する</Text>
             </Pressable>
           </View>
         </View>
       </View>
     </Modal>
-    <PhotoCropModal
-      visible={photoCropUri != null}
-      uri={photoCropUri}
-      aspectRatio={EPISODE_PHOTO_ASPECT}
-      hint="ピンチで拡大・ドラッグで位置調整（カード表示は横4:縦3）"
-      onCancel={() => setPhotoCropUri(null)}
-      onConfirm={(croppedUri) => {
-        setNewPhotoUris((prev) => [...prev, croppedUri]);
-        setPhotoCropUri(null);
-      }}
-    />
-    </>
   );
 }
 
@@ -300,7 +105,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Theme.border,
     padding: Spacing.md,
-    maxHeight: '85%',
   },
   heading: {
     fontSize: 16,
@@ -312,125 +116,63 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     color: Theme.textSecondary,
   },
-  subheading: {
-    marginTop: Spacing.xs,
+  title: {
+    marginTop: Spacing.sm,
     fontSize: Typography.base,
     fontWeight: '600',
     color: Theme.textPrimary,
   },
   meta: {
-    marginTop: 2,
+    marginTop: 4,
     fontSize: Typography.sm,
     color: Theme.textSecondary,
   },
-  formScroll: {
-    marginTop: Spacing.sm,
-    maxHeight: 360,
-  },
-  label: {
-    marginTop: Spacing.sm,
-    marginBottom: 4,
-    fontSize: Typography.sm,
-    fontWeight: '700',
-    color: Theme.textPrimary,
-  },
-  textInput: {
-    minHeight: 42,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    backgroundColor: Theme.inputBg,
-    color: Theme.inputText,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: Typography.base,
-  },
-  descriptionInput: {
-    minHeight: 96,
-  },
-  photoScroll: {
-    marginBottom: Spacing.xs,
-  },
-  photoRow: {
-    gap: Spacing.sm,
-  },
-  photoThumbWrap: {
-    position: 'relative',
-  },
-  photoThumb: {
-    width: 72,
-    height: 72,
-    borderRadius: Radius.sm,
-    backgroundColor: Theme.border,
-  },
-  photoRemoveButton: {
-    position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#dc2626',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  photoRemoveButtonText: {
-    color: '#fff',
-    fontWeight: '700',
-    fontSize: 14,
-    lineHeight: 16,
-  },
-  photoAddButton: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: Radius.sm,
-    backgroundColor: Theme.border,
-  },
-  photoAddButtonDisabled: {
-    opacity: 0.5,
-  },
-  photoAddButtonText: {
-    color: Theme.textPrimary,
-    fontWeight: '600',
-    fontSize: Typography.sm,
-  },
   actions: {
+    marginTop: Spacing.lg,
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
-    marginTop: Spacing.md,
   },
   secondaryButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    minHeight: 40,
+    paddingHorizontal: Spacing.md,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.border,
+    borderWidth: 1,
+    borderColor: Theme.inputBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Theme.inputBg,
   },
   secondaryButtonText: {
-    color: Theme.textPrimary,
+    fontSize: Typography.sm,
     fontWeight: '600',
+    color: Theme.textPrimary,
   },
   dangerButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    minHeight: 40,
+    paddingHorizontal: Spacing.md,
     borderRadius: Radius.sm,
-    backgroundColor: '#fee2e2',
-    borderWidth: 1,
-    borderColor: '#fecaca',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dc2626',
   },
   dangerButtonText: {
-    color: '#dc2626',
+    fontSize: Typography.sm,
     fontWeight: '700',
+    color: '#fff',
   },
   primaryButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    minHeight: 40,
+    paddingHorizontal: Spacing.md,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.btnPrimaryBg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Theme.accent,
   },
   primaryButtonText: {
-    color: Theme.btnPrimaryText,
+    fontSize: Typography.sm,
     fontWeight: '700',
+    color: Theme.onAccent,
   },
 });

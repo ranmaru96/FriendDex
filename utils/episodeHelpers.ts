@@ -57,6 +57,25 @@ export function mergeParticipantEntries(...lists: EpisodeParticipant[][]): Episo
   return merged;
 }
 
+/**
+ * Build individual-only participant entries from friend IDs.
+ * Group-name tags are deferred (see settings 今後の構想); EpisodeParticipant.kind
+ * still supports 'group' in the type for a future revival.
+ */
+export function toIndividualParticipantEntries(friendIds: Iterable<string>): EpisodeParticipant[] {
+  const seen = new Set<string>();
+  const next: EpisodeParticipant[] = [];
+  for (const friendId of friendIds) {
+    const value = friendId.trim();
+    if (!value || seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    next.push({ kind: 'individual', value });
+  }
+  return next;
+}
+
 export function getVisibilityModeLabel(mode: EpisodeVisibilityMode): string {
   switch (mode) {
     case 'public':

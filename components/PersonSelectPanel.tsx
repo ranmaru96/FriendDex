@@ -2,9 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   Dimensions,
   FlatList,
-  Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,13 +10,12 @@ import {
 } from 'react-native';
 import { sortFriendsBySelectedId } from '@/utils/selectionSortHelpers';
 import type { Option } from '@/components/episode/types';
+import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
 import { Radius } from '@/constants/theme';
 import {
   contentInputStyle,
   contentMutedTextStyle,
-  contentSelectedOptionStyle,
   contentSurfaceStyle,
-  contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
@@ -56,50 +53,14 @@ function SelectField({ label, value, options, onValueChange }: SelectFieldProps)
         </Text>
         <Text style={[styles.selectChevron, contentMutedTextStyle(content)]}>▼</Text>
       </Pressable>
-      <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, contentSurfaceStyle(content)]}>
-            <Text style={[styles.modalTitle, contentTextStyle(content)]}>{label}</Text>
-            <ScrollView style={styles.modalOptions}>
-              <Pressable
-                style={[
-                  styles.modalOption,
-                  { borderBottomColor: content.contentDivider },
-                  !value ? contentSelectedOptionStyle(content) : null,
-                ]}
-                onPress={() => {
-                  onValueChange('');
-                  setVisible(false);
-                }}
-              >
-                <Text style={[styles.modalOptionText, contentTextStyle(content)]}>指定なし</Text>
-              </Pressable>
-              {options.map((option) => (
-                <Pressable
-                  key={option.value}
-                  style={[
-                    styles.modalOption,
-                    { borderBottomColor: content.contentDivider },
-                    option.value === value ? contentSelectedOptionStyle(content) : null,
-                  ]}
-                  onPress={() => {
-                    onValueChange(option.value);
-                    setVisible(false);
-                  }}
-                >
-                  <Text style={[styles.modalOptionText, contentTextStyle(content)]}>{option.label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable
-              style={[styles.modalCloseButton, contentTagStyle(content)]}
-              onPress={() => setVisible(false)}
-            >
-              <Text style={[styles.modalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <OptionPickerModal
+        visible={visible}
+        label={label}
+        value={value}
+        options={options}
+        onValueChange={onValueChange}
+        onClose={() => setVisible(false)}
+      />
     </View>
   );
 }
@@ -303,45 +264,6 @@ const styles = StyleSheet.create({
   selectChevron: {
     fontSize: 10,
     marginLeft: 4,
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
-    justifyContent: 'center',
-    paddingHorizontal: 16,
-  },
-  modalCard: {
-    borderRadius: Radius.md,
-    borderWidth: 1,
-    padding: 14,
-    maxHeight: '70%',
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  modalOptions: {
-    maxHeight: 320,
-  },
-  modalOption: {
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  modalOptionText: {
-    fontSize: 15,
-  },
-  modalCloseButton: {
-    marginTop: 10,
-    alignSelf: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: Radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  modalCloseButtonText: {
-    fontWeight: '600',
   },
   personList: {
     flex: 1,

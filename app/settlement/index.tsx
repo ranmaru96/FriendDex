@@ -641,6 +641,7 @@ export default function SettlementScreen() {
         onToggleGroup={toggleSelectorGroup}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        enableGroupTab={false}
       />
     </>
   );

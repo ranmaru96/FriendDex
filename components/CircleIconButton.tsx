@@ -29,8 +29,8 @@ export function CircleIconButton({
   const content = useContentColors();
   const isBlack = appTheme?.variant === 'black';
   const fill = isBlack ? content.contentCard : '#FFFFFF';
-  const ink = isBlack ? content.contentText : '#565656';
   const border = isBlack ? content.contentText : '#2f2f2f';
+  const ink = border;
 
   return (
     <Pressable

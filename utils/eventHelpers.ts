@@ -15,6 +15,19 @@ export const parseDateKey = (dateKey: string): Date => {
   return new Date();
 };
 
+/** Local calendar start day of an event (all-day uses stored start key). */
+export const getEventStartDateKey = (event: Event): string => {
+  const keys = getLocalDateKeysForEvent(event);
+  if (keys.length > 0) {
+    return keys[0];
+  }
+  return formatDateKey(new Date(event.startAt));
+};
+
+/** True when the event has not started yet (episode add / link not allowed). */
+export const isEventStartInFuture = (event: Event, todayKey = formatDateKey(new Date())): boolean =>
+  getEventStartDateKey(event) > todayKey;
+
 export const getMonthRangeIso = (year: number, month: number): { rangeStartAt: string; rangeEndAt: string } => {
   const rangeStartAt = new Date(year, month - 1, 1, 0, 0, 0, 0).toISOString();
   const rangeEndAt = new Date(year, month, 1, 0, 0, 0, 0).toISOString();

@@ -26,7 +26,7 @@ export function contentMutedTextStyle(c: AppThemeContentColorFields): TextStyle 
   return { color: c.contentTextSecondary };
 }
 
-/** 小さなタグ／チップ（人物・エピソードタグなど） */
+/** 小さなタグ／チップ（人物・予定タグなど） */
 export function contentTagStyle(c: AppThemeContentColorFields): ViewStyle {
   return {
     backgroundColor: c.contentInputBg,

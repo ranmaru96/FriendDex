@@ -10,7 +10,7 @@ import {
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Theme } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
-import { FriendHomeCard } from '@/components/friend/FriendHomeCard';
+import { FriendHomeCard, formatFriendBirthdayBadge } from '@/components/friend/FriendHomeCard';
 import {
   SearchArea,
   SearchAreaDivider,
@@ -96,6 +96,22 @@ export default function HomeScreen() {
     setReviewModalVisible(pending.length > 0);
   }, []);
 
+  const handleWritePendingEpisode = useCallback(
+    (item: PendingReviewEpisodeRef) => {
+      setReviewModalVisible(false);
+      const ownerId = item.episode.authorFriendId.trim() || item.friendId;
+      router.push({
+        pathname: '/episode-detail',
+        params: {
+          episodeId: item.episode.id,
+          ownerId,
+          edit: '1',
+        },
+      });
+    },
+    [router]
+  );
+
   const loadInitialData = useCallback(() => {
     initializeDatabase();
     setAffiliationOptions(toOptions(getDistinctAffiliations()));
@@ -119,6 +135,10 @@ export default function HomeScreen() {
       loadInitialData();
       setFriends(loadHomeFriends(filtersRef.current));
     }, [loadInitialData])
+  );
+
+  const showBirthdayBadges = Boolean(
+    filters.birthMonth && filters.birthMonth >= 1 && filters.birthMonth <= 12
   );
 
   const mbtiOptions = useMemo(() => toOptions(MBTI_TYPES as string[]), []);
@@ -180,11 +200,6 @@ export default function HomeScreen() {
             icon="scan-outline"
             onPress={() => router.push('/scan')}
             accessibilityLabel="QRコードを読み取る"
-          />
-          <CircleIconButton
-            icon="people-circle-outline"
-            onPress={() => router.push('/follows')}
-            accessibilityLabel="フォロー一覧"
           />
           <AddCircleButton
             onPress={() => router.push('/edit')}
@@ -255,6 +270,9 @@ export default function HomeScreen() {
               friend={item}
               width={cardWidth}
               isMyself={isMyself}
+              birthdayBadgeText={
+                showBirthdayBadges ? formatFriendBirthdayBadge(item.birthday) : null
+              }
               onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
               onLongPress={() => handleLongPressDeleteProfile(item)}
               delayLongPress={400}
@@ -271,6 +289,7 @@ export default function HomeScreen() {
         items={pendingReviewItems}
         onClose={() => setReviewModalVisible(false)}
         onChanged={reloadPendingReviews}
+        onWrite={handleWritePendingEpisode}
       />
     </ListScreenTemplate>
   );

@@ -10,7 +10,7 @@ const BLACK_INFO_CHIP_STYLES: Record<string, InfoChipStyle> = {
   好物: { backgroundColor: 'transparent', borderColor: '#fbbf24', color: '#fde68a', borderWidth: 1.5 },
   苦手: { backgroundColor: 'transparent', borderColor: '#f87171', color: '#fca5a5', borderWidth: 1.5 },
   公開先: { backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.28)', color: '#A8A8A8', borderWidth: 1.5 },
-  エピソードタグ: {
+  予定タグ: {
     backgroundColor: '#2a2a2a',
     borderColor: 'rgba(255,255,255,0.28)',
     color: '#F2F2F2',

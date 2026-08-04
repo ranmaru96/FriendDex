@@ -20,6 +20,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { DetailTabKey } from '@/constants/detailThemes';
+import { DETAIL_TAB_KEYS } from '@/constants/detailThemes/tabs';
 import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
 import { TabScreenTemplate } from '@/components/screen-templates';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
@@ -27,6 +28,7 @@ import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
 import { setNextStackAnimation } from '@/utils/tabTransition';
+import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 import { useDetailDesign } from './contexts/DetailDesignContext';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
@@ -596,8 +598,8 @@ export default function DetailScreen() {
     ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }
     : null;
   const router = useRouter();
-  const { width: screenWidth } = useWindowDimensions();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const { width: screenWidth, height: windowHeight } = useWindowDimensions();
+  const params = useLocalSearchParams<{ id?: string; tab?: string }>();
   const outgoingSlideX = useSharedValue(0);
   const incomingSlideX = useSharedValue(0);
   const isAdjacentSlidingRef = useRef(false);
@@ -614,6 +616,10 @@ export default function DetailScreen() {
   const [activeTab, setActiveTab] = useState<DetailTabKey>('情報');
   const isEpisodeTab = activeTab === 'エピソード';
   const bottomNavClearance = useBottomNavScrollClearance();
+  const keyboardBottomInset = useKeyboardBottomInset();
+  const detailListRef = useRef<FlatList<Episode>>(null);
+  const detailScrollOffsetRef = useRef(0);
+  const noteFormAnchorRef = useRef<View>(null);
   const [habitNotes, setHabitNotes] = useState<string[]>([]);
   const [isHabitFormVisible, setIsHabitFormVisible] = useState(false);
   const [editingHabitIndex, setEditingHabitIndex] = useState<number | null>(null);
@@ -639,12 +645,51 @@ export default function DetailScreen() {
   const [sayingInputHeight, setSayingInputHeight] = useState(48);
   const [sayingFormError, setSayingFormError] = useState('');
 
+  const isNoteFormOpen =
+    ((activeTab === '習性' || activeTab === 'メモ') && isHabitFormVisible) ||
+    (activeTab === '彼曰く' && isSayingFormVisible);
+
+  const scrollNoteFormAboveKeyboard = useCallback(() => {
+    if (keyboardBottomInset <= 0) {
+      return;
+    }
+    noteFormAnchorRef.current?.measureInWindow((_x, y, _width, height) => {
+      const keyboardTop = windowHeight - keyboardBottomInset;
+      const formBottom = y + height;
+      const overlap = formBottom - (keyboardTop - 16);
+      if (overlap <= 0) {
+        return;
+      }
+      detailListRef.current?.scrollToOffset({
+        offset: Math.max(0, detailScrollOffsetRef.current + overlap),
+        animated: true,
+      });
+    });
+  }, [keyboardBottomInset, windowHeight]);
+
+  useEffect(() => {
+    if (!isNoteFormOpen || keyboardBottomInset <= 0) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      scrollNoteFormAboveKeyboard();
+    }, 80);
+    return () => clearTimeout(timer);
+  }, [isNoteFormOpen, keyboardBottomInset, scrollNoteFormAboveKeyboard]);
+
   const friendId = useMemo(() => {
     if (Array.isArray(params.id)) {
       return params.id[0] ?? '';
     }
     return params.id ?? '';
   }, [params.id]);
+
+  useEffect(() => {
+    const raw = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+    if (raw && (DETAIL_TAB_KEYS as readonly string[]).includes(raw)) {
+      setActiveTab(raw as DetailTabKey);
+    }
+  }, [friendId, params.tab]);
 
   const [homeFilter] = usePersistedFilter(FILTER_KEYS.home, DEFAULT_HOME_FILTER, {
     validate: isHomeFilterState,
@@ -1775,19 +1820,27 @@ export default function DetailScreen() {
             pointerEvents={adjacentTransition ? 'none' : 'auto'}
           >
             <FlatList
+                ref={detailListRef}
                 style={{ flex: 1, marginHorizontal: isFlatProfileCard ? 0 : 6 }}
                 data={isEpisodeTab ? filteredEpisodes : []}
                 keyExtractor={(item) => item.id}
                 renderItem={useSharedEpisodeCard ? renderSharedEpisodeItem : renderLegacyEpisodeItem}
                 ItemSeparatorComponent={episodeItemSeparator}
                 keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
                 initialNumToRender={6}
                 maxToRenderPerBatch={6}
                 windowSize={7}
                 removeClippedSubviews
                 showsVerticalScrollIndicator
+                onScroll={(event) => {
+                  detailScrollOffsetRef.current = event.nativeEvent.contentOffset.y;
+                }}
+                scrollEventThrottle={16}
                 contentContainerStyle={{
-                  paddingBottom: bottomNavClearance > 0 ? 60 : Spacing.lg,
+                  paddingBottom:
+                    (bottomNavClearance > 0 ? 60 : Spacing.lg) +
+                    (isNoteFormOpen ? keyboardBottomInset : 0),
                 }}
                 ListHeaderComponentStyle={{ marginBottom: 0 }}
                 ListEmptyComponent={
@@ -2212,7 +2265,7 @@ export default function DetailScreen() {
             </View>
 
             {isHabitFormVisible && (
-              <View style={styles.sayingFormCard}>
+              <View ref={noteFormAnchorRef} collapsable={false} style={styles.sayingFormCard}>
                 <TextInput
                   style={[styles.sayingTextInput, { height: Math.max(48, habitInputHeight) }]}
                   placeholder="習性（自由記入）"
@@ -2221,8 +2274,14 @@ export default function DetailScreen() {
                   value={habitText}
                   onContentSizeChange={(event) => {
                     setHabitInputHeight(event.nativeEvent.contentSize.height + 20);
+                    if (keyboardBottomInset > 0) {
+                      setTimeout(() => scrollNoteFormAboveKeyboard(), 50);
+                    }
                   }}
                   onChangeText={setHabitText}
+                  onFocus={() => {
+                    setTimeout(() => scrollNoteFormAboveKeyboard(), 80);
+                  }}
                 />
                 <View style={styles.sayingActionRow}>
                   <Pressable
@@ -2289,7 +2348,7 @@ export default function DetailScreen() {
             </View>
 
             {isSayingFormVisible && (
-              <View style={styles.sayingFormCard}>
+              <View ref={noteFormAnchorRef} collapsable={false} style={styles.sayingFormCard}>
                 <TextInput
                   style={[styles.sayingTextInput, { height: Math.max(48, sayingInputHeight) }]}
                   placeholder="彼曰く（自由記入）"
@@ -2298,8 +2357,14 @@ export default function DetailScreen() {
                   value={sayingText}
                   onContentSizeChange={(event) => {
                     setSayingInputHeight(event.nativeEvent.contentSize.height + 20);
+                    if (keyboardBottomInset > 0) {
+                      setTimeout(() => scrollNoteFormAboveKeyboard(), 50);
+                    }
                   }}
                   onChangeText={setSayingText}
+                  onFocus={() => {
+                    setTimeout(() => scrollNoteFormAboveKeyboard(), 80);
+                  }}
                 />
                 <Pressable
                   style={[styles.episodeInput, styles.sayingDateInput]}

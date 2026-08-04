@@ -6,7 +6,14 @@ import {
   getEventsByDateRange,
 } from '../db';
 import type { EpisodeParticipant, Event } from '../types';
-import { buildAllDayEndAt, buildAllDayStartAt, eventOccursOnLocalDate, getLocalDateKeysForEvent, parseDateKey } from './eventHelpers';
+import {
+  buildAllDayEndAt,
+  buildAllDayStartAt,
+  eventOccursOnLocalDate,
+  getLocalDateKeysForEvent,
+  isEventStartInFuture,
+  parseDateKey,
+} from './eventHelpers';
 import { normalizeEpisodeTag } from './episodeHelpers';
 import { friendIdsToProfileIds, syncEventParticipants } from './eventParticipantHelpers';
 
@@ -74,6 +81,9 @@ export const findMatchingEventsForEpisode = (
   const matches: EpisodeEventMatch[] = [];
 
   events.forEach((event) => {
+    if (isEventStartInFuture(event)) {
+      return;
+    }
     if (!eventOccursOnLocalDate(event, dateKey)) {
       return;
     }
@@ -108,7 +118,7 @@ export const findEventsOnEpisodeDate = (episodeDate: string): Event[] => {
   }
 
   return getEventsByDateRange(range.rangeStartAt, range.rangeEndAt)
-    .filter((event) => eventOccursOnLocalDate(event, dateKey))
+    .filter((event) => eventOccursOnLocalDate(event, dateKey) && !isEventStartInFuture(event))
     .sort((left, right) => {
       const startCmp = left.startAt.localeCompare(right.startAt);
       if (startCmp !== 0) {
@@ -136,6 +146,9 @@ export const searchEventsForEpisodeLink = (
 
   const hits: EventSearchHit[] = [];
   for (const event of events) {
+    if (isEventStartInFuture(event)) {
+      continue;
+    }
     if (normalizedQuery) {
       const title = event.title.toLocaleLowerCase('ja');
       const memo = (event.memo ?? '').toLocaleLowerCase('ja');

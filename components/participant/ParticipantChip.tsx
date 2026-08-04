@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Image, Pressable, Text, useWindowDimensions, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { getScaledHomeCardPhotoCornerRadius } from '@/utils/homeCardPhotoMetrics';
 import {
   PARTICIPANT_CHIP_FITTED_BORDER_RADIUS,
@@ -21,24 +22,14 @@ type ParticipantChipProps = {
 
 function FittedChipAvatar({
   photoUri,
-  label,
   cornerRadius,
 }: {
-  photoUri?: string;
-  label: string;
+  photoUri: string;
   cornerRadius: number;
 }) {
-  const initial = label.trim().slice(0, 1) || '?';
-
   return (
     <View style={[styles.avatarFittedOuter, { borderRadius: cornerRadius }]}>
-      {photoUri ? (
-        <Image source={{ uri: photoUri }} style={styles.avatarFittedImage} resizeMode="cover" />
-      ) : (
-        <View style={styles.avatarFittedPlaceholder}>
-          <Text style={styles.avatarInitialCompact}>{initial}</Text>
-        </View>
-      )}
+      <Image source={{ uri: photoUri }} style={styles.avatarFittedImage} resizeMode="cover" />
     </View>
   );
 }
@@ -54,6 +45,7 @@ export function ParticipantChip({
   const content = useContentColors();
   const { width: screenWidth } = useWindowDimensions();
   const isGroup = chip.kind === 'group';
+  const hasPhoto = Boolean(!isGroup && chip.photoUri?.trim());
   const isFitted = chipStyle === 'fitted';
   const fittedPhotoCornerRadius = useMemo(
     () =>
@@ -62,53 +54,47 @@ export function ParticipantChip({
         : 0,
     [isFitted, screenWidth]
   );
+  const photoUri = chip.photoUri?.trim() || undefined;
+  const fittedRadius = isFitted ? PARTICIPANT_CHIP_FITTED_BORDER_RADIUS : undefined;
+  const groupIconSize = isFitted ? 14 : compact ? 14 : 16;
 
   return (
     <View
       style={[
         styles.chip,
         contentPersonTagStyle(content),
+        compact && styles.chipCompact,
         isFitted && styles.chipFitted,
-        isGroup && styles.chipGroup,
+        (isGroup || !hasPhoto) && styles.chipTextOnly,
+        isGroup && styles.chipGroupBorder,
         chipBackgroundColor ? { backgroundColor: chipBackgroundColor } : null,
-        isFitted ? { borderRadius: PARTICIPANT_CHIP_FITTED_BORDER_RADIUS } : null,
+        fittedRadius != null ? { borderRadius: fittedRadius } : null,
       ]}
     >
       <Pressable
-        style={[styles.chipBody, isFitted && styles.chipBodyFitted, isGroup && styles.chipBodyGroup]}
+        style={[
+          styles.chipBody,
+          isFitted && styles.chipBodyFitted,
+          (isGroup || !hasPhoto) && styles.chipBodyTextOnly,
+        ]}
         onPress={onPress}
         disabled={!onPress}
       >
-        {!isGroup ? (
+        {isGroup ? (
+          <Ionicons
+            name="people-outline"
+            size={groupIconSize}
+            color={content.contentTextSecondary}
+          />
+        ) : null}
+        {hasPhoto && photoUri ? (
           isFitted ? (
-            <FittedChipAvatar
-              photoUri={chip.photoUri ?? undefined}
-              label={chip.label}
-              cornerRadius={fittedPhotoCornerRadius}
-            />
-          ) : chip.photoUri ? (
+            <FittedChipAvatar photoUri={photoUri} cornerRadius={fittedPhotoCornerRadius} />
+          ) : (
             <Image
-              source={{ uri: chip.photoUri }}
+              source={{ uri: photoUri }}
               style={[styles.avatar, compact && styles.avatarCompact]}
             />
-          ) : (
-            <View
-              style={[
-                styles.avatarPlaceholder,
-                compact && styles.avatarCompact,
-                { backgroundColor: content.contentPhotoPlaceholder },
-              ]}
-            >
-              <Text
-                style={[
-                  styles.avatarInitial,
-                  compact && styles.avatarInitialCompact,
-                  { color: content.contentPhotoPlaceholderText },
-                ]}
-              >
-                {chip.label.trim().slice(0, 1) || '?'}
-              </Text>
-            </View>
           )
         ) : null}
         <Text style={[styles.name, compact && styles.nameCompact, contentTagTextStyle(content)]}>

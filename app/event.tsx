@@ -16,8 +16,8 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import type { Option } from '@/components/episode/types';
-import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
-import { formatEpisodeDateToYMD, parseEpisodeDateString } from '@/components/episode/types';
+import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
+import { formatEpisodeDateToYMD } from '@/components/episode/types';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
@@ -34,6 +34,7 @@ import {
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
   createEvent,
   deleteEvent,
@@ -44,6 +45,7 @@ import {
   getEpisodesByEventId,
   getEvent,
   getEventParticipants,
+  getEpisodeParticipantFriendIds,
   getMergedEpisodeTagLabels,
   getDefaultProfile,
   getMyself,
@@ -53,8 +55,8 @@ import {
   updateEvent,
   updateEventNotificationId,
 } from '../db';
-import type { Episode, EventInput, Friend, Task } from '../types';
-import { buildParticipantChips } from '../utils/episodeHelpers';
+import type { Episode, EpisodeParticipant, EventInput, Friend, Task } from '../types';
+import { buildParticipantChipDisplays, buildParticipantChips } from '../utils/episodeHelpers';
 
 const buildFriendNameById = (friendList: Friend[]): Map<string, string> =>
   new Map(friendList.map((friend) => [friend.id, friend.name]));
@@ -89,7 +91,11 @@ import {
   requestNotificationPermissionOnFirstCreate,
   scheduleEventNotification,
 } from '../utils/eventNotifications';
-import { clampLinkedEpisodeDatesToEvent } from '../utils/eventEpisodeBidirectionalSync';
+import {
+  clampLinkedEpisodeDatesToEvent,
+  deleteEpisodesLinkedToEvent,
+  unlinkEpisodesFromEvent,
+} from '../utils/eventEpisodeBidirectionalSync';
 
 type PickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime' | null;
 
@@ -123,11 +129,23 @@ const addDaysToDateKey = (dateKey: string, days: number): string => {
 
 export default function EventScreen() {
   const router = useRouter();
+  const kit = useUiKit();
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const switchColors = contentSwitchColors(content);
   const fieldCorner = { borderRadius: 0 };
+  /** 真っ白すぎない薄い塗り（白テーマは #F2F2F2、他は personTag 背景）。枠と＋は同色 */
+  const plusButtonFill = {
+    borderColor: content.contentTextSecondary,
+    backgroundColor:
+      appTheme?.variant === 'white' ? '#F2F2F2' : content.contentPersonTagBg,
+  };
+  const plusButtonInk = { color: content.contentTextSecondary };
+  /** ラベル列を少し狭めて記入欄を左へ広げる */
+  const formLabelWidth = 72;
+  const fieldIndent =
+    kit.formLayout === 'horizontal' ? formLabelWidth + kit.formRowGap : 0;
   const params = useLocalSearchParams<{ eventId?: string; date?: string }>();
   const eventId = parseRouteParam(params.eventId);
   const initialDate = parseRouteParam(params.date);
@@ -146,7 +164,7 @@ export default function EventScreen() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
-  const [selectedProfileIds, setSelectedProfileIds] = useState<string[]>([]);
+  const [participantEntries, setParticipantEntries] = useState<EpisodeParticipant[]>([]);
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [selectorTab, setSelectorTab] = useState<'individual' | 'group'>('individual');
   const [selectedIndividualIds, setSelectedIndividualIds] = useState<Set<string>>(new Set());
@@ -188,13 +206,24 @@ export default function EventScreen() {
     );
   }, [availableTimingOptions, notifyTimingPreset]);
 
-  const participantDisplays = useMemo(
-    () => toEventParticipantDisplays(selectedProfileIds),
-    [selectedProfileIds]
-  );
-
   const friendNameById = useMemo(() => buildFriendNameById(friends), [friends]);
   const friendPhotoById = useMemo(() => buildFriendPhotoById(friends), [friends]);
+
+  const selectedProfileIds = useMemo(() => {
+    const friendIds = getEpisodeParticipantFriendIds({ participantEntries }).filter(
+      (friendId) => friendId !== myselfId
+    );
+    return friendIdsToProfileIds(friendIds);
+  }, [myselfId, participantEntries]);
+
+  const participantChips = useMemo(
+    () =>
+      buildParticipantChipDisplays(participantEntries, friendNameById, {
+        excludeFriendIds: myselfId ? [myselfId] : [],
+        friendPhotoById,
+      }),
+    [friendNameById, friendPhotoById, myselfId, participantEntries]
+  );
 
   const handleOpenLinkedEpisode = useCallback(
     (episode: Episode) => {
@@ -214,11 +243,15 @@ export default function EventScreen() {
     if (!isEditing) {
       return;
     }
+    const todayKey = formatDateKey(new Date());
+    if (!startDateKey.trim() || todayKey < startDateKey.trim()) {
+      return;
+    }
     router.push({
       pathname: '/episode',
       params: { createForEventId: eventId },
     });
-  }, [eventId, isEditing, router]);
+  }, [eventId, isEditing, router, startDateKey]);
 
   const loadEvent = useCallback(() => {
     initializeDatabase();
@@ -240,7 +273,7 @@ export default function EventScreen() {
       setStartTime(DEFAULT_START_TIME);
       setEndTime(DEFAULT_END_TIME);
       previousStartRef.current = combineLocalDateTime(baseDate, DEFAULT_START_TIME);
-      setSelectedProfileIds([]);
+      setParticipantEntries([]);
       setNotifyEnabled(true);
       setNotifyTimingPreset(DEFAULT_NOTIFY_TIMING_PRESET);
       setLinkedEpisodes([]);
@@ -278,15 +311,18 @@ export default function EventScreen() {
       setEndTime(formatTimeFromDate(end ?? start));
       previousStartRef.current = combineLocalDateTime(loadedStartDateKey, loadedStartTime);
     }
-    setSelectedProfileIds(
+    setParticipantEntries(
       (() => {
         const excludeProfileId = currentMyselfId
           ? getDefaultProfile(currentMyselfId)?.id ?? null
           : null;
         const participantIds = getEventParticipants(eventId).map((participant) => participant.profileId);
-        return excludeProfileId
+        const profileIds = excludeProfileId
           ? participantIds.filter((profileId) => profileId !== excludeProfileId)
           : participantIds;
+        return profileIdsToFriendIds(profileIds)
+          .filter((friendId) => friendId !== currentMyselfId)
+          .map((friendId) => ({ kind: 'individual' as const, value: friendId }));
       })()
     );
     setNotifyEnabled(event.notifyEnabled);
@@ -330,11 +366,16 @@ export default function EventScreen() {
     if (!isEditing) {
       return;
     }
+    const todayKey = formatDateKey(new Date());
+    const eventLastDateKey = (endDateKey.trim() || startDateKey).trim();
+    if (eventLastDateKey && eventLastDateKey < todayKey) {
+      return;
+    }
     router.push({
       pathname: '/task-edit',
       params: { eventId },
     });
-  }, [eventId, isEditing, router]);
+  }, [endDateKey, eventId, isEditing, router, startDateKey]);
 
   const performEventDelete = useCallback(async () => {
     initializeDatabase();
@@ -428,6 +469,25 @@ export default function EventScreen() {
 
   const screenTitle = isEditing ? '予定を編集' : '予定を追加';
 
+  /** 終了日（なければ開始日）が昨日以前なら過去予定 */
+  const isPastEvent = useMemo(() => {
+    const todayKey = formatDateKey(new Date());
+    const lastDateKey = (endDateKey.trim() || startDateKey).trim();
+    return Boolean(lastDateKey) && lastDateKey < todayKey;
+  }, [endDateKey, startDateKey]);
+  const showLinkedTasksSection = isEditing && (!isPastEvent || linkedTasks.length > 0);
+  const canAddLinkedTask = isEditing && !isPastEvent;
+
+  /** 開始日の前日まではエピソード追加不可。当日以降に追加欄を出す */
+  const canAddLinkedEpisode = useMemo(() => {
+    if (!isEditing || !startDateKey.trim()) {
+      return false;
+    }
+    const todayKey = formatDateKey(new Date());
+    return todayKey >= startDateKey.trim();
+  }, [isEditing, startDateKey]);
+  const showLinkedEpisodesSection = isEditing && (canAddLinkedEpisode || linkedEpisodes.length > 0);
+
   const buildEventInput = (): EventInput | null => {
     const normalizedTitle = title.trim();
     if (!normalizedTitle) {
@@ -520,34 +580,74 @@ export default function EventScreen() {
       await requestNotificationPermissionOnFirstCreate();
     }
 
-    if (isEditing) {
-      const ok = updateEvent(eventId, input);
-      if (!ok) {
-        Alert.alert('エラー', '予定の更新に失敗しました。');
+    const persistEvent = async (options?: { skipClamp?: boolean }) => {
+      if (isEditing) {
+        const ok = updateEvent(eventId, input);
+        if (!ok) {
+          Alert.alert('エラー', '予定の更新に失敗しました。');
+          return;
+        }
+        syncEventParticipants(eventId, selectedProfileIds);
+        if (!options?.skipClamp) {
+          clampLinkedEpisodeDatesToEvent(eventId);
+        }
+        await applySavedEventNotifications(eventId, previousNotificationId);
+        router.back();
         return;
       }
-      syncEventParticipants(eventId, selectedProfileIds);
-      clampLinkedEpisodeDatesToEvent(eventId);
-      await applySavedEventNotifications(eventId, previousNotificationId);
+
+      const created = createEvent(input);
+      if (!created) {
+        Alert.alert('エラー', '予定の作成に失敗しました。');
+        return;
+      }
+      syncEventParticipants(created.id, selectedProfileIds);
+      await applySavedEventNotifications(created.id, null);
       router.back();
-      return;
+    };
+
+    if (isEditing) {
+      const todayKey = formatDateKey(new Date());
+      const movingToFuture = startDateKey.trim() > todayKey;
+      const linked = getEpisodesByEventId(eventId);
+      if (movingToFuture && linked.length > 0) {
+        Alert.alert(
+          'エピソードとの矛盾',
+          '開始日を未来に変更すると、紐づいているエピソードを予定に残せません。どうしますか？',
+          [
+            { text: 'キャンセル', style: 'cancel' },
+            {
+              text: 'エピソードを削除',
+              style: 'destructive',
+              onPress: () => {
+                deleteEpisodesLinkedToEvent(eventId);
+                void persistEvent({ skipClamp: true });
+              },
+            },
+            {
+              text: '紐づけを解除',
+              onPress: () => {
+                unlinkEpisodesFromEvent(eventId);
+                void persistEvent({ skipClamp: true });
+              },
+            },
+          ]
+        );
+        return;
+      }
     }
 
-    const created = createEvent(input);
-    if (!created) {
-      Alert.alert('エラー', '予定の作成に失敗しました。');
-      return;
-    }
-    syncEventParticipants(created.id, selectedProfileIds);
-    await applySavedEventNotifications(created.id, null);
-    router.back();
+    await persistEvent();
   };
 
   const openParticipantSelector = () => {
-    const friendIds = profileIdsToFriendIds(selectedProfileIds).filter(
-      (friendId) => friendId !== myselfId
+    const individualIds = new Set(
+      participantEntries
+        .filter((entry) => entry.kind === 'individual')
+        .map((entry) => entry.value.trim())
+        .filter((friendId) => friendId.length > 0 && friendId !== myselfId)
     );
-    setSelectedIndividualIds(new Set(friendIds));
+    setSelectedIndividualIds(individualIds);
     setSelectedGroupValues(new Set());
     setSelectorTab('individual');
     setSelectorNameFilter('');
@@ -564,10 +664,11 @@ export default function EventScreen() {
   };
 
   const handleSelectorConfirm = () => {
-    const nextProfileIds = friendIdsToProfileIds(
-      Array.from(selectedIndividualIds).filter((friendId) => friendId !== myselfId)
-    );
-    setSelectedProfileIds(nextProfileIds);
+    // Individual IDs only; group-name tags deferred (settings 今後の構想).
+    const nextEntries: EpisodeParticipant[] = Array.from(selectedIndividualIds)
+      .filter((friendId) => friendId !== myselfId)
+      .map((friendId) => ({ kind: 'individual' as const, value: friendId }));
+    setParticipantEntries(nextEntries);
     setSelectorVisible(false);
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
@@ -589,8 +690,10 @@ export default function EventScreen() {
     });
   };
 
-  const handleRemoveParticipant = (profileId: string) => {
-    setSelectedProfileIds((prev) => prev.filter((id) => id !== profileId));
+  const handleRemoveParticipantChip = (chipId: string) => {
+    setParticipantEntries((prev) =>
+      prev.filter((entry) => `${entry.kind}:${entry.value}` !== chipId)
+    );
   };
 
   const handleOpenProfileDetail = (friendId: string) => {
@@ -598,19 +701,26 @@ export default function EventScreen() {
   };
 
   const pickerValue = useMemo(() => {
+    const safeEndDateKey = endDateKey.trim() || startDateKey;
+    const safeStartTime = startTime.trim() || DEFAULT_START_TIME;
+    const safeEndTime = endTime.trim() || DEFAULT_END_TIME;
     switch (activePicker) {
       case 'startDate':
         return parseDateKey(startDateKey);
       case 'endDate':
-        return parseDateKey(endDateKey);
+        return parseDateKey(safeEndDateKey);
       case 'startTime':
-        return combineLocalDateTime(startDateKey, startTime);
+        return combineLocalDateTime(startDateKey, safeStartTime);
       case 'endTime':
-        return combineLocalDateTime(endDateKey, endTime);
+        return combineLocalDateTime(safeEndDateKey, safeEndTime);
       default:
         return new Date();
     }
   }, [activePicker, endDateKey, endTime, startDateKey, startTime]);
+
+  const pickerMode = activePicker === 'startTime' || activePicker === 'endTime' ? 'time' : 'date';
+  const pickerMinimumDate =
+    allDay && activePicker === 'endDate' ? parseDateKey(startDateKey) : undefined;
 
   const applyStartDateChange = (selected: Date) => {
     const nextStartDateKey = formatEpisodeDateToYMD(selected);
@@ -697,7 +807,7 @@ export default function EventScreen() {
       >
         <FormScreenBody gap={Spacing.md} style={{ borderRadius: 0 }}>
         <FormScreenSection elevated style={styles.formSection}>
-          <FormRow label="タイトル">
+          <FormRow label="タイトル" labelWidth={formLabelWidth}>
             <TextInput
               style={[styles.textInput, fieldCorner, contentInputStyle(content)]}
               placeholder="予定のタイトル"
@@ -707,7 +817,7 @@ export default function EventScreen() {
             />
           </FormRow>
 
-          <FormRow label="エピソードタグ">
+          <FormRow label="予定タグ" labelWidth={formLabelWidth}>
             <Pressable
               style={[styles.pickerButton, fieldCorner, contentInputStyle(content)]}
               onPress={() => setTagModalVisible(true)}
@@ -724,7 +834,7 @@ export default function EventScreen() {
             </Pressable>
           </FormRow>
 
-          <FormRow label="終日" contentStyle={styles.switchField}>
+          <FormRow label="終日" labelWidth={formLabelWidth} contentStyle={styles.switchField}>
             <Switch
               value={allDay}
               onValueChange={setAllDay}
@@ -733,7 +843,7 @@ export default function EventScreen() {
             />
           </FormRow>
 
-          <FormRow label={`開始${allDay ? '日' : '日時'}`}>
+          <FormRow label={`開始${allDay ? '日' : '日時'}`} labelWidth={formLabelWidth}>
             <View style={styles.dateTimeRow}>
               <Pressable
                 style={[styles.pickerButton, styles.dateButton, fieldCorner, contentInputStyle(content)]}
@@ -752,7 +862,7 @@ export default function EventScreen() {
             </View>
           </FormRow>
 
-          <FormRow label={`終了${allDay ? '日' : '日時'}`}>
+          <FormRow label={`終了${allDay ? '日' : '日時'}`} labelWidth={formLabelWidth}>
             <View style={styles.dateTimeRow}>
               <Pressable
                 style={[styles.pickerButton, styles.dateButton, fieldCorner, contentInputStyle(content)]}
@@ -788,21 +898,15 @@ export default function EventScreen() {
           </FormRow>
 
           {activePicker ? (
-            <View style={styles.pickerWrap}>
+            <View style={[styles.pickerWrap, { marginLeft: fieldIndent }]}>
               <DateTimePicker
-                value={activePicker.includes('Date') ? parseEpisodeDateString(
-                  activePicker === 'startDate' ? startDateKey : endDateKey
-                ) : pickerValue}
-                mode={activePicker.includes('Date') ? 'date' : 'time'}
+                value={Number.isNaN(pickerValue.getTime()) ? new Date() : pickerValue}
+                mode={pickerMode}
                 display="spinner"
                 locale="ja-JP"
                 style={styles.picker}
                 {...dateTimePickerProps}
-                minimumDate={
-                  allDay && activePicker === 'endDate'
-                    ? parseDateKey(startDateKey)
-                    : undefined
-                }
+                {...(pickerMinimumDate ? { minimumDate: pickerMinimumDate } : {})}
                 onChange={handlePickerChange}
               />
               <Pressable
@@ -814,7 +918,32 @@ export default function EventScreen() {
             </View>
           ) : null}
 
-          <FormRow label="メモ" contentStyle={styles.memoField}>
+          <FormRow
+            label="会う人"
+            labelWidth={formLabelWidth}
+            style={styles.participantsFormRow}
+          >
+            <View style={[styles.participantsTagArea, fieldCorner, contentInputStyle(content)]}>
+              <ParticipantChipList
+                chips={participantChips}
+                layout="wrap"
+                onPressProfile={handleOpenProfileDetail}
+                onRemoveChip={handleRemoveParticipantChip}
+                trailing={
+                  <Pressable
+                    accessibilityLabel="会う人を追加"
+                    style={[styles.addParticipantPlusButton, plusButtonFill]}
+                    onPress={openParticipantSelector}
+                  >
+                    <Text style={[styles.addParticipantPlusButtonText, plusButtonInk]}>
+                      ＋
+                    </Text>
+                  </Pressable>
+                }
+              />
+            </View>
+          </FormRow>
+          <FormRow label="メモ" labelWidth={formLabelWidth} contentStyle={styles.memoField}>
             <ViewportCappedMultilineTextInput
               style={[styles.textInput, styles.memoInput, fieldCorner, contentInputStyle(content)]}
               placeholder="メモ（任意）"
@@ -827,7 +956,7 @@ export default function EventScreen() {
         </FormScreenSection>
 
         <FormScreenSection elevated style={styles.formSection}>
-          <FormRow label="通知" contentStyle={styles.switchField}>
+          <FormRow label="通知" labelWidth={formLabelWidth} contentStyle={styles.switchField}>
             <Switch
               value={notifyEnabled}
               onValueChange={setNotifyEnabled}
@@ -836,7 +965,11 @@ export default function EventScreen() {
             />
           </FormRow>
           {notifyEnabled ? (
-            <FormRow label="通知タイミング">
+            <FormRow
+              label="通知タイミング"
+              labelWidth={formLabelWidth}
+              labelNumberOfLines={2}
+            >
               <Pressable
                 style={[styles.pickerButton, fieldCorner, contentInputStyle(content)]}
                 onPress={() => setTimingModalVisible(true)}
@@ -847,39 +980,25 @@ export default function EventScreen() {
           ) : null}
         </FormScreenSection>
 
-        <FormScreenSection elevated style={styles.formSection}>
-          <View style={styles.sectionHeaderRow}>
-            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>会う人</Text>
-            <Pressable
-              style={[styles.addParticipantButton, fieldCorner, contentTagStyle(content)]}
-              onPress={openParticipantSelector}
-            >
-              <Text style={[styles.addParticipantButtonText, contentTextStyle(content)]}>追加</Text>
-            </Pressable>
-          </View>
-          {participantDisplays.length > 0 ? (
-            <EventParticipantChipList
-              participants={participantDisplays}
-              onPressProfile={handleOpenProfileDetail}
-              onRemoveProfile={handleRemoveParticipant}
-            />
-          ) : (
-            <Text style={[styles.emptyParticipantText, contentMutedTextStyle(content)]}>
-              会う人が選択されていません
-            </Text>
-          )}
-        </FormScreenSection>
-
-        {isEditing ? (
+        {showLinkedTasksSection ? (
           <FormScreenSection elevated style={styles.formSection}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.fieldLabel, contentTextStyle(content)]}>タスク</Text>
-              <Pressable
-                style={[styles.addParticipantButton, fieldCorner, contentTagStyle(content)]}
-                onPress={handleAddLinkedTask}
-              >
-                <Text style={[styles.addParticipantButtonText, contentTextStyle(content)]}>追加</Text>
-              </Pressable>
+              {canAddLinkedTask ? (
+                <Pressable
+                  accessibilityLabel="タスクを追加"
+                  style={[
+                    styles.addParticipantPlusButton,
+                    styles.sectionHeaderPlusButton,
+                    plusButtonFill,
+                  ]}
+                  onPress={handleAddLinkedTask}
+                >
+                  <Text style={[styles.addParticipantPlusButtonText, plusButtonInk]}>
+                    ＋
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
             {linkedTasks.length > 0 ? (
               <View style={{ gap: 8 }}>
@@ -911,16 +1030,25 @@ export default function EventScreen() {
           </FormScreenSection>
         ) : null}
 
-        {isEditing ? (
+        {showLinkedEpisodesSection ? (
           <FormScreenSection elevated style={styles.formSection}>
             <View style={styles.sectionHeaderRow}>
               <Text style={[styles.fieldLabel, contentTextStyle(content)]}>エピソード</Text>
-              <Pressable
-                style={[styles.addParticipantButton, fieldCorner, contentTagStyle(content)]}
-                onPress={handleAddLinkedEpisode}
-              >
-                <Text style={[styles.addParticipantButtonText, contentTextStyle(content)]}>追加</Text>
-              </Pressable>
+              {canAddLinkedEpisode ? (
+                <Pressable
+                  accessibilityLabel="エピソードを追加"
+                  style={[
+                    styles.addParticipantPlusButton,
+                    styles.sectionHeaderPlusButton,
+                    plusButtonFill,
+                  ]}
+                  onPress={handleAddLinkedEpisode}
+                >
+                  <Text style={[styles.addParticipantPlusButtonText, plusButtonInk]}>
+                    ＋
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
             {linkedEpisodes.length > 0 ? (
               <View style={styles.linkedEpisodeList}>
@@ -952,14 +1080,16 @@ export default function EventScreen() {
           </FormScreenSection>
         ) : null}
 
-        <View style={styles.formActions}>
-          <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
-            <Text style={styles.formCancelButtonText}>キャンセル</Text>
-          </Pressable>
-          <Pressable style={styles.formSaveButton} onPress={handleSave}>
-            <Text style={styles.formSaveButtonText}>保存</Text>
-          </Pressable>
-        </View>
+        <FormScreenSection elevated style={[styles.formSection, styles.formActionsSection]}>
+          <View style={styles.formActions}>
+            <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
+              <Text style={styles.formCancelButtonText}>キャンセル</Text>
+            </Pressable>
+            <Pressable style={styles.formSaveButton} onPress={handleSave}>
+              <Text style={styles.formSaveButtonText}>保存</Text>
+            </Pressable>
+          </View>
+        </FormScreenSection>
         </FormScreenBody>
 
         {isEditing ? (
@@ -1029,7 +1159,7 @@ export default function EventScreen() {
             style={[styles.timingModalCard, contentSurfaceStyle(content)]}
             onPress={(event) => event.stopPropagation()}
           >
-            <Text style={[styles.timingModalTitle, contentTextStyle(content)]}>エピソードタグ</Text>
+            <Text style={[styles.timingModalTitle, contentTextStyle(content)]}>予定タグ</Text>
             <ScrollView style={styles.timingModalOptions}>
               <Pressable
                 style={[
@@ -1166,6 +1296,7 @@ export default function EventScreen() {
         }}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        enableGroupTab={false}
       />
     </>
   );
@@ -1188,8 +1319,11 @@ const styles = StyleSheet.create({
   formActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    flexWrap: 'wrap',
     gap: 8,
-    marginTop: Spacing.sm,
+  },
+  formActionsSection: {
+    paddingTop: Spacing.sm,
   },
   formCancelButton: {
     backgroundColor: 'transparent',
@@ -1223,6 +1357,17 @@ const styles = StyleSheet.create({
   },
   formSection: {
     gap: 8,
+  },
+  participantsFormRow: {
+    alignItems: 'center',
+  },
+  participantsTagArea: {
+    borderWidth: 1,
+    minHeight: 42,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    justifyContent: 'center',
+    width: '100%',
   },
   fieldLabel: {
     fontSize: Typography.base,
@@ -1330,16 +1475,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: Spacing.xs,
   },
-  addParticipantButton: {
-    backgroundColor: Theme.border,
-    borderRadius: 0,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  addParticipantPlusButton: {
+    width: 22,
+    height: 22,
+    borderRadius: 999,
+    borderWidth: 1.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    /** 折り返し最終行の右端へ寄せる */
+    marginLeft: 'auto',
   },
-  addParticipantButtonText: {
+  sectionHeaderPlusButton: {
+    marginLeft: 0,
+  },
+  addParticipantPlusButtonText: {
     color: Theme.textPrimary,
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
+    lineHeight: 15,
+    textAlign: 'center',
   },
   emptyParticipantText: {
     fontSize: Typography.base,

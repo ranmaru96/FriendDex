@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { HomeCardElevation, Radius, Theme } from '@/constants/theme';
+import { HomeCardElevation, Radius } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { withAlpha } from '@/utils/colorHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import type { Friend } from '../../types';
 
@@ -13,16 +14,31 @@ type FriendHomeCardProps = {
   friend: Friend;
   width?: number;
   isMyself?: boolean;
+  /** 一覧で誕生月絞り込み中など、右上に月日を出す（本人マークと同型） */
+  birthdayBadgeText?: string | null;
   onPress?: () => void;
   onLongPress?: () => void;
   delayLongPress?: number;
   style?: StyleProp<ViewStyle>;
 };
 
+/** YYYY-MM-DD → `M/D`。不正なら null */
+export function formatFriendBirthdayBadge(birthday: string | null | undefined): string | null {
+  const trimmed = typeof birthday === 'string' ? birthday.trim() : '';
+  if (!trimmed) return null;
+  const parts = trimmed.split('-').map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  const month = parts[1];
+  const day = parts[2];
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `${month}/${day}`;
+}
+
 export function FriendHomeCard({
   friend,
   width,
   isMyself = false,
+  birthdayBadgeText = null,
   onPress,
   onLongPress,
   delayLongPress,
@@ -36,6 +52,15 @@ export function FriendHomeCard({
   const cardBorderColor = content.contentTextSecondary;
   const cardBorderWidth = 1;
   const cardElevation = appTheme?.colors.homeCardElevation ?? HomeCardElevation;
+  const normalizedBirthdayBadge = birthdayBadgeText?.trim() ? birthdayBadgeText.trim() : null;
+  const birthdayBadgeStyle = {
+    backgroundColor: withAlpha(content.contentCard, 0.95),
+    borderColor: content.contentBorder,
+  };
+  const myselfBadgeStyle = {
+    backgroundColor: withAlpha(content.contentCard, 0.45),
+  };
+  const badgeTextStyle = { color: content.contentText };
 
   const cardOuterStyle = [
     styles.cardOuter,
@@ -49,8 +74,15 @@ export function FriendHomeCard({
   const inner = (
     <>
       {isMyself ? (
-        <View style={styles.myselfBadge} pointerEvents="none">
-          <Text style={styles.myselfBadgeText}>本人</Text>
+        <View style={[styles.myselfBadge, myselfBadgeStyle]} pointerEvents="none">
+          <Text style={[styles.cornerBadgeText, badgeTextStyle]}>me</Text>
+        </View>
+      ) : null}
+      {normalizedBirthdayBadge != null ? (
+        <View style={styles.birthdayBadgeStack} pointerEvents="none">
+          <View style={[styles.cornerBadge, birthdayBadgeStyle]}>
+            <Text style={[styles.cornerBadgeText, badgeTextStyle]}>{normalizedBirthdayBadge}</Text>
+          </View>
         </View>
       ) : null}
       <View
@@ -139,17 +171,26 @@ const styles = StyleSheet.create({
   myselfBadge: {
     position: 'absolute',
     top: 6,
+    left: 6,
+    zIndex: 3,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  birthdayBadgeStack: {
+    position: 'absolute',
+    top: 6,
     right: 6,
     zIndex: 3,
-    backgroundColor: Theme.accent,
+    alignItems: 'flex-end',
+  },
+  cornerBadge: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: Theme.accent,
   },
-  myselfBadgeText: {
-    color: Theme.onAccent,
+  cornerBadgeText: {
     fontSize: 11,
     fontWeight: '800',
   },

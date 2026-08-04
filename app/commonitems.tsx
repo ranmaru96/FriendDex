@@ -55,13 +55,13 @@ import {
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 
-type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先' | 'エピソードタグ';
+type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先' | '予定タグ';
 type Option = { label: string; value: string };
 
 const TAGS_SCROLL_MAX_HEIGHT = Math.max(120, Dimensions.get('window').height - 280);
 const TAB_TAG_DIVIDER_INSET = Spacing.md;
 
-const TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '好物', '苦手', '公開先', 'エピソードタグ'];
+const TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '好物', '苦手', '公開先', '予定タグ'];
 
 const TAB_ICONS: Record<CommonItemTabKey, ComponentProps<typeof Ionicons>['name']> = {
   所属: 'people-outline',
@@ -70,7 +70,7 @@ const TAB_ICONS: Record<CommonItemTabKey, ComponentProps<typeof Ionicons>['name'
   好物: 'heart-outline',
   苦手: 'thumbs-down-outline',
   公開先: 'eye-outline',
-  エピソードタグ: 'pricetags-outline',
+  予定タグ: 'pricetags-outline',
 };
 
 const DEFAULT_CHIP_STYLE = {
@@ -87,7 +87,7 @@ const TAB_KIND_MAP: Record<CommonItemTabKey, CommonItemKind> = {
   好物: 'like',
   苦手: 'dislike',
   公開先: 'visibility_group',
-  エピソードタグ: 'episode_tag',
+  予定タグ: 'episode_tag',
 };
 
 const GROUP_KINDS: CommonItemKind[] = [
@@ -664,7 +664,7 @@ export default function CommonItemsScreen() {
         </View>
       </TabScreenTemplate>
 
-      {/* Simple editor（エピソードタグなど） */}
+      {/* Simple editor（予定タグなど） */}
       <Modal visible={editorVisible} transparent animationType="fade" onRequestClose={() => setEditorVisible(false)}>
         <View style={styles.editorOverlay}>
           <View style={[styles.editorCard, contentSurfaceStyle(content), styles.editorCardPreview]}>

@@ -4,6 +4,11 @@ import { Radius, Theme } from '@/constants/theme';
 export const PARTICIPANT_CHIP_FITTED_PHOTO_SIZE = 22;
 export const PARTICIPANT_CHIP_FITTED_BORDER_RADIUS = 6;
 
+/** 写真ありタグと同じ高さ（avatar + border） */
+export const PARTICIPANT_CHIP_HEIGHT = 34;
+export const PARTICIPANT_CHIP_COMPACT_HEIGHT = 30;
+export const PARTICIPANT_CHIP_FITTED_HEIGHT = 28;
+
 export const participantChipStyles = StyleSheet.create({
   scroll: {
     flexGrow: 0,
@@ -19,13 +24,18 @@ export const participantChipStyles = StyleSheet.create({
   wrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    alignItems: 'center',
     gap: 6,
+  },
+  wrapWithTrailing: {
+    width: '100%',
   },
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
     flexShrink: 0,
+    height: PARTICIPANT_CHIP_HEIGHT,
     borderWidth: 1,
     borderColor: Theme.border,
     borderRadius: 999,
@@ -33,16 +43,21 @@ export const participantChipStyles = StyleSheet.create({
     paddingLeft: 4,
     paddingRight: 4,
   },
+  chipCompact: {
+    height: PARTICIPANT_CHIP_COMPACT_HEIGHT,
+  },
   /** カレンダー予定カード用：写真左・コンパクト */
   chipFitted: {
+    height: PARTICIPANT_CHIP_FITTED_HEIGHT,
     paddingLeft: 2,
     paddingRight: 4,
   },
   chipBodyFitted: {
     gap: 3,
-    paddingVertical: 2,
+    paddingVertical: 0,
     paddingLeft: 2,
     paddingRight: 2,
+    alignSelf: 'stretch',
   },
   avatarFittedOuter: {
     width: PARTICIPANT_CHIP_FITTED_PHOTO_SIZE,
@@ -61,21 +76,28 @@ export const participantChipStyles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  chipGroup: {
-    paddingLeft: 10,
-    paddingRight: 10,
+  /** 写真なし個人・グループ（アイコン＋名前） */
+  chipTextOnly: {
+    paddingLeft: 8,
+    paddingRight: 8,
+  },
+  /** グループ：枠線を個人の倍に */
+  chipGroupBorder: {
+    borderWidth: 2,
   },
   chipBody: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'stretch',
     gap: 6,
-    paddingVertical: 4,
+    paddingVertical: 0,
     paddingLeft: 4,
     paddingRight: 2,
   },
-  chipBodyGroup: {
+  chipBodyTextOnly: {
     paddingLeft: 0,
     paddingRight: 0,
+    gap: 4,
   },
   avatar: {
     width: 24,

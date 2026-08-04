@@ -3,7 +3,6 @@ import {
   Dimensions,
   FlatList,
   Image,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -17,6 +16,7 @@ import {
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
+import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
 import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
@@ -24,7 +24,6 @@ import {
   contentInputStyle,
   contentMutedTextStyle,
   contentPersonTagStyle,
-  contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentTagStyle,
   contentTagTextStyle,
@@ -122,47 +121,15 @@ function SelectInput({
           <Text style={[styles.selectChipChevron, contentMutedTextStyle(content)]}>▼</Text>
         ) : null}
       </Pressable>
-      <Modal transparent animationType="fade" visible={modalVisible} onRequestClose={() => setModalVisible(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, contentSurfaceStyle(content)]}>
-            <Text style={[styles.modalTitle, contentTextStyle(content)]}>{placeholder}</Text>
-            <ScrollView style={styles.modalOptionsScroll} keyboardShouldPersistTaps="handled">
-              {includeEmptyOption ? (
-                <Pressable
-                  style={[
-                    styles.modalOption,
-                    value === '' ? contentSelectedOptionStyle(content) : null,
-                  ]}
-                  onPress={() => {
-                    onChange('');
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.modalOptionText, contentTextStyle(content)]}>{placeholder}</Text>
-                </Pressable>
-              ) : null}
-              {options.map((option) => (
-                <Pressable
-                  key={option.value}
-                  style={[
-                    styles.modalOption,
-                    value === option.value ? contentSelectedOptionStyle(content) : null,
-                  ]}
-                  onPress={() => {
-                    onChange(option.value);
-                    setModalVisible(false);
-                  }}
-                >
-                  <Text style={[styles.modalOptionText, contentTextStyle(content)]}>{option.label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable style={[styles.modalCloseButton, contentInputStyle(content)]} onPress={() => setModalVisible(false)}>
-              <Text style={[styles.modalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+      <OptionPickerModal
+        visible={modalVisible}
+        label={placeholder}
+        value={value}
+        options={options}
+        onValueChange={onChange}
+        onClose={() => setModalVisible(false)}
+        clearLabel={includeEmptyOption ? placeholder : null}
+      />
     </>
   );
 }
@@ -262,8 +229,8 @@ export function EpisodeFormOverlay({
                         locale="ja-JP"
                         style={styles.datePickerSelf}
                         {...dateTimePickerProps}
-                        minimumDate={form.allowedEventDateRange?.minimumDate}
-                        maximumDate={form.allowedEventDateRange?.maximumDate}
+                        minimumDate={form.episodeDateMinimumDate ?? new Date(1900, 0, 1)}
+                        maximumDate={form.episodeDateMaximumDate}
                         onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                           if (Platform.OS !== 'ios') form.setShowDatePicker(false);
                           if (selected) form.setDate(formatEpisodeDateToYMD(selected));
@@ -494,6 +461,7 @@ export function EpisodeFormOverlay({
         onToggleGroup={form.toggleSelectorGroup}
         onCancel={form.handleSelectorCancel}
         onConfirm={form.handleSelectorConfirm}
+        enableGroupTab={form.selectorTarget === 'visibility'}
       />
 
       <PhotoCropModal
@@ -747,26 +715,4 @@ const styles = StyleSheet.create({
   },
   episodeSelectText: { fontSize: 14 },
   episodeSelectPlaceholder: { fontSize: 14 },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-  modalCard: {
-    borderRadius: Radius.md,
-    padding: 14,
-    maxHeight: '70%',
-  },
-  modalTitle: { fontSize: 16, fontWeight: '700', marginBottom: 10 },
-  modalOptionsScroll: { marginBottom: 10 },
-  modalOption: { paddingVertical: 10, paddingHorizontal: 8, borderRadius: Radius.sm },
-  modalOptionText: { fontSize: 14 },
-  modalCloseButton: {
-    alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: Radius.sm,
-  },
-  modalCloseButtonText: { fontWeight: '600' },
 });

@@ -554,6 +554,7 @@ export function SettlementIndividualLoanPanel() {
         onToggleGroup={toggleSelectorGroup}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        enableGroupTab={false}
       />
 
       <Modal visible={editLoan != null} animationType="slide" onRequestClose={closeEditLoan}>

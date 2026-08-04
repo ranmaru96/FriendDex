@@ -18,6 +18,31 @@ export function addDays(date: Date, days: number): Date {
   return next;
 }
 
+export type RecentSevenDayItem = {
+  ymd: string;
+  label: string;
+  done: boolean;
+  isToday: boolean;
+};
+
+/** 左が古く、右が今日の直近7日 */
+export function getRecentSevenDayItems(
+  completedOnSet: Set<string>,
+  asOf: Date = new Date()
+): RecentSevenDayItem[] {
+  return Array.from({ length: 7 }, (_, index) => {
+    const offset = index - 6;
+    const date = addDays(asOf, offset);
+    const ymd = toYmd(date);
+    return {
+      ymd,
+      label: `${date.getMonth() + 1}/${date.getDate()}`,
+      done: completedOnSet.has(ymd),
+      isToday: offset === 0,
+    };
+  });
+}
+
 export type TaskRecurrenceUnit = 'day' | 'week' | 'month' | 'year';
 
 export type TaskRecurrenceConfig = {
@@ -214,7 +239,7 @@ export function daysBetweenYmd(pastYmd: string, asOfYmd: string): number {
   const past = parseYmd(pastYmd);
   const asOf = parseYmd(asOfYmd);
   const ms = asOf.getTime() - past.getTime();
-  return Math.round(ms / (24 * 60 * 60 * 1000));
+  return Math.max(0, Math.floor(ms / (24 * 60 * 60 * 1000)));
 }
 
 /**

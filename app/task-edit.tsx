@@ -22,15 +22,25 @@ import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCapped
 import { DayRollPicker, MonthDayRollPicker, RollScrollLockProvider, useRollScrollLock } from '@/components/ui/RollSelect';
 import {
   createTask,
+  createTaskGroup,
   deleteTask,
   getAllEvents,
+  getAllTaskGroups,
   getEvent,
   getTask,
   getTaskCompletions,
   initializeDatabase,
   updateTask,
 } from '../db';
-import { Event, TaskCompletion, TaskInput, TaskKind, TaskPace, TaskRecurrenceUnit } from '../types';
+import {
+  Event,
+  TaskCompletion,
+  TaskGroup,
+  TaskInput,
+  TaskKind,
+  TaskPace,
+  TaskRecurrenceUnit,
+} from '../types';
 import {
   MONTH_NTH_OPTIONS,
   TaskRecurrenceConfig,
@@ -50,6 +60,10 @@ import {
   contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
+import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
+
+const GROUP_NONE = '';
+const GROUP_NEW = '__new__';
 
 function eventStartDateKey(event: Event): string {
   if (event.allDay) {
@@ -72,11 +86,21 @@ export default function TaskEditScreen() {
   const appTheme = useAppThemeOptional();
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const [formScrollEnabled, setRollScrolling] = useRollScrollLock();
-  const params = useLocalSearchParams<{ taskId?: string; eventId?: string; kind?: string }>();
+  const params = useLocalSearchParams<{
+    taskId?: string;
+    eventId?: string;
+    kind?: string;
+    groupId?: string;
+  }>();
   const taskId = typeof params.taskId === 'string' ? params.taskId : '';
   const presetEventId = typeof params.eventId === 'string' ? params.eventId : '';
+  const presetGroupId = typeof params.groupId === 'string' ? params.groupId.trim() : '';
   const presetKind: TaskKind | null =
-    params.kind === 'recurring' || params.kind === 'temporary' ? params.kind : null;
+    params.kind === 'recurring' || params.kind === 'temporary'
+      ? params.kind
+      : presetGroupId
+        ? 'recurring'
+        : null;
   const isEditing = Boolean(taskId);
   /** 予定起点: 臨時固定・種類選択を出さない */
   const [lockedToEvent, setLockedToEvent] = useState(Boolean(presetEventId));
@@ -102,12 +126,17 @@ export default function TaskEditScreen() {
   const [eventId, setEventId] = useState(presetEventId);
   const [events, setEvents] = useState<Event[]>([]);
   const [completions, setCompletions] = useState<TaskCompletion[]>([]);
+  const [taskGroups, setTaskGroups] = useState<TaskGroup[]>([]);
+  const [groupSelect, setGroupSelect] = useState(GROUP_NONE);
+  const [newGroupTitle, setNewGroupTitle] = useState('');
+  const [groupPickerVisible, setGroupPickerVisible] = useState(false);
   const [ready, setReady] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
       initializeDatabase();
       setEvents(getAllEvents());
+      setTaskGroups(getAllTaskGroups());
       if (taskId) {
         const task = getTask(taskId);
         if (!task) {
@@ -143,6 +172,8 @@ export default function TaskEditScreen() {
         setDueDate(task.dueDate ?? '');
         setEventId(task.eventId ?? '');
         setLockedToEvent(Boolean(task.eventId));
+        setGroupSelect(task.groupId ?? GROUP_NONE);
+        setNewGroupTitle('');
         setCompletions(task.kind === 'recurring' ? getTaskCompletions(taskId) : []);
       } else if (presetEventId) {
         setKind('temporary');
@@ -150,14 +181,18 @@ export default function TaskEditScreen() {
         setLockedToEvent(true);
         const event = getEvent(presetEventId);
         setDueDate(event ? eventStartDateKey(event) : '');
+        setGroupSelect(GROUP_NONE);
+        setNewGroupTitle('');
         setCompletions([]);
       } else {
         setLockedToEvent(false);
         setKind(presetKind ?? 'temporary');
+        setGroupSelect(presetGroupId || GROUP_NONE);
+        setNewGroupTitle('');
         setCompletions([]);
       }
       setReady(true);
-    }, [presetEventId, presetKind, router, taskId])
+    }, [presetEventId, presetGroupId, presetKind, router, taskId])
   );
 
   const buildConfig = (): TaskRecurrenceConfig => {
@@ -205,6 +240,27 @@ export default function TaskEditScreen() {
       }
     }
 
+    initializeDatabase();
+
+    let resolvedGroupId: string | null = null;
+    if (effectiveKind === 'recurring') {
+      if (groupSelect === GROUP_NEW) {
+        const groupTitle = newGroupTitle.trim();
+        if (!groupTitle) {
+          Alert.alert('入力エラー', '新しいグループ名を入力してください');
+          return;
+        }
+        const createdGroup = createTaskGroup({ title: groupTitle });
+        if (!createdGroup) {
+          Alert.alert('エラー', 'グループの作成に失敗しました');
+          return;
+        }
+        resolvedGroupId = createdGroup.id;
+      } else if (groupSelect) {
+        resolvedGroupId = groupSelect;
+      }
+    }
+
     const input: TaskInput = {
       kind: effectiveKind,
       title: trimmed,
@@ -214,9 +270,9 @@ export default function TaskEditScreen() {
       recurrenceConfig: effectiveKind === 'recurring' && pace === 'scheduled' ? buildConfig() : null,
       dueDate: effectiveKind === 'temporary' ? dueDate.trim() || null : null,
       eventId: effectiveKind === 'temporary' ? eventId.trim() || null : null,
+      groupId: resolvedGroupId,
     };
 
-    initializeDatabase();
     if (isEditing) {
       const ok = updateTask(taskId, input);
       if (!ok) {
@@ -233,20 +289,56 @@ export default function TaskEditScreen() {
     router.back();
   };
 
+  const confirmDeleteFinally = () => {
+    deleteTask(taskId);
+    router.back();
+  };
+
   const handleDelete = () => {
     if (!isEditing) return;
+    if (kind === 'recurring') {
+      Alert.alert(
+        '定期タスクを削除',
+        'この定期タスクを削除すると、これまでの実施履歴もすべて消えます。\nこの操作は取り消せません。',
+        [
+          { text: 'キャンセル', style: 'cancel' },
+          {
+            text: 'それでも削除する',
+            style: 'destructive',
+            onPress: () => {
+              Alert.alert(
+                '本当に削除しますか？',
+                '実施履歴を含めて完全に削除されます。よろしいですか？',
+                [
+                  { text: 'キャンセル', style: 'cancel' },
+                  { text: '完全に削除', style: 'destructive', onPress: confirmDeleteFinally },
+                ]
+              );
+            },
+          },
+        ]
+      );
+      return;
+    }
     Alert.alert('タスクを削除', 'このタスクを削除しますか？', [
       { text: 'キャンセル', style: 'cancel' },
-      {
-        text: '削除',
-        style: 'destructive',
-        onPress: () => {
-          deleteTask(taskId);
-          router.back();
-        },
-      },
+      { text: '削除', style: 'destructive', onPress: confirmDeleteFinally },
     ]);
   };
+
+  const groupPickerOptions = useMemo(
+    () => [
+      ...taskGroups.map((group) => ({ label: group.title, value: group.id })),
+      { label: '新しいグループ…', value: GROUP_NEW },
+    ],
+    [taskGroups]
+  );
+
+  const groupSelectLabel = useMemo(() => {
+    if (groupSelect === GROUP_NEW) return '新しいグループ…';
+    if (!groupSelect) return 'なし';
+    return taskGroups.find((group) => group.id === groupSelect)?.title ?? 'なし';
+  }, [groupSelect, taskGroups]);
 
   const previewLabel = useMemo(() => {
     if (kind !== 'recurring') return '';
@@ -370,6 +462,39 @@ export default function TaskEditScreen() {
 
         {kind === 'recurring' ? (
           <>
+            <FormScreenSection>
+              <FormRow label="グループ">
+                <Pressable
+                  style={[styles.pickerButton, contentInputStyle(content)]}
+                  onPress={() => setGroupPickerVisible(true)}
+                >
+                  <Text
+                    style={[
+                      styles.pickerButtonText,
+                      groupSelect ? contentTextStyle(content) : contentMutedTextStyle(content),
+                    ]}
+                  >
+                    {groupSelectLabel}
+                  </Text>
+                  <Text style={[styles.pickerChevron, contentMutedTextStyle(content)]}>▼</Text>
+                </Pressable>
+              </FormRow>
+              {groupSelect === GROUP_NEW ? (
+                <FormRow label="グループ名">
+                  <TextInput
+                    style={[styles.input, contentInputStyle(content)]}
+                    value={newGroupTitle}
+                    onChangeText={setNewGroupTitle}
+                    placeholder="例: 筋トレ"
+                    placeholderTextColor={content.contentTextSecondary}
+                  />
+                </FormRow>
+              ) : null}
+              <Text style={[styles.hint, contentMutedTextStyle(content)]}>
+                くくり用です。中のどれかを実行するとグループもその日「実施」になります
+              </Text>
+            </FormScreenSection>
+
             <FormScreenSection>
               <Text style={[styles.label, contentTextStyle(content)]}>ペース</Text>
               <View style={styles.chipRow}>
@@ -759,12 +884,32 @@ export default function TaskEditScreen() {
         ) : null}
 
         {isEditing ? (
-          <Pressable style={styles.deleteButton} onPress={handleDelete}>
+          <Pressable
+            style={[styles.deleteButton, { borderColor: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.1)' }]}
+            onPress={handleDelete}
+            accessibilityRole="button"
+            accessibilityLabel="タスクを削除"
+          >
             <Text style={styles.deleteText}>タスクを削除</Text>
           </Pressable>
         ) : null}
       </FormScreenBody>
       </RollScrollLockProvider>
+
+      <OptionPickerModal
+        visible={groupPickerVisible}
+        label="グループ"
+        value={groupSelect}
+        options={groupPickerOptions}
+        clearLabel="なし"
+        onValueChange={(value) => {
+          setGroupSelect(value);
+          if (value !== GROUP_NEW) {
+            setNewGroupTitle('');
+          }
+        }}
+        onClose={() => setGroupPickerVisible(false)}
+      />
     </FormScreenTemplate>
   );
 }
@@ -841,12 +986,18 @@ const styles = StyleSheet.create({
     minHeight: 40,
     borderWidth: 1,
     borderRadius: 8,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 10,
   },
   pickerButtonText: {
+    flex: 1,
     fontSize: 15,
     fontWeight: '600',
+  },
+  pickerChevron: {
+    fontSize: 10,
+    marginLeft: 4,
   },
   pickerPlaceholder: {
     fontSize: 15,
@@ -890,12 +1041,18 @@ const styles = StyleSheet.create({
   },
   deleteButton: {
     marginTop: 16,
+    marginBottom: 8,
     alignItems: 'center',
-    paddingVertical: 12,
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1.5,
   },
   deleteText: {
     color: '#dc2626',
-    fontWeight: '700',
+    fontWeight: '800',
+    fontSize: 15,
   },
   saveText: {
     fontSize: 16,

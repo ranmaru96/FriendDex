@@ -15,6 +15,9 @@ const HIDE_HEADER_PATHS = [
   'follows',
   'friends',
   'task-edit',
+  'task-detail',
+  'task-group',
+  'appsettings',
 ];
 
 const HIDE_BOTTOM_NAV_PATHS = [
@@ -27,6 +30,8 @@ const HIDE_BOTTOM_NAV_PATHS = [
   'follows',
   'friends',
   'task-edit',
+  'task-detail',
+  'task-group',
 ];
 
 export function shouldHideHeader(pathname: string): boolean {
@@ -41,13 +46,22 @@ export function getBottomNavScrollClearance(pathname: string): number {
   return shouldHideBottomNav(pathname) ? 0 : BOTTOM_NAV_SCROLL_CLEARANCE;
 }
 
-export function getActiveTab(pathname: string): BottomNavTabKey {
+export function getActiveTab(pathname: string): BottomNavTabKey | null {
+  /** 設定などは下部タブを出すが、どのタブ上でもない（タップで各タブへ移れる） */
+  if (pathname.includes('/appsettings')) return null;
   if (pathname.includes('/commonitems')) return 'commonitems';
   if (pathname.includes('/calendar')) return 'calendar';
   if (pathname.includes('/shuffle') || pathname.includes('/settlement')) return 'tools';
   if (pathname.includes('/episode')) return 'episode';
   if (pathname.includes('/tools')) return 'tools';
-  if (pathname.includes('/tasks') || pathname.includes('/task-edit')) return 'tasks';
+  if (
+    pathname.includes('/tasks') ||
+    pathname.includes('/task-edit') ||
+    pathname.includes('/task-detail') ||
+    pathname.includes('/task-group')
+  ) {
+    return 'tasks';
+  }
   if (pathname.includes('/detail')) return 'home';
   return 'home';
 }

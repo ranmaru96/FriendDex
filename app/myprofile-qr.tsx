@@ -317,8 +317,14 @@ export default function MyProfileQrScreen() {
               </View>
             </View>
 
-            <Pressable style={styles.textLinkButton} onPress={() => router.push('/myprofile')}>
-              <Text style={styles.textLink}>公開項目を設定</Text>
+            <Pressable
+              style={styles.settingsButton}
+              onPress={() => router.push('/myprofile')}
+              accessibilityRole="button"
+              accessibilityLabel="公開項目を設定"
+            >
+              <Ionicons name="settings-outline" size={18} color="#FFFFFF" />
+              <Text style={styles.settingsButtonText}>公開項目を設定</Text>
             </Pressable>
           </>
         )}
@@ -439,13 +445,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#64748b',
   },
-  textLinkButton: {
-    paddingVertical: Spacing.sm,
+  settingsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    maxWidth: 320,
+    borderRadius: Radius.md,
+    backgroundColor: '#5EC8F0',
+    borderWidth: 1,
+    borderColor: '#4BB8E0',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
   },
-  textLink: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#2563eb',
+  settingsButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
   primaryButton: {
     borderRadius: Radius.md,

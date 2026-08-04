@@ -32,6 +32,8 @@ import {
   Saying,
   Task,
   TaskCompletion,
+  TaskGroup,
+  TaskGroupInput,
   TaskInput,
   CompletedTaskRetention,
 } from './types';
@@ -192,6 +194,7 @@ const SETTLEMENT_TRANSFER_COMPLETIONS_TABLE = 'settlement_transfer_completions';
 const SHUFFLE_POOLS_TABLE = 'shuffle_pools';
 const TASKS_TABLE = 'tasks';
 const TASK_COMPLETIONS_TABLE = 'task_completions';
+const TASK_GROUPS_TABLE = 'task_groups';
 const MYSELF_KEY = 'myself_friend_id';
 
 const db = SQLite.openDatabaseSync(DB_NAME);
@@ -810,6 +813,7 @@ export const initializeDatabase = (): void => {
       recurrence_config TEXT,
       due_date TEXT,
       event_id TEXT,
+      group_id TEXT,
       completed_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -824,6 +828,20 @@ export const initializeDatabase = (): void => {
   if (!taskColumns.has('memo')) {
     db.execSync(`ALTER TABLE ${TASKS_TABLE} ADD COLUMN memo TEXT NOT NULL DEFAULT '';`);
   }
+  if (!taskColumns.has('group_id')) {
+    db.execSync(`ALTER TABLE ${TASKS_TABLE} ADD COLUMN group_id TEXT;`);
+  }
+  db.execSync(`CREATE INDEX IF NOT EXISTS idx_${TASKS_TABLE}_group_id ON ${TASKS_TABLE}(group_id);`);
+
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${TASK_GROUPS_TABLE} (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
 
   db.execSync(`
     CREATE TABLE IF NOT EXISTS ${TASK_COMPLETIONS_TABLE} (
@@ -1438,7 +1456,11 @@ export const getAppThemeVariant = (): 'default' | 'white' | 'black' => {
   if (value === 'white' || value === 'black') {
     return value;
   }
-  return 'default';
+  /** 旧 default / 未設定 → ホワイト（default テーマ実装は残置） */
+  if (value === 'default') {
+    setAppSetting(APP_THEME_VARIANT_KEY, 'white');
+  }
+  return 'white';
 };
 
 export const setAppThemeVariant = (variant: 'default' | 'white' | 'black'): void => {
@@ -1758,6 +1780,40 @@ const expandParticipantEntriesToFriendIds = (entries: EpisodeParticipant[]): str
 
 export const getEpisodeParticipantFriendIds = (episode: Pick<Episode, 'participantEntries'>): string[] =>
   expandParticipantEntriesToFriendIds(episode.participantEntries ?? []);
+
+/**
+ * エピソード一覧などの参加者フィルタ。
+ * グループはエントリ名の直接一致、または所属メンバー展開後の friendId 交差で判定する。
+ */
+export const episodeMatchesParticipantFilter = (
+  episode: Pick<Episode, 'participantEntries'>,
+  filterEntries: EpisodeParticipant[]
+): boolean => {
+  if (filterEntries.length === 0) {
+    return true;
+  }
+  const episodeEntries = episode.participantEntries ?? [];
+  const filterGroups = new Set(
+    filterEntries
+      .filter((entry) => entry.kind === 'group')
+      .map((entry) => entry.value.trim())
+      .filter((value) => value.length > 0)
+  );
+  if (filterGroups.size > 0) {
+    const hasDirectGroupMatch = episodeEntries.some(
+      (entry) => entry.kind === 'group' && filterGroups.has(entry.value.trim())
+    );
+    if (hasDirectGroupMatch) {
+      return true;
+    }
+  }
+  const filterIds = expandParticipantEntriesToFriendIds(filterEntries);
+  if (filterIds.length === 0) {
+    return false;
+  }
+  const episodeIds = expandParticipantEntriesToFriendIds(episodeEntries);
+  return filterIds.some((id) => episodeIds.includes(id));
+};
 
 const ensureRequiredParticipants = (
   entries: EpisodeParticipant[],
@@ -2781,7 +2837,7 @@ export const addCommonItemOption = (
   return { id, kind, label: normalized, members: [], color: colorValue, createdAt: now, updatedAt: now };
 };
 
-/** エピソードタグ等の色を設定。未登録ラベルならオプションを新規作成する */
+/** 予定タグ等の色を設定。未登録ラベルならオプションを新規作成する */
 export const setCommonItemOptionColor = (
   kind: CommonItemKind,
   label: string,
@@ -4052,7 +4108,16 @@ type TaskRow = {
   recurrence_config: string | null;
   due_date: string | null;
   event_id: string | null;
+  group_id: string | null;
   completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type TaskGroupRow = {
+  id: string;
+  title: string;
+  sort_order: number;
   created_at: string;
   updated_at: string;
 };
@@ -4092,7 +4157,16 @@ const rowToTask = (row: TaskRow): Task => ({
   recurrenceConfig: parseTaskRecurrenceConfig(row.recurrence_config),
   dueDate: row.due_date,
   eventId: row.event_id,
+  groupId: row.group_id?.trim() || null,
   completedAt: row.completed_at,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const rowToTaskGroup = (row: TaskGroupRow): TaskGroup => ({
+  id: row.id,
+  title: row.title,
+  sortOrder: row.sort_order ?? 0,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -4155,6 +4229,104 @@ export const getRecurringTasks = (): Task[] => {
   return rows.map(rowToTask);
 };
 
+export const getRecurringTasksByGroupId = (groupId: string): Task[] => {
+  const normalizedId = groupId.trim();
+  if (!normalizedId) {
+    return [];
+  }
+  const rows = db.getAllSync<TaskRow>(
+    `SELECT * FROM ${TASKS_TABLE}
+     WHERE kind = 'recurring' AND group_id = ?
+     ORDER BY created_at ASC;`,
+    [normalizedId]
+  );
+  return rows.map(rowToTask);
+};
+
+export const getAllTaskGroups = (): TaskGroup[] => {
+  const rows = db.getAllSync<TaskGroupRow>(
+    `SELECT * FROM ${TASK_GROUPS_TABLE} ORDER BY sort_order ASC, created_at ASC;`
+  );
+  return rows.map(rowToTaskGroup);
+};
+
+export const getTaskGroup = (groupId: string): TaskGroup | null => {
+  const normalizedId = groupId.trim();
+  if (!normalizedId) {
+    return null;
+  }
+  const row = db.getFirstSync<TaskGroupRow>(
+    `SELECT * FROM ${TASK_GROUPS_TABLE} WHERE id = ?;`,
+    [normalizedId]
+  );
+  return row ? rowToTaskGroup(row) : null;
+};
+
+export const createTaskGroup = (input: TaskGroupInput): TaskGroup | null => {
+  const title = input.title.trim();
+  if (!title) {
+    return null;
+  }
+  const timestamp = nowIso();
+  const maxRow = db.getFirstSync<{ max_sort: number | null }>(
+    `SELECT MAX(sort_order) as max_sort FROM ${TASK_GROUPS_TABLE};`
+  );
+  const sortOrder =
+    input.sortOrder != null ? input.sortOrder : (maxRow?.max_sort ?? -1) + 1;
+  const group: TaskGroup = {
+    id: uuidv4(),
+    title,
+    sortOrder,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  db.runSync(
+    `INSERT INTO ${TASK_GROUPS_TABLE} (id, title, sort_order, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?);`,
+    [group.id, group.title, group.sortOrder, group.createdAt, group.updatedAt]
+  );
+  return group;
+};
+
+export const updateTaskGroup = (groupId: string, input: TaskGroupInput): boolean => {
+  const normalizedId = groupId.trim();
+  const title = input.title.trim();
+  if (!normalizedId || !title) {
+    return false;
+  }
+  if (!getTaskGroup(normalizedId)) {
+    return false;
+  }
+  const result = db.runSync(
+    `UPDATE ${TASK_GROUPS_TABLE}
+     SET title = ?, sort_order = COALESCE(?, sort_order), updated_at = ?
+     WHERE id = ?;`,
+    [title, input.sortOrder ?? null, nowIso(), normalizedId]
+  );
+  return result.changes > 0;
+};
+
+/** グループ削除。所属タスクはグループなしに戻す（タスク自体は残す） */
+export const deleteTaskGroup = (groupId: string): boolean => {
+  const normalizedId = groupId.trim();
+  if (!normalizedId) {
+    return false;
+  }
+  db.execSync('BEGIN IMMEDIATE;');
+  try {
+    db.runSync(
+      `UPDATE ${TASKS_TABLE} SET group_id = NULL, updated_at = ? WHERE group_id = ?;`,
+      [nowIso(), normalizedId]
+    );
+    const result = db.runSync(`DELETE FROM ${TASK_GROUPS_TABLE} WHERE id = ?;`, [normalizedId]);
+    db.execSync('COMMIT;');
+    return result.changes > 0;
+  } catch {
+    db.execSync('ROLLBACK;');
+    return false;
+  }
+};
+
 export const createTask = (input: TaskInput): Task | null => {
   const title = input.title.trim();
   if (!title) {
@@ -4162,6 +4334,8 @@ export const createTask = (input: TaskInput): Task | null => {
   }
   const timestamp = nowIso();
   const memo = input.memo?.trim() ?? '';
+  const groupId =
+    input.kind === 'recurring' ? input.groupId?.trim() || null : null;
   const task: Task = {
     id: uuidv4(),
     kind: input.kind,
@@ -4173,14 +4347,15 @@ export const createTask = (input: TaskInput): Task | null => {
       input.kind === 'recurring' && input.pace === 'scheduled' ? input.recurrenceConfig ?? {} : null,
     dueDate: input.kind === 'temporary' ? input.dueDate?.trim() || null : null,
     eventId: input.kind === 'temporary' ? input.eventId?.trim() || null : null,
+    groupId,
     completedAt: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
   db.runSync(
     `INSERT INTO ${TASKS_TABLE} (
-      id, kind, title, memo, pace, recurrence_unit, recurrence_config, due_date, event_id, completed_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);`,
+      id, kind, title, memo, pace, recurrence_unit, recurrence_config, due_date, event_id, group_id, completed_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);`,
     [
       task.id,
       task.kind,
@@ -4191,6 +4366,7 @@ export const createTask = (input: TaskInput): Task | null => {
       task.recurrenceConfig ? JSON.stringify(task.recurrenceConfig) : null,
       task.dueDate,
       task.eventId,
+      task.groupId,
       task.createdAt,
       task.updatedAt,
     ]
@@ -4215,10 +4391,11 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
     input.kind === 'recurring' && pace === 'scheduled' ? input.recurrenceConfig ?? {} : null;
   const dueDate = input.kind === 'temporary' ? input.dueDate?.trim() || null : null;
   const eventId = input.kind === 'temporary' ? input.eventId?.trim() || null : null;
+  const groupId = input.kind === 'recurring' ? input.groupId?.trim() || null : null;
   const result = db.runSync(
     `UPDATE ${TASKS_TABLE}
      SET kind = ?, title = ?, memo = ?, pace = ?, recurrence_unit = ?, recurrence_config = ?,
-         due_date = ?, event_id = ?, updated_at = ?
+         due_date = ?, event_id = ?, group_id = ?, updated_at = ?
      WHERE id = ?;`,
     [
       input.kind,
@@ -4229,9 +4406,31 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
       recurrenceConfig ? JSON.stringify(recurrenceConfig) : null,
       dueDate,
       eventId,
+      groupId,
       nowIso(),
       normalizedId,
     ]
+  );
+  return result.changes > 0;
+};
+
+/** 定期タスクのグループ所属だけ更新 */
+export const setTaskGroupId = (taskId: string, groupId: string | null): boolean => {
+  const normalizedId = taskId.trim();
+  if (!normalizedId) {
+    return false;
+  }
+  const task = getTask(normalizedId);
+  if (!task || task.kind !== 'recurring') {
+    return false;
+  }
+  const nextGroupId = groupId?.trim() || null;
+  if ((task.groupId ?? null) === nextGroupId) {
+    return true;
+  }
+  const result = db.runSync(
+    `UPDATE ${TASKS_TABLE} SET group_id = ?, updated_at = ? WHERE id = ? AND kind = 'recurring';`,
+    [nextGroupId, nowIso(), normalizedId]
   );
   return result.changes > 0;
 };
@@ -4341,6 +4540,21 @@ export const getTaskCompletions = (taskId: string): TaskCompletion[] => {
 
 export const getTaskCompletionDatesSet = (taskId: string): Set<string> => {
   return new Set(getTaskCompletions(taskId).map((item) => item.completedOn));
+};
+
+/** OR 集約: いずれかのタスクが完了した日付の和集合 */
+export const getTasksCompletionDatesUnion = (taskIds: string[]): Set<string> => {
+  const ids = taskIds.map((id) => id.trim()).filter(Boolean);
+  if (ids.length === 0) {
+    return new Set();
+  }
+  const placeholders = ids.map(() => '?').join(', ');
+  const rows = db.getAllSync<{ completed_on: string }>(
+    `SELECT DISTINCT completed_on FROM ${TASK_COMPLETIONS_TABLE}
+     WHERE task_id IN (${placeholders});`,
+    ids
+  );
+  return new Set(rows.map((row) => row.completed_on));
 };
 
 export const getTaskCompletionCount = (taskId: string): number => {

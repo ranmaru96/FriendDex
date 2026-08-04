@@ -2,7 +2,7 @@ import { Theme } from '@/constants/theme';
 import { getCommonItemOptionByKindAndLabel } from '@/db';
 import { normalizeEpisodeTag } from './episodeHelpers';
 
-/** エピソードタグのカレンダー帯色パレット（共通項目エディタでも使用） */
+/** 予定タグのカレンダー帯色パレット（共通項目エディタでも使用） */
 export const EPISODE_TAG_COLOR_PALETTE = [
   '#E85D75',
   '#7C5CBF',

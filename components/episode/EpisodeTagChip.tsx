@@ -3,7 +3,7 @@ import { Radius, Typography } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { getEventCalendarColor } from '@/utils/calendarEventColors';
 
-/** 共通項目ブラック時のエピソードタグ塗り（bridgeDetailForAppTheme と揃える） */
+/** 共通項目ブラック時の予定タグ塗り（bridgeDetailForAppTheme と揃える） */
 const BLACK_EPISODE_TAG_CHIP = {
   backgroundColor: 'transparent',
   color: '#F2F2F2',
@@ -22,7 +22,7 @@ type EpisodeTagChipProps = {
 };
 
 /**
- * 共通項目「エピソードタグ」と同じ見た目：登録色の枠＋色ドット＋ラベル。
+ * 共通項目「予定タグ」と同じ見た目：登録色の枠＋色ドット＋ラベル。
  */
 export function EpisodeTagChip({
   label,

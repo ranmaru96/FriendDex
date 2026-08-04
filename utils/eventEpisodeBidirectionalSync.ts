@@ -1,4 +1,5 @@
 import {
+  deleteEpisode,
   getEpisodesByEventId,
   getEvent,
   getMyself,
@@ -30,6 +31,7 @@ const buildEpisodeInputFromEpisode = (
 
 /**
  * 予定の期間が変わったとき、範囲外になったエピソード日付だけ開始日へクランプする。
+ * 開始日が未来になる場合は日付を未来にせず、紐づけを解除する。
  * タイトル・タグ・本文・参加者は同期しない（フォルダモデル）。
  */
 export const clampLinkedEpisodeDatesToEvent = (eventId: string): void => {
@@ -47,22 +49,27 @@ export const clampLinkedEpisodeDatesToEvent = (eventId: string): void => {
     return;
   }
 
-  const allowedDateKeys = getLocalDateKeysForEvent(event);
-  if (allowedDateKeys.length === 0) {
-    return;
-  }
-
-  const fallbackDate = formatDateKey(new Date(event.startAt));
+  const todayKey = formatDateKey(new Date());
+  const allowedDateKeys = getLocalDateKeysForEvent(event).filter((key) => key <= todayKey);
   const episodes = getEpisodesByEventId(normalizedEventId);
+  const fallbackDate = allowedDateKeys[0] ?? null;
 
   isSyncingEventEpisode = true;
   try {
     episodes.forEach((episode) => {
+      const ownerId = episode.authorFriendId.trim() || getMyself() || '';
+      if (!ownerId) {
+        return;
+      }
       if (allowedDateKeys.includes(episode.date)) {
         return;
       }
-      const ownerId = episode.authorFriendId.trim() || getMyself() || '';
-      if (!ownerId) {
+      if (!fallbackDate) {
+        updateEpisode(
+          ownerId,
+          episode.id,
+          buildEpisodeInputFromEpisode(episode, { eventId: null })
+        );
         return;
       }
       updateEpisode(
@@ -87,6 +94,47 @@ export const syncLinkedEventFromEpisode = (
   // no-op
 };
 
+/** Keep episode dates; clear eventId on all episodes linked to this event. */
+export const unlinkEpisodesFromEvent = (eventId: string): void => {
+  const normalizedEventId = eventId.trim();
+  if (!normalizedEventId) {
+    return;
+  }
+  const episodes = getEpisodesByEventId(normalizedEventId);
+  isSyncingEventEpisode = true;
+  try {
+    episodes.forEach((episode) => {
+      const ownerId = episode.authorFriendId.trim() || getMyself() || '';
+      if (!ownerId) {
+        return;
+      }
+      updateEpisode(ownerId, episode.id, buildEpisodeInputFromEpisode(episode, { eventId: null }));
+    });
+  } finally {
+    isSyncingEventEpisode = false;
+  }
+};
+
+/** Delete all episodes linked to this event. */
+export const deleteEpisodesLinkedToEvent = (eventId: string): void => {
+  const normalizedEventId = eventId.trim();
+  if (!normalizedEventId) {
+    return;
+  }
+  const episodes = getEpisodesByEventId(normalizedEventId);
+  episodes.forEach((episode) => {
+    const ownerId = episode.authorFriendId.trim() || getMyself() || '';
+    if (!ownerId) {
+      return;
+    }
+    deleteEpisode(ownerId, episode.id);
+  });
+};
+
+/**
+ * Episode date picker bounds for a linked event.
+ * Future dates are excluded (episode dates cannot be after today).
+ */
 export const getLinkedEventDateBounds = (
   eventId: string | null | undefined
 ): { minimumDate: Date; maximumDate: Date } | null => {
@@ -98,7 +146,8 @@ export const getLinkedEventDateBounds = (
   if (!event) {
     return null;
   }
-  const dateKeys = getLocalDateKeysForEvent(event);
+  const todayKey = formatDateKey(new Date());
+  const dateKeys = getLocalDateKeysForEvent(event).filter((key) => key <= todayKey);
   if (dateKeys.length === 0) {
     return null;
   }

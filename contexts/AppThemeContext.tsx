@@ -19,7 +19,7 @@ type AppThemeContextValue = {
 const AppThemeContext = createContext<AppThemeContextValue | null>(null);
 
 export function AppThemeProvider({ children }: { children: ReactNode }) {
-  const [variant, setVariantState] = useState<AppThemeVariant>('default');
+  const [variant, setVariantState] = useState<AppThemeVariant>('white');
 
   const reload = useCallback(() => {
     initializeDatabase();

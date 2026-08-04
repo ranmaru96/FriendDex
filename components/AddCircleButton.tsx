@@ -31,8 +31,8 @@ export function AddCircleButton({
   const content = useContentColors();
   const isBlack = appTheme?.variant === 'black';
   const fill = isBlack ? content.contentCard : '#FFFFFF';
-  const ink = isBlack ? content.contentText : '#565656';
   const border = isBlack ? content.contentText : '#2f2f2f';
+  const ink = border;
   const glyphSize = Math.round(size * (22 / 36));
   const borderWidth = size < 32 ? 1.5 : 2;
 

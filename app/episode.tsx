@@ -1,25 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
-  Modal,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { SearchArea, SearchAreaDivider, SearchAreaRow, SearchAreaSelectTrigger, SearchAreaTextInputField } from '@/components/ui/SearchArea';
+import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
 import { ListItemGroup } from '@/components/ui/ListItemGroup';
 import { ListScreenTemplate } from '@/components/screen-templates';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
-  contentInputStyle,
   contentMutedTextStyle,
-  contentSurfaceStyle,
-  contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
@@ -66,7 +61,35 @@ function collectUniqueEpisodes(friends: Friend[]): EpisodeRow[] {
   const byId = new Map<string, EpisodeRow>();
   sortedFriends.forEach((friend) => {
     friend.episodes.forEach((episode) => {
-      if (!byId.has(episode.id)) {
+      const existing = byId.get(episode.id);
+      const candidateIsAuthor = Boolean(
+        episode.authorFriendId && friend.id === episode.authorFriendId
+      );
+      if (!existing) {
+        byId.set(episode.id, {
+          episode,
+          recordOwnerId: resolveEpisodeRecordOwnerId(episode, friend.id),
+        });
+        return;
+      }
+      const existingIsAuthor = Boolean(
+        existing.episode.authorFriendId &&
+          existing.recordOwnerId === existing.episode.authorFriendId
+      );
+      // 著者側のコピーを優先（他プロフィールに古い参加者一覧が残っていると絞り込みが効かない）
+      if (candidateIsAuthor && !existingIsAuthor) {
+        byId.set(episode.id, {
+          episode,
+          recordOwnerId: resolveEpisodeRecordOwnerId(episode, friend.id),
+        });
+        return;
+      }
+      if (
+        !existingIsAuthor &&
+        !candidateIsAuthor &&
+        (episode.participantEntries?.length ?? 0) >
+          (existing.episode.participantEntries?.length ?? 0)
+      ) {
         byId.set(episode.id, {
           episode,
           recordOwnerId: resolveEpisodeRecordOwnerId(episode, friend.id),
@@ -210,7 +233,9 @@ export default function EpisodeScreen() {
   }, []);
 
   const openFilterParticipantSelector = useCallback(() => {
-    restoreFilterSelectorFromParticipants(filterParticipants);
+    restoreFilterSelectorFromParticipants(
+      filterParticipants.filter((p) => p.participantType === 'individual')
+    );
     setFilterSelectorTab('individual');
     setFilterSelectorNameFilter('');
     setFilterSelectorAffiliationFilter('');
@@ -230,15 +255,13 @@ export default function EpisodeScreen() {
     filterSelectedIndividualIds.forEach((friendId) => {
       nextParticipants.push({ participantType: 'individual', value: friendId });
     });
-    filterSelectedGroupValues.forEach((groupValue) => {
-      nextParticipants.push({ participantType: 'group', value: groupValue });
-    });
     setFilterParticipants(nextParticipants);
+    setFilterSelectedGroupValues(new Set());
     setFilterSelectorVisible(false);
     setFilterSelectorNameFilter('');
     setFilterSelectorAffiliationFilter('');
     setFilterSelectorExperienceFilter('');
-  }, [filterSelectedGroupValues, filterSelectedIndividualIds]);
+  }, [filterSelectedIndividualIds, setFilterParticipants]);
 
   const toggleFilterSelectorIndividual = useCallback((friendId: string) => {
     setFilterSelectedIndividualIds((prev) => {
@@ -270,6 +293,9 @@ export default function EpisodeScreen() {
   const filteredEpisodeRows = useMemo(() => {
     const normalizedTitle = filterTitle.trim().toLowerCase();
     const normalizedFilterTag = normalizeEpisodeTag(filterTag);
+    const filterFriendIds = new Set(
+      getEpisodeParticipantFriendIds({ participantEntries: filterParticipantEntries })
+    );
     return episodeRows.filter((row) => {
       if (normalizedTitle && !row.episode.title.toLowerCase().includes(normalizedTitle)) {
         return false;
@@ -277,10 +303,10 @@ export default function EpisodeScreen() {
       if (normalizedFilterTag && normalizeEpisodeTag(row.episode.tag) !== normalizedFilterTag) {
         return false;
       }
-      if (filterParticipantEntries.length > 0) {
-        const filterIds = getEpisodeParticipantFriendIds({ participantEntries: filterParticipantEntries });
-        const episodeIds = getEpisodeParticipantFriendIds(row.episode);
-        if (!filterIds.some((id) => episodeIds.includes(id))) {
+      if (filterFriendIds.size > 0) {
+        const episodeFriendIds = getEpisodeParticipantFriendIds(row.episode);
+        const matches = episodeFriendIds.some((id) => filterFriendIds.has(id));
+        if (!matches) {
           return false;
         }
       }
@@ -547,59 +573,18 @@ export default function EpisodeScreen() {
         onToggleGroup={toggleFilterSelectorGroup}
         onCancel={handleFilterSelectorCancel}
         onConfirm={handleFilterSelectorConfirm}
+        enableGroupTab={false}
       />
 
-      <Modal
-        transparent
-        animationType="fade"
+      <OptionPickerModal
         visible={tagFilterModalVisible}
-        onRequestClose={() => setTagFilterModalVisible(false)}
-      >
-        <View style={styles.selectorFilterModalBackdrop}>
-          <View style={[styles.selectorFilterModalCard, contentSurfaceStyle(content)]}>
-            <Text style={[styles.selectorFilterModalTitle, contentTextStyle(content)]}>タグで絞り込み</Text>
-            <ScrollView style={styles.selectorFilterModalOptions}>
-              <Pressable
-                style={[
-                  styles.selectorFilterModalOption,
-                  !filterTag
-                    ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                    : null,
-                ]}
-                onPress={() => {
-                  setFilterTag('');
-                  setTagFilterModalVisible(false);
-                }}
-              >
-                <Text style={[styles.selectorFilterModalOptionText, contentTextStyle(content)]}>すべて</Text>
-              </Pressable>
-              {episodeTagOptions.map((option) => {
-                const selected = option.value === filterTag;
-                return (
-                  <Pressable
-                    key={option.value}
-                    style={[
-                      styles.selectorFilterModalOption,
-                      selected
-                        ? [{ backgroundColor: content.contentInputBg, borderColor: content.contentText, borderWidth: 1 }]
-                        : null,
-                    ]}
-                    onPress={() => {
-                      setFilterTag(option.value);
-                      setTagFilterModalVisible(false);
-                    }}
-                  >
-                    <Text style={[styles.selectorFilterModalOptionText, contentTextStyle(content)]}>{option.label}</Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <Pressable style={[styles.eventLinkSecondaryButton, contentInputStyle(content)]} onPress={() => setTagFilterModalVisible(false)}>
-              <Text style={[styles.eventLinkSecondaryButtonText, contentTextStyle(content)]}>閉じる</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
+        label="タグ"
+        value={filterTag}
+        options={episodeTagOptions}
+        onValueChange={setFilterTag}
+        onClose={() => setTagFilterModalVisible(false)}
+        clearLabel="すべて"
+      />
     </>
   );
 }
@@ -886,47 +871,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#475569',
     marginLeft: 4,
-  },
-  selectorFilterModalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-  selectorFilterModalCard: {
-    backgroundColor: Theme.bgSurface,
-    borderRadius: Radius.md,
-    padding: 14,
-    maxHeight: '70%',
-  },
-  selectorFilterModalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 10,
-  },
-  selectorFilterModalOptions: {
-    marginBottom: 10,
-  },
-  selectorFilterModalOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: Radius.sm,
-  },
-  selectorFilterModalOptionText: {
-    fontSize: 14,
-    color: '#1e293b',
-  },
-  selectorFilterModalCloseButton: {
-    alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: Radius.sm,
-    backgroundColor: '#e2e8f0',
-  },
-  selectorFilterModalCloseButtonText: {
-    color: '#0f172a',
-    fontWeight: '600',
   },
   eventLinkModalDescription: {
     fontSize: 13,

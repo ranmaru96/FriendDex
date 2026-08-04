@@ -19,21 +19,25 @@ const BUNDLES: Record<AppThemeVariant, AppThemeBundle> = {
   black: blackAppTheme,
 };
 
+/**
+ * 設定画面で選べるテーマ。
+ * default は非表示（実装・BUNDLES は残しているので、ここへ戻せば再選択できる）。
+ */
 export const APP_THEME_OPTIONS: { value: AppThemeVariant; label: string }[] = [
-  { value: 'default', label: defaultAppTheme.label },
   { value: 'white', label: whiteAppTheme.label },
   { value: 'black', label: blackAppTheme.label },
 ];
 
 export function getAppThemeBundle(variant: AppThemeVariant): AppThemeBundle {
-  return BUNDLES[variant] ?? defaultAppTheme;
+  return BUNDLES[variant] ?? whiteAppTheme;
 }
 
+/** 未設定・旧 default はホワイトに寄せる（default バンドル自体は残置） */
 export function normalizeAppThemeVariant(value: string | null | undefined): AppThemeVariant {
   if (value === 'white' || value === 'black') {
     return value;
   }
-  return 'default';
+  return 'white';
 }
 
 /** ホワイト / ブラック：形状・レイアウト共通。差は AppThemeColors のみ */

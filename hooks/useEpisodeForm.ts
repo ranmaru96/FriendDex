@@ -3,6 +3,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { PHOTO_LIMITS } from '@/constants';
 import {
   deleteEpisodePhoto,
+  getEpisodeParticipantFriendIds,
   getEpisodePhotos,
   getEvent,
   getEventParticipants,
@@ -17,9 +18,14 @@ import type {
   EpisodeVisibilityMode,
   Friend,
 } from '@/types';
-import { mergeParticipantEntries, normalizeEpisodeTag } from '@/utils/episodeHelpers';
+import { mergeParticipantEntries, normalizeEpisodeTag, toIndividualParticipantEntries } from '@/utils/episodeHelpers';
 import { getLinkedEventDateBounds } from '@/utils/eventEpisodeBidirectionalSync';
-import { formatDateKey, getLocalDateKeysForEvent } from '@/utils/eventHelpers';
+import {
+  formatDateKey,
+  getLocalDateKeysForEvent,
+  isEventStartInFuture,
+  parseDateKey,
+} from '@/utils/eventHelpers';
 import { profileIdsToFriendIds } from '@/utils/eventParticipantHelpers';
 import {
   EpisodeParticipantDraft,
@@ -96,10 +102,17 @@ export function useEpisodeForm({
   const isPhotoLimitReached =
     visibleExistingPhotos.length + newPhotoUris.length >= PHOTO_LIMITS.free;
 
+  const todayKey = formatDateKey(new Date());
+  const todayDate = parseDateKey(todayKey);
+
   const allowedEventDateRange = useMemo(
     () => (eventLinkMode === 'existing' ? getLinkedEventDateBounds(linkedEventId) : null),
     [eventLinkMode, linkedEventId]
   );
+
+  /** Episode dates cannot be in the future; linked events further restrict the range. */
+  const episodeDateMaximumDate = allowedEventDateRange?.maximumDate ?? todayDate;
+  const episodeDateMinimumDate = allowedEventDateRange?.minimumDate;
 
   const linkedEventDateKeys = useMemo(() => {
     if (eventLinkMode !== 'existing') {
@@ -113,8 +126,8 @@ export function useEpisodeForm({
     if (!event) {
       return null;
     }
-    return getLocalDateKeysForEvent(event);
-  }, [eventLinkMode, linkedEventId]);
+    return getLocalDateKeysForEvent(event).filter((key) => key <= todayKey);
+  }, [eventLinkMode, linkedEventId, todayKey]);
 
   const isLinkedEventSingleDay = (linkedEventDateKeys?.length ?? 0) === 1;
 
@@ -207,14 +220,25 @@ export function useEpisodeForm({
 
   const handleSelectorConfirm = useCallback(() => {
     if (selectorTarget === 'participant') {
-      const nextParticipants: EpisodeParticipantDraft[] = [];
-      selectedIndividualIds.forEach((friendId) => {
-        nextParticipants.push({ participantType: 'individual', value: friendId });
+      // Participants are individual IDs only (group-name tags deferred).
+      const expandedIds = getEpisodeParticipantFriendIds({
+        participantEntries: [
+          ...Array.from(selectedIndividualIds).map((friendId) => ({
+            kind: 'individual' as const,
+            value: friendId,
+          })),
+          ...Array.from(selectedGroupValues).map((groupValue) => ({
+            kind: 'group' as const,
+            value: groupValue,
+          })),
+        ],
       });
-      selectedGroupValues.forEach((groupValue) => {
-        nextParticipants.push({ participantType: 'group', value: groupValue });
-      });
-      setParticipants(nextParticipants);
+      setParticipants(
+        toIndividualParticipantEntries(expandedIds).map((entry) => ({
+          participantType: 'individual' as const,
+          value: entry.value,
+        }))
+      );
     } else {
       const nextVisibility: EpisodeVisibilityDraft[] = [];
       selectedIndividualIds.forEach((friendId) => {
@@ -227,6 +251,8 @@ export function useEpisodeForm({
     }
     setSelectorVisible(false);
     setSelectorNameFilter('');
+    setSelectorAffiliationFilter('');
+    setSelectorExperienceFilter('');
   }, [selectorTarget, selectedIndividualIds, selectedGroupValues]);
 
   const toggleSelectorIndividual = useCallback((friendId: string) => {
@@ -250,12 +276,16 @@ export function useEpisodeForm({
   const loadFromEpisode = useCallback(
     (episode: Episode) => {
       const hidden = hiddenIdSet(hiddenParticipantIds);
-      const participantDrafts: EpisodeParticipantDraft[] = (episode.participantEntries ?? [])
-        .filter((entry) => !(entry.kind === 'individual' && hidden.has(entry.value)))
-        .map((entry) => ({
-          participantType: entry.kind,
-          value: entry.value,
-        }));
+      // Expand any legacy group participant tags to individuals for editing.
+      const expandedFriendIds = getEpisodeParticipantFriendIds({
+        participantEntries: episode.participantEntries ?? [],
+      }).filter((friendId) => !hidden.has(friendId));
+      const participantDrafts: EpisodeParticipantDraft[] = toIndividualParticipantEntries(
+        expandedFriendIds
+      ).map((entry) => ({
+        participantType: 'individual' as const,
+        value: entry.value,
+      }));
       setEditingEpisodeId(episode.id);
       setTitle(episode.title);
       const eventId = episode.eventId?.trim() || null;
@@ -296,15 +326,16 @@ export function useEpisodeForm({
     (eventId: string) => {
       const normalized = eventId.trim();
       const event = getEvent(normalized);
-      if (!event) {
+      if (!event || isEventStartInFuture(event)) {
         return false;
       }
       reset();
       setLinkedEventId(normalized);
       setEventLinkModeState('existing');
       setTitle(event.title);
-      const keys = getLocalDateKeysForEvent(event);
-      setDate(keys[0] ?? formatDateKey(new Date(event.startAt)));
+      const today = formatDateKey(new Date());
+      const keys = getLocalDateKeysForEvent(event).filter((key) => key <= today);
+      setDate(keys[0] ?? today);
       setTag(event.episodeTag ?? '');
       setDescription('');
       const myselfId = getMyself();
@@ -334,15 +365,23 @@ export function useEpisodeForm({
       setFormError('日付を選択してください。');
       return null;
     }
+    if (normalizedDate > formatDateKey(new Date())) {
+      setFormError('未来の日付は選択できません。');
+      return null;
+    }
 
-    const participantEntries = mergeParticipantEntries(
-      implicitParticipantEntries,
-      participants
-        .filter((participant) => participant.value.trim().length > 0)
-        .map((participant) => ({
-          kind: participant.participantType,
-          value: participant.value,
-        }))
+    const participantEntries = toIndividualParticipantEntries(
+      getEpisodeParticipantFriendIds({
+        participantEntries: mergeParticipantEntries(
+          implicitParticipantEntries,
+          participants
+            .filter((participant) => participant.value.trim().length > 0)
+            .map((participant) => ({
+              kind: participant.participantType,
+              value: participant.value,
+            }))
+        ),
+      })
     );
     const visibilityEntries: EpisodeVisibilityEntry[] =
       visibilityMode === 'limited'
@@ -393,13 +432,19 @@ export function useEpisodeForm({
       setEventLinkModeState('none');
       return;
     }
-    setEventLinkModeState('existing');
-    setLinkedEventId(normalized);
     const event = getEvent(normalized);
     if (!event) {
       return;
     }
-    const keys = getLocalDateKeysForEvent(event);
+    if (isEventStartInFuture(event)) {
+      setFormError('未来の予定にはエピソードを紐づけられません。');
+      return;
+    }
+    setFormError('');
+    setEventLinkModeState('existing');
+    setLinkedEventId(normalized);
+    const today = formatDateKey(new Date());
+    const keys = getLocalDateKeysForEvent(event).filter((key) => key <= today);
     if (keys.length === 1) {
       setDate(keys[0]);
     } else if (keys.length > 1) {
@@ -473,6 +518,8 @@ export function useEpisodeForm({
     tag,
     setTag,
     allowedEventDateRange,
+    episodeDateMinimumDate,
+    episodeDateMaximumDate,
     linkedEventDateKeys,
     isLinkedEventSingleDay,
     title,

@@ -37,6 +37,7 @@ export const MBTI_TYPES: MBTIType[] = [
 ];
 
 export type EpisodeParticipant = {
+  /** 'group' reserved for future group-name tags; UI currently writes individuals only. */
   kind: 'individual' | 'group';
   value: string;
 };
@@ -267,7 +268,7 @@ export type CommonItemOption = {
   kind: CommonItemKind;
   label: string;
   members: string[];
-  /** エピソードタグ用。カレンダー帯色（#RRGGBB）。他 kind は null */
+  /** 予定タグ用。カレンダー帯色（#RRGGBB）。他 kind は null */
   color: string | null;
   createdAt: string;
   updatedAt: string;
@@ -301,6 +302,8 @@ export type Task = {
   recurrenceConfig: TaskRecurrenceConfig | null;
   dueDate: string | null;
   eventId: string | null;
+  /** 定期タスクのくくり（グループ）。臨時は通常 null */
+  groupId: string | null;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -315,6 +318,20 @@ export type TaskInput = {
   recurrenceConfig?: TaskRecurrenceConfig | null;
   dueDate?: string | null;
   eventId?: string | null;
+  groupId?: string | null;
+};
+
+export type TaskGroup = {
+  id: string;
+  title: string;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TaskGroupInput = {
+  title: string;
+  sortOrder?: number;
 };
 
 export type TaskCompletion = {

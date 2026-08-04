@@ -6,6 +6,7 @@ import { ParticipantChipList } from '@/components/participant/ParticipantChipLis
 import { Radius, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useTapUnlessHorizontalScroll } from '@/hooks/useTapUnlessHorizontalScroll';
 import { useContentColors } from '@/utils/useContentColors';
 import { getEventCalendarColor } from '@/utils/calendarEventColors';
 import {
@@ -76,7 +77,7 @@ export type EpisodeListCardProps = {
   coverPhotoUri?: string | null;
   /** 一覧カード用写真（最大2枚想定） */
   photoUris?: string[];
-  /** 紐づく予定タイトル（日付・エピソードタグ行の右端タグ） */
+  /** 紐づく予定タイトル（日付・予定タグ行の右端タグ） */
   eventTitle?: string | null;
   /** 予定のカレンダー色用タグ（省略時は未設定色） */
   eventEpisodeTag?: string | null;
@@ -118,6 +119,7 @@ export function EpisodeListCard({
   const kit = useUiKit();
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
+  const participantTap = useTapUnlessHorizontalScroll(onPress);
   const usePhotoLayout = kit.episodeListCardLayout === 'photoRight';
   const photoFrameBorderColor = content.contentText;
   const episodeCardBackgroundColor =
@@ -154,7 +156,12 @@ export function EpisodeListCard({
       hasPhoto && !embedded && kit.episodeListPhotoLayout === 'compactTwoSideBySide' && displayPhotoUris.length > 1;
 
     const photoRightMetaRow = (
-      <View style={styles.photoRightMetaRow}>
+      <View
+        style={[
+          styles.photoRightMetaRow,
+          titleMultiline ? styles.photoRightMetaRowExpanded : null,
+        ]}
+      >
         <Text
           style={[
             styles.episodeCardDateText,
@@ -185,17 +192,24 @@ export function EpisodeListCard({
           <Pressable
             onPress={onEventPress}
             disabled={!onEventPress}
-            style={styles.photoRightMetaEventPressable}
+            style={[
+              styles.photoRightMetaEventPressable,
+              titleMultiline ? styles.photoRightMetaEventPressableExpanded : null,
+            ]}
             accessibilityRole={onEventPress ? 'button' : undefined}
             accessibilityLabel={onEventPress ? '所属する予定を開く' : undefined}
           >
             <View
               style={[
                 styles.photoRightMetaEventTag,
+                titleMultiline ? styles.photoRightMetaEventTagExpanded : null,
                 { backgroundColor: eventChipColor },
               ]}
             >
-              <Text style={styles.photoRightMetaEventTagText} numberOfLines={1}>
+              <Text
+                style={styles.photoRightMetaEventTagText}
+                numberOfLines={titleMultiline ? undefined : 1}
+              >
                 {normalizedEventTitle}
               </Text>
             </View>
@@ -225,16 +239,29 @@ export function EpisodeListCard({
 
     const participantBlock =
       useTallPhoto || hasParticipants ? (
-        <View
-          style={[
+        <Pressable
+          onPress={participantTap.onPress}
+          onLongPress={onLongPress}
+          delayLongPress={delayLongPress}
+          disabled={!onPress && !onLongPress}
+          style={({ pressed }) => [
             styles.photoRightParticipantRow,
             useTallPhoto ? styles.photoRightParticipantRowInColumn : null,
+            pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
           ]}
         >
           {hasParticipants ? (
-            <ParticipantChipList chips={chips} layout="scroll" compact />
+            <ParticipantChipList
+              chips={chips}
+              layout="scroll"
+              compact
+              onChipPress={participantTap.onChipPress}
+              onScrollBeginDrag={participantTap.onScrollBeginDrag}
+              onScrollEndDrag={participantTap.onScrollEndDrag}
+              onMomentumScrollEnd={participantTap.onMomentumScrollEnd}
+            />
           ) : null}
-        </View>
+        </Pressable>
       ) : null;
 
     const photoBlock = hasPhoto ? (
@@ -434,9 +461,26 @@ export function EpisodeListCard({
         </View>
       ) : null}
       {chips.length > 0 ? (
-        <View style={styles.episodeParticipantChipList}>
-          <ParticipantChipList chips={chips} layout="scroll" compact />
-        </View>
+        <Pressable
+          onPress={participantTap.onPress}
+          onLongPress={onLongPress}
+          delayLongPress={delayLongPress}
+          disabled={!onPress && !onLongPress}
+          style={({ pressed }) => [
+            styles.episodeParticipantChipList,
+            pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
+          ]}
+        >
+          <ParticipantChipList
+            chips={chips}
+            layout="scroll"
+            compact
+            onChipPress={participantTap.onChipPress}
+            onScrollBeginDrag={participantTap.onScrollBeginDrag}
+            onScrollEndDrag={participantTap.onScrollEndDrag}
+            onMomentumScrollEnd={participantTap.onMomentumScrollEnd}
+          />
+        </Pressable>
       ) : null}
     </View>
   );
@@ -498,6 +542,14 @@ const styles = StyleSheet.create({
     height: META_ROW_HEIGHT,
     overflow: 'hidden',
   },
+  /** 詳細など：メタ行内で予定タイトルを折り返して全文表示 */
+  photoRightMetaRowExpanded: {
+    height: undefined,
+    minHeight: META_ROW_HEIGHT,
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    overflow: 'visible',
+  },
   photoRightMetaDateText: {
     lineHeight: 14,
   },
@@ -515,6 +567,12 @@ const styles = StyleSheet.create({
     maxWidth: '42%',
     marginLeft: 'auto',
   },
+  photoRightMetaEventPressableExpanded: {
+    maxWidth: '100%',
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
   classicMetaEventPressable: {
     flexShrink: 1,
     maxWidth: 120,
@@ -528,6 +586,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     maxWidth: '100%',
     overflow: 'hidden',
+  },
+  photoRightMetaEventTagExpanded: {
+    height: undefined,
+    minHeight: META_ROW_HEIGHT,
+    paddingVertical: 2,
+    overflow: 'visible',
   },
   photoRightMetaEventTagText: {
     fontSize: 11,

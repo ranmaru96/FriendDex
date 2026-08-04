@@ -1,20 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { ComponentProps } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import type { BottomNavTabKey } from '@/utils/bottomNavVisibility';
 import { setNextTabAnimation } from '@/utils/tabTransition';
 
-type TabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'tasks';
-
 type BottomNavProps = {
-  active: TabKey;
+  active: BottomNavTabKey | null;
 };
 
 const TABS: {
-  key: TabKey;
+  key: BottomNavTabKey;
   label: string;
   icon: ComponentProps<typeof Ionicons>['name'];
   route: '/' | '/commonitems' | '/calendar' | '/episode' | '/tools' | '/tasks';
@@ -27,7 +26,15 @@ const TABS: {
   { key: 'tools', label: 'ツール', icon: 'construct-outline', route: '/tools' },
 ];
 
+function isOnTabRoute(pathname: string, tab: (typeof TABS)[number]): boolean {
+  if (tab.key === 'home') {
+    return pathname === '/' || pathname === '/index';
+  }
+  return pathname === tab.route;
+}
+
 export default function BottomNav({ active }: BottomNavProps) {
+  const pathname = usePathname();
   const insets = useSafeAreaInsets();
   const appTheme = useAppThemeOptional();
   const tabBarBackground = appTheme?.colors.tabBarBackground ?? Theme.tabBarBase;
@@ -37,10 +44,10 @@ export default function BottomNav({ active }: BottomNavProps) {
   const tabBarActiveText = appTheme?.colors.tabBarActiveText ?? '#ffffff';
 
   const handleTabPress = (tab: (typeof TABS)[number]) => {
-    if (active === tab.key) {
+    if (isOnTabRoute(pathname, tab)) {
       return;
     }
-    const fromIndex = TABS.findIndex((item) => item.key === active);
+    const fromIndex = active == null ? -1 : TABS.findIndex((item) => item.key === active);
     const toIndex = TABS.findIndex((item) => item.key === tab.key);
     setNextTabAnimation(toIndex > fromIndex ? 'slide_from_right' : 'slide_from_left');
     router.replace(tab.route);
