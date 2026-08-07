@@ -181,31 +181,49 @@ export default function HomeScreen() {
   return (
     <ListScreenTemplate
       fab={
-        <View
-          style={[
-            styles.fabRow,
-            {
-              backgroundColor: isBlack ? 'rgba(28, 28, 28, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-              borderColor: content.contentBorder,
-              borderWidth: 1,
-            },
-          ]}
-        >
-          <CircleIconButton
-            icon="qr-code-outline"
-            onPress={() => router.push('/myprofile-qr')}
-            accessibilityLabel="QRコードを表示"
-          />
-          <CircleIconButton
-            icon="scan-outline"
-            onPress={() => router.push('/scan')}
-            accessibilityLabel="QRコードを読み取る"
-          />
-          <AddCircleButton
-            onPress={() => router.push('/edit')}
-            accessibilityLabel="人物を追加"
-          />
-        </View>
+        <>
+          <View
+            style={[
+              styles.fabLeft,
+              {
+                backgroundColor: isBlack ? 'rgba(28, 28, 28, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                borderColor: content.contentBorder,
+                borderWidth: 1,
+              },
+            ]}
+          >
+            <CircleIconButton
+              icon="pricetag-outline"
+              onPress={() => router.push('/commonitems')}
+              accessibilityLabel="共通項目"
+            />
+          </View>
+          <View
+            style={[
+              styles.fabRow,
+              {
+                backgroundColor: isBlack ? 'rgba(28, 28, 28, 0.9)' : 'rgba(255, 255, 255, 0.9)',
+                borderColor: content.contentBorder,
+                borderWidth: 1,
+              },
+            ]}
+          >
+            <CircleIconButton
+              icon="qr-code-outline"
+              onPress={() => router.push('/myprofile-qr')}
+              accessibilityLabel="QRコードを表示"
+            />
+            <CircleIconButton
+              icon="scan-outline"
+              onPress={() => router.push('/scan')}
+              accessibilityLabel="QRコードを読み取る"
+            />
+            <AddCircleButton
+              onPress={() => router.push('/edit')}
+              accessibilityLabel="人物を追加"
+            />
+          </View>
+        </>
       }
     >
       <FlatList
@@ -306,6 +324,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: Theme.textSecondary,
     marginTop: 20,
+  },
+  fabLeft: {
+    position: 'absolute',
+    left: 14,
+    bottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 28,
   },
   fabRow: {
     position: 'absolute',

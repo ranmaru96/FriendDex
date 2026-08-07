@@ -4,30 +4,39 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
+  completeTemporaryTask,
   deleteTask,
+  getEvent,
   getTask,
   getTaskCompletions,
   getTaskGroup,
   initializeDatabase,
+  reopenTemporaryTask,
 } from '../db';
-import type { Task, TaskCompletion, TaskGroup } from '../types';
+import type { Event, Task, TaskCompletion, TaskGroup } from '../types';
 import {
   calculateScheduledStreak,
   daysBetweenYmd,
   formatRecurrenceLabel,
+  formatTaskDueDateLabel,
   getLastCompletionYmd,
   getRecentScheduledDotItems,
+  getTaskDueUrgency,
   toYmd,
 } from '@/utils/taskHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   contentMutedTextStyle,
   contentSurfaceStyle,
+  contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { Radius } from '@/constants/theme';
 import { StreakFlameIcon } from '@/components/ui/StreakFlameIcon';
-import { TaskRecentSevenDayDots } from '@/components/task/TaskRecentSevenDayDots';
+import { TaskRecentSevenDayDots, taskCompletionFillColor } from '@/components/task/TaskRecentSevenDayDots';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { getEventCalendarColor } from '@/utils/calendarEventColors';
+import { formatEventScheduleLabel } from '@/utils/eventHelpers';
 
 function formatStampDate(ymd: string): string {
   const [, m, d] = ymd.split('-').map(Number);
@@ -42,14 +51,25 @@ function formatDaysAgo(ymd: string): string {
   return `${diff}日前`;
 }
 
+function formatCompletedAt(iso: string): string {
+  const ymd = iso.slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ymd)) {
+    return formatStampDate(ymd);
+  }
+  return iso;
+}
+
 export default function TaskDetailScreen() {
   const router = useRouter();
   const content = useContentColors();
+  const isBlack = useAppThemeOptional()?.variant === 'black';
+  const checkedColor = taskCompletionFillColor(Boolean(isBlack));
   const params = useLocalSearchParams<{ taskId?: string }>();
   const taskId = typeof params.taskId === 'string' ? params.taskId : '';
   const [task, setTask] = useState<Task | null>(null);
   const [group, setGroup] = useState<TaskGroup | null>(null);
   const [completions, setCompletions] = useState<TaskCompletion[]>([]);
+  const [linkedEvent, setLinkedEvent] = useState<Event | null>(null);
 
   const reload = useCallback(() => {
     initializeDatabase();
@@ -57,6 +77,7 @@ export default function TaskDetailScreen() {
       setTask(null);
       setGroup(null);
       setCompletions([]);
+      setLinkedEvent(null);
       return;
     }
     const loaded = getTask(taskId);
@@ -67,6 +88,11 @@ export default function TaskDetailScreen() {
     setTask(loaded);
     setGroup(loaded.groupId ? getTaskGroup(loaded.groupId) : null);
     setCompletions(loaded.kind === 'recurring' ? getTaskCompletions(taskId) : []);
+    if (loaded.kind === 'temporary' && loaded.eventId) {
+      setLinkedEvent(getEvent(loaded.eventId));
+    } else {
+      setLinkedEvent(null);
+    }
   }, [router, taskId]);
 
   useFocusEffect(
@@ -140,9 +166,23 @@ export default function TaskDetailScreen() {
     ]);
   };
 
+  const toggleTemporaryComplete = () => {
+    if (!task || task.kind !== 'temporary') return;
+    if (task.completedAt) {
+      reopenTemporaryTask(task.id);
+    } else {
+      completeTemporaryTask(task.id);
+    }
+    reload();
+  };
+
   if (!task) {
     return null;
   }
+
+  const isTemporary = task.kind === 'temporary';
+  const isCompleted = Boolean(task.completedAt);
+  const dueUrgency = task.dueDate ? getTaskDueUrgency(task.dueDate) : null;
 
   return (
     <FormScreenTemplate
@@ -162,19 +202,82 @@ export default function TaskDetailScreen() {
         <FormScreenSection>
           <View style={styles.titleRow}>
             <View style={[styles.titleIcon, contentSurfaceStyle(content), { borderColor: content.contentBorder }]}>
-              <Ionicons name="checkmark-done-circle-outline" size={22} color={content.contentText} />
+              <Ionicons
+                name={isTemporary ? 'flash-outline' : 'checkmark-done-circle-outline'}
+                size={22}
+                color={content.contentText}
+              />
             </View>
             <View style={styles.titleMain}>
               <Text style={[styles.title, contentTextStyle(content)]}>{task.title}</Text>
-              <Text style={[styles.subtitle, contentMutedTextStyle(content)]}>
-                {formatRecurrenceLabel(task.pace, task.recurrenceUnit, task.recurrenceConfig) || '定期'}
-                {group ? ` · ${group.title}` : ''}
-              </Text>
+              {isTemporary ? (
+                <Text style={[styles.subtitle, contentMutedTextStyle(content)]}>臨時</Text>
+              ) : (
+                <Text style={[styles.subtitle, contentMutedTextStyle(content)]}>
+                  {formatRecurrenceLabel(task.pace, task.recurrenceUnit, task.recurrenceConfig) || '定期'}
+                  {group ? ` · ${group.title}` : ''}
+                </Text>
+              )}
             </View>
           </View>
         </FormScreenSection>
 
-        {task.trackCompletions ? (
+        {isTemporary ? (
+          <FormScreenSection>
+            <View style={styles.temporaryMetaRow}>
+              {task.dueDate ? (
+                <View
+                  style={[
+                    styles.dueChip,
+                    contentTagStyle(content),
+                    { borderWidth: 1 },
+                    dueUrgency === 'overdue'
+                      ? { borderColor: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.12)' }
+                      : null,
+                    dueUrgency === 'today'
+                      ? { borderColor: checkedColor, backgroundColor: `${checkedColor}22` }
+                      : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dueChipText,
+                      contentTextStyle(content),
+                      dueUrgency === 'overdue' ? { color: '#dc2626' } : null,
+                      dueUrgency === 'today' ? { color: checkedColor } : null,
+                    ]}
+                  >
+                    {formatTaskDueDateLabel(task.dueDate)}
+                  </Text>
+                </View>
+              ) : (
+                <Text style={[styles.empty, contentMutedTextStyle(content)]}>期限なし</Text>
+              )}
+              <Pressable
+                style={[
+                  styles.statusToggle,
+                  contentSurfaceStyle(content),
+                  { borderColor: isCompleted ? checkedColor : content.contentBorder },
+                ]}
+                onPress={toggleTemporaryComplete}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: isCompleted }}
+                accessibilityLabel={isCompleted ? '完了を解除' : '完了にする'}
+              >
+                <Ionicons
+                  name={isCompleted ? 'checkbox' : 'square-outline'}
+                  size={22}
+                  color={isCompleted ? checkedColor : content.contentTextSecondary}
+                />
+                <Text style={[styles.statusToggleText, contentTextStyle(content)]}>
+                  {isCompleted
+                    ? `完了${task.completedAt ? ` · ${formatCompletedAt(task.completedAt)}` : ''}`
+                    : '未完了'}
+                </Text>
+              </Pressable>
+            </View>
+          </FormScreenSection>
+        ) : task.trackCompletions ? (
           <FormScreenSection>
             <View style={styles.topSummaryRow}>
               <View
@@ -220,7 +323,50 @@ export default function TaskDetailScreen() {
           </FormScreenSection>
         )}
 
-        {task.trackCompletions ? (
+        {linkedEvent ? (
+          <FormScreenSection>
+            <Text style={[styles.linkedEventLabel, contentTextStyle(content)]}>紐づけられている予定</Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.linkedEventCard,
+                contentSurfaceStyle(content),
+                { borderColor: content.contentBorder },
+                pressed ? styles.linkedEventCardPressed : null,
+              ]}
+              onPress={() =>
+                router.push({
+                  pathname: '/event',
+                  params: { eventId: linkedEvent.id },
+                })
+              }
+              accessibilityRole="button"
+              accessibilityLabel={`予定「${linkedEvent.title || '無題'}」を開く`}
+            >
+              <View
+                style={[
+                  styles.linkedEventIcon,
+                  { backgroundColor: getEventCalendarColor(linkedEvent.episodeTag) },
+                ]}
+              >
+                <Ionicons name="calendar-outline" size={19} color="#ffffff" />
+              </View>
+              <View style={styles.linkedEventMain}>
+                <Text style={[styles.linkedEventTitle, contentTextStyle(content)]} numberOfLines={2}>
+                  {linkedEvent.title || '無題'}
+                </Text>
+                <View style={styles.linkedEventScheduleRow}>
+                  <Ionicons name="time-outline" size={14} color={content.contentTextSecondary} />
+                  <Text style={[styles.linkedEventSchedule, contentMutedTextStyle(content)]}>
+                    {formatEventScheduleLabel(linkedEvent)}
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={content.contentTextSecondary} />
+            </Pressable>
+          </FormScreenSection>
+        ) : null}
+
+        {!isTemporary && task.trackCompletions ? (
         <FormScreenSection>
           <View style={styles.historyHeaderRow}>
             <Text style={[styles.sectionTitle, styles.historyTitle, contentTextStyle(content)]}>過去の実施日</Text>
@@ -258,12 +404,9 @@ export default function TaskDetailScreen() {
         ) : null}
 
         <FormScreenSection>
-          <Text style={[styles.sectionTitle, contentTextStyle(content)]}>詳細</Text>
-          <View style={[styles.detailCard, contentSurfaceStyle(content), { borderColor: content.contentBorder }]}>
-            <Text style={[styles.detailText, contentMutedTextStyle(content)]}>
-              {task.memo.trim() || '説明はありません'}
-            </Text>
-          </View>
+          <Text style={[styles.detailText, contentMutedTextStyle(content)]}>
+            {task.memo.trim() || 'メモはありません'}
+          </Text>
         </FormScreenSection>
 
         <View style={styles.deleteButtonWrap}>
@@ -310,6 +453,79 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 13,
+  },
+  temporaryMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  linkedEventLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  linkedEventCard: {
+    minHeight: 64,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  linkedEventCardPressed: {
+    opacity: 0.72,
+  },
+  linkedEventIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  linkedEventMain: {
+    flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  linkedEventTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  linkedEventScheduleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  linkedEventSchedule: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  dueChip: {
+    borderRadius: Radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  dueChipText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  statusToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  statusToggleText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   topSummaryRow: {
     flexDirection: 'row',
@@ -412,12 +628,6 @@ const styles = StyleSheet.create({
   stampText: {
     fontSize: 13,
     fontWeight: '700',
-  },
-  detailCard: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
   },
   detailText: {
     fontSize: 14,

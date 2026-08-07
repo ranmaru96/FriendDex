@@ -13,6 +13,7 @@ import { useUiKit } from '@/contexts/UiPreviewContext';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
 import { useSearchAreaStyles } from '@/utils/useSearchAreaStyles';
 import { useContentColors } from '@/utils/useContentColors';
+import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
 
 type SearchAreaProps = {
   children: ReactNode;
@@ -113,7 +114,10 @@ export function SearchAreaSelectTrigger({
     <SearchAreaField label={label} style={style}>
       <Pressable
         style={[styles.selectButton, hasValue ? styles.selectButtonActive : null]}
-        onPress={onPress}
+        onPress={() => {
+          dismissKeyboardFocus();
+          onPress();
+        }}
       >
         <Text
           style={showPlaceholder ? styles.selectPlaceholder : styles.selectValue}

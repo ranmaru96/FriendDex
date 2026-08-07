@@ -13,11 +13,61 @@ export const normalizeEpisodeTag = (value: string | null | undefined): string | 
   return normalized.length > 0 ? normalized : null;
 };
 
+/** HH:mm。不正・空は null */
+export const normalizeEpisodeTime = (value: string | null | undefined): string | null => {
+  const normalized = typeof value === 'string' ? value.trim() : '';
+  if (!normalized) {
+    return null;
+  }
+  const match = /^(\d{1,2}):(\d{2})$/.exec(normalized);
+  if (!match) {
+    return null;
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return null;
+  }
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
 export const formatEpisodeDateForCard = (date: string): string => {
   if (!date.trim()) return '-';
   const parts = date.split('-').map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return '-';
   return date.replace(/-/g, '/');
+};
+
+/** 詳細用: 日付＋任意時刻（カード一覧では使わない） */
+export const formatEpisodeDateTimeForDetail = (
+  date: string,
+  time?: string | null
+): string => {
+  const dateLabel = formatEpisodeDateForCard(date);
+  const normalizedTime = normalizeEpisodeTime(time);
+  return normalizedTime ? `${dateLabel} ${normalizedTime}` : dateLabel;
+};
+
+/**
+ * 一覧ソート: 日付新しい順 → 同日は時刻ありを遅い順 → 時刻なしは同日の末尾。
+ */
+export const compareEpisodesByEventDateTime = (a: Episode, b: Episode): number => {
+  const dateCmp = b.date.localeCompare(a.date);
+  if (dateCmp !== 0) {
+    return dateCmp;
+  }
+  const aTime = normalizeEpisodeTime(a.time) ?? '';
+  const bTime = normalizeEpisodeTime(b.time) ?? '';
+  if (aTime && bTime) {
+    return bTime.localeCompare(aTime);
+  }
+  if (aTime && !bTime) {
+    return -1;
+  }
+  if (!aTime && bTime) {
+    return 1;
+  }
+  return b.id.localeCompare(a.id);
 };
 
 /** update/delete に渡す author（公開者）の friend ID */

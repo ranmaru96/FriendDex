@@ -2,18 +2,24 @@ import { Theme } from '@/constants/theme';
 import { getCommonItemOptionByKindAndLabel } from '@/db';
 import { normalizeEpisodeTag } from './episodeHelpers';
 
-/** 予定タグのカレンダー帯色パレット（共通項目エディタでも使用） */
+/** 予定タグのカレンダー帯色パレット（共通項目エディタでも使用）
+ * 赤〜紫を色相で離し、グレー／茶をニュートラルとして足す（計14色）。
+ */
 export const EPISODE_TAG_COLOR_PALETTE = [
-  '#E85D75',
-  '#7C5CBF',
-  '#2A9D5A',
-  '#F4A261',
-  '#457B9D',
-  '#6D597A',
-  '#E76F51',
-  '#2A6F97',
-  '#9B5DE5',
-  '#06A77D',
+  '#DC2626', // 赤
+  '#EC4899', // ピンク
+  '#EA580C', // オレンジ
+  '#CA8A04', // 黄（帯でも沈まない濃さ）
+  '#65A30D', // 黄緑
+  '#15803D', // 緑
+  '#0F766E', // 青緑
+  '#0891B2', // 水色
+  '#2563EB', // 青
+  '#1E3A8A', // 紺
+  '#7C3AED', // 紫
+  '#C026D3', // 赤紫
+  '#9A3412', // 茶
+  '#6B7280', // グレー
 ] as const;
 
 const UNTAGGED_EVENT_COLOR = Theme.accent;

@@ -36,7 +36,7 @@ export default {
     },
     ios: {
       bundleIdentifier: getUniqueIdentifier(),
-      buildNumber: "1",
+      buildNumber: "2",
       supportsTablet: false,
       infoPlist: {
         NSPhotoLibraryUsageDescription: "プロフィール写真の選択・保存などのために、写真ライブラリへのアクセスが必要になる場合があります。",

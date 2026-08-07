@@ -19,6 +19,7 @@ const buildEpisodeInputFromEpisode = (
 ): EpisodeInput => ({
   title: episode.title,
   date: overrides.date ?? episode.date,
+  time: episode.time ?? null,
   description: episode.description,
   visibilityMode: episode.visibilityMode,
   participantEntries: episode.participantEntries,

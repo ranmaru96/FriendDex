@@ -3,6 +3,7 @@ import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-na
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { Spacing, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { useContentColors } from '@/utils/useContentColors';
 
 type CompactSectionHeaderProps = {
   title: string;
@@ -13,6 +14,8 @@ type CompactSectionHeaderProps = {
   edgeToEdge?: boolean;
   /** 行の右端（例: 追加ボタン） */
   right?: ReactNode;
+  /** タイトルと右端の間（例: 誕生日タグ） */
+  middle?: ReactNode;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -23,12 +26,20 @@ export function CompactSectionHeader({
   variant = 'compact',
   edgeToEdge = false,
   right,
+  middle,
   style,
 }: CompactSectionHeaderProps) {
   const appTheme = useAppThemeOptional();
+  const content = useContentColors();
   const showCount = count != null;
   const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
   const isBlack = appTheme?.variant === 'black';
+  const isWhite = appTheme?.variant === 'white';
+  /** ホワイト: 予定カードと同じ塗り・枠に揃える */
+  const whiteChipSurface = {
+    backgroundColor: content.contentCard,
+    borderColor: content.contentBorder,
+  };
   const titleColor = appTheme?.colors.onScreenText ?? '#FFFFFF';
   const countColor = appTheme?.colors.onScreenTextSecondary ?? Theme.textSecondary;
 
@@ -37,13 +48,17 @@ export function CompactSectionHeader({
       <View
         style={[
           styles.monoRow,
-          right ? styles.monoRowWithRight : null,
+          right || middle ? styles.monoRowWithRight : null,
           edgeToEdge ? styles.edgeToEdge : null,
           style,
         ]}
       >
         <View
-          style={[styles.monoChip, isBlack ? styles.monoChipBlack : styles.monoChipWhite]}
+          style={[
+            styles.monoChip,
+            isBlack ? styles.monoChipBlack : styles.monoChipWhite,
+            isWhite ? whiteChipSurface : null,
+          ]}
         >
           <Text
             style={[
@@ -61,6 +76,7 @@ export function CompactSectionHeader({
             </Text>
           ) : null}
         </View>
+        {middle ? <View style={styles.middleSlot}>{middle}</View> : null}
         {right ? <View style={styles.rightSlot}>{right}</View> : null}
       </View>
     );
@@ -84,6 +100,7 @@ export function CompactSectionHeader({
       >
         {title}
       </Text>
+      {middle ? <View style={styles.middleSlot}>{middle}</View> : null}
       <View style={styles.bandTrailing}>
         {showCount ? (
           <Text style={[styles.count, { color: countColor }]}>
@@ -141,6 +158,11 @@ const styles = StyleSheet.create({
   },
   rightSlot: {
     flexShrink: 0,
+    justifyContent: 'center',
+  },
+  middleSlot: {
+    flex: 1,
+    minWidth: 0,
     justifyContent: 'center',
   },
   classicHeader: {

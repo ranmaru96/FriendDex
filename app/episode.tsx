@@ -45,6 +45,7 @@ import { Episode, EpisodeParticipant, Friend } from '../types';
 import {
   buildParticipantChips,
   canManageEpisode,
+  compareEpisodesByEventDateTime,
   normalizeEpisodeTag,
   resolveEpisodeRecordOwnerId,
 } from '../utils/episodeHelpers';
@@ -52,6 +53,7 @@ import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
 } from '../utils/episodeEventLinking';
+import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 
 type EpisodeRow = { episode: Episode; recordOwnerId: string };
@@ -97,10 +99,9 @@ function collectUniqueEpisodes(friends: Friend[]): EpisodeRow[] {
       }
     });
   });
-  return Array.from(byId.values()).sort((a, b) => {
-    const d = b.episode.date.localeCompare(a.episode.date);
-    return d !== 0 ? d : b.episode.id.localeCompare(a.episode.id);
-  });
+  return Array.from(byId.values()).sort((a, b) =>
+    compareEpisodesByEventDateTime(a.episode, b.episode)
+  );
 }
 
 function buildFriendNameById(friends: Friend[]): Map<string, string> {
@@ -432,6 +433,7 @@ export default function EpisodeScreen() {
         episodeForm.setFormError('エピソードの更新に失敗しました。');
         return;
       }
+      registerSavedEpisodeTag(episodeInput.tag);
       episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
       episodeForm.reset();
       setIsFormVisible(false);
@@ -444,6 +446,7 @@ export default function EpisodeScreen() {
       episodeForm.setFormError('エピソードの追加に失敗しました。');
       return;
     }
+    registerSavedEpisodeTag(episodeInput.tag);
     episodeForm.persistPhotos(created.id, false);
     episodeForm.reset();
     setIsFormVisible(false);

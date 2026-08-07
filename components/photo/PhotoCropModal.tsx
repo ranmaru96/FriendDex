@@ -16,6 +16,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import type { Action } from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing } from '@/constants/theme';
+import { persistImageFile } from '@/utils/persistImageFile';
 
 /** エピソードカード表示と同じ横4:縦3 */
 export const EPISODE_PHOTO_ASPECT = 4 / 3;
@@ -229,7 +230,8 @@ export function PhotoCropModal({
         compress: 0.8,
         format: ImageManipulator.SaveFormat.JPEG,
       });
-      onConfirm(result.uri);
+      const persistedUri = await persistImageFile(result.uri);
+      onConfirm(persistedUri);
     } catch {
       setError('切り取りに失敗しました。');
     } finally {

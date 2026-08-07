@@ -67,6 +67,8 @@ function VisibilityModeIcon({ mode }: { mode: EpisodeVisibilityMode }) {
 export type EpisodeListCardProps = {
   title: string;
   date: string;
+  /** 詳細画面など日付表示を差し替えるとき（一覧カードは未指定のまま） */
+  dateLabel?: string;
   episodeTag?: string | null;
   chips: ParticipantChipDisplay[];
   visibility?: string[];
@@ -97,6 +99,7 @@ export type EpisodeListCardProps = {
 export function EpisodeListCard({
   title,
   date,
+  dateLabel,
   episodeTag,
   chips,
   visibility = [],
@@ -129,6 +132,7 @@ export function EpisodeListCard({
   const showPosterName = visibilityMode == null && normalizedPosterName != null;
   const normalizedEventTitle = eventTitle?.trim() ? eventTitle.trim() : null;
   const eventChipColor = getEventCalendarColor(eventEpisodeTag);
+  const resolvedDateLabel = dateLabel?.trim() || formatEpisodeDateForCard(date);
 
   if (usePhotoLayout) {
     const resolvedPhotoUris = (photoUris?.length
@@ -168,7 +172,7 @@ export function EpisodeListCard({
           ]}
           numberOfLines={1}
         >
-          {formatEpisodeDateForCard(date)}
+          {resolvedDateLabel}
         </Text>
         {normalizedEpisodeTag ? (
           <EpisodeTagChip
@@ -399,7 +403,7 @@ export function EpisodeListCard({
       >
         <EpisodeCardTitle title={title} multiline={titleMultiline} />
         <Text style={[styles.episodeCardDateText, { color: content.contentTextSecondary }]}>
-          {formatEpisodeDateForCard(date)}
+          {resolvedDateLabel}
         </Text>
         {visibilityMode != null ? (
           <VisibilityModeIcon mode={visibilityMode} />

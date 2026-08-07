@@ -5,10 +5,16 @@ import type { DateData } from 'react-native-calendars';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { CalendarDayCell } from '@/components/calendar/CalendarDayCell';
-import { ScheduleGridMonthCalendar } from '@/components/calendar/ScheduleGridMonthCalendar';
+import {
+  BIRTHDAY_ICON_COLOR,
+  ScheduleGridMonthCalendar,
+} from '@/components/calendar/ScheduleGridMonthCalendar';
+import { EpisodeTagsModal } from '@/components/episode/EpisodeTagsModal';
 import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
+import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { CompactSectionHeader } from '@/components/ui/CompactSectionHeader';
 import { MetaTitleRow, type MetaTitleRowLayout } from '@/components/ui/MetaTitleRow';
 import { HomeCardElevation, Radius, Spacing, Theme } from '@/constants/theme';
@@ -18,9 +24,20 @@ import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useTapUnlessHorizontalScroll } from '@/hooks/useTapUnlessHorizontalScroll';
 import { useContentColors } from '@/utils/useContentColors';
-import { getEpisodesByEventIds, getEventParticipantsForEvents, getEventsByDateRange, initializeDatabase } from '../db';
+import {
+  getAllFriends,
+  getEpisodesByEventIds,
+  getEventParticipantsForEvents,
+  getEventsByDateRange,
+  initializeDatabase,
+} from '../db';
 import type { Episode, Event } from '../types';
 import { buildCalendarMarkedDates } from '../utils/calendarMarking';
+import {
+  buildBirthdayFriendsByMonthDay,
+  getBirthdayFriendsForDateKey,
+  type BirthdayFriendDisplay,
+} from '@/utils/birthdayCalendar';
 import {
   filterEventsByLocalDate,
   formatDateKey,
@@ -197,6 +214,21 @@ export default function CalendarScreen() {
     Map<string, ReturnType<typeof toEventParticipantDisplays>>
   >(new Map());
   const [episodesByEventId, setEpisodesByEventId] = useState<Map<string, Episode[]>>(new Map());
+  const [birthdayFriendsByMonthDay, setBirthdayFriendsByMonthDay] = useState<
+    Map<string, BirthdayFriendDisplay[]>
+  >(new Map());
+  const [episodeTagsModalVisible, setEpisodeTagsModalVisible] = useState(false);
+  /** 予定タグの色・名称変更をカレンダー表示へ即時反映するためのカウンタ */
+  const [episodeTagStyleEpoch, setEpisodeTagStyleEpoch] = useState(0);
+
+  const birthdayMonthDays = useMemo(
+    () => new Set(birthdayFriendsByMonthDay.keys()),
+    [birthdayFriendsByMonthDay]
+  );
+  const birthdayFriendsForSelectedDate = useMemo(
+    () => getBirthdayFriendsForDateKey(birthdayFriendsByMonthDay, selectedDate),
+    [birthdayFriendsByMonthDay, selectedDate]
+  );
 
   const loadMonthEvents = useCallback(
     (year: number, month: number) => {
@@ -220,9 +252,15 @@ export default function CalendarScreen() {
     [isScheduleGrid]
   );
 
+  const refreshCalendarAfterEpisodeTagChange = useCallback(() => {
+    loadMonthEvents(visibleMonth.year, visibleMonth.month);
+    setEpisodeTagStyleEpoch((n) => n + 1);
+  }, [loadMonthEvents, visibleMonth.month, visibleMonth.year]);
+
   useFocusEffect(
     useCallback(() => {
       loadMonthEvents(visibleMonth.year, visibleMonth.month);
+      setBirthdayFriendsByMonthDay(buildBirthdayFriendsByMonthDay(getAllFriends()));
     }, [loadMonthEvents, visibleMonth.month, visibleMonth.year])
   );
 
@@ -241,7 +279,9 @@ export default function CalendarScreen() {
 
   const markedDates = useMemo(
     () => buildCalendarMarkedDates(monthEvents, selectedDate),
-    [monthEvents, selectedDate]
+    // episodeTagStyleEpoch: 色だけ変えたときも帯色を取り直す
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [monthEvents, selectedDate, episodeTagStyleEpoch]
   );
 
   const handleDayPress = (day: DateData) => {
@@ -348,6 +388,10 @@ export default function CalendarScreen() {
     router.push({ pathname: '/event', params: { eventId } });
   };
 
+  const handleOpenFriendDetail = (friendId: string) => {
+    router.push({ pathname: '/detail', params: { id: friendId } });
+  };
+
   const selectedDateLabel = useMemo(() => {
     if (isScheduleGrid) {
       return formatScheduleGridSelectedLabel(selectedDate);
@@ -357,6 +401,7 @@ export default function CalendarScreen() {
   }, [isScheduleGrid, selectedDate]);
 
   return (
+    <>
     <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
       <ScrollView
         style={styles.scrollView}
@@ -372,6 +417,7 @@ export default function CalendarScreen() {
       >
         {isScheduleGrid ? (
           <ScheduleGridMonthCalendar
+            key={`schedule-grid-${episodeTagStyleEpoch}`}
             year={visibleMonth.year}
             month={visibleMonth.month}
             selectedDate={selectedDate}
@@ -380,6 +426,8 @@ export default function CalendarScreen() {
             onDayPress={handleScheduleGridDayPress}
             onMonthChange={handleScheduleGridMonthChange}
             edgeToEdge={isEdgeToEdge}
+            birthdayMonthDays={birthdayMonthDays}
+            onPressEpisodeTags={() => setEpisodeTagsModalVisible(true)}
           />
         ) : (
           <GestureDetector gesture={classicCalendarSwipeGesture}>
@@ -435,6 +483,25 @@ export default function CalendarScreen() {
               count={eventsForSelectedDate.length}
               variant={isScheduleGrid ? 'compact' : 'classic'}
               edgeToEdge={isEdgeToEdge}
+              middle={
+                birthdayFriendsForSelectedDate.length > 0 ? (
+                  <View style={styles.birthdayRow}>
+                    <Ionicons name="gift" size={14} color={BIRTHDAY_ICON_COLOR} />
+                    <ParticipantChipList
+                      chips={birthdayFriendsForSelectedDate.map((friend) => ({
+                        id: `birthday-${friend.friendId}`,
+                        kind: 'individual' as const,
+                        label: friend.name,
+                        friendId: friend.friendId,
+                        photoUri: friend.photoUri,
+                      }))}
+                      compact
+                      layout="scroll"
+                      onPressProfile={handleOpenFriendDetail}
+                    />
+                  </View>
+                ) : null
+              }
               right={
                 <AddCircleButton
                   size={28}
@@ -493,6 +560,15 @@ export default function CalendarScreen() {
         </GestureDetector>
       </ScrollView>
     </SafeAreaView>
+    <EpisodeTagsModal
+      visible={episodeTagsModalVisible}
+      onClose={() => {
+        setEpisodeTagsModalVisible(false);
+        refreshCalendarAfterEpisodeTagChange();
+      }}
+      onTagsChanged={refreshCalendarAfterEpisodeTagChange}
+    />
+    </>
   );
 }
 
@@ -524,6 +600,11 @@ const styles = StyleSheet.create({
   },
   eventAreaTight: {
     gap: Spacing.sm,
+  },
+  birthdayRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   calendarShadow: {
     borderRadius: Radius.md,

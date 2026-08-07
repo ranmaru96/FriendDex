@@ -16,13 +16,12 @@ const TABS: {
   key: BottomNavTabKey;
   label: string;
   icon: ComponentProps<typeof Ionicons>['name'];
-  route: '/' | '/commonitems' | '/calendar' | '/episode' | '/tools' | '/tasks';
+  route: '/' | '/calendar' | '/episode' | '/tools' | '/tasks';
 }[] = [
   { key: 'home', label: '一覧', icon: 'people-outline', route: '/' },
   { key: 'calendar', label: 'カレンダー', icon: 'calendar-outline', route: '/calendar' },
   { key: 'episode', label: 'エピソード', icon: 'book-outline', route: '/episode' },
   { key: 'tasks', label: 'タスク', icon: 'checkbox-outline', route: '/tasks' },
-  { key: 'commonitems', label: '共通項目', icon: 'pricetag-outline', route: '/commonitems' },
   { key: 'tools', label: 'ツール', icon: 'construct-outline', route: '/tools' },
 ];
 

@@ -36,6 +36,9 @@ import { useAppTheme } from './contexts/AppThemeContext';
 import { createDetailStyles } from './utils/detailStyles';
 import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
 import { useContentColors } from '@/utils/useContentColors';
+import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
+import { pastOrTodayDatePickerBounds } from '@/utils/datePickerBounds';
+import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { contentDateTimePickerProps } from '@/utils/contentStyleHelpers';
 import { computeProfileCompleteness } from '@/utils/profileCompleteness';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
@@ -72,6 +75,7 @@ import {
 import {
   buildParticipantChips,
   canManageEpisode,
+  compareEpisodesByEventDateTime,
   formatEpisodeDateForCard,
   getVisibilityModeIconColor,
   getVisibilityModeIconName,
@@ -93,6 +97,7 @@ import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
 } from './utils/episodeEventLinking';
+import { registerSavedEpisodeTag } from './utils/episodeTagMaster';
 
 const EPISODE_PICKER_COLUMNS = 3;
 const EPISODE_PICKER_GAP = 6;
@@ -107,6 +112,8 @@ type AdjacentSlideSnapshot = {
   habitCount: number;
   sayingCount: number;
   sinceYear: string;
+  recentMeetingLabel: string;
+  showRecentMeeting: boolean;
   profileCompleteness: number;
   profileImageStatus: ProfileImageStatus;
   showProfileSwitcher: boolean;
@@ -176,6 +183,8 @@ const buildAdjacentSlideSnapshot = (
   options?: {
     habitCount?: number;
     sinceYear?: string;
+    recentMeetingLabel?: string;
+    showRecentMeeting?: boolean;
     profileImageStatus?: ProfileImageStatus;
     showProfileSwitcher?: boolean;
     profileByLabel?: string;
@@ -188,7 +197,9 @@ const buildAdjacentSlideSnapshot = (
     activeTab,
     habitCount: options?.habitCount ?? friend.traits.length,
     sayingCount: friend.sayings.length,
-    sinceYear: options?.sinceYear ?? '—',
+    sinceYear: options?.sinceYear ?? getEpisodeSinceYear(friend),
+    recentMeetingLabel: options?.recentMeetingLabel ?? getRecentMeetingLabel(friend),
+    showRecentMeeting: options?.showRecentMeeting ?? true,
     profileCompleteness: computeProfileCompleteness(friend, hasPhoto),
     profileImageStatus,
     showProfileSwitcher: options?.showProfileSwitcher ?? false,
@@ -211,12 +222,28 @@ const parseDateString = (s: string): Date => {
   return new Date();
 };
 
-const formatProfileSinceYear = (createdAt: string | undefined): string => {
-  if (!createdAt?.trim()) {
-    return '—';
+const getSortedEpisodeDates = (friend: Friend): string[] =>
+  friend.episodes
+    .map((episode) => episode.date.trim())
+    .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .sort((a, b) => a.localeCompare(b));
+
+const getEpisodeSinceYear = (friend: Friend): string => {
+  const oldestDate = getSortedEpisodeDates(friend)[0];
+  return oldestDate ? oldestDate.slice(0, 4) : '—';
+};
+
+const getRecentMeetingLabel = (friend: Friend): string => {
+  const dates = getSortedEpisodeDates(friend);
+  const latestDate = dates[dates.length - 1];
+  if (!latestDate) {
+    return '直近 —';
   }
-  const year = new Date(createdAt).getFullYear();
-  return Number.isNaN(year) ? '—' : String(year);
+  const [year, month, day] = latestDate.split('-').map(Number);
+  const currentYear = new Date().getFullYear();
+  return year === currentYear
+    ? `直近 ${month}/${day}`
+    : `直近 ${String(year).slice(-2)}/${month}/${day}`;
 };
 
 type Option = {
@@ -304,6 +331,8 @@ function DetailAdjacentSlidePanel({
     habitCount,
     sayingCount,
     sinceYear,
+    recentMeetingLabel,
+    showRecentMeeting,
     profileCompleteness,
     profileImageStatus,
     showProfileSwitcher,
@@ -389,8 +418,15 @@ function DetailAdjacentSlidePanel({
                   <Text style={styles.heroName} numberOfLines={2}>
                     {friend.name}
                   </Text>
-                  <View style={styles.heroEditButton}>
-                    <Ionicons name="pencil-outline" size={16} color={c.accent} />
+                  <View style={styles.heroNameActions}>
+                    {showRecentMeeting ? (
+                      <Text style={styles.heroRecentMeeting} numberOfLines={1}>
+                        {recentMeetingLabel}
+                      </Text>
+                    ) : null}
+                    <View style={styles.heroEditButton}>
+                      <Ionicons name="pencil-outline" size={16} color={c.accent} />
+                    </View>
                   </View>
                 </View>
                 {friend.nickname.trim() || friend.importSource === 'qr_scan' ? (
@@ -638,6 +674,7 @@ export default function DetailScreen() {
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
   const [showSayingDatePicker, setShowSayingDatePicker] = useState(false);
+  useDismissPickerOnKeyboardShow(showSayingDatePicker, () => setShowSayingDatePicker(false));
   const [isSayingFormVisible, setIsSayingFormVisible] = useState(false);
   const [editingSayingId, setEditingSayingId] = useState<string | null>(null);
   const [sayingText, setSayingText] = useState('');
@@ -951,7 +988,7 @@ export default function DetailScreen() {
 
   const sortedEpisodes = useMemo(() => {
     if (!friend) return [];
-    return [...friend.episodes].sort((a, b) => b.date.localeCompare(a.date));
+    return [...friend.episodes].sort(compareEpisodesByEventDateTime);
   }, [friend]);
 
   const filteredEpisodes = useMemo(() => {
@@ -1013,9 +1050,10 @@ export default function DetailScreen() {
       ? { borderColor: content.contentPhotoInnerBorder }
       : null;
 
-  const sinceYear = useMemo(
-    () => formatProfileSinceYear(selectedProfile?.createdAt),
-    [selectedProfile]
+  const sinceYear = useMemo(() => (friend ? getEpisodeSinceYear(friend) : '—'), [friend]);
+  const recentMeetingLabel = useMemo(
+    () => (friend ? getRecentMeetingLabel(friend) : '直近 —'),
+    [friend]
   );
 
   const goToAdjacentFriend = useCallback(
@@ -1030,12 +1068,6 @@ export default function DetailScreen() {
       }
 
       const nextProfiles = getProfilesByFriendId(targetId);
-      const nextDefaultProfile =
-        (nextFriend.activeProfileId
-          ? nextProfiles.find((profile) => profile.id === nextFriend.activeProfileId)
-          : undefined) ??
-        nextProfiles.find((profile) => profile.source === 'self') ??
-        nextProfiles[0];
       const outgoingProfileMeta = {
         showProfileSwitcher: selectableProfiles.length > 0,
         profileByLabel: profileTagLabel,
@@ -1054,11 +1086,12 @@ export default function DetailScreen() {
         outgoing: buildAdjacentSlideSnapshot(friend, activeTab, {
           habitCount: habitNotes.length,
           sinceYear,
+          showRecentMeeting: friend.id !== myselfId,
           profileImageStatus,
           ...outgoingProfileMeta,
         }),
         incoming: buildAdjacentSlideSnapshot(nextFriend, activeTab, {
-          sinceYear: formatProfileSinceYear(nextDefaultProfile?.createdAt),
+          showRecentMeeting: nextFriend.id !== myselfId,
           ...incomingProfileMeta,
         }),
         targetId,
@@ -1630,6 +1663,7 @@ export default function DetailScreen() {
         episodeForm.setFormError('エピソードの更新に失敗しました。');
         return;
       }
+      registerSavedEpisodeTag(episodeInput.tag);
       episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
     } else {
       const created = createEpisode(episodeInput);
@@ -1637,6 +1671,7 @@ export default function DetailScreen() {
         episodeForm.setFormError('エピソードの追加に失敗しました。');
         return;
       }
+      registerSavedEpisodeTag(episodeInput.tag);
       episodeForm.persistPhotos(created.id, false);
     }
     episodeForm.reset();
@@ -1955,14 +1990,21 @@ export default function DetailScreen() {
                 <Text style={styles.heroName} numberOfLines={2}>
                   {friend.name}
                 </Text>
-                <Pressable
-                  style={styles.heroEditButton}
-                  onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
-                  accessibilityLabel="編集"
-                  hitSlop={8}
-                >
-                  <Ionicons name="pencil-outline" size={16} color={c.accent} />
-                </Pressable>
+                <View style={styles.heroNameActions}>
+                  {friend.id !== myselfId ? (
+                    <Text style={styles.heroRecentMeeting} numberOfLines={1}>
+                      {recentMeetingLabel}
+                    </Text>
+                  ) : null}
+                  <Pressable
+                    style={styles.heroEditButton}
+                    onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
+                    accessibilityLabel="編集"
+                    hitSlop={8}
+                  >
+                    <Ionicons name="pencil-outline" size={16} color={c.accent} />
+                  </Pressable>
+                </View>
               </View>
               {(friend.nickname.trim() || friend.importSource === 'qr_scan') ? (
                 <View style={styles.heroNicknameRow}>
@@ -2368,7 +2410,13 @@ export default function DetailScreen() {
                 />
                 <Pressable
                   style={[styles.episodeInput, styles.sayingDateInput]}
-                  onPress={() => setShowSayingDatePicker(true)}
+                  onPress={() => {
+                    dismissKeyboardFocus();
+                    if (!sayingDate) {
+                      setSayingDate(formatDateToYMD(new Date()));
+                    }
+                    setShowSayingDatePicker(true);
+                  }}
                 >
                   <Text style={sayingDate ? styles.episodeDateText : styles.episodeDatePlaceholder}>
                     {sayingDate || 'YYYY-MM-DD（任意）'}
@@ -2383,6 +2431,7 @@ export default function DetailScreen() {
                       locale="ja-JP"
                       style={styles.datePickerSelf}
                       {...dateTimePickerProps}
+                      {...pastOrTodayDatePickerBounds()}
                       onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                         if (Platform.OS !== 'ios') setShowSayingDatePicker(false);
                         if (selected) setSayingDate(formatDateToYMD(selected));

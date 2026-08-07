@@ -18,6 +18,25 @@ export function addDays(date: Date, days: number): Date {
   return next;
 }
 
+/** YYYY-MM-DD → 同年は `M/D`、他年は `YY/M/D`（月日はゼロ埋めなし） */
+export function formatTaskDueDateLabel(dueDateYmd: string, asOf: Date = new Date()): string {
+  if (!dueDateYmd) return '';
+  const [y, m, d] = dueDateYmd.split('-').map((part) => Number(part));
+  if (!y || !m || !d) return '';
+  const md = `${m}/${d}`;
+  if (y === asOf.getFullYear()) return md;
+  return `${String(y % 100).padStart(2, '0')}/${md}`;
+}
+
+export type TaskDueUrgency = 'overdue' | 'today' | 'upcoming';
+
+export function getTaskDueUrgency(dueDateYmd: string, asOf: Date = new Date()): TaskDueUrgency {
+  const today = toYmd(asOf);
+  if (dueDateYmd < today) return 'overdue';
+  if (dueDateYmd === today) return 'today';
+  return 'upcoming';
+}
+
 export type RecentSevenDayItem = {
   ymd: string;
   label: string;

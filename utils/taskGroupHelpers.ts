@@ -1,17 +1,24 @@
-import type { Task, TaskGroup } from '@/types';
-import { formatRecurringActivityLabel, isRecurringDueOnDate, toYmd } from '@/utils/taskHelpers';
+import type { Task, TaskGroup, TaskPace } from '@/types';
+import {
+  formatRecurringActivityLabel,
+  isRecurringDueOnDate,
+  toYmd,
+  type TaskScheduleLike,
+} from '@/utils/taskHelpers';
 
 export type RecurringTaskGroupBundle = {
   group: TaskGroup;
   members: Task[];
 };
 
-/** 定期タスクをグループ束と未所属に分割。emptyGroups が true ならメンバー0のグループも残す */
-export function partitionRecurringByGroup(
+export type TaskGroupBundle = RecurringTaskGroupBundle;
+
+/** タスクをグループ束と未所属に分割。emptyGroups が true ならメンバー0のグループも残す */
+export function partitionTasksByGroup(
   tasks: Task[],
   groups: TaskGroup[],
   options?: { includeEmptyGroups?: boolean }
-): { bundles: RecurringTaskGroupBundle[]; ungrouped: Task[] } {
+): { bundles: TaskGroupBundle[]; ungrouped: Task[] } {
   const includeEmptyGroups = options?.includeEmptyGroups ?? false;
   const byGroupId = new Map<string, Task[]>();
   const ungrouped: Task[] = [];
@@ -26,7 +33,7 @@ export function partitionRecurringByGroup(
     byGroupId.set(groupId, list);
   }
 
-  const bundles: RecurringTaskGroupBundle[] = [];
+  const bundles: TaskGroupBundle[] = [];
   for (const group of groups) {
     const members = byGroupId.get(group.id) ?? [];
     byGroupId.delete(group.id);
@@ -40,6 +47,15 @@ export function partitionRecurringByGroup(
     ungrouped.push(...orphans);
   }
   return { bundles, ungrouped };
+}
+
+/** @deprecated Use partitionTasksByGroup */
+export function partitionRecurringByGroup(
+  tasks: Task[],
+  groups: TaskGroup[],
+  options?: { includeEmptyGroups?: boolean }
+): { bundles: RecurringTaskGroupBundle[]; ungrouped: Task[] } {
+  return partitionTasksByGroup(tasks, groups, options);
 }
 
 /** グループ実施日集合向けの活動ラベル（暦日の連続＝unpaced 相当） */
@@ -90,4 +106,115 @@ export function formatGroupListMeta(
     return `今日 ${progress.done}/${progress.total}`;
   }
   return '';
+}
+
+/** 臨時グループ内で最も早い期限（YYYY-MM-DD）。期限なしのみなら null */
+export function getNearestTemporaryGroupDueDate(members: Task[]): string | null {
+  let nearest: string | null = null;
+  for (const task of members) {
+    const due = task.dueDate?.trim();
+    if (!due) continue;
+    if (nearest == null || due < nearest) {
+      nearest = due;
+    }
+  }
+  return nearest;
+}
+
+export function groupToScheduleLike(group: TaskGroup): TaskScheduleLike {
+  return {
+    pace: group.pace,
+    recurrenceUnit: group.recurrenceUnit,
+    recurrenceConfig: group.recurrenceConfig,
+  };
+}
+
+/** 周期あり＆対象日 → 必須。周期なしは必須にならない */
+export function isRecurringTaskRequiredOnDate(task: TaskScheduleLike, date: Date): boolean {
+  if (task.pace !== 'scheduled') {
+    return false;
+  }
+  return isRecurringDueOnDate(task, date);
+}
+
+/** 周期なし（記録のみ）→ 自由として今日触れる */
+export function isRecurringTaskFree(task: TaskScheduleLike): boolean {
+  return task.pace === 'unpaced' || task.pace == null;
+}
+
+/** グループ固有周期による必須日（メンバーは見ない） */
+export function isGroupOwnRequiredOnDate(group: TaskGroup, date: Date): boolean {
+  if (group.kind !== 'recurring') {
+    return false;
+  }
+  if (group.pace !== 'scheduled') {
+    return false;
+  }
+  return isRecurringDueOnDate(groupToScheduleLike(group), date);
+}
+
+/** グループ必須 = グループ周期 OR メンバーに必須が1つでもある */
+export function isGroupRequiredOnDate(
+  group: TaskGroup,
+  members: Task[],
+  date: Date
+): boolean {
+  if (isGroupOwnRequiredOnDate(group, date)) {
+    return true;
+  }
+  return members.some((task) => isRecurringTaskRequiredOnDate(task, date));
+}
+
+/**
+ * 定期タブ「本日対象」: 今日チェック可能なメンバーがいる、
+ * または空グループでグループ自身が必須日。
+ */
+export function isGroupCheckableOnDate(
+  group: TaskGroup,
+  members: Task[],
+  date: Date
+): boolean {
+  if (members.some((task) => isRecurringDueOnDate(task, date))) {
+    return true;
+  }
+  return members.length === 0 && isGroupOwnRequiredOnDate(group, date);
+}
+
+/** 自由定期向け: 必須ではなく、自由メンバーがいる */
+export function isGroupFreeOnDate(
+  group: TaskGroup,
+  members: Task[],
+  date: Date
+): boolean {
+  if (isGroupRequiredOnDate(group, members, date)) {
+    return false;
+  }
+  if (members.length === 0) {
+    return false;
+  }
+  return members.some((task) => isRecurringTaskFree(task));
+}
+
+export function isTemporaryDueOnOrBefore(task: Task, ymd: string): boolean {
+  const due = task.dueDate?.trim();
+  if (!due) {
+    return false;
+  }
+  return due <= ymd;
+}
+
+export function isTemporaryOpenIncompleteBucket(task: Task, ymd: string): boolean {
+  const due = task.dueDate?.trim();
+  return !due || due > ymd;
+}
+
+export function isCompletedOnLocalDay(iso: string | null | undefined, ymd: string): boolean {
+  if (!iso) {
+    return false;
+  }
+  return toYmd(new Date(iso)) === ymd;
+}
+
+export function normalizeGroupPace(pace: TaskPace | null | undefined): TaskPace {
+  return pace === 'scheduled' ? 'scheduled' : 'unpaced';
 }

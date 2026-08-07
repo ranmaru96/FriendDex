@@ -220,6 +220,56 @@ export function MonthDayRollPicker({ month, day, onChange, style }: MonthDayRoll
   );
 }
 
+type YearMonthRollPickerProps = {
+  year: number;
+  month: number;
+  onChange: (next: { year: number; month: number }) => void;
+  /** Inclusive year range. Defaults to currentYear-20 … currentYear+5 */
+  yearRange?: { min: number; max: number };
+  style?: StyleProp<ViewStyle>;
+};
+
+export function YearMonthRollPicker({
+  year,
+  month,
+  onChange,
+  yearRange,
+  style,
+}: YearMonthRollPickerProps) {
+  const nowYear = new Date().getFullYear();
+  const minYear = yearRange?.min ?? nowYear - 20;
+  const maxYear = yearRange?.max ?? nowYear + 5;
+  const years = useMemo(() => {
+    const list: number[] = [];
+    for (let y = minYear; y <= maxYear; y += 1) {
+      list.push(y);
+    }
+    return list;
+  }, [maxYear, minYear]);
+  const months = useMemo(() => Array.from({ length: 12 }, (_, i) => i + 1), []);
+  const safeYear = Math.min(maxYear, Math.max(minYear, year));
+  const safeMonth = Math.min(12, Math.max(1, month));
+
+  return (
+    <RollGestureZone style={style}>
+      <View style={styles.row}>
+        <RollColumn
+          values={years}
+          value={safeYear}
+          onChange={(nextYear) => onChange({ year: nextYear, month: safeMonth })}
+          formatLabel={(v) => `${v}年`}
+        />
+        <RollColumn
+          values={months}
+          value={safeMonth}
+          onChange={(nextMonth) => onChange({ year: safeYear, month: nextMonth })}
+          formatLabel={(v) => `${v}月`}
+        />
+      </View>
+    </RollGestureZone>
+  );
+}
+
 const styles = StyleSheet.create({
   zone: {
     width: '100%',

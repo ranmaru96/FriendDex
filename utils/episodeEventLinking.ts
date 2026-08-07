@@ -68,6 +68,7 @@ const buildEpisodeInputFromEpisode = (episode: Episode, eventId: string): Episod
   return {
     title: episode.title,
     date: resolveDateForLinkedEvent(episode.date, normalizedEventId),
+    time: episode.time ?? null,
     description: episode.description,
     visibilityMode: episode.visibilityMode,
     participantEntries: episode.participantEntries,

@@ -58,6 +58,7 @@ export function TabScreenTemplate({
             { paddingBottom: bottomPadding },
           ]}
           enableOnAndroid
+          enableResetScrollToCoords={false}
           extraScrollHeight={extraScrollHeight}
           keyboardShouldPersistTaps="handled"
         >

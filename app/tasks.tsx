@@ -26,14 +26,15 @@ import {
   deleteTask,
   getAllTaskGroups,
   getCompletedTemporaryTasks,
-  getEvent,
   getOpenTemporaryTasks,
   getRecurringTasks,
-  getRecurringTasksByGroupId,
+  getTask,
+  getTasksByGroupId,
   getTaskCompletionDatesSet,
   getTasksCompletionDatesUnion,
   initializeDatabase,
   isRecurringDoneOn,
+  reopenTemporaryTask,
   setRecurringDoneOn,
   setTaskGroupId,
 } from '../db';
@@ -41,8 +42,10 @@ import type { Task, TaskGroup } from '../types';
 import { TASK_GROUP_MEMBER_LIMIT } from '../types';
 import {
   formatRecurrenceLabel,
+  formatTaskDueDateLabel,
   getRecentGroupScheduledDotItems,
   getRecentScheduledDotItems,
+  getTaskDueUrgency,
   isRecurringDueOnDate,
   toYmd,
 } from '@/utils/taskHelpers';
@@ -51,20 +54,39 @@ import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import {
   countGroupDueProgress,
   formatGroupListMeta,
+  getNearestTemporaryGroupDueDate,
   groupTracksCompletions,
-  partitionRecurringByGroup,
+  isCompletedOnLocalDay,
+  isGroupFreeOnDate,
+  isGroupOwnRequiredOnDate,
+  isGroupRequiredOnDate,
+  isRecurringTaskFree,
+  isRecurringTaskRequiredOnDate,
+  isTemporaryDueOnOrBefore,
+  isTemporaryOpenIncompleteBucket,
+  partitionTasksByGroup,
   trackingMembers,
 } from '@/utils/taskGroupHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   contentMutedTextStyle,
   contentSurfaceStyle,
+  contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { Radius } from '@/constants/theme';
 import type { AppThemeContentColorFields } from '@/constants/appThemes/contentColors';
 
 type Segment = 'today' | 'recurring' | 'temporary';
+
+const TASK_ACCENT = {
+  required: '#dc2626',
+  free: '#eab308',
+  incomplete: '#2563eb',
+  dim: '#9ca3af',
+} as const;
+
+type TaskAccent = (typeof TASK_ACCENT)[keyof typeof TASK_ACCENT];
 
 /** グループ ID。ヒットなしは undefined */
 type DropTargetId = string;
@@ -89,6 +111,7 @@ type RecurringTaskRowProps = {
   showCheckbox: boolean;
   indented?: boolean;
   muted?: boolean;
+  accent?: TaskAccent;
   todayYmd: string;
   content: AppThemeContentColorFields;
   dragEnabled: boolean;
@@ -105,6 +128,7 @@ function RecurringTaskRow({
   showCheckbox,
   indented = false,
   muted = false,
+  accent,
   todayYmd,
   content,
   dragEnabled,
@@ -124,6 +148,13 @@ function RecurringTaskRow({
     ? getRecentScheduledDotItems(task, dates, new Date())
     : [];
   const softDoneLook = !task.trackCompletions && doneToday;
+  const dimmed = muted || softDoneLook;
+  /** 要対応などでチェック後は枠を赤→チェック色に揃える（muted 対象外はグレーのまま） */
+  const borderColor = muted
+    ? TASK_ACCENT.dim
+    : doneToday
+      ? checkedColor
+      : accent ?? content.contentBorder;
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -195,9 +226,13 @@ function RecurringTaskRow({
       style={[
         styles.row,
         contentSurfaceStyle(content),
-        { borderWidth: 1, borderRadius: 10 },
+        {
+          borderWidth: dimmed ? 1 : accent ? 1.5 : 1,
+          borderRadius: 10,
+          borderColor,
+        },
         indented ? styles.rowIndented : null,
-        muted || softDoneLook ? styles.mutedBlock : null,
+        dimmed ? styles.dimmedBlock : null,
         animatedStyle,
       ]}
     >
@@ -227,7 +262,7 @@ function RecurringTaskRow({
         <Text
           style={[
             styles.rowTitle,
-            contentTextStyle(content),
+            dimmed ? contentMutedTextStyle(content) : contentTextStyle(content),
             softDoneLook ? styles.completedTemporaryTitle : null,
           ]}
         >
@@ -245,6 +280,194 @@ function RecurringTaskRow({
             </Text>
           ) : null}
         </View>
+      </Pressable>
+    </Animated.View>
+  );
+
+  if (!dragEnabled) {
+    return body;
+  }
+
+  return <GestureDetector gesture={pan}>{body}</GestureDetector>;
+}
+
+type TemporaryTaskRowProps = {
+  task: Task;
+  completed?: boolean;
+  indented?: boolean;
+  accent?: TaskAccent;
+  content: AppThemeContentColorFields;
+  checkedColor: string;
+  dragEnabled: boolean;
+  onOpen: () => void;
+  onToggle: () => void;
+  onLongPressDelete: () => void;
+  onDragStart: (task: Task) => void;
+  onDragMove: (pageX: number, pageY: number) => void;
+  onDragEnd: (pageX: number, pageY: number) => void;
+};
+
+function TemporaryTaskRow({
+  task,
+  completed = false,
+  indented = false,
+  accent,
+  content,
+  checkedColor,
+  dragEnabled,
+  onOpen,
+  onToggle,
+  onLongPressDelete,
+  onDragStart,
+  onDragMove,
+  onDragEnd,
+}: TemporaryTaskRowProps) {
+  const memoPreview = task.memo.trim();
+  const dueUrgency = task.dueDate ? getTaskDueUrgency(task.dueDate) : null;
+  const borderColor = completed ? TASK_ACCENT.dim : accent ?? content.contentBorder;
+
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const dragging = useSharedValue(false);
+  const onDragStartRef = useRef(onDragStart);
+  const onDragMoveRef = useRef(onDragMove);
+  const onDragEndRef = useRef(onDragEnd);
+  onDragStartRef.current = onDragStart;
+  onDragMoveRef.current = onDragMove;
+  onDragEndRef.current = onDragEnd;
+
+  const notifyStart = useCallback(() => {
+    onDragStartRef.current(task);
+  }, [task]);
+  const notifyMove = useCallback((pageX: number, pageY: number) => {
+    onDragMoveRef.current(pageX, pageY);
+  }, []);
+  const notifyEnd = useCallback((pageX: number, pageY: number) => {
+    onDragEndRef.current(pageX, pageY);
+  }, []);
+
+  const pan = useMemo(() => {
+    if (!dragEnabled) {
+      return Gesture.Pan().enabled(false);
+    }
+    return Gesture.Pan()
+      .activateAfterLongPress(420)
+      .onStart(() => {
+        dragging.value = true;
+        scale.value = withTiming(1.04, { duration: 120 });
+        runOnJS(notifyStart)();
+      })
+      .onUpdate((event) => {
+        translateX.value = event.translationX;
+        translateY.value = event.translationY;
+        runOnJS(notifyMove)(event.absoluteX, event.absoluteY);
+      })
+      .onEnd((event) => {
+        runOnJS(notifyEnd)(event.absoluteX, event.absoluteY);
+        translateX.value = withSpring(0);
+        translateY.value = withSpring(0);
+        scale.value = withTiming(1, { duration: 120 });
+        dragging.value = false;
+      })
+      .onFinalize((_event, success) => {
+        if (!success) {
+          translateX.value = withSpring(0);
+          translateY.value = withSpring(0);
+          scale.value = withTiming(1, { duration: 120 });
+          dragging.value = false;
+          runOnJS(notifyEnd)(-1, -1);
+        }
+      });
+  }, [dragEnabled, dragging, notifyEnd, notifyMove, notifyStart, scale, translateX, translateY]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: translateX.value },
+      { translateY: translateY.value },
+      { scale: scale.value },
+    ],
+    zIndex: dragging.value ? 20 : 0,
+    opacity: dragging.value ? 0.92 : 1,
+  }));
+
+  const body = (
+    <Animated.View
+      style={[
+        styles.row,
+        contentSurfaceStyle(content),
+        {
+          borderWidth: completed ? 1 : accent ? 1.5 : 1,
+          borderRadius: 10,
+          borderColor,
+        },
+        completed ? styles.dimmedBlock : null,
+        indented ? styles.rowIndented : null,
+        animatedStyle,
+      ]}
+    >
+      <Pressable
+        style={styles.checkboxHit}
+        onPress={(e) => {
+          e.stopPropagation?.();
+          onToggle();
+        }}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: completed }}
+        accessibilityLabel={completed ? '未完了に戻す' : '完了にする'}
+      >
+        <Ionicons
+          name={completed ? 'checkbox' : 'square-outline'}
+          size={26}
+          color={completed ? TASK_ACCENT.dim : content.contentTextSecondary}
+        />
+      </Pressable>
+      <Pressable style={styles.rowMain} onPress={onOpen} onLongPress={dragEnabled ? undefined : onLongPressDelete}>
+        <View style={styles.temporaryTitleRow}>
+          <Text
+            style={[
+              styles.rowTitle,
+              styles.temporaryTitle,
+              completed ? contentMutedTextStyle(content) : contentTextStyle(content),
+              completed ? styles.completedTemporaryTitle : null,
+            ]}
+            numberOfLines={1}
+          >
+            {task.title}
+          </Text>
+          {task.dueDate ? (
+            <View
+              style={[
+                styles.dueChip,
+                contentTagStyle(content),
+                { borderWidth: 1 },
+                dueUrgency === 'overdue'
+                  ? { borderColor: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.12)' }
+                  : null,
+                dueUrgency === 'today'
+                  ? { borderColor: checkedColor, backgroundColor: `${checkedColor}22` }
+                  : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.dueChipText,
+                  contentMutedTextStyle(content),
+                  dueUrgency === 'overdue' ? { color: '#dc2626' } : null,
+                  dueUrgency === 'today' ? { color: checkedColor } : null,
+                ]}
+                numberOfLines={1}
+              >
+                {formatTaskDueDateLabel(task.dueDate)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        {memoPreview ? (
+          <Text style={[styles.rowMeta, contentMutedTextStyle(content)]} numberOfLines={1}>
+            {memoPreview}
+          </Text>
+        ) : null}
       </Pressable>
     </Animated.View>
   );
@@ -293,58 +516,101 @@ export default function TasksScreen() {
     }, [reload])
   );
 
-  const { bundles, ungrouped } = useMemo(
-    () =>
-      partitionRecurringByGroup(recurring, groups, {
-        includeEmptyGroups: segment === 'recurring',
-      }),
-    [recurring, groups, completionTick, segment]
+  const recurringGroups = useMemo(
+    () => groups.filter((group) => group.kind === 'recurring'),
+    [groups]
+  );
+  const temporaryGroups = useMemo(
+    () => groups.filter((group) => group.kind === 'temporary'),
+    [groups]
   );
 
-  const todayUngrouped = useMemo(() => {
+  const { bundles, ungrouped } = useMemo(
+    () =>
+      partitionTasksByGroup(recurring, recurringGroups, {
+        includeEmptyGroups: segment === 'recurring',
+      }),
+    [recurring, recurringGroups, completionTick, segment]
+  );
+
+  const actionRequiredRecurringBundles = useMemo(() => {
     const today = new Date();
-    return ungrouped.filter((task) => isRecurringDueOnDate(task, today));
+    return bundles.filter((bundle) => isGroupRequiredOnDate(bundle.group, bundle.members, today));
+  }, [bundles, completionTick]);
+
+  const actionRequiredRecurringUngrouped = useMemo(() => {
+    const today = new Date();
+    return ungrouped.filter((task) => isRecurringTaskRequiredOnDate(task, today));
   }, [ungrouped, completionTick]);
 
-  const todayBundles = useMemo(() => {
+  const freeRecurringBundles = useMemo(() => {
     const today = new Date();
-    return bundles
-      .map((bundle) => ({
-        ...bundle,
-        dueMembers: bundle.members.filter((task) => isRecurringDueOnDate(task, today)),
-        offMembers: bundle.members.filter((task) => !isRecurringDueOnDate(task, today)),
-      }))
-      .filter((bundle) => bundle.dueMembers.length > 0);
+    return bundles.filter((bundle) => isGroupFreeOnDate(bundle.group, bundle.members, today));
   }, [bundles, completionTick]);
 
-  const recurringDueBundles = useMemo(() => {
-    const today = new Date();
-    return bundles
-      .map((bundle) => ({
-        ...bundle,
-        dueMembers: bundle.members.filter((task) => isRecurringDueOnDate(task, today)),
-      }))
-      .filter((bundle) => bundle.dueMembers.length > 0);
-  }, [bundles, completionTick]);
+  const freeRecurringUngrouped = useMemo(() => {
+    return ungrouped.filter((task) => isRecurringTaskFree(task));
+  }, [ungrouped, completionTick]);
 
+  const completedTodayTemporary = useMemo(
+    () =>
+      completedTemporary.filter((task) => isCompletedOnLocalDay(task.completedAt, todayYmd)),
+    [completedTemporary, todayYmd, completionTick]
+  );
+
+  const {
+    bundles: actionRequiredTemporaryBundles,
+    ungrouped: actionRequiredTemporaryUngrouped,
+  } = useMemo(() => {
+    const { bundles: allBundles, ungrouped } = partitionTasksByGroup(temporary, temporaryGroups, {
+      includeEmptyGroups: segment === 'temporary',
+    });
+    const actionBundles = allBundles.filter((bundle) =>
+      bundle.members.some((task) => isTemporaryDueOnOrBefore(task, todayYmd))
+    );
+    return {
+      bundles: actionBundles,
+      ungrouped: ungrouped.filter((task) => isTemporaryDueOnOrBefore(task, todayYmd)),
+    };
+  }, [temporary, temporaryGroups, todayYmd, completionTick, segment]);
+
+  const {
+    bundles: openIncompleteTemporaryBundles,
+    ungrouped: openIncompleteTemporaryUngrouped,
+  } = useMemo(() => {
+    const actionGroupIds = new Set(
+      actionRequiredTemporaryBundles.map((bundle) => bundle.group.id)
+    );
+    const { bundles: allBundles, ungrouped } = partitionTasksByGroup(temporary, temporaryGroups, {
+      includeEmptyGroups: segment === 'temporary',
+    });
+    return {
+      bundles: allBundles.filter((bundle) => !actionGroupIds.has(bundle.group.id)),
+      ungrouped: ungrouped.filter((task) => isTemporaryOpenIncompleteBucket(task, todayYmd)),
+    };
+  }, [
+    temporary,
+    temporaryGroups,
+    actionRequiredTemporaryBundles,
+    todayYmd,
+    completionTick,
+    segment,
+  ]);
+
+  /** 要対応・自由対応以外（周期対象外の定期） */
   const recurringOffBundles = useMemo(() => {
-    const today = new Date();
-    return bundles
-      .map((bundle) => ({
-        ...bundle,
-        offMembers: bundle.members.filter((task) => !isRecurringDueOnDate(task, today)),
-      }))
-      .filter((bundle) => bundle.offMembers.length > 0);
-  }, [bundles, completionTick]);
-
-  const recurringDueUngrouped = useMemo(() => {
-    const today = new Date();
-    return ungrouped.filter((task) => isRecurringDueOnDate(task, today));
-  }, [ungrouped, completionTick]);
+    const activeIds = new Set([
+      ...actionRequiredRecurringBundles.map((bundle) => bundle.group.id),
+      ...freeRecurringBundles.map((bundle) => bundle.group.id),
+    ]);
+    return bundles.filter((bundle) => !activeIds.has(bundle.group.id));
+  }, [bundles, actionRequiredRecurringBundles, freeRecurringBundles, completionTick]);
 
   const recurringOffUngrouped = useMemo(() => {
     const today = new Date();
-    return ungrouped.filter((task) => !isRecurringDueOnDate(task, today));
+    return ungrouped.filter(
+      (task) => !isRecurringTaskRequiredOnDate(task, today) && !isRecurringTaskFree(task)
+    );
   }, [ungrouped, completionTick]);
 
   const toggleExpanded = (groupId: string) => {
@@ -365,8 +631,12 @@ export default function TasksScreen() {
     reload();
   };
 
-  const completeTemp = (task: Task) => {
-    completeTemporaryTask(task.id);
+  const toggleTemporary = (task: Task, completed: boolean) => {
+    if (completed) {
+      reopenTemporaryTask(task.id);
+    } else {
+      completeTemporaryTask(task.id);
+    }
     reload();
   };
 
@@ -457,7 +727,7 @@ export default function TasksScreen() {
         if (target === undefined) {
           return;
         }
-        const task = getRecurringTasks().find((item) => item.id === taskId);
+        const task = getTask(taskId);
         if (!task) {
           return;
         }
@@ -466,7 +736,7 @@ export default function TasksScreen() {
           return;
         }
         if (nextGroupId) {
-          const members = getRecurringTasksByGroupId(nextGroupId);
+          const members = getTasksByGroupId(nextGroupId);
           if (members.length >= TASK_GROUP_MEMBER_LIMIT) {
             Alert.alert('グループ上限', `1つのグループに入れられるタスクは${TASK_GROUP_MEMBER_LIMIT}個までです。`);
             return;
@@ -474,7 +744,10 @@ export default function TasksScreen() {
         }
         const ok = setTaskGroupId(taskId, nextGroupId);
         if (!ok) {
-          Alert.alert('グループ上限', `1つのグループに入れられるタスクは${TASK_GROUP_MEMBER_LIMIT}個までです。`);
+          Alert.alert(
+            '移動できません',
+            'グループに入れられませんでした。上限に達しているか、種別が一致しません。'
+          );
           return;
         }
         setExpandedGroupIds((prev) => new Set(prev).add(nextGroupId));
@@ -488,14 +761,16 @@ export default function TasksScreen() {
     task: Task,
     showCheckbox: boolean,
     indented = false,
-    muted = false
+    muted = false,
+    accent?: TaskAccent
   ) => (
     <RecurringTaskRow
-      key={`${task.id}${muted ? '-off' : ''}`}
+      key={`${task.id}${muted ? '-off' : ''}${accent ?? ''}`}
       task={task}
       showCheckbox={showCheckbox}
       indented={indented}
       muted={muted}
+      accent={accent}
       todayYmd={todayYmd}
       content={content}
       dragEnabled={segment === 'recurring'}
@@ -515,22 +790,52 @@ export default function TasksScreen() {
       expanded: boolean;
       childSource?: Task[];
       muted?: boolean;
+      accent?: TaskAccent;
       keySuffix?: string;
       registerDropZone?: boolean;
     }
   ) => {
     const muted = options.muted === true;
+    const accent = muted ? TASK_ACCENT.dim : options.accent;
+    const today = new Date();
     const trackers = trackingMembers(members);
     const dates = getTasksCompletionDatesUnion(trackers.map((m) => m.id));
-    const progress = countGroupDueProgress(members, new Date(), isRecurringDoneOn);
-    const meta = muted ? '' : formatGroupListMeta(dates, progress, new Date());
+    const progress = countGroupDueProgress(members, today, isRecurringDoneOn);
+    const individuallyRequired = members.filter((task) =>
+      isRecurringTaskRequiredOnDate(task, today)
+    );
+    /**
+     * 要対応グループ枠:
+     * - 必須メンバがいれば全員完了で黄緑（自由メンバのチェックだけでは足りない）
+     * - 必須メンバがおらずグループ周期のみなら、1件でも完了で黄緑
+     */
+    let requiredMet = false;
+    if (!muted && options.accent === TASK_ACCENT.required) {
+      if (individuallyRequired.length > 0) {
+        requiredMet = individuallyRequired.every((task) => isRecurringDoneOn(task, todayYmd));
+      } else if (isGroupOwnRequiredOnDate(group, today)) {
+        requiredMet = members.some((task) => isRecurringDoneOn(task, todayYmd));
+      }
+    }
+    const borderColor = muted
+      ? TASK_ACCENT.dim
+      : requiredMet
+        ? checkedColor
+        : accent ?? content.contentBorder;
+    const meta = muted
+      ? members.length === 0
+        ? 'ドロップで追加'
+        : ''
+      : members.length === 0
+        ? 'ドロップで追加'
+        : formatGroupListMeta(dates, progress, today);
     const children = options.childSource ?? members;
     const showChildren = options.expanded;
     const isHover = draggingTaskId != null && hoverDropId === group.id;
     const registerDropZone = options.registerDropZone !== false;
     const showDots = groupTracksCompletions(members);
     const groupDays = showDots
-      ? getRecentGroupScheduledDotItems(trackers, dates, new Date())
+      ? getRecentGroupScheduledDotItems(trackers, dates, today)
       : [];
 
     return (
@@ -548,13 +853,13 @@ export default function TasksScreen() {
         }}
         style={[
           styles.groupBlock,
-          muted ? styles.mutedBlock : null,
+          muted ? styles.dimmedBlock : null,
           isHover
             ? {
                 borderRadius: 12,
                 borderWidth: 2,
                 borderColor: content.contentText,
-                backgroundColor: content.contentPersonTagBg,
+                backgroundColor: content.contentCard,
                 padding: 4,
                 marginHorizontal: -4,
               }
@@ -565,9 +870,11 @@ export default function TasksScreen() {
           style={[
             styles.row,
             styles.groupHeaderRow,
+            contentSurfaceStyle(content),
             {
-              backgroundColor: content.contentPersonTagBg,
-              borderColor: content.contentText,
+              borderWidth: muted ? 1 : accent ? 1.5 : 1,
+              borderRadius: 10,
+              borderColor,
             },
             isHover ? styles.groupHeaderRowHover : null,
           ]}
@@ -575,10 +882,21 @@ export default function TasksScreen() {
           onLongPress={() => openGroupScreen(group)}
         >
           <View style={styles.checkboxHit}>
-            <Ionicons name="layers-outline" size={22} color={content.contentText} />
+            <Ionicons
+              name="layers-outline"
+              size={22}
+              color={muted ? content.contentTextSecondary : content.contentText}
+            />
           </View>
           <View style={styles.rowMain}>
-            <Text style={[styles.rowTitle, contentTextStyle(content)]}>{group.title}</Text>
+            <Text
+              style={[
+                styles.rowTitle,
+                muted ? contentMutedTextStyle(content) : contentTextStyle(content),
+              ]}
+            >
+              {group.title}
+            </Text>
             <View style={styles.dotsMetaRowNear}>
               <View style={styles.dotsMetaDots}>
                 {groupDays.length > 0 ? (
@@ -604,63 +922,207 @@ export default function TasksScreen() {
           </View>
         </Pressable>
         {showChildren
-          ? children.map((task) =>
-              renderRecurringRow(
+          ? children.map((task) => {
+              const dueToday = isRecurringDueOnDate(task, today);
+              let memberAccent = muted ? TASK_ACCENT.dim : accent;
+              if (!muted) {
+                if (isRecurringTaskRequiredOnDate(task, today)) {
+                  memberAccent = TASK_ACCENT.required;
+                } else if (isRecurringTaskFree(task)) {
+                  memberAccent = TASK_ACCENT.free;
+                }
+              }
+              return renderRecurringRow(
                 task,
-                isRecurringDueOnDate(task, new Date()),
+                dueToday,
                 true,
-                muted
-              )
-            )
+                muted || !dueToday,
+                memberAccent
+              );
+            })
           : null}
       </View>
     );
   };
 
-  const renderTemporaryRow = (task: Task, completed = false) => {
-    const eventTitle = task.eventId ? getEvent(task.eventId)?.title : null;
-    return (
-      <Pressable
-        key={task.id}
+  const renderSectionTitle = (
+    label: string,
+    barColor: string,
+    options?: { muted?: boolean }
+  ) => (
+    <View style={styles.sectionTitleRow}>
+      <View style={[styles.sectionBar, { backgroundColor: barColor }]} />
+      <Text
         style={[
-          styles.row,
-          contentSurfaceStyle(content),
-          { borderWidth: 1, borderRadius: 10 },
-          completed ? styles.completedTemporaryRow : null,
+          styles.sectionTitle,
+          options?.muted ? contentMutedTextStyle(content) : contentTextStyle(content),
         ]}
-        onPress={() => router.push({ pathname: '/task-edit', params: { taskId: task.id } })}
-        onLongPress={() => confirmDelete(task)}
       >
-        {completed ? (
+        {label}
+      </Text>
+    </View>
+  );
+
+  const renderTemporaryRow = (
+    task: Task,
+    completed = false,
+    indented = false,
+    accent?: TaskAccent
+  ) => (
+    <TemporaryTaskRow
+      key={task.id}
+      task={task}
+      completed={completed}
+      indented={indented}
+      accent={accent}
+      content={content}
+      checkedColor={checkedColor}
+      dragEnabled={segment === 'temporary' && !completed}
+      onOpen={() => router.push({ pathname: '/task-detail', params: { taskId: task.id } })}
+      onToggle={() => toggleTemporary(task, completed)}
+      onLongPressDelete={() => confirmDelete(task)}
+      onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
+      onDragEnd={handleDragEnd}
+    />
+  );
+
+  const renderTemporaryGroupHeader = (
+    group: TaskGroup,
+    members: Task[],
+    options: {
+      expanded: boolean;
+      completed?: boolean;
+      accent?: TaskAccent;
+      keySuffix?: string;
+      registerDropZone?: boolean;
+    }
+  ) => {
+    const completed = options.completed === true;
+    const accent = completed ? TASK_ACCENT.dim : options.accent;
+    const borderColor = accent ?? content.contentBorder;
+    const registerDropZone = options.registerDropZone === true;
+    const isHover = draggingTaskId != null && hoverDropId === group.id;
+    const openCount = members.filter((task) => !task.completedAt).length;
+    const nearestDue = getNearestTemporaryGroupDueDate(members);
+    const dueUrgency = nearestDue ? getTaskDueUrgency(nearestDue) : null;
+    const meta = completed
+      ? `${members.length}件`
+      : members.length === 0
+        ? 'ドロップで追加'
+        : openCount === members.length
+          ? `${members.length}件`
+          : `未完了 ${openCount}/${members.length}`;
+    return (
+      <View
+        key={`${group.id}${options.keySuffix ?? ''}`}
+        ref={(node) => {
+          if (registerDropZone) {
+            setDropZoneHost(group.id, node);
+          }
+        }}
+        onLayout={() => {
+          if (registerDropZone) {
+            refreshDropZones();
+          }
+        }}
+        style={[
+          styles.groupBlock,
+          completed ? styles.dimmedBlock : null,
+          isHover
+            ? {
+                borderRadius: 12,
+                borderWidth: 2,
+                borderColor: content.contentText,
+                backgroundColor: content.contentCard,
+                padding: 4,
+                marginHorizontal: -4,
+              }
+            : null,
+        ]}
+      >
+        <Pressable
+          style={[
+            styles.row,
+            styles.groupHeaderRow,
+            contentSurfaceStyle(content),
+            {
+              borderWidth: completed ? 1 : accent ? 1.5 : 1,
+              borderRadius: 10,
+              borderColor,
+            },
+            isHover ? styles.groupHeaderRowHover : null,
+          ]}
+          onPress={() => toggleExpanded(group.id)}
+          onLongPress={() => openGroupScreen(group)}
+        >
           <View style={styles.checkboxHit}>
-            <Ionicons name="checkbox" size={26} color={checkedColor} />
+            <Ionicons
+              name="layers-outline"
+              size={22}
+              color={completed ? content.contentTextSecondary : content.contentText}
+            />
           </View>
-        ) : (
-          <Pressable
-            style={styles.checkboxHit}
-            onPress={() => completeTemp(task)}
-            accessibilityLabel="完了にする"
-          >
-            <Ionicons name="square-outline" size={26} color={content.contentTextSecondary} />
-          </Pressable>
-        )}
-        <View style={styles.rowMain}>
-          <Text
-            style={[
-              styles.rowTitle,
-              contentTextStyle(content),
-              completed ? styles.completedTemporaryTitle : null,
-            ]}
-          >
-            {task.title}
-          </Text>
-          <Text style={[styles.rowMeta, contentMutedTextStyle(content)]}>
-            {task.dueDate ? `期限 ${task.dueDate}` : '期限なし'}
-            {eventTitle ? ` · ${eventTitle}` : ''}
-            {completed && task.completedAt ? ` · 完了 ${task.completedAt.slice(0, 10)}` : ''}
-          </Text>
-        </View>
-      </Pressable>
+          <View style={styles.rowMain}>
+            <View style={styles.temporaryTitleRow}>
+              <Text
+                style={[
+                  styles.rowTitle,
+                  styles.temporaryTitle,
+                  completed ? contentMutedTextStyle(content) : contentTextStyle(content),
+                  completed ? styles.completedTemporaryTitle : null,
+                ]}
+                numberOfLines={1}
+              >
+                {group.title}
+              </Text>
+              {nearestDue ? (
+                <View
+                  style={[
+                    styles.dueChip,
+                    contentTagStyle(content),
+                    { borderWidth: 1 },
+                    dueUrgency === 'overdue'
+                      ? { borderColor: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.12)' }
+                      : null,
+                    dueUrgency === 'today'
+                      ? { borderColor: checkedColor, backgroundColor: `${checkedColor}22` }
+                      : null,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.dueChipText,
+                      contentMutedTextStyle(content),
+                      dueUrgency === 'overdue' ? { color: '#dc2626' } : null,
+                      dueUrgency === 'today' ? { color: checkedColor } : null,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {formatTaskDueDateLabel(nearestDue)}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+            <Text style={[styles.rowMetaNear, contentMutedTextStyle(content)]} numberOfLines={1}>
+              {meta}
+            </Text>
+            {isHover ? (
+              <Text style={[styles.dropHint, contentTextStyle(content)]}>ここにドロップ</Text>
+            ) : null}
+          </View>
+          <View style={styles.checkboxHit}>
+            <Ionicons
+              name={options.expanded ? 'chevron-down' : 'chevron-forward'}
+              size={20}
+              color={content.contentTextSecondary}
+            />
+          </View>
+        </Pressable>
+        {options.expanded
+          ? members.map((task) => renderTemporaryRow(task, completed, true, accent))
+          : null}
+      </View>
     );
   };
 
@@ -733,40 +1195,90 @@ export default function TasksScreen() {
 
         {segment === 'today' ? (
           <View style={styles.section}>
-            <Text style={[styles.sectionTitle, contentTextStyle(content)]}>今日の定期</Text>
-            {todayBundles.length === 0 && todayUngrouped.length === 0 ? (
+            {renderSectionTitle('要対応', TASK_ACCENT.required)}
+            {actionRequiredRecurringBundles.length === 0 &&
+            actionRequiredRecurringUngrouped.length === 0 &&
+            actionRequiredTemporaryBundles.length === 0 &&
+            actionRequiredTemporaryUngrouped.length === 0 ? (
               <Text style={[styles.empty, contentMutedTextStyle(content)]}>
-                今日の定期タスクはありません
+                要対応のタスクはありません
               </Text>
             ) : (
               <>
-                {todayBundles.map((bundle) =>
+                {actionRequiredRecurringBundles.map((bundle) =>
                   renderGroupHeader(bundle.group, bundle.members, {
                     expanded: expandedGroupIds.has(bundle.group.id),
-                    childSource: bundle.dueMembers,
+                    keySuffix: '-today-required',
+                    accent: TASK_ACCENT.required,
                   })
                 )}
-                {todayUngrouped.map((task) => renderRecurringRow(task, true))}
+                {actionRequiredRecurringUngrouped.map((task) =>
+                  renderRecurringRow(task, true, false, false, TASK_ACCENT.required)
+                )}
+                {actionRequiredTemporaryBundles.map((bundle) =>
+                  renderTemporaryGroupHeader(bundle.group, bundle.members, {
+                    expanded: expandedGroupIds.has(bundle.group.id),
+                    keySuffix: '-today-action-temp',
+                    accent: TASK_ACCENT.required,
+                  })
+                )}
+                {actionRequiredTemporaryUngrouped.map((task) =>
+                  renderTemporaryRow(task, false, false, TASK_ACCENT.required)
+                )}
               </>
             )}
-            <Text style={[styles.sectionTitle, contentTextStyle(content)]}>臨時（未完了）</Text>
-            {temporary.length === 0 ? (
+
+            {renderSectionTitle('自由対応', TASK_ACCENT.free)}
+            {freeRecurringBundles.length === 0 && freeRecurringUngrouped.length === 0 ? (
+              <Text style={[styles.empty, contentMutedTextStyle(content)]}>
+                自由対応のタスクはありません
+              </Text>
+            ) : (
+              <>
+                {freeRecurringBundles.map((bundle) =>
+                  renderGroupHeader(bundle.group, bundle.members, {
+                    expanded: expandedGroupIds.has(bundle.group.id),
+                    keySuffix: '-today-free',
+                    accent: TASK_ACCENT.free,
+                  })
+                )}
+                {freeRecurringUngrouped.map((task) =>
+                  renderRecurringRow(task, true, false, false, TASK_ACCENT.free)
+                )}
+              </>
+            )}
+
+            {renderSectionTitle('未完了', TASK_ACCENT.incomplete)}
+            {openIncompleteTemporaryBundles.length === 0 &&
+            openIncompleteTemporaryUngrouped.length === 0 ? (
               <Text style={[styles.empty, contentMutedTextStyle(content)]}>
                 未完了の臨時タスクはありません
               </Text>
             ) : (
-              temporary.map(renderTemporaryRow)
+              <>
+                {openIncompleteTemporaryBundles.map((bundle) =>
+                  renderTemporaryGroupHeader(bundle.group, bundle.members, {
+                    expanded: expandedGroupIds.has(bundle.group.id),
+                    keySuffix: '-today-open',
+                    accent: TASK_ACCENT.incomplete,
+                  })
+                )}
+                {openIncompleteTemporaryUngrouped.map((task) =>
+                  renderTemporaryRow(task, false, false, TASK_ACCENT.incomplete)
+                )}
+              </>
             )}
+
             <View style={[styles.completedDivider, { backgroundColor: content.contentBorder }]} />
-            <Text style={[styles.sectionTitle, styles.completedSectionTitle, contentMutedTextStyle(content)]}>
-              完了済み
-            </Text>
-            {completedTemporary.length === 0 ? (
+            {renderSectionTitle('完了済み', TASK_ACCENT.dim, { muted: true })}
+            {completedTodayTemporary.length === 0 ? (
               <Text style={[styles.empty, contentMutedTextStyle(content)]}>
-                完了済みの臨時タスクはありません
+                今日完了した臨時タスクはありません
               </Text>
             ) : (
-              completedTemporary.map((task) => renderTemporaryRow(task, true))
+              completedTodayTemporary.map((task) =>
+                renderTemporaryRow(task, true, false, TASK_ACCENT.dim)
+              )
             )}
           </View>
         ) : null}
@@ -777,42 +1289,65 @@ export default function TasksScreen() {
               <Text style={[styles.empty, contentMutedTextStyle(content)]}>定期タスクがありません</Text>
             ) : (
               <>
-                {recurringDueBundles.length === 0 && recurringDueUngrouped.length === 0 ? (
+                {renderSectionTitle('要対応', TASK_ACCENT.required)}
+                {actionRequiredRecurringBundles.length === 0 &&
+                actionRequiredRecurringUngrouped.length === 0 ? (
                   <Text style={[styles.empty, contentMutedTextStyle(content)]}>
-                    本日対象の定期タスクはありません
+                    要対応の定期タスクはありません
                   </Text>
                 ) : (
                   <>
-                    {recurringDueBundles.map((bundle) =>
+                    {actionRequiredRecurringBundles.map((bundle) =>
                       renderGroupHeader(bundle.group, bundle.members, {
                         expanded: expandedGroupIds.has(bundle.group.id) || draggingTaskId != null,
-                        childSource: bundle.dueMembers,
-                        keySuffix: '-due',
+                        keySuffix: '-rec-required',
                         registerDropZone: true,
+                        accent: TASK_ACCENT.required,
                       })
                     )}
-                    {recurringDueUngrouped.map((task) => renderRecurringRow(task, true))}
+                    {actionRequiredRecurringUngrouped.map((task) =>
+                      renderRecurringRow(task, true, false, false, TASK_ACCENT.required)
+                    )}
                   </>
                 )}
+
+                {renderSectionTitle('自由対応', TASK_ACCENT.free)}
+                {freeRecurringBundles.length === 0 && freeRecurringUngrouped.length === 0 ? (
+                  <Text style={[styles.empty, contentMutedTextStyle(content)]}>
+                    自由対応の定期タスクはありません
+                  </Text>
+                ) : (
+                  <>
+                    {freeRecurringBundles.map((bundle) =>
+                      renderGroupHeader(bundle.group, bundle.members, {
+                        expanded: expandedGroupIds.has(bundle.group.id) || draggingTaskId != null,
+                        keySuffix: '-rec-free',
+                        registerDropZone: true,
+                        accent: TASK_ACCENT.free,
+                      })
+                    )}
+                    {freeRecurringUngrouped.map((task) =>
+                      renderRecurringRow(task, true, false, false, TASK_ACCENT.free)
+                    )}
+                  </>
+                )}
+
                 {recurringOffBundles.length > 0 || recurringOffUngrouped.length > 0 ? (
                   <>
                     <View style={[styles.completedDivider, { backgroundColor: content.contentBorder }]} />
-                    <Text
-                      style={[styles.sectionTitle, styles.completedSectionTitle, contentMutedTextStyle(content)]}
-                    >
-                      本日対象外
-                    </Text>
+                    {renderSectionTitle('本日対象外', TASK_ACCENT.dim, { muted: true })}
                     {recurringOffBundles.map((bundle) =>
                       renderGroupHeader(bundle.group, bundle.members, {
                         expanded: expandedGroupIds.has(bundle.group.id) || draggingTaskId != null,
-                        childSource: bundle.offMembers,
                         muted: true,
                         keySuffix: '-off',
-                        // 本日対象側に同じグループがある場合はドロップゾーンはそちら優先
-                        registerDropZone: !recurringDueBundles.some((b) => b.group.id === bundle.group.id),
+                        registerDropZone: true,
+                        accent: TASK_ACCENT.dim,
                       })
                     )}
-                    {recurringOffUngrouped.map((task) => renderRecurringRow(task, false, false, true))}
+                    {recurringOffUngrouped.map((task) =>
+                      renderRecurringRow(task, false, false, true, TASK_ACCENT.dim)
+                    )}
                   </>
                 ) : null}
               </>
@@ -822,23 +1357,70 @@ export default function TasksScreen() {
 
         {segment === 'temporary' ? (
           <View style={styles.section}>
-            {temporary.length === 0 ? (
+            {temporary.length === 0 &&
+            completedTemporary.length === 0 &&
+            temporaryGroups.length === 0 ? (
               <Text style={[styles.empty, contentMutedTextStyle(content)]}>
-                未完了の臨時タスクはありません
+                臨時タスクがありません
               </Text>
             ) : (
-              temporary.map(renderTemporaryRow)
-            )}
-            <View style={[styles.completedDivider, { backgroundColor: content.contentBorder }]} />
-            <Text style={[styles.sectionTitle, styles.completedSectionTitle, contentMutedTextStyle(content)]}>
-              完了済み
-            </Text>
-            {completedTemporary.length === 0 ? (
-              <Text style={[styles.empty, contentMutedTextStyle(content)]}>
-                完了済みの臨時タスクはありません
-              </Text>
-            ) : (
-              completedTemporary.map((task) => renderTemporaryRow(task, true))
+              <>
+                {renderSectionTitle('要対応', TASK_ACCENT.required)}
+                {actionRequiredTemporaryBundles.length === 0 &&
+                actionRequiredTemporaryUngrouped.length === 0 ? (
+                  <Text style={[styles.empty, contentMutedTextStyle(content)]}>
+                    要対応の臨時タスクはありません
+                  </Text>
+                ) : (
+                  <>
+                    {actionRequiredTemporaryBundles.map((bundle) =>
+                      renderTemporaryGroupHeader(bundle.group, bundle.members, {
+                        expanded: expandedGroupIds.has(bundle.group.id) || draggingTaskId != null,
+                        keySuffix: '-temp-action',
+                        registerDropZone: true,
+                        accent: TASK_ACCENT.required,
+                      })
+                    )}
+                    {actionRequiredTemporaryUngrouped.map((task) =>
+                      renderTemporaryRow(task, false, false, TASK_ACCENT.required)
+                    )}
+                  </>
+                )}
+
+                {renderSectionTitle('未完了', TASK_ACCENT.incomplete)}
+                {openIncompleteTemporaryBundles.length === 0 &&
+                openIncompleteTemporaryUngrouped.length === 0 ? (
+                  <Text style={[styles.empty, contentMutedTextStyle(content)]}>
+                    未完了の臨時タスクはありません
+                  </Text>
+                ) : (
+                  <>
+                    {openIncompleteTemporaryBundles.map((bundle) =>
+                      renderTemporaryGroupHeader(bundle.group, bundle.members, {
+                        expanded: expandedGroupIds.has(bundle.group.id) || draggingTaskId != null,
+                        keySuffix: '-temp-open',
+                        registerDropZone: true,
+                        accent: TASK_ACCENT.incomplete,
+                      })
+                    )}
+                    {openIncompleteTemporaryUngrouped.map((task) =>
+                      renderTemporaryRow(task, false, false, TASK_ACCENT.incomplete)
+                    )}
+                  </>
+                )}
+
+                <View style={[styles.completedDivider, { backgroundColor: content.contentBorder }]} />
+                {renderSectionTitle('完了済み', TASK_ACCENT.dim, { muted: true })}
+                {completedTemporary.length === 0 ? (
+                  <Text style={[styles.empty, contentMutedTextStyle(content)]}>
+                    完了済みの臨時タスクはありません
+                  </Text>
+                ) : (
+                  completedTemporary.map((task) =>
+                    renderTemporaryRow(task, true, false, TASK_ACCENT.dim)
+                  )
+                )}
+              </>
             )}
           </View>
         ) : null}
@@ -856,13 +1438,13 @@ export default function TasksScreen() {
             <View style={[styles.helpCard, contentSurfaceStyle(content)]}>
               <Text style={[styles.helpTitle, contentTextStyle(content)]}>タスクの使い方</Text>
               <Text style={[styles.helpBody, contentMutedTextStyle(content)]}>
-                ・今日 / 定期 / 臨時タブで一覧を切り替えます。{'\n'}
-                ・定期タスクはチェックでその日の実施を記録します。{'\n'}
-                ・グループはくくりです。編集画面でグループを付けられます。{'\n'}
-                ・今日・定期タブでグループ行をタップすると、中のタスクを開閉できます。{'\n'}
-                ・グループ行を長押しすると、グループ画面（実施履歴・タスク追加）を開けます。{'\n'}
-                ・定期タブでタスクを長押しし、グループ（中のタスク行含む）へドロップすると所属を変えられます。{'\n'}
-                ・グループ内のどれかを実施すると、その日はグループも「実施」扱いになります。
+                ・今日・定期タブは要対応 / 自由対応、臨時は要対応 / 未完了、それぞれ完了・対象外ありです。{'\n'}
+                ・要対応は「期限が今日以前の臨時」と「今日必須の定期」です。{'\n'}
+                ・必須は周期の対象日、自由は周期なし（記録のみ）です。{'\n'}
+                ・グループにも周期を付けられ、メンバー必須との OR でグループ必須になります。{'\n'}
+                ・完了済みではグループ内の臨時もタスク単体で表示します。{'\n'}
+                ・グループ内をどれか実施すると、その日はグループも「実施」扱いになります。{'\n'}
+                ・定期・臨時タブでタスクを長押しし、グループへドロップすると所属を変えられます。
               </Text>
               <Pressable style={styles.helpClose} onPress={() => setHelpVisible(false)}>
                 <Text style={[styles.helpCloseText, contentTextStyle(content)]}>閉じる</Text>
@@ -913,10 +1495,21 @@ const styles = StyleSheet.create({
   section: {
     gap: 8,
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
+  },
+  sectionBar: {
+    width: 3,
+    alignSelf: 'stretch',
+    minHeight: 14,
+    borderRadius: 2,
+  },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '700',
-    marginTop: 8,
   },
   empty: {
     fontSize: 13,
@@ -928,12 +1521,14 @@ const styles = StyleSheet.create({
   mutedBlock: {
     opacity: 0.62,
   },
+  dimmedBlock: {
+    opacity: 0.45,
+  },
   groupHeaderRow: {
-    borderWidth: 2.5,
     borderRadius: 10,
   },
   groupHeaderRowHover: {
-    borderWidth: 3,
+    borderWidth: 2,
   },
   row: {
     flexDirection: 'row',
@@ -958,6 +1553,25 @@ const styles = StyleSheet.create({
   },
   rowTitle: {
     fontSize: 15,
+    fontWeight: '700',
+  },
+  temporaryTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  temporaryTitle: {
+    flex: 1,
+    minWidth: 0,
+  },
+  dueChip: {
+    flexShrink: 0,
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  dueChipText: {
+    fontSize: 11,
     fontWeight: '700',
   },
   dotsMetaRow: {
@@ -1000,9 +1614,6 @@ const styles = StyleSheet.create({
   },
   completedSectionTitle: {
     marginTop: 0,
-  },
-  completedTemporaryRow: {
-    opacity: 0.62,
   },
   completedTemporaryTitle: {
     textDecorationLine: 'line-through',

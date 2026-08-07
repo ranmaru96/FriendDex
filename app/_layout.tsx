@@ -25,7 +25,6 @@ import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion
 
 const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'index',
-  'commonitems',
   'calendar',
   'episode',
   'tools',

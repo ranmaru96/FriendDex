@@ -13,7 +13,7 @@ export type CalendarPeriodMark = {
   showTitle: boolean;
 };
 
-export type CalendarDayMarking = MarkingProps & {
+export type CalendarDayMarking = Omit<MarkingProps, 'periods'> & {
   periods: CalendarPeriodMark[];
   totalCount: number;
   overflowCount: number;

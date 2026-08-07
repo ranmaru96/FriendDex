@@ -3,14 +3,14 @@ import { StyleSheet, Text, TouchableOpacity, View, type ViewStyle } from 'react-
 import type { DateData } from 'react-native-calendars';
 import type { DayProps } from 'react-native-calendars/src/calendar/day';
 import { Theme as AppTheme } from '@/constants/theme';
-import type { CalendarDayMarking } from '@/utils/calendarMarking';
+import type { CalendarDayMarking, CalendarPeriodMark } from '@/utils/calendarMarking';
 
 type CalendarDayCellProps = DayProps & {
   date?: DateData;
   children?: React.ReactNode;
 };
 
-function PeriodBar({ period }: { period: CalendarDayMarking['periods'][number] }) {
+function PeriodBar({ period }: { period: CalendarPeriodMark }) {
   const isSingle = period.startingDay && period.endingDay;
   const isStart = period.startingDay && !period.endingDay;
   const isEnd = period.endingDay && !period.startingDay;
@@ -109,11 +109,20 @@ export const CalendarDayCell = React.memo(function CalendarDayCell({
     }
   }, [date, onPress, shouldDisableTouch]);
 
-  const periods = dayMark?.periods ?? [];
-  const showFooter = dayMark?.showCountLabel === true;
+  const periods: CalendarPeriodMark[] = dayMark?.periods ?? [];
+  const overflowCount = dayMark?.overflowCount ?? 0;
 
   return (
     <View style={styles.container}>
+      {overflowCount > 0 ? (
+        <Text
+          style={styles.overflowBadge}
+          allowFontScaling={false}
+          accessibilityLabel={`他${overflowCount}件の予定`}
+        >
+          +{overflowCount}
+        </Text>
+      ) : null}
       <TouchableOpacity
         style={dayCircleStyle}
         activeOpacity={0.7}
@@ -135,21 +144,6 @@ export const CalendarDayCell = React.memo(function CalendarDayCell({
       ) : (
         <View style={styles.periodsPlaceholder} />
       )}
-
-      {showFooter && dayMark ? (
-        <View style={styles.footer}>
-          {dayMark.overflowCount > 0 ? (
-            <Text style={styles.footerOverflow} allowFontScaling={false}>
-              +{dayMark.overflowCount}
-            </Text>
-          ) : null}
-          <Text style={styles.footerCount} allowFontScaling={false}>
-            {dayMark.totalCount}件
-          </Text>
-        </View>
-      ) : (
-        <View style={styles.footerPlaceholder} />
-      )}
     </View>
   );
 });
@@ -160,6 +154,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 92,
     paddingBottom: 2,
+    position: 'relative',
+  },
+  overflowBadge: {
+    position: 'absolute',
+    top: 0,
+    right: 1,
+    zIndex: 2,
+    fontSize: 9,
+    fontWeight: '700',
+    color: AppTheme.textSecondary,
+    lineHeight: 11,
   },
   dayCircle: {
     width: 28,
@@ -212,27 +217,5 @@ const styles = StyleSheet.create({
   periodEnding: {
     borderTopRightRadius: 4,
     borderBottomRightRadius: 4,
-  },
-  footer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 1,
-    minHeight: 11,
-  },
-  footerPlaceholder: {
-    minHeight: 11,
-    marginTop: 1,
-  },
-  footerOverflow: {
-    fontSize: 9,
-    fontWeight: '700',
-    color: AppTheme.accent,
-    marginRight: 3,
-  },
-  footerCount: {
-    fontSize: 9,
-    fontWeight: '600',
-    color: AppTheme.textSecondary,
   },
 });

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Dimensions,
   Pressable,
@@ -8,12 +8,14 @@ import {
   type LayoutChangeEvent,
   type ViewStyle,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { Radius, Theme } from '@/constants/theme';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useContentColors } from '@/utils/useContentColors';
+import { YearMonthRollPicker } from '@/components/ui/RollSelect';
 import type { Event } from '@/types';
 import {
   buildScheduleGridChipsForDate,
@@ -22,14 +24,20 @@ import {
   getScheduleGridWeekdayLabels,
   SCHEDULE_GRID_CELL_BLEED,
   SCHEDULE_GRID_EVENT_SLOTS,
+  SCHEDULE_GRID_MAX_EVENTS,
   type ScheduleGridDay,
   type ScheduleGridEventChip,
 } from '@/utils/scheduleGridCalendar';
+import { filterEventsByLocalDate } from '@/utils/eventHelpers';
 
 const GRID_BORDER = Theme.inputBorder;
 /** 当日日付バッジ（オレンジ） */
 const TODAY_BADGE_BG = '#F5A623';
-const SELECTED_RING = Theme.accent;
+/** 選択枠（オレンジ）: 格子線の上に乗せる */
+const SELECTED_RING = '#F5A623';
+const SELECTED_RING_WIDTH = 2;
+/** 誕生日アイコン（日付の右） */
+export const BIRTHDAY_ICON_COLOR = '#F2789F';
 const SATURDAY_COLOR = '#2563eb';
 const SUNDAY_COLOR = '#dc2626';
 const CHIP_HEIGHT = 14;
@@ -55,6 +63,10 @@ type ScheduleGridMonthCalendarProps = {
   onDayPress: (dateKey: string) => void;
   onMonthChange: (year: number, month: number) => void;
   edgeToEdge?: boolean;
+  /** 誕生日がある月日（MM-DD）。年は問わない */
+  birthdayMonthDays?: Set<string>;
+  /** 予定タグ（共通項目）編集へ */
+  onPressEpisodeTags?: () => void;
 };
 
 function getChipBarStyles(chip: ScheduleGridEventChip, barWidthPx: number | null): ViewStyle[] {
@@ -120,6 +132,7 @@ function DayCell({
   isLastColumn,
   gridLineColor,
   gridLineWidth,
+  hasBirthday,
 }: {
   day: ScheduleGridDay;
   week: ScheduleGridDay[];
@@ -131,6 +144,7 @@ function DayCell({
   isLastColumn: boolean;
   gridLineColor: string;
   gridLineWidth: number;
+  hasBirthday: boolean;
 }) {
   const isSelected = day.dateKey === selectedDate;
   const isToday = day.dateKey === todayKey;
@@ -138,6 +152,10 @@ function DayCell({
     () => buildScheduleGridChipsForDate(events, day.dateKey, week, cellWidth),
     [cellWidth, day.dateKey, events, week]
   );
+  const overflowCount = useMemo(() => {
+    const total = filterEventsByLocalDate(events, day.dateKey).length;
+    return Math.max(0, total - SCHEDULE_GRID_MAX_EVENTS);
+  }, [day.dateKey, events]);
 
   const content = useContentColors();
   const dateColor = useMemo(() => {
@@ -169,10 +187,33 @@ function DayCell({
             : content.contentCalendarOutMonth,
         },
         hasSpanningLabel ? styles.dayCellSpanningLabel : null,
+        isSelected ? styles.dayCellSelected : null,
       ]}
       onPress={() => onDayPress(day.dateKey)}
     >
-      {isSelected ? <View pointerEvents="none" style={styles.selectedFrame} /> : null}
+      {isSelected ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.selectedFrame,
+            {
+              top: -gridLineWidth,
+              bottom: -gridLineWidth,
+              left: -gridLineWidth,
+              right: -gridLineWidth,
+            },
+          ]}
+        />
+      ) : null}
+      {overflowCount > 0 ? (
+        <Text
+          style={[styles.overflowBadge, { color: content.contentTextSecondary }]}
+          allowFontScaling={false}
+          accessibilityLabel={`他${overflowCount}件の予定`}
+        >
+          +{overflowCount}
+        </Text>
+      ) : null}
       <View style={styles.dateRow}>
         {isToday ? (
           <View style={styles.todayBadge}>
@@ -192,6 +233,14 @@ function DayCell({
             {day.day}
           </Text>
         )}
+        {hasBirthday ? (
+          <Ionicons
+            name="gift"
+            size={10}
+            color={BIRTHDAY_ICON_COLOR}
+            style={styles.birthdayIcon}
+          />
+        ) : null}
       </View>
 
       <View style={styles.chipColumn}>
@@ -215,10 +264,15 @@ export function ScheduleGridMonthCalendar({
   onDayPress,
   onMonthChange,
   edgeToEdge = false,
+  birthdayMonthDays,
+  onPressEpisodeTags,
 }: ScheduleGridMonthCalendarProps) {
   const weeks = useMemo(() => buildScheduleGridWeeks(year, month), [month, year]);
   const weekdayLabels = getScheduleGridWeekdayLabels();
   const [cellWidth, setCellWidth] = useState(() => Dimensions.get('window').width / 7);
+  const [yearMonthPickerOpen, setYearMonthPickerOpen] = useState(false);
+  const [draftYear, setDraftYear] = useState(year);
+  const [draftMonth, setDraftMonth] = useState(month);
   const appTheme = useAppThemeOptional();
   const content = useContentColors();
   const outerBorderColor = appTheme?.colors.calendarOuterBorder ?? GRID_BORDER;
@@ -226,6 +280,26 @@ export function ScheduleGridMonthCalendar({
   const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
   const gridLineColor = content.contentBorder;
   const gridLineWidth = isMonochrome ? 1 : StyleSheet.hairlineWidth;
+
+  useEffect(() => {
+    if (!yearMonthPickerOpen) {
+      setDraftYear(year);
+      setDraftMonth(month);
+    }
+  }, [month, year, yearMonthPickerOpen]);
+
+  const openYearMonthPicker = useCallback(() => {
+    setDraftYear(year);
+    setDraftMonth(month);
+    setYearMonthPickerOpen(true);
+  }, [month, year]);
+
+  const confirmYearMonthPicker = useCallback(() => {
+    setYearMonthPickerOpen(false);
+    if (draftYear !== year || draftMonth !== month) {
+      onMonthChange(draftYear, draftMonth);
+    }
+  }, [draftMonth, draftYear, month, onMonthChange, year]);
 
   const handleGridLayout = useCallback((event: LayoutChangeEvent) => {
     const width = event.nativeEvent.layout.width;
@@ -236,6 +310,7 @@ export function ScheduleGridMonthCalendar({
 
   const shiftMonth = useCallback(
     (delta: number) => {
+      setYearMonthPickerOpen(false);
       const next = new Date(year, month - 1 + delta, 1);
       onMonthChange(next.getFullYear(), next.getMonth() + 1);
     },
@@ -291,16 +366,72 @@ export function ScheduleGridMonthCalendar({
           },
         ]}
       >
-        <Pressable style={styles.navButton} onPress={() => shiftMonth(-1)} hitSlop={8}>
-          <Text style={[styles.navButtonText, { color: content.contentText }]}>‹</Text>
+        {/* 左右対称: 外側スロット（タグボタン幅）＋内側の月送り */}
+        <View style={styles.headerSide}>
+          <View style={styles.headerOuterSlot} />
+          <Pressable style={styles.navButton} onPress={() => shiftMonth(-1)} hitSlop={8}>
+            <Text style={[styles.navButtonText, { color: content.contentText }]}>‹</Text>
+          </Pressable>
+        </View>
+        <Pressable
+          style={styles.headerTitleButton}
+          onPress={openYearMonthPicker}
+          accessibilityRole="button"
+          accessibilityLabel={`${year}年${month}月。タップで年月を選択`}
+        >
+          <Text style={[styles.headerTitle, { color: content.contentText }]}>
+            {year}年{month}月
+          </Text>
         </Pressable>
-        <Text style={[styles.headerTitle, { color: content.contentText }]}>
-          {year}年{month}月
-        </Text>
-        <Pressable style={styles.navButton} onPress={() => shiftMonth(1)} hitSlop={8}>
-          <Text style={[styles.navButtonText, { color: content.contentText }]}>›</Text>
-        </Pressable>
+        <View style={[styles.headerSide, styles.headerSideRight]}>
+          <Pressable style={styles.navButton} onPress={() => shiftMonth(1)} hitSlop={8}>
+            <Text style={[styles.navButtonText, { color: content.contentText }]}>›</Text>
+          </Pressable>
+          {onPressEpisodeTags ? (
+            <Pressable
+              style={styles.headerOuterSlot}
+              onPress={onPressEpisodeTags}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="予定タグを編集"
+            >
+              <Ionicons name="pricetags-outline" size={18} color={content.contentText} />
+            </Pressable>
+          ) : (
+            <View style={styles.headerOuterSlot} />
+          )}
+        </View>
       </View>
+
+      {yearMonthPickerOpen ? (
+        <View
+          style={[
+            styles.yearMonthPicker,
+            {
+              backgroundColor: content.contentCalendarInMonth,
+              borderBottomWidth: gridLineWidth,
+              borderBottomColor: gridLineColor,
+            },
+          ]}
+        >
+          <YearMonthRollPicker
+            year={draftYear}
+            month={draftMonth}
+            onChange={({ year: nextYear, month: nextMonth }) => {
+              setDraftYear(nextYear);
+              setDraftMonth(nextMonth);
+            }}
+          />
+          <Pressable
+            style={[styles.yearMonthDone, { borderColor: content.contentBorder }]}
+            onPress={confirmYearMonthPicker}
+            accessibilityRole="button"
+            accessibilityLabel="年月選択を完了"
+          >
+            <Text style={[styles.yearMonthDoneText, { color: content.contentText }]}>完了</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       <View
         style={[
@@ -362,6 +493,7 @@ export function ScheduleGridMonthCalendar({
                 isLastColumn={dayIndex === 6}
                 gridLineColor={gridLineColor}
                 gridLineWidth={gridLineWidth}
+                hasBirthday={birthdayMonthDays?.has(day.dateKey.slice(5)) ?? false}
               />
             ))}
           </View>
@@ -388,8 +520,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingVertical: 10,
+    paddingHorizontal: 4,
+    paddingVertical: 8,
+  },
+  headerSide: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
+    minWidth: 84,
+    gap: 10,
+  },
+  headerSideRight: {
+    justifyContent: 'flex-end',
+  },
+  headerOuterSlot: {
+    width: 36,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerTitleButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    paddingVertical: 4,
   },
   headerTitle: {
     fontSize: 16,
@@ -405,6 +560,23 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '600',
     lineHeight: 24,
+  },
+  yearMonthPicker: {
+    paddingHorizontal: 12,
+    paddingTop: 4,
+    paddingBottom: 10,
+    gap: 8,
+  },
+  yearMonthDone: {
+    alignSelf: 'flex-end',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  yearMonthDoneText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   weekdayRow: {
     flexDirection: 'row',
@@ -440,18 +612,36 @@ const styles = StyleSheet.create({
     paddingBottom: ROW_PADDING,
     overflow: 'visible',
   },
+  overflowBadge: {
+    position: 'absolute',
+    top: 1,
+    right: 2,
+    zIndex: 3,
+    fontSize: 9,
+    fontWeight: '700',
+    lineHeight: 11,
+  },
+  /** 格子線の上に重ねるので、上下左右へ線幅ぶんはみ出させる */
   selectedFrame: {
-    ...StyleSheet.absoluteFillObject,
-    borderWidth: 1.5,
+    position: 'absolute',
+    borderWidth: SELECTED_RING_WIDTH,
     borderColor: SELECTED_RING,
     zIndex: 4,
   },
+  dayCellSelected: {
+    zIndex: 6,
+  },
   dateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     height: DATE_ROW_HEIGHT,
     paddingHorizontal: 2,
-    alignItems: 'flex-start',
     justifyContent: 'flex-start',
+    gap: 2,
     zIndex: 1,
+  },
+  birthdayIcon: {
+    marginTop: 1,
   },
   dateText: {
     fontSize: 12,

@@ -10,6 +10,7 @@ import {
   buildAllDayEndAt,
   buildAllDayStartAt,
   eventOccursOnLocalDate,
+  formatDateKey,
   getLocalDateKeysForEvent,
   isEventStartInFuture,
   parseDateKey,
@@ -109,16 +110,24 @@ export const findMatchingEventsForEpisode = (
   });
 };
 
-/** Same calendar date as the episode (all events that day; no participant filter). */
-export const findEventsOnEpisodeDate = (episodeDate: string): Event[] => {
+/** Same calendar date as the form (all events that day; no participant filter). */
+export const findEventsOnEpisodeDate = (
+  episodeDate: string,
+  options?: { timeScope?: EventLinkTimeScope }
+): Event[] => {
   const dateKey = episodeDate.trim();
   const range = getDayRangeIso(dateKey);
   if (!range) {
     return [];
   }
+  const timeScope = options?.timeScope ?? 'pastOrToday';
 
   return getEventsByDateRange(range.rangeStartAt, range.rangeEndAt)
-    .filter((event) => eventOccursOnLocalDate(event, dateKey) && !isEventStartInFuture(event))
+    .filter(
+      (event) =>
+        eventOccursOnLocalDate(event, dateKey) &&
+        eventMatchesLinkTimeScope(event, timeScope)
+    )
     .sort((left, right) => {
       const startCmp = left.startAt.localeCompare(right.startAt);
       if (startCmp !== 0) {
@@ -133,22 +142,36 @@ export type EventSearchHit = {
   dateKeys: string[];
 };
 
+export type EventLinkTimeScope = 'pastOrToday' | 'todayOrFuture';
+
+const eventMatchesLinkTimeScope = (event: Event, scope: EventLinkTimeScope): boolean => {
+  if (scope === 'pastOrToday') {
+    return !isEventStartInFuture(event);
+  }
+  const today = formatDateKey(new Date());
+  return getLocalDateKeysForEvent(event).some((dateKey) => dateKey >= today);
+};
+
 /**
  * Search events by title / memo. Empty query returns recent events (newest first).
  */
 export const searchEventsForEpisodeLink = (
   query: string,
-  options?: { limit?: number }
+  options?: { limit?: number; timeScope?: EventLinkTimeScope }
 ): EventSearchHit[] => {
   const limit = Math.max(1, options?.limit ?? 40);
+  const timeScope = options?.timeScope ?? 'pastOrToday';
   const normalizedQuery = query.trim().toLocaleLowerCase('ja');
-  const events = getAllEvents();
+  const events = getAllEvents()
+    .filter((event) => eventMatchesLinkTimeScope(event, timeScope))
+    .sort((left, right) =>
+      timeScope === 'todayOrFuture'
+        ? left.startAt.localeCompare(right.startAt)
+        : right.startAt.localeCompare(left.startAt)
+    );
 
   const hits: EventSearchHit[] = [];
   for (const event of events) {
-    if (isEventStartInFuture(event)) {
-      continue;
-    }
     if (normalizedQuery) {
       const title = event.title.toLocaleLowerCase('ja');
       const memo = (event.memo ?? '').toLocaleLowerCase('ja');
@@ -156,9 +179,14 @@ export const searchEventsForEpisodeLink = (
         continue;
       }
     }
+    const allDateKeys = getLocalDateKeysForEvent(event);
+    const today = formatDateKey(new Date());
     hits.push({
       event,
-      dateKeys: getLocalDateKeysForEvent(event),
+      dateKeys:
+        timeScope === 'todayOrFuture'
+          ? allDateKeys.filter((dateKey) => dateKey >= today)
+          : allDateKeys,
     });
     if (hits.length >= limit) {
       break;

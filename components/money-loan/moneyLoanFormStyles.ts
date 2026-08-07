@@ -236,6 +236,7 @@ export const moneyLoanFormStyles = createMoneyLoanFormStyles(
     contentBorder: Theme.border,
     contentText: Theme.textPrimary,
     contentTextSecondary: Theme.textSecondary,
+    contentPersonTagBg: '#F7F7F8',
     contentSearchArea: Theme.searchAreaBase,
     contentSearchFieldBorder: Theme.searchFieldBorder,
     contentInputBg: Theme.card,

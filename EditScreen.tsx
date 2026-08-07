@@ -31,6 +31,10 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
+import { pastOrTodayDatePickerBounds } from '@/utils/datePickerBounds';
+import { deletePersistedImages } from '@/utils/persistImageFile';
+import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 
 import {
@@ -158,7 +162,10 @@ function SelectField({ label, value, options, placeholder = '選択', onChange }
       <FormRow label={label}>
         <Pressable
           style={[styles.selectButton, contentInputStyle(content)]}
-          onPress={() => setVisible(true)}
+          onPress={() => {
+            dismissKeyboardFocus();
+            setVisible(true);
+          }}
         >
           <Text style={[styles.selectValue, contentTextStyle(content)]} numberOfLines={1}>
             {selectedLabel}
@@ -442,8 +449,11 @@ export default function EditScreen() {
   const isEditMode = !!friendId;
   const [form, setForm] = useState<FriendInput>(EMPTY_FORM);
   const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
+  useDismissPickerOnKeyboardShow(showBirthdayPicker, () => setShowBirthdayPicker(false));
   const [nameSaveAttempted, setNameSaveAttempted] = useState(false);
   const [cropSourceUri, setCropSourceUri] = useState<string | null>(null);
+  /** DB に保存済みの写真 URI。これ以外は本画面で作られた未保存ファイルなので破棄してよい。 */
+  const savedPhotoUriRef = useRef<string | null>(null);
   const [affiliationSuggestions, setAffiliationSuggestions] = useState<string[]>([]);
   const [personalitySuggestions, setPersonalitySuggestions] = useState<string[]>([]);
   const [experienceSuggestions, setExperienceSuggestions] = useState<string[]>([]);
@@ -492,6 +502,7 @@ export default function EditScreen() {
       router.back();
       return;
     }
+    savedPhotoUriRef.current = friend.photoUri;
     setForm({
       name: friend.name,
       nickname: friend.nickname,
@@ -522,6 +533,7 @@ export default function EditScreen() {
   );
 
   const onPickImage = async () => {
+    dismissKeyboardFocus();
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
       quality: 1,
@@ -529,6 +541,13 @@ export default function EditScreen() {
     });
     if (!result.canceled && result.assets[0]) {
       setCropSourceUri(result.assets[0].uri);
+    }
+  };
+
+  /** 保存済み写真は残し、この画面で作った未保存ファイルだけ実体を消す。 */
+  const discardUnsavedPhoto = (uri: string | null) => {
+    if (uri && uri !== savedPhotoUriRef.current) {
+      deletePersistedImages([uri]);
     }
   };
 
@@ -540,7 +559,10 @@ export default function EditScreen() {
         text: '削除',
         style: 'destructive',
         onPress: () => {
-          setForm((prev) => ({ ...prev, photoUri: null }));
+          setForm((prev) => {
+            discardUnsavedPhoto(prev.photoUri);
+            return { ...prev, photoUri: null };
+          });
         },
       },
     ]);
@@ -609,6 +631,10 @@ export default function EditScreen() {
         Alert.alert('保存エラー', '更新に失敗しました。');
         return;
       }
+      if (savedPhotoUriRef.current && savedPhotoUriRef.current !== payload.photoUri) {
+        deletePersistedImages([savedPhotoUriRef.current]);
+      }
+      savedPhotoUriRef.current = payload.photoUri;
       finishSave(friendId, '人物データを更新しました。');
       return;
     }
@@ -774,20 +800,43 @@ export default function EditScreen() {
             </FormRow>
             <SelectField label="MBTI" value={form.mbti} options={mbtiOptions} onChange={(value) => updateText('mbti', value)} />
             <FormRow label="誕生日">
-              <Pressable
-                style={[styles.dateButton, contentInputStyle(content)]}
-                onPress={() => setShowBirthdayPicker(true)}
-              >
-                <Text
-                  style={
-                    form.birthday
-                      ? [styles.dateButtonText, contentTextStyle(content)]
-                      : [styles.dateButtonPlaceholder, contentMutedTextStyle(content)]
-                  }
+              <View style={styles.birthdayRow}>
+                <Pressable
+                  style={[styles.dateButton, contentInputStyle(content)]}
+                  onPress={() => {
+                    dismissKeyboardFocus();
+                    if (!form.birthday) {
+                      updateText('birthday', formatDateToYMD(new Date()));
+                    }
+                    setShowBirthdayPicker(true);
+                  }}
                 >
-                  {form.birthday || 'YYYY-MM-DD'}
-                </Text>
-              </Pressable>
+                  <Text
+                    style={
+                      form.birthday
+                        ? [styles.dateButtonText, contentTextStyle(content)]
+                        : [styles.dateButtonPlaceholder, contentMutedTextStyle(content)]
+                    }
+                  >
+                    {form.birthday || 'YYYY-MM-DD'}
+                  </Text>
+                </Pressable>
+                {form.birthday ? (
+                  <Pressable
+                    onPress={() => {
+                      updateText('birthday', '');
+                      setShowBirthdayPicker(false);
+                    }}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="誕生日をクリア"
+                  >
+                    <Text style={[styles.birthdayClearText, contentMutedTextStyle(content)]}>
+                      クリア
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
             </FormRow>
             {showBirthdayPicker ? (
               <View style={[styles.datePickerWrap, { marginLeft: fieldIndent }]}>
@@ -798,6 +847,7 @@ export default function EditScreen() {
                   locale="ja-JP"
                   style={styles.datePickerSelf}
                   {...dateTimePickerProps}
+                  {...pastOrTodayDatePickerBounds()}
                   onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                     if (Platform.OS !== 'ios') setShowBirthdayPicker(false);
                     if (selected) updateText('birthday', formatDateToYMD(selected));
@@ -919,7 +969,10 @@ export default function EditScreen() {
       aspectRatio={1}
       onCancel={() => setCropSourceUri(null)}
       onConfirm={(croppedUri) => {
-        setForm((prev) => ({ ...prev, photoUri: croppedUri }));
+        setForm((prev) => {
+          discardUnsavedPhoto(prev.photoUri);
+          return { ...prev, photoUri: croppedUri };
+        });
         setCropSourceUri(null);
       }}
     />
@@ -1064,6 +1117,7 @@ const styles = StyleSheet.create({
   },
   dateButton: {
     flex: 1,
+    minWidth: 0,
     height: INPUT_H,
     backgroundColor: Theme.inputBg,
     borderColor: Theme.inputBorder,
@@ -1071,6 +1125,16 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     paddingHorizontal: Spacing.sm,
     justifyContent: 'center',
+  },
+  birthdayRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  birthdayClearText: {
+    fontSize: 12,
+    fontWeight: '500',
   },
   dateButtonText: {
     fontSize: Typography.sm,

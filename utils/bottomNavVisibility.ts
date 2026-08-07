@@ -1,6 +1,6 @@
 export const BOTTOM_NAV_SCROLL_CLEARANCE = 100;
 
-export type BottomNavTabKey = 'home' | 'commonitems' | 'calendar' | 'episode' | 'tools' | 'tasks';
+export type BottomNavTabKey = 'home' | 'calendar' | 'episode' | 'tools' | 'tasks';
 
 const HIDE_HEADER_PATHS = [
   'detail',
@@ -18,6 +18,7 @@ const HIDE_HEADER_PATHS = [
   'task-detail',
   'task-group',
   'appsettings',
+  'commonitems',
 ];
 
 const HIDE_BOTTOM_NAV_PATHS = [
@@ -32,6 +33,7 @@ const HIDE_BOTTOM_NAV_PATHS = [
   'task-edit',
   'task-detail',
   'task-group',
+  'commonitems',
 ];
 
 export function shouldHideHeader(pathname: string): boolean {
@@ -49,7 +51,6 @@ export function getBottomNavScrollClearance(pathname: string): number {
 export function getActiveTab(pathname: string): BottomNavTabKey | null {
   /** 設定などは下部タブを出すが、どのタブ上でもない（タップで各タブへ移れる） */
   if (pathname.includes('/appsettings')) return null;
-  if (pathname.includes('/commonitems')) return 'commonitems';
   if (pathname.includes('/calendar')) return 'calendar';
   if (pathname.includes('/shuffle') || pathname.includes('/settlement')) return 'tools';
   if (pathname.includes('/episode')) return 'episode';

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState, type ComponentProps } from '
 import {
   Alert,
   Dimensions,
-  FlatList,
   Modal,
   Pressable,
   ScrollView,
@@ -12,13 +11,15 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { createDetailStyles } from '../utils/detailStyles';
 import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
-import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
 import { TabScreenTemplate } from '@/components/screen-templates';
+import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
+import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
   addCommonItemOption,
@@ -32,36 +33,29 @@ import {
   reconcileGroupOptionMembers,
   removeCommonItemLabel,
   renameCommonItemLabel,
-  setCommonItemOptionColor,
   updateGroupOption,
 } from '../db';
-import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import { CommonItemKind, Friend } from '../types';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { AddCircleButton } from '@/components/AddCircleButton';
-import {
-  EPISODE_TAG_COLOR_PALETTE,
-  getHashedEpisodeTagColor,
-} from '@/utils/calendarEventColors';
 import { INACTIVE_TAB_COLOR_ALPHA, withAlpha } from '@/utils/colorHelpers';
 import {
   contentInputStyle,
   contentMutedTextStyle,
-  contentSelectedOptionStyle,
   contentSurfaceStyle,
-  contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 
-type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先' | '予定タグ';
+/** 公開先は概念・データ種別として残し、導入までタブ表示のみ隠す。予定タグはカレンダー側管理のため除外。 */
+type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先';
 type Option = { label: string; value: string };
 
 const TAGS_SCROLL_MAX_HEIGHT = Math.max(120, Dimensions.get('window').height - 280);
 const TAB_TAG_DIVIDER_INSET = Spacing.md;
 
-const TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '好物', '苦手', '公開先', '予定タグ'];
+const VISIBLE_TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '好物', '苦手'];
 
 const TAB_ICONS: Record<CommonItemTabKey, ComponentProps<typeof Ionicons>['name']> = {
   所属: 'people-outline',
@@ -70,7 +64,6 @@ const TAB_ICONS: Record<CommonItemTabKey, ComponentProps<typeof Ionicons>['name'
   好物: 'heart-outline',
   苦手: 'thumbs-down-outline',
   公開先: 'eye-outline',
-  予定タグ: 'pricetags-outline',
 };
 
 const DEFAULT_CHIP_STYLE = {
@@ -87,7 +80,20 @@ const TAB_KIND_MAP: Record<CommonItemTabKey, CommonItemKind> = {
   好物: 'like',
   苦手: 'dislike',
   公開先: 'visibility_group',
-  予定タグ: 'episode_tag',
+};
+
+const parseCommonItemTabParam = (value: unknown): CommonItemTabKey | null => {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) {
+    return null;
+  }
+  if ((VISIBLE_TAB_ORDER as string[]).includes(raw)) {
+    return raw as CommonItemTabKey;
+  }
+  const byKind = (Object.entries(TAB_KIND_MAP) as [CommonItemTabKey, CommonItemKind][]).find(
+    ([tab, kind]) => kind === raw && (VISIBLE_TAB_ORDER as CommonItemTabKey[]).includes(tab)
+  );
+  return byKind?.[0] ?? null;
 };
 
 const GROUP_KINDS: CommonItemKind[] = [
@@ -98,10 +104,6 @@ const GROUP_KINDS: CommonItemKind[] = [
   'dislike',
   'visibility_group',
 ];
-const PERSON_COLUMNS = 3;
-const PERSON_GAP = 6;
-const GROUP_EDITOR_PADDING = 14;
-
 const toOptions = (values: string[]): Option[] => values.map((v) => ({ label: v, value: v }));
 
 function EditorActionButtons({
@@ -149,66 +151,8 @@ function EditorActionButtons({
   );
 }
 
-function SelectField({ label, value, options, onValueChange }: {
-  label: string;
-  value: string;
-  options: Option[];
-  onValueChange: (v: string) => void;
-}) {
-  const content = useContentColors();
-  const [visible, setVisible] = useState(false);
-  const displayLabel = useMemo(() => {
-    if (!value) return label;
-    return options.find((o) => o.value === value)?.label ?? label;
-  }, [label, options, value]);
-
-  return (
-    <View style={styles.filterSelectContainer}>
-      <Pressable style={[styles.filterSelectButton, contentInputStyle(content)]} onPress={() => setVisible(true)}>
-        <Text style={[value ? styles.filterSelectValue : styles.filterSelectPlaceholder, value ? contentTextStyle(content) : contentMutedTextStyle(content)]}>{displayLabel}</Text>
-        <Text style={[styles.filterSelectChevron, contentMutedTextStyle(content)]}>▼</Text>
-      </Pressable>
-      <Modal transparent animationType="fade" visible={visible} onRequestClose={() => setVisible(false)}>
-        <View style={styles.selectModalBackdrop}>
-          <View style={[styles.selectModalCard, contentSurfaceStyle(content)]}>
-            <Text style={[styles.selectModalTitle, contentTextStyle(content)]}>{label}</Text>
-            <ScrollView style={styles.selectModalOptions}>
-              <Pressable
-                style={[
-                  styles.selectModalOption,
-                  !value ? contentSelectedOptionStyle(content) : null,
-                ]}
-                onPress={() => { onValueChange(''); setVisible(false); }}
-              >
-                <Text style={[styles.selectModalOptionText, contentTextStyle(content)]}>指定なし</Text>
-              </Pressable>
-              {options.map((opt) => (
-                <Pressable
-                  key={opt.value}
-                  style={[
-                    styles.selectModalOption,
-                    opt.value === value ? contentSelectedOptionStyle(content) : null,
-                  ]}
-                  onPress={() => { onValueChange(opt.value); setVisible(false); }}
-                >
-                  <Text style={[styles.selectModalOptionText, contentTextStyle(content)]}>{opt.label}</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-            <Pressable
-              style={[styles.selectModalCloseButton, contentTagStyle(content)]}
-              onPress={() => setVisible(false)}
-            >
-              <Text style={[styles.selectModalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
-    </View>
-  );
-}
-
 export default function CommonItemsScreen() {
+  const router = useRouter();
   const kit = useUiKit();
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
@@ -242,12 +186,23 @@ export default function CommonItemsScreen() {
     ? kit.commonItemsContentPaddingHorizontal
     : TAB_TAG_DIVIDER_INSET;
   const themeColors = bundle.colors;
-  const [activeTab, setActiveTab] = useState<CommonItemTabKey>('所属');
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const initialTab = parseCommonItemTabParam(params.tab) ?? '所属';
+  const [activeTab, setActiveTab] = useState<CommonItemTabKey>(initialTab);
+
+  useFocusEffect(
+    useCallback(() => {
+      const nextTab = parseCommonItemTabParam(params.tab);
+      if (nextTab) {
+        setActiveTab(nextTab);
+      }
+    }, [params.tab])
+  );
   const [mergedLabels, setMergedLabels] = useState<string[]>([]);
+  const [infoVisible, setInfoVisible] = useState(false);
 
   const [editorVisible, setEditorVisible] = useState(false);
   const [editorText, setEditorText] = useState('');
-  const [editorColor, setEditorColor] = useState<string>(EPISODE_TAG_COLOR_PALETTE[0]);
   const [editingOriginalLabel, setEditingOriginalLabel] = useState<string | null>(null);
 
   const [groupEditorVisible, setGroupEditorVisible] = useState(false);
@@ -256,6 +211,7 @@ export default function CommonItemsScreen() {
   const [groupEditingOriginalLabel, setGroupEditingOriginalLabel] = useState<string | null>(null);
   const [allPersons, setAllPersons] = useState<Friend[]>([]);
   const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
+  const [selectorTab, setSelectorTab] = useState<'individual' | 'group'>('individual');
   const [personNameFilter, setPersonNameFilter] = useState('');
   const [personAffiliationFilter, setPersonAffiliationFilter] = useState('');
   const [personExperienceFilter, setPersonExperienceFilter] = useState('');
@@ -264,15 +220,8 @@ export default function CommonItemsScreen() {
 
   const activeKind = TAB_KIND_MAP[activeTab];
   const isGroupTab = GROUP_KINDS.includes(activeKind);
-  const isEpisodeTagTab = activeKind === 'episode_tag';
 
   const requireActiveKind = (): CommonItemKind => activeKind;
-
-  const personCardWidth = useMemo(() => {
-    const screenWidth = Dimensions.get('window').width;
-    const totalGap = PERSON_GAP * (PERSON_COLUMNS - 1);
-    return (screenWidth - GROUP_EDITOR_PADDING * 2 - totalGap) / PERSON_COLUMNS;
-  }, []);
 
   const refreshItems = useCallback(() => {
     initializeDatabase();
@@ -283,29 +232,12 @@ export default function CommonItemsScreen() {
     refreshItems();
   }, [refreshItems]);
 
-  const filteredPersons = useMemo(() => {
-    const filtered = allPersons.filter((p) => {
-      if (personNameFilter.trim() && !p.name.toLowerCase().includes(personNameFilter.trim().toLowerCase())) return false;
-      if (personAffiliationFilter) {
-        const match = (p.affiliations ?? []).includes(personAffiliationFilter);
-        if (!match) return false;
-      }
-      if (personExperienceFilter) {
-        const match = (p.experiences ?? []).includes(personExperienceFilter);
-        if (!match) return false;
-      }
-      return true;
-    });
-    return sortFriendsBySelectedIds(filtered, selectedMemberIds);
-  }, [allPersons, personNameFilter, personAffiliationFilter, personExperienceFilter, selectedMemberIds]);
-
   const openAddEditor = () => {
     if (isGroupTab) {
       openGroupEditorForCreate();
     } else {
       setEditingOriginalLabel(null);
       setEditorText('');
-      setEditorColor(EPISODE_TAG_COLOR_PALETTE[0]);
       setEditorVisible(true);
     }
   };
@@ -316,10 +248,6 @@ export default function CommonItemsScreen() {
     } else {
       setEditingOriginalLabel(label);
       setEditorText(label);
-      if (activeKind === 'episode_tag') {
-        const option = getCommonItemOptionByKindAndLabel('episode_tag', label);
-        setEditorColor(option?.color ?? getHashedEpisodeTagColor(label));
-      }
       setEditorVisible(true);
     }
   };
@@ -363,11 +291,7 @@ export default function CommonItemsScreen() {
     }
     const kind = requireActiveKind();
     if (!editingOriginalLabel) {
-      const created = addCommonItemOption(
-        kind,
-        normalized,
-        kind === 'episode_tag' ? editorColor : null
-      );
+      const created = addCommonItemOption(kind, normalized, null);
       if (!created) {
         Alert.alert('登録失敗', '同じ項目が既に存在するか、入力値が不正です。');
         return;
@@ -377,9 +301,6 @@ export default function CommonItemsScreen() {
       if (!ok) {
         Alert.alert('更新失敗', '同じ項目が既に存在するか、入力値が不正です。');
         return;
-      }
-      if (kind === 'episode_tag') {
-        setCommonItemOptionColor(kind, normalized, editorColor);
       }
     }
     setEditorVisible(false);
@@ -467,61 +388,10 @@ export default function CommonItemsScreen() {
 
   const simpleEditorTitle = editingOriginalLabel ? `${activeTab}を編集` : `${activeTab}を追加`;
 
-  const renderEpisodeTagColorPicker = () => {
-    if (!isEpisodeTagTab) return null;
-    return (
-      <View style={styles.colorPickerSection}>
-        <Text style={[styles.colorPickerLabel, contentMutedTextStyle(content)]}>カレンダーの色</Text>
-        <View style={styles.colorPickerRow}>
-          {EPISODE_TAG_COLOR_PALETTE.map((swatch) => {
-            const selected = editorColor.toUpperCase() === swatch.toUpperCase();
-            return (
-              <Pressable
-                key={swatch}
-                onPress={() => setEditorColor(swatch)}
-                style={[
-                  styles.colorSwatch,
-                  { backgroundColor: swatch },
-                  selected ? styles.colorSwatchSelected : null,
-                ]}
-                accessibilityRole="button"
-                accessibilityState={{ selected }}
-                accessibilityLabel={`色 ${swatch}`}
-              />
-            );
-          })}
-        </View>
-      </View>
-    );
-  };
-
   const activeChipStyle = bundle.infoChipStyles[activeTab] ?? DEFAULT_CHIP_STYLE;
 
   const getTabAccentColor = (tab: CommonItemTabKey) =>
     bundle.infoChipStyles[tab]?.borderColor ?? themeColors.accent;
-
-  const renderPersonRow = ({ item }: { item: Friend }) => {
-    const checked = selectedMemberIds.has(item.id);
-    return (
-      <Pressable style={[styles.personRow, contentSurfaceStyle(content), { width: personCardWidth }]} onPress={() => toggleMember(item.id)}>
-        <View
-          style={[
-            styles.checkbox,
-            contentSurfaceStyle(content),
-            checked
-              ? {
-                  backgroundColor: content.contentInputBg,
-                  borderColor: '#4caf50',
-                }
-              : null,
-          ]}
-        >
-          {checked ? <Text style={styles.checkmark}>✓</Text> : null}
-        </View>
-        <Text style={[styles.personName, contentTextStyle(content)]} numberOfLines={1}>{item.name}</Text>
-      </Pressable>
-    );
-  };
 
   const renderTabInner = () => (
     <View
@@ -535,7 +405,7 @@ export default function CommonItemsScreen() {
       ]}
     >
       <View style={detailStyles.tabInner}>
-        {TAB_ORDER.map((tab) => {
+        {VISIBLE_TAB_ORDER.map((tab) => {
           const isActive = activeTab === tab;
           const tabColor = getTabAccentColor(tab);
           const inactiveIconBg = withAlpha(tabColor, INACTIVE_TAB_COLOR_ALPHA);
@@ -601,24 +471,6 @@ export default function CommonItemsScreen() {
           nestedScrollEnabled
         >
           {mergedLabels.map((label) => {
-            if (isEpisodeTagTab) {
-              return (
-                <Pressable
-                  key={label}
-                  onPress={() => handlePressTag(label)}
-                >
-                  <EpisodeTagChip
-                    label={label}
-                    chipStyle={{
-                      backgroundColor: 'transparent',
-                      color: activeChipStyle.color,
-                    }}
-                    style={styles.commonItemTagChip}
-                    textStyle={styles.commonItemTagText}
-                  />
-                </Pressable>
-              );
-            }
             return (
               <Pressable
                 key={label}
@@ -638,7 +490,20 @@ export default function CommonItemsScreen() {
           })}
         </ScrollView>
       </View>
-      <View style={[styles.addButtonRow, { paddingHorizontal: contentPaddingHorizontal }]}>
+      <View style={[styles.bottomRow, { paddingHorizontal: contentPaddingHorizontal }]}>
+        <Pressable
+          style={styles.infoButton}
+          onPress={() => setInfoVisible(true)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="共通項目についての説明"
+        >
+          <Ionicons
+            name="information-circle-outline"
+            size={28}
+            color={content.contentTextSecondary}
+          />
+        </Pressable>
         <AddCircleButton onPress={openAddEditor} accessibilityLabel={`${activeTab}を追加`} />
       </View>
     </>
@@ -646,7 +511,11 @@ export default function CommonItemsScreen() {
 
   return (
     <>
-      <TabScreenTemplate contentContainerStyle={styles.body}>
+      <TabScreenTemplate
+        contentContainerStyle={styles.body}
+        header={<ScreenTopBar title="共通項目" onBack={() => router.back()} />}
+        safeAreaEdges={['top', 'right', 'bottom', 'left']}
+      >
         <View style={[detailStyles.tabSection, styles.tabSectionFill, styles.tabSectionNoFrame]}>
           <View
             style={[
@@ -664,7 +533,38 @@ export default function CommonItemsScreen() {
         </View>
       </TabScreenTemplate>
 
-      {/* Simple editor（予定タグなど） */}
+      <Modal
+        transparent
+        animationType="fade"
+        visible={infoVisible}
+        onRequestClose={() => setInfoVisible(false)}
+      >
+        <View style={styles.infoOverlay}>
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setInfoVisible(false)}
+            accessibilityLabel="閉じる"
+          />
+          <View style={[styles.infoCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.infoTitle, contentTextStyle(content)]}>共通項目について</Text>
+            <Text style={[styles.infoBody, contentMutedTextStyle(content)]}>
+              {[
+                '・人物プロフィールで使う所属・経験などの候補をまとめて管理します。',
+                '・一覧の絞り込みや、プロフィール編集時の候補に使われます。',
+                '・タグをタップすると編集できます。＋で新規追加できます。',
+              ].join('\n')}
+            </Text>
+            <Pressable
+              style={[styles.infoClose, contentInputStyle(content)]}
+              onPress={() => setInfoVisible(false)}
+            >
+              <Text style={[styles.infoCloseText, contentTextStyle(content)]}>閉じる</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Simple editor */}
       <Modal visible={editorVisible} transparent animationType="fade" onRequestClose={() => setEditorVisible(false)}>
         <View style={styles.editorOverlay}>
           <View style={[styles.editorCard, contentSurfaceStyle(content), styles.editorCardPreview]}>
@@ -687,7 +587,6 @@ export default function CommonItemsScreen() {
                   autoCapitalize="none"
                   autoFocus
                 />
-                {renderEpisodeTagColorPicker()}
                 {editingOriginalLabel ? (
                   <Pressable
                     style={[
@@ -707,81 +606,56 @@ export default function CommonItemsScreen() {
         </View>
       </Modal>
 
-      {/* Group editor（所属/公開先など） */}
-      <Modal visible={groupEditorVisible} transparent animationType="slide" onRequestClose={() => setGroupEditorVisible(false)}>
-        <View style={styles.groupEditorOverlay}>
-          <View style={[styles.groupEditorCard, contentSurfaceStyle(content)]}>
-            <>
-                <View style={styles.groupHeaderRowPreview}>
-                  <TextInput
-                    value={groupName}
-                    onChangeText={setGroupName}
-                    style={[styles.groupNameInputPreview, contentInputStyle(content)]}
-                    placeholder={`${activeTab}名`}
-                    placeholderTextColor={content.contentTextSecondary}
-                    autoCapitalize="none"
-                  />
-                  <EditorActionButtons
-                    onCancel={() => setGroupEditorVisible(false)}
-                    onSave={handleSaveGroupEditor}
-                    saveDisabled={!groupName.trim()}
-                    saveAccessibilityLabel={groupEditingId ? '保存' : '作成'}
-                  />
-                </View>
-
-                <View style={styles.filterRow}>
-                  <View style={styles.filterNameContainer}>
-                    <TextInput
-                      style={[styles.filterNameInput, contentInputStyle(content)]}
-                      value={personNameFilter}
-                      onChangeText={setPersonNameFilter}
-                      placeholder="名前"
-                      placeholderTextColor={content.contentTextSecondary}
-                      autoCapitalize="none"
-                    />
-                  </View>
-                  <SelectField
-                    label="所属"
-                    value={personAffiliationFilter}
-                    options={affiliationOptions}
-                    onValueChange={setPersonAffiliationFilter}
-                  />
-                  <SelectField
-                    label="経験"
-                    value={personExperienceFilter}
-                    options={experienceOptions}
-                    onValueChange={setPersonExperienceFilter}
-                  />
-                </View>
-
-                <FlatList
-                  data={filteredPersons}
-                  keyExtractor={(item) => item.id}
-                  renderItem={renderPersonRow}
-                  style={styles.personList}
-                  contentContainerStyle={styles.personListContent}
-                  numColumns={PERSON_COLUMNS}
-                  columnWrapperStyle={styles.personColumnWrapper}
-                />
-
-                {groupEditingId ? (
-                  <Pressable
-                    style={[
-                      styles.editorDeleteButton,
-                      {
-                        backgroundColor: 'rgba(248, 113, 113, 0.18)',
-                        borderColor: 'rgba(248, 113, 113, 0.55)',
-                      },
-                    ]}
-                    onPress={handleDeleteGroupEditor}
-                  >
-                    <Text style={styles.editorDeleteText}>削除</Text>
-                  </Pressable>
-                ) : null}
-            </>
-          </View>
-        </View>
-      </Modal>
+      {/* 所属などの対象者選択は、参加者選択と同じシートを使う。 */}
+      <EntrySelectorModal
+        visible={groupEditorVisible}
+        selectorTab={selectorTab}
+        onTabChange={setSelectorTab}
+        nameFilter={personNameFilter}
+        onNameFilterChange={setPersonNameFilter}
+        affiliationFilter={personAffiliationFilter}
+        onAffiliationFilterChange={setPersonAffiliationFilter}
+        experienceFilter={personExperienceFilter}
+        onExperienceFilterChange={setPersonExperienceFilter}
+        friends={allPersons}
+        affiliationOptions={affiliationOptions}
+        experienceOptions={experienceOptions}
+        groupOptions={[]}
+        selectedIndividualIds={selectedMemberIds}
+        selectedGroupValues={new Set<string>()}
+        onToggleIndividual={toggleMember}
+        onToggleGroup={() => undefined}
+        onCancel={() => setGroupEditorVisible(false)}
+        onConfirm={handleSaveGroupEditor}
+        enableGroupTab={false}
+        initialExpanded
+        headerContent={
+          <TextInput
+            value={groupName}
+            onChangeText={setGroupName}
+            style={[styles.groupNameInputPreview, contentInputStyle(content)]}
+            placeholder={`${activeTab}名`}
+            placeholderTextColor={content.contentTextSecondary}
+            autoCapitalize="none"
+          />
+        }
+        footerContent={
+          groupEditingId ? (
+            <Pressable
+              style={[
+                styles.editorDeleteButton,
+                {
+                  backgroundColor: 'rgba(248, 113, 113, 0.18)',
+                  borderColor: 'rgba(248, 113, 113, 0.55)',
+                },
+              ]}
+              onPress={handleDeleteGroupEditor}
+            >
+              <Text style={styles.editorDeleteText}>削除</Text>
+            </Pressable>
+          ) : null
+        }
+      />
     </>
   );
 }
@@ -851,43 +725,51 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
-  /** 約1.1倍（共通項目一覧のみ。EpisodeTagChip 既定は他画面用に据え置き） */
-  commonItemTagChip: {
-    gap: 5,
-    paddingHorizontal: 11,
-    paddingVertical: 5,
-  },
-  commonItemTagText: {
-    fontSize: 12,
-  },
-  colorPickerSection: {
-    gap: 8,
-  },
-  colorPickerLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  colorPickerRow: {
+  bottomRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  colorSwatch: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  colorSwatchSelected: {
-    borderColor: '#0f172a',
-  },
-  addButtonRow: {
-    alignItems: 'flex-end',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingTop: Spacing.sm,
   },
-  /* Simple editor (経験/性格) */
+  infoButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  infoOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 120,
+  },
+  infoCard: {
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    padding: 18,
+    gap: 12,
+  },
+  infoTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  infoBody: {
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  infoClose: {
+    alignSelf: 'flex-end',
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  infoCloseText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  /* Simple editor */
   editorOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.5)',
@@ -1000,33 +882,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  /* Group editor (所属/公開範囲) */
-  groupEditorOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  groupEditorCard: {
-    backgroundColor: Theme.bgSurface,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    height: '90%',
-    padding: GROUP_EDITOR_PADDING,
-  },
-  groupHeaderRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginBottom: 10,
-  },
-  groupHeaderRowPreview: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 10,
-  },
+  /* EntrySelectorModal 内のグループ名入力 */
   groupNameInputPreview: {
-    flex: 1,
     borderWidth: 1,
     borderColor: '#94a3b8',
     borderRadius: Radius.sm,
@@ -1036,187 +893,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
     minHeight: 40,
-  },
-  groupNameInput: {
-    flex: 1,
-    borderWidth: 2,
-    borderColor: '#94a3b8',
-    borderRadius: Radius.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  groupEditButtons: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  groupCancelButton: {
-    borderWidth: 1,
-    borderColor: '#94a3b8',
-    borderRadius: Radius.sm,
-    backgroundColor: Theme.bgSurface,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-  },
-  groupCancelButtonText: {
-    color: '#0f172a',
-    fontSize: Typography.base,
-    fontWeight: '700',
-  },
-  groupCreateButton: {
-    borderWidth: 2,
-    borderColor: '#2e7d32',
-    borderRadius: Radius.sm,
-    backgroundColor: '#c8e6c9',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  groupCreateButtonText: {
-    color: '#1b5e20',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  groupSaveButton: {
-    borderWidth: 2,
-    borderColor: '#2e7d32',
-    borderRadius: Radius.sm,
-    backgroundColor: '#4caf50',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  groupSaveButtonText: {
-    color: Theme.bgSurface,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  groupButtonDisabled: {
-    opacity: 0.4,
-  },
-
-  /* Filter row */
-  filterRow: {
-    flexDirection: 'row',
-    gap: 6,
     marginBottom: 10,
-  },
-  filterNameContainer: {
-    flex: 1,
-  },
-  filterNameInput: {
-    borderWidth: 1,
-    borderColor: '#94a3b8',
-    borderRadius: Radius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    fontSize: Typography.base,
-    color: '#111827',
-  },
-  filterSelectContainer: {
-    flex: 1,
-  },
-  filterSelectButton: {
-    borderWidth: 1,
-    borderColor: '#94a3b8',
-    borderRadius: Radius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  filterSelectValue: {
-    fontSize: Typography.base,
-    color: '#111827',
-    flex: 1,
-  },
-  filterSelectPlaceholder: {
-    fontSize: Typography.base,
-    color: '#6b7280',
-    flex: 1,
-  },
-  filterSelectChevron: {
-    fontSize: 10,
-    color: '#475569',
-    marginLeft: 4,
-  },
-  selectModalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.45)',
-    justifyContent: 'center',
-    paddingHorizontal: 18,
-  },
-  selectModalCard: {
-    backgroundColor: Theme.bgSurface,
-    borderRadius: Radius.md,
-    padding: 14,
-    maxHeight: '70%',
-  },
-  selectModalTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#0f172a',
-    marginBottom: 10,
-  },
-  selectModalOptions: {
-    marginBottom: 10,
-  },
-  selectModalOption: {
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: Radius.sm,
-  },
-  selectModalOptionText: {
-    fontSize: 14,
-  },
-  selectModalCloseButton: {
-    alignSelf: 'flex-end',
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: Radius.sm,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  selectModalCloseButtonText: {
-    fontWeight: '600',
-  },
-
-  /* Person list */
-  personList: {
-    flex: 1,
-  },
-  personListContent: {
-    paddingBottom: 16,
-  },
-  personColumnWrapper: {
-    gap: PERSON_GAP,
-    marginBottom: PERSON_GAP,
-  },
-  personRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 2,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 10,
-  },
-  checkbox: {
-    width: 24,
-    height: 24,
-    borderWidth: 2,
-    borderColor: '#94a3b8',
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  checkmark: {
-    color: '#4caf50',
-    fontSize: 16,
-    fontWeight: '900',
-  },
-  personName: {
-    flex: 1,
-    fontSize: 14,
-    fontWeight: '600',
   },
 });

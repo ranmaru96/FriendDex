@@ -58,6 +58,7 @@ export function SubToolScreenTemplate({
         ]}
         keyboardShouldPersistTaps="handled"
         enableOnAndroid
+        enableResetScrollToCoords={false}
         extraScrollHeight={extraScrollHeight}
       >
         {children}

@@ -35,10 +35,13 @@ import {
   TaskGroup,
   TaskGroupInput,
   TaskInput,
+  TaskKind,
+  TaskPace,
   TASK_GROUP_MEMBER_LIMIT,
   CompletedTaskRetention,
 } from './types';
-import { normalizeEpisodeTag } from './utils/episodeHelpers';
+import { deletePersistedImages } from './utils/persistImageFile';
+import { normalizeEpisodeTag, normalizeEpisodeTime, compareEpisodesByEventDateTime } from './utils/episodeHelpers';
 import { buildDefaultShufflePoolLabel, buildShuffleMemberSetKey, normalizeShuffleMemberIds } from './utils/shuffleHelpers';
 import { retentionToCutoffIso } from './utils/taskHelpers';
 import { mergeFriendInputWithPublicFields } from './utils/qrScanHelpers';
@@ -341,11 +344,13 @@ const sanitizeEpisode = (value: unknown): Episode | null => {
         : '';
   const eventId = rawEventId.length > 0 ? rawEventId : null;
   const tag = normalizeEpisodeTag(raw.tag);
+  const time = normalizeEpisodeTime(typeof raw.time === 'string' ? raw.time : null);
 
   return {
     id: raw.id,
     title: raw.title,
     date: raw.date,
+    ...(time ? { time } : {}),
     description: raw.description,
     authorFriendId: typeof raw.authorFriendId === 'string' ? raw.authorFriendId : '',
     visibilityMode: sanitizeVisibilityMode(raw.visibilityMode),
@@ -844,11 +849,37 @@ export const initializeDatabase = (): void => {
     CREATE TABLE IF NOT EXISTS ${TASK_GROUPS_TABLE} (
       id TEXT PRIMARY KEY NOT NULL,
       title TEXT NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'recurring',
+      pace TEXT,
+      recurrence_unit TEXT,
+      recurrence_config TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
   `);
+  const taskGroupTableInfo = db.getAllSync<{ name: string }>(
+    `PRAGMA table_info(${TASK_GROUPS_TABLE});`
+  );
+  const taskGroupColumns = new Set(taskGroupTableInfo.map((column) => column.name));
+  if (!taskGroupColumns.has('kind')) {
+    db.execSync(
+      `ALTER TABLE ${TASK_GROUPS_TABLE} ADD COLUMN kind TEXT NOT NULL DEFAULT 'recurring';`
+    );
+  }
+  if (!taskGroupColumns.has('pace')) {
+    db.execSync(`ALTER TABLE ${TASK_GROUPS_TABLE} ADD COLUMN pace TEXT;`);
+  }
+  if (!taskGroupColumns.has('recurrence_unit')) {
+    db.execSync(`ALTER TABLE ${TASK_GROUPS_TABLE} ADD COLUMN recurrence_unit TEXT;`);
+  }
+  if (!taskGroupColumns.has('recurrence_config')) {
+    db.execSync(`ALTER TABLE ${TASK_GROUPS_TABLE} ADD COLUMN recurrence_config TEXT;`);
+  }
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${TASK_GROUPS_TABLE}_kind ON ${TASK_GROUPS_TABLE}(kind);`
+  );
+  backfillTaskGroupKindsIfNeeded();
 
   db.execSync(`
     CREATE TABLE IF NOT EXISTS ${TASK_COMPLETIONS_TABLE} (
@@ -1706,7 +1737,16 @@ export const updateProfile = (profileId: string, input: ProfileSelfUpdateInput):
 };
 
 export const deleteFriend = (id: string): boolean => {
+  const uris = db
+    .getAllSync<{ photoUri: string | null }>(
+      `SELECT photoUri FROM ${PROFILES_TABLE} WHERE friendId = ?;`,
+      [id]
+    )
+    .map((row) => row.photoUri);
   const result = db.runSync(`DELETE FROM ${PROFILES_TABLE} WHERE friendId = ?;`, [id]);
+  if (result.changes > 0) {
+    deletePersistedImages(uris);
+  }
   return result.changes > 0;
 };
 
@@ -1722,6 +1762,9 @@ export const deleteProfileById = (profileId: string): boolean => {
     }
   }
   const result = db.runSync(`DELETE FROM ${PROFILES_TABLE} WHERE id = ?;`, [profileId]);
+  if (result.changes > 0) {
+    deletePersistedImages([row.photoUri]);
+  }
   return result.changes > 0;
 };
 
@@ -1861,10 +1904,12 @@ export const createEpisode = (input: EpisodeInput): Episode | null => {
   const visibilityEntries =
     visibilityMode === 'limited' ? uniqueVisibilityEntries(input.visibilityEntries ?? []) : [];
   const tag = resolveEpisodeTagForInput(input);
+  const time = normalizeEpisodeTime(input.time);
   const episode: Episode = {
     id: uuidv4(),
     title: input.title,
     date: input.date,
+    ...(time ? { time } : {}),
     description: input.description,
     authorFriendId: myselfId,
     visibilityMode,
@@ -1941,10 +1986,12 @@ export const updateEpisode = (authorFriendId: string, episodeId: string, input: 
   const visibilityEntries =
     visibilityMode === 'limited' ? uniqueVisibilityEntries(input.visibilityEntries ?? []) : [];
   const tag = resolveEpisodeTagForInput(input, previousEpisode);
+  const time = normalizeEpisodeTime(input.time);
   const updatedEpisode: Episode = {
     id: normalizedId,
     title: input.title,
     date: input.date,
+    ...(time ? { time } : {}),
     description: input.description,
     authorFriendId: previousEpisode.authorFriendId,
     visibilityMode,
@@ -2061,11 +2108,7 @@ export const getEpisodesByEventId = (eventId: string): Episode[] => {
       }
     });
   }
-  return Array.from(byId.values()).sort((a, b) => {
-    const dateCmp = a.date.localeCompare(b.date);
-    if (dateCmp !== 0) return dateCmp;
-    return a.title.localeCompare(b.title, 'ja');
-  });
+  return Array.from(byId.values()).sort(compareEpisodesByEventDateTime);
 };
 
 export const getEpisodesByEventIds = (eventIds: string[]): Map<string, Episode[]> => {
@@ -2093,14 +2136,7 @@ export const getEpisodesByEventIds = (eventIds: string[]): Map<string, Episode[]
     });
   }
   map.forEach((list, eventId) => {
-    map.set(
-      eventId,
-      [...list].sort((a, b) => {
-        const dateCmp = a.date.localeCompare(b.date);
-        if (dateCmp !== 0) return dateCmp;
-        return a.title.localeCompare(b.title, 'ja');
-      })
-    );
+    map.set(eventId, [...list].sort(compareEpisodesByEventDateTime));
   });
   return map;
 };
@@ -2154,7 +2190,7 @@ export const getPendingReviewEpisodes = (): PendingReviewEpisodeRef[] => {
       });
     });
   });
-  pending.sort((left, right) => right.episode.date.localeCompare(left.episode.date));
+  pending.sort((left, right) => compareEpisodesByEventDateTime(left.episode, right.episode));
   return pending;
 };
 
@@ -2232,7 +2268,14 @@ export const getEpisodeListPhotoUrisMap = (
 };
 
 export const deleteEpisodePhoto = (id: number): boolean => {
+  const row = db.getFirstSync<{ photo_uri: string }>(
+    `SELECT photo_uri FROM ${EPISODE_PHOTOS_TABLE} WHERE id = ?;`,
+    [id]
+  );
   const result = db.runSync(`DELETE FROM ${EPISODE_PHOTOS_TABLE} WHERE id = ?;`, [id]);
+  if (result.changes > 0) {
+    deletePersistedImages([row?.photo_uri]);
+  }
   return result.changes > 0;
 };
 
@@ -2241,7 +2284,16 @@ export const deleteEpisodePhotosByEpisodeId = (episodeId: string): boolean => {
   if (!normalizedEpisodeId) {
     return false;
   }
+  const uris = db
+    .getAllSync<{ photo_uri: string }>(
+      `SELECT photo_uri FROM ${EPISODE_PHOTOS_TABLE} WHERE episode_id = ?;`,
+      [normalizedEpisodeId]
+    )
+    .map((row) => row.photo_uri);
   const result = db.runSync(`DELETE FROM ${EPISODE_PHOTOS_TABLE} WHERE episode_id = ?;`, [normalizedEpisodeId]);
+  if (result.changes > 0) {
+    deletePersistedImages(uris);
+  }
   return result.changes > 0;
 };
 
@@ -4134,6 +4186,10 @@ type TaskRow = {
 type TaskGroupRow = {
   id: string;
   title: string;
+  kind: string | null;
+  pace: string | null;
+  recurrence_unit: string | null;
+  recurrence_config: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -4181,13 +4237,34 @@ const rowToTask = (row: TaskRow): Task => ({
   updatedAt: row.updated_at,
 });
 
-const rowToTaskGroup = (row: TaskGroupRow): TaskGroup => ({
-  id: row.id,
-  title: row.title,
-  sortOrder: row.sort_order ?? 0,
-  createdAt: row.created_at,
-  updatedAt: row.updated_at,
-});
+const rowToTaskGroup = (row: TaskGroupRow): TaskGroup => {
+  const kind: Task['kind'] = row.kind === 'temporary' ? 'temporary' : 'recurring';
+  const pace =
+    kind === 'recurring' && (row.pace === 'scheduled' || row.pace === 'unpaced')
+      ? row.pace
+      : kind === 'recurring'
+        ? 'unpaced'
+        : null;
+  const recurrenceUnit =
+    pace === 'scheduled' &&
+    (row.recurrence_unit === 'day' ||
+      row.recurrence_unit === 'week' ||
+      row.recurrence_unit === 'month' ||
+      row.recurrence_unit === 'year')
+      ? row.recurrence_unit
+      : null;
+  return {
+    id: row.id,
+    kind,
+    title: row.title,
+    pace,
+    recurrenceUnit,
+    recurrenceConfig: pace === 'scheduled' ? parseTaskRecurrenceConfig(row.recurrence_config) : null,
+    sortOrder: row.sort_order ?? 0,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+};
 
 const rowToTaskCompletion = (row: TaskCompletionRow): TaskCompletion => ({
   id: row.id,
@@ -4247,18 +4324,78 @@ export const getRecurringTasks = (): Task[] => {
   return rows.map(rowToTask);
 };
 
-export const getRecurringTasksByGroupId = (groupId: string): Task[] => {
+export const getTasksByGroupId = (
+  groupId: string,
+  kind?: 'recurring' | 'temporary'
+): Task[] => {
   const normalizedId = groupId.trim();
   if (!normalizedId) {
     return [];
   }
+  if (kind) {
+    const rows = db.getAllSync<TaskRow>(
+      `SELECT * FROM ${TASKS_TABLE}
+       WHERE group_id = ? AND kind = ?
+       ORDER BY created_at ASC;`,
+      [normalizedId, kind]
+    );
+    return rows.map(rowToTask);
+  }
   const rows = db.getAllSync<TaskRow>(
     `SELECT * FROM ${TASKS_TABLE}
-     WHERE kind = 'recurring' AND group_id = ?
-     ORDER BY created_at ASC;`,
+     WHERE group_id = ?
+     ORDER BY kind ASC, created_at ASC;`,
     [normalizedId]
   );
   return rows.map(rowToTask);
+};
+
+export const getRecurringTasksByGroupId = (groupId: string): Task[] =>
+  getTasksByGroupId(groupId, 'recurring');
+
+export const getTemporaryTasksByGroupId = (groupId: string): Task[] =>
+  getTasksByGroupId(groupId, 'temporary');
+
+const TASK_GROUP_KIND_BACKFILLED_KEY = 'task_group_kind_backfilled_v1';
+
+/** 既存グループに kind を付け、混在メンバーはグループ種別と不一致なら外す */
+const backfillTaskGroupKindsIfNeeded = (): void => {
+  if (getAppSetting(TASK_GROUP_KIND_BACKFILLED_KEY) === '1') {
+    return;
+  }
+  const groups = db.getAllSync<TaskGroupRow>(`SELECT * FROM ${TASK_GROUPS_TABLE};`);
+  const timestamp = nowIso();
+  groups.forEach((groupRow) => {
+    const members = db.getAllSync<{ id: string; kind: string }>(
+      `SELECT id, kind FROM ${TASKS_TABLE} WHERE group_id = ?;`,
+      [groupRow.id]
+    );
+    let recurringCount = 0;
+    let temporaryCount = 0;
+    members.forEach((member) => {
+      if (member.kind === 'temporary') {
+        temporaryCount += 1;
+      } else {
+        recurringCount += 1;
+      }
+    });
+    const kind: TaskKind = temporaryCount > recurringCount ? 'temporary' : 'recurring';
+    db.runSync(`UPDATE ${TASK_GROUPS_TABLE} SET kind = ?, updated_at = ? WHERE id = ?;`, [
+      kind,
+      timestamp,
+      groupRow.id,
+    ]);
+    members.forEach((member) => {
+      const memberKind: TaskKind = member.kind === 'temporary' ? 'temporary' : 'recurring';
+      if (memberKind !== kind) {
+        db.runSync(`UPDATE ${TASKS_TABLE} SET group_id = NULL, updated_at = ? WHERE id = ?;`, [
+          timestamp,
+          member.id,
+        ]);
+      }
+    });
+  });
+  setAppSetting(TASK_GROUP_KIND_BACKFILLED_KEY, '1');
 };
 
 export const getAllTaskGroups = (): TaskGroup[] => {
@@ -4267,6 +4404,9 @@ export const getAllTaskGroups = (): TaskGroup[] => {
   );
   return rows.map(rowToTaskGroup);
 };
+
+export const getTaskGroupsByKind = (kind: TaskKind): TaskGroup[] =>
+  getAllTaskGroups().filter((group) => group.kind === kind);
 
 export const getTaskGroup = (groupId: string): TaskGroup | null => {
   const normalizedId = groupId.trim();
@@ -4280,8 +4420,14 @@ export const getTaskGroup = (groupId: string): TaskGroup | null => {
   return row ? rowToTaskGroup(row) : null;
 };
 
+const assertTaskCanJoinGroup = (taskKind: TaskKind, groupId: string): boolean => {
+  const group = getTaskGroup(groupId);
+  return Boolean(group && group.kind === taskKind);
+};
+
 export const createTaskGroup = (input: TaskGroupInput): TaskGroup | null => {
   const title = input.title.trim();
+  const kind: TaskKind = input.kind === 'temporary' ? 'temporary' : 'recurring';
   if (!title) {
     return null;
   }
@@ -4291,17 +4437,42 @@ export const createTaskGroup = (input: TaskGroupInput): TaskGroup | null => {
   );
   const sortOrder =
     input.sortOrder != null ? input.sortOrder : (maxRow?.max_sort ?? -1) + 1;
+  const pace: TaskPace | null =
+    kind === 'temporary'
+      ? null
+      : input.pace === 'scheduled' || input.pace === 'unpaced'
+        ? input.pace
+        : 'unpaced';
+  const recurrenceUnit =
+    pace === 'scheduled' ? input.recurrenceUnit ?? 'day' : null;
+  const recurrenceConfig =
+    pace === 'scheduled' ? input.recurrenceConfig ?? {} : null;
   const group: TaskGroup = {
     id: uuidv4(),
+    kind,
     title,
+    pace,
+    recurrenceUnit,
+    recurrenceConfig,
     sortOrder,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
   db.runSync(
-    `INSERT INTO ${TASK_GROUPS_TABLE} (id, title, sort_order, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?);`,
-    [group.id, group.title, group.sortOrder, group.createdAt, group.updatedAt]
+    `INSERT INTO ${TASK_GROUPS_TABLE} (
+      id, title, kind, pace, recurrence_unit, recurrence_config, sort_order, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    [
+      group.id,
+      group.title,
+      group.kind,
+      group.pace,
+      group.recurrenceUnit,
+      group.recurrenceConfig ? JSON.stringify(group.recurrenceConfig) : null,
+      group.sortOrder,
+      group.createdAt,
+      group.updatedAt,
+    ]
   );
   return group;
 };
@@ -4312,16 +4483,46 @@ export const updateTaskGroup = (groupId: string, input: TaskGroupInput): boolean
   if (!normalizedId || !title) {
     return false;
   }
-  if (!getTaskGroup(normalizedId)) {
+  const existing = getTaskGroup(normalizedId);
+  if (!existing) {
     return false;
   }
+  const kind = existing.kind;
+  const pace: TaskPace | null =
+    kind === 'temporary'
+      ? null
+      : input.pace === 'scheduled' || input.pace === 'unpaced'
+        ? input.pace
+        : existing.pace ?? 'unpaced';
+  const recurrenceUnit =
+    pace === 'scheduled'
+      ? input.recurrenceUnit !== undefined
+        ? input.recurrenceUnit
+        : existing.recurrenceUnit ?? 'day'
+      : null;
+  const recurrenceConfig =
+    pace === 'scheduled'
+      ? input.recurrenceConfig !== undefined
+        ? input.recurrenceConfig
+        : existing.recurrenceConfig ?? {}
+      : null;
   const result = db.runSync(
     `UPDATE ${TASK_GROUPS_TABLE}
-     SET title = ?, sort_order = COALESCE(?, sort_order), updated_at = ?
+     SET title = ?, pace = ?, recurrence_unit = ?, recurrence_config = ?,
+         sort_order = COALESCE(?, sort_order), updated_at = ?
      WHERE id = ?;`,
-    [title, input.sortOrder ?? null, nowIso(), normalizedId]
+    [
+      title,
+      pace,
+      recurrenceUnit,
+      recurrenceConfig ? JSON.stringify(recurrenceConfig) : null,
+      input.sortOrder ?? null,
+      nowIso(),
+      normalizedId,
+    ]
   );
-  return result.changes > 0;
+  // 同一内容の再保存でも changes=0 になり得るので、行が残っていれば成功扱い
+  return result.changes > 0 || getTaskGroup(normalizedId) != null;
 };
 
 /** グループ削除。所属タスクはグループなしに戻す（タスク自体は残す） */
@@ -4352,10 +4553,12 @@ export const createTask = (input: TaskInput): Task | null => {
   }
   const timestamp = nowIso();
   const memo = input.memo?.trim() ?? '';
-  const groupId =
-    input.kind === 'recurring' ? input.groupId?.trim() || null : null;
+  const groupId = input.groupId?.trim() || null;
   if (groupId) {
-    const existing = getRecurringTasksByGroupId(groupId);
+    if (!assertTaskCanJoinGroup(input.kind, groupId)) {
+      return null;
+    }
+    const existing = getTasksByGroupId(groupId, input.kind);
     if (existing.length >= TASK_GROUP_MEMBER_LIMIT) {
       return null;
     }
@@ -4419,9 +4622,12 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
     input.kind === 'recurring' && pace === 'scheduled' ? input.recurrenceConfig ?? {} : null;
   const dueDate = input.kind === 'temporary' ? input.dueDate?.trim() || null : null;
   const eventId = input.kind === 'temporary' ? input.eventId?.trim() || null : null;
-  const groupId = input.kind === 'recurring' ? input.groupId?.trim() || null : null;
+  const groupId = input.groupId?.trim() || null;
   if (groupId) {
-    const existing = getRecurringTasksByGroupId(groupId);
+    if (!assertTaskCanJoinGroup(input.kind, groupId)) {
+      return false;
+    }
+    const existing = getTasksByGroupId(groupId, input.kind);
     const others = existing.filter((item) => item.id !== normalizedId);
     if (others.length >= TASK_GROUP_MEMBER_LIMIT) {
       return false;
@@ -4451,14 +4657,14 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
   return result.changes > 0;
 };
 
-/** 定期タスクのグループ所属だけ更新 */
+/** タスクのグループ所属を更新（定期・臨時とも可） */
 export const setTaskGroupId = (taskId: string, groupId: string | null): boolean => {
   const normalizedId = taskId.trim();
   if (!normalizedId) {
     return false;
   }
   const task = getTask(normalizedId);
-  if (!task || task.kind !== 'recurring') {
+  if (!task) {
     return false;
   }
   const nextGroupId = groupId?.trim() || null;
@@ -4466,13 +4672,16 @@ export const setTaskGroupId = (taskId: string, groupId: string | null): boolean 
     return true;
   }
   if (nextGroupId) {
-    const existing = getRecurringTasksByGroupId(nextGroupId);
+    if (!assertTaskCanJoinGroup(task.kind, nextGroupId)) {
+      return false;
+    }
+    const existing = getTasksByGroupId(nextGroupId, task.kind);
     if (existing.length >= TASK_GROUP_MEMBER_LIMIT) {
       return false;
     }
   }
   const result = db.runSync(
-    `UPDATE ${TASKS_TABLE} SET group_id = ?, updated_at = ? WHERE id = ? AND kind = 'recurring';`,
+    `UPDATE ${TASKS_TABLE} SET group_id = ?, updated_at = ? WHERE id = ?;`,
     [nextGroupId, nowIso(), normalizedId]
   );
   return result.changes > 0;

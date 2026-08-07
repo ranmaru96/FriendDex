@@ -3,14 +3,14 @@ import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import type { RecentSevenDayItem } from '@/utils/taskHelpers';
 import type { AppThemeContentColorFields } from '@/constants/appThemes/contentColors';
 
-/** 完了塗り: ホワイト=オレンジ / ブラック=緑 */
+/** 完了塗り: ブラック=明るい黄緑 / ホワイト・デフォルト=やや濃い黄緑 */
 export function taskCompletionFillColor(isBlack: boolean): string {
-  return isBlack ? '#9ae635' : '#f0a040';
+  return isBlack ? '#9ae635' : '#84cc16';
 }
 
 /** 当日の外リング用アクセント */
 function todayAccentColor(isBlack: boolean): string {
-  return isBlack ? '#9ae635' : '#f0a040';
+  return isBlack ? '#9ae635' : '#84cc16';
 }
 
 type TaskRecentSevenDayDotsProps = {

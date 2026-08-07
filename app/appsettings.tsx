@@ -399,6 +399,22 @@ export default function AppSettingsScreen() {
           </View>
           <View style={[styles.separator, themed.separator]} />
           <View style={styles.roadmapBlock}>
+            <Text style={[styles.roadmapTitle, themed.rowLabel]}>相関図機能</Text>
+            <Text style={[styles.roadmapBody, themed.hint]}>
+              ・ver001以降の構想。人物同士の関係を相関図として作成・表示する。
+            </Text>
+          </View>
+          <View style={[styles.separator, themed.separator]} />
+          <View style={styles.roadmapBlock}>
+            <Text style={[styles.roadmapTitle, themed.rowLabel]}>
+              行ってみたい・食べてみたい場所
+            </Text>
+            <Text style={[styles.roadmapBody, themed.hint]}>
+              ・ver001以降の構想。行きたい場所や飲食店を登録・管理する。
+            </Text>
+          </View>
+          <View style={[styles.separator, themed.separator]} />
+          <View style={styles.roadmapBlock}>
             <Text style={[styles.roadmapTitle, themed.rowLabel]}>ウィジェット機能追加</Text>
             <Text style={[styles.roadmapBody, themed.hint]}>
               ・ver001以降の構想。ホーム画面ウィジェット対応。
@@ -414,6 +430,13 @@ export default function AppSettingsScreen() {
               ・人物カードの共有{'\n'}
               ・お金貸し借り管理の共有{'\n'}
               ・シャッフル結果共有
+            </Text>
+          </View>
+          <View style={[styles.separator, themed.separator]} />
+          <View style={styles.roadmapBlock}>
+            <Text style={[styles.roadmapTitle, themed.rowLabel]}>音声入力</Text>
+            <Text style={[styles.roadmapBody, themed.hint]}>
+              ・ver001以降の構想。エピソード・メモ等への音声入力対応。
             </Text>
           </View>
         </View>

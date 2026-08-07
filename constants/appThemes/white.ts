@@ -19,7 +19,7 @@ export const whiteAppTheme: AppThemeBundle = {
     headerBackground: '#FFFFFF',
     headerBorder: 'rgba(0, 0, 0, 0.22)',
     headerText: '#111111',
-    tabBarBackground: '#F2F2F2',
+    tabBarBackground: '#FFFFFF',
     tabBarBorder: 'rgba(0, 0, 0, 0.22)',
     tabBarInactive: '#666666',
     tabBarActivePill: '#222222',

@@ -9,8 +9,12 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
 import { getEvent } from '@/db';
-import { formatEpisodeEventMatchLabel } from '@/utils/eventEpisodeSync';
+import {
+  formatEpisodeEventMatchLabel,
+  type EventLinkTimeScope,
+} from '@/utils/eventEpisodeSync';
 import type { EpisodeEventLinkMode } from '@/hooks/useEpisodeForm';
 import { EpisodeEventPickModal } from '@/components/episode/EpisodeEventPickModal';
 
@@ -21,6 +25,9 @@ type EpisodeEventLinkFieldProps = {
   onModeChange: (mode: EpisodeEventLinkMode) => void;
   onSelectEvent: (eventId: string) => void;
   fieldCorner?: StyleProp<ViewStyle>;
+  /** Override default mode hints (episode copy). */
+  hints?: Partial<Record<'create_new' | 'none', string>>;
+  eventTimeScope?: EventLinkTimeScope;
 };
 
 const MODE_OPTIONS: { value: EpisodeEventLinkMode; label: string }[] = [
@@ -28,6 +35,11 @@ const MODE_OPTIONS: { value: EpisodeEventLinkMode; label: string }[] = [
   { value: 'create_new', label: '新規作成' },
   { value: 'none', label: '予定なし' },
 ];
+
+const DEFAULT_HINTS: Record<'create_new' | 'none', string> = {
+  create_new: '保存時に、このエピソードと同じ日付・参加者の予定を新しく作ります。',
+  none: 'カレンダー予定には紐づけません（日記など）。',
+};
 
 /** Right-side content only — wrap with FormRow label="対応する予定". */
 export function EpisodeEventLinkField({
@@ -37,9 +49,13 @@ export function EpisodeEventLinkField({
   onModeChange,
   onSelectEvent,
   fieldCorner,
+  hints,
+  eventTimeScope = 'pastOrToday',
 }: EpisodeEventLinkFieldProps) {
   const content = useContentColors();
   const [pickVisible, setPickVisible] = useState(false);
+  const createNewHint = hints?.create_new ?? DEFAULT_HINTS.create_new;
+  const noneHint = hints?.none ?? DEFAULT_HINTS.none;
 
   const selectedLabel = useMemo(() => {
     const id = linkedEventId?.trim();
@@ -54,10 +70,15 @@ export function EpisodeEventLinkField({
     return formatEpisodeEventMatchLabel(event, labelDate);
   }, [linkedEventId, dateKey]);
 
+  const openPick = () => {
+    dismissKeyboardFocus();
+    setPickVisible(true);
+  };
+
   const handleModePress = (next: EpisodeEventLinkMode) => {
     if (next === 'existing') {
       onModeChange('existing');
-      setPickVisible(true);
+      openPick();
       return;
     }
     onModeChange(next);
@@ -86,22 +107,18 @@ export function EpisodeEventLinkField({
       </View>
 
       {mode === 'create_new' ? (
-        <Text style={[styles.hint, contentMutedTextStyle(content)]}>
-          保存時に、このエピソードと同じ日付・参加者の予定を新しく作ります。
-        </Text>
+        <Text style={[styles.hint, contentMutedTextStyle(content)]}>{createNewHint}</Text>
       ) : null}
 
       {mode === 'none' ? (
-        <Text style={[styles.hint, contentMutedTextStyle(content)]}>
-          カレンダー予定には紐づけません（日記など）。
-        </Text>
+        <Text style={[styles.hint, contentMutedTextStyle(content)]}>{noneHint}</Text>
       ) : null}
 
       {mode === 'existing' ? (
         selectedLabel ? (
           <Pressable
             style={[styles.selectedCard, fieldCorner, contentSurfaceStyle(content)]}
-            onPress={() => setPickVisible(true)}
+            onPress={openPick}
           >
             <Text style={[styles.selectedValue, contentTextStyle(content)]}>{selectedLabel}</Text>
             <Text style={[styles.changeHint, contentMutedTextStyle(content)]}>タップして変更</Text>
@@ -109,7 +126,7 @@ export function EpisodeEventLinkField({
         ) : (
           <Pressable
             style={[styles.pickButton, fieldCorner, contentInputStyle(content)]}
-            onPress={() => setPickVisible(true)}
+            onPress={openPick}
           >
             <Text style={[styles.pickButtonText, contentTextStyle(content)]}>予定を選択</Text>
           </Pressable>
@@ -120,6 +137,7 @@ export function EpisodeEventLinkField({
         visible={pickVisible}
         dateKey={dateKey}
         selectedEventId={linkedEventId}
+        timeScope={eventTimeScope}
         onSelect={onSelectEvent}
         onClose={() => setPickVisible(false)}
       />

@@ -54,6 +54,8 @@ export type Episode = {
   id: string;
   title: string;
   date: string;
+  /** 出来事の時刻（HH:mm）。任意。未設定時は省略または null */
+  time?: string | null;
   description: string;
   authorFriendId: string;
   visibilityMode: EpisodeVisibilityMode;
@@ -302,7 +304,7 @@ export type Task = {
   recurrenceConfig: TaskRecurrenceConfig | null;
   dueDate: string | null;
   eventId: string | null;
-  /** 定期タスクのくくり（グループ）。臨時は通常 null */
+  /** 所属グループ（定期グループ / 臨時グループ。kind はタスクと一致） */
   groupId: string | null;
   /**
    * 実施履歴・連続・ドットを残すか（定期）。デフォルト true。
@@ -327,12 +329,21 @@ export type TaskInput = {
   trackCompletions?: boolean;
 };
 
-/** 1グループに入れられる定期タスクの上限 */
+/** 1グループに入れられるタスクの上限（定期・臨時とも） */
 export const TASK_GROUP_MEMBER_LIMIT = 10;
 
 export type TaskGroup = {
   id: string;
+  /** 定期グループ / 臨時グループ（混在不可） */
+  kind: TaskKind;
   title: string;
+  /**
+   * 定期グループの追加周期（メンバー必須の OR 用）。
+   * null / unpaced = グループ固有の必須日なし。臨時は常に null。
+   */
+  pace: TaskPace | null;
+  recurrenceUnit: TaskRecurrenceUnit | null;
+  recurrenceConfig: TaskRecurrenceConfig | null;
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
@@ -340,6 +351,10 @@ export type TaskGroup = {
 
 export type TaskGroupInput = {
   title: string;
+  kind: TaskKind;
+  pace?: TaskPace | null;
+  recurrenceUnit?: TaskRecurrenceUnit | null;
+  recurrenceConfig?: TaskRecurrenceConfig | null;
   sortOrder?: number;
 };
 

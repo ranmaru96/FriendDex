@@ -20,6 +20,7 @@ import { ParticipantChipList } from '@/components/participant/ParticipantChipLis
 import { formatEpisodeDateToYMD } from '@/components/episode/types';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
+import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
 import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
@@ -33,6 +34,13 @@ import {
   contentDateTimePickerProps,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
+import {
+  DATE_PICKER_MAX_FAR,
+  DATE_PICKER_MIN,
+  openRangeDatePickerBounds,
+} from '@/utils/datePickerBounds';
+import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
@@ -73,6 +81,7 @@ import {
   parseDateKey,
 } from '../utils/eventHelpers';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
+import { formatTaskDueDateLabel } from '@/utils/taskHelpers';
 import {
   friendIdsToProfileIds,
   profileIdsToFriendIds,
@@ -96,6 +105,7 @@ import {
   deleteEpisodesLinkedToEvent,
   unlinkEpisodesFromEvent,
 } from '../utils/eventEpisodeBidirectionalSync';
+import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
 
 type PickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime' | null;
 
@@ -160,6 +170,7 @@ export default function EventScreen() {
   const [endTime, setEndTime] = useState(DEFAULT_END_TIME);
   const previousStartRef = useRef<Date | null>(null);
   const [activePicker, setActivePicker] = useState<PickerTarget>(null);
+  useDismissPickerOnKeyboardShow(activePicker != null, () => setActivePicker(null));
   const [isReady, setIsReady] = useState(false);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
@@ -587,6 +598,7 @@ export default function EventScreen() {
           Alert.alert('エラー', '予定の更新に失敗しました。');
           return;
         }
+        registerSavedEpisodeTag(input.episodeTag);
         syncEventParticipants(eventId, selectedProfileIds);
         if (!options?.skipClamp) {
           clampLinkedEpisodeDatesToEvent(eventId);
@@ -601,6 +613,7 @@ export default function EventScreen() {
         Alert.alert('エラー', '予定の作成に失敗しました。');
         return;
       }
+      registerSavedEpisodeTag(input.episodeTag);
       syncEventParticipants(created.id, selectedProfileIds);
       await applySavedEventNotifications(created.id, null);
       router.back();
@@ -719,8 +732,12 @@ export default function EventScreen() {
   }, [activePicker, endDateKey, endTime, startDateKey, startTime]);
 
   const pickerMode = activePicker === 'startTime' || activePicker === 'endTime' ? 'time' : 'date';
-  const pickerMinimumDate =
-    allDay && activePicker === 'endDate' ? parseDateKey(startDateKey) : undefined;
+  const pickerBounds = useMemo(() => {
+    if (allDay && activePicker === 'endDate') {
+      return openRangeDatePickerBounds(parseDateKey(startDateKey), DATE_PICKER_MAX_FAR);
+    }
+    return openRangeDatePickerBounds(DATE_PICKER_MIN, DATE_PICKER_MAX_FAR);
+  }, [activePicker, allDay, startDateKey]);
 
   const applyStartDateChange = (selected: Date) => {
     const nextStartDateKey = formatEpisodeDateToYMD(selected);
@@ -755,6 +772,17 @@ export default function EventScreen() {
     setEndDateKey(formatDateKey(shiftedEnd));
     setEndTime(formatTimeFromDate(shiftedEnd));
     previousStartRef.current = newStart;
+  };
+
+  const openPicker = (target: Exclude<PickerTarget, null>) => {
+    dismissKeyboardFocus();
+    if (target === 'endDate' && !endDateKey.trim()) {
+      setEndDateKey(startDateKey);
+    }
+    if (target === 'endTime' && !endTime.trim()) {
+      setEndTime(DEFAULT_END_TIME);
+    }
+    setActivePicker(target);
   };
 
   const handlePickerChange = (_event: DateTimePickerEvent, selected?: Date) => {
@@ -820,7 +848,12 @@ export default function EventScreen() {
           <FormRow label="予定タグ" labelWidth={formLabelWidth}>
             <Pressable
               style={[styles.pickerButton, fieldCorner, contentInputStyle(content)]}
-              onPress={() => setTagModalVisible(true)}
+              onPress={() => {
+                dismissKeyboardFocus();
+                setTagModalVisible(true);
+              }}
+              accessibilityLabel="予定タグを選択"
+              accessibilityRole="button"
             >
               <Text
                 style={
@@ -847,14 +880,14 @@ export default function EventScreen() {
             <View style={styles.dateTimeRow}>
               <Pressable
                 style={[styles.pickerButton, styles.dateButton, fieldCorner, contentInputStyle(content)]}
-                onPress={() => setActivePicker('startDate')}
+                onPress={() => openPicker('startDate')}
               >
                 <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{startDateKey}</Text>
               </Pressable>
               {!allDay ? (
                 <Pressable
                   style={[styles.pickerButton, styles.timeButton, fieldCorner, contentInputStyle(content)]}
-                  onPress={() => setActivePicker('startTime')}
+                  onPress={() => openPicker('startTime')}
                 >
                   <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{startTime}</Text>
                 </Pressable>
@@ -866,7 +899,7 @@ export default function EventScreen() {
             <View style={styles.dateTimeRow}>
               <Pressable
                 style={[styles.pickerButton, styles.dateButton, fieldCorner, contentInputStyle(content)]}
-                onPress={() => setActivePicker('endDate')}
+                onPress={() => openPicker('endDate')}
               >
                 <Text
                   style={
@@ -881,7 +914,7 @@ export default function EventScreen() {
               {!allDay ? (
                 <Pressable
                   style={[styles.pickerButton, styles.timeButton, fieldCorner, contentInputStyle(content)]}
-                  onPress={() => setActivePicker('endTime')}
+                  onPress={() => openPicker('endTime')}
                 >
                   <Text
                     style={
@@ -906,7 +939,7 @@ export default function EventScreen() {
                 locale="ja-JP"
                 style={styles.picker}
                 {...dateTimePickerProps}
-                {...(pickerMinimumDate ? { minimumDate: pickerMinimumDate } : {})}
+                {...pickerBounds}
                 onChange={handlePickerChange}
               />
               <Pressable
@@ -972,7 +1005,10 @@ export default function EventScreen() {
             >
               <Pressable
                 style={[styles.pickerButton, fieldCorner, contentInputStyle(content)]}
-                onPress={() => setTimingModalVisible(true)}
+                onPress={() => {
+                  dismissKeyboardFocus();
+                  setTimingModalVisible(true);
+                }}
               >
                 <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{selectedTimingLabel}</Text>
               </Pressable>
@@ -1016,7 +1052,11 @@ export default function EventScreen() {
                   >
                     <Text style={[styles.linkedTaskTitle, contentTextStyle(content)]}>{task.title}</Text>
                     <Text style={[styles.linkedTaskMeta, contentMutedTextStyle(content)]}>
-                      {task.completedAt ? '完了' : task.dueDate ? `期限 ${task.dueDate}` : '期限なし'}
+                      {task.completedAt
+                        ? '完了'
+                        : task.dueDate
+                          ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
+                          : '期限なし'}
                       {task.memo.trim() ? ` · ${task.memo.trim()}` : ''}
                     </Text>
                   </Pressable>
@@ -1148,61 +1188,18 @@ export default function EventScreen() {
         </Pressable>
       </Modal>
 
-      <Modal
+      <OptionPickerModal
         visible={tagModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTagModalVisible(false)}
-      >
-        <Pressable style={styles.timingModalBackdrop} onPress={() => setTagModalVisible(false)}>
-          <Pressable
-            style={[styles.timingModalCard, contentSurfaceStyle(content)]}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <Text style={[styles.timingModalTitle, contentTextStyle(content)]}>予定タグ</Text>
-            <ScrollView style={styles.timingModalOptions}>
-              <Pressable
-                style={[
-                  styles.timingModalOption,
-                  !episodeTag ? contentSelectedOptionStyle(content) : null,
-                ]}
-                onPress={() => {
-                  setEpisodeTag('');
-                  setTagModalVisible(false);
-                }}
-              >
-                <Text style={[styles.timingModalOptionText, contentTextStyle(content)]}>未設定</Text>
-              </Pressable>
-              {episodeTagOptions.map((option) => {
-                const selected = option.value === episodeTag;
-                return (
-                  <Pressable
-                    key={option.value}
-                    style={[
-                      styles.timingModalOption,
-                      selected ? contentSelectedOptionStyle(content) : null,
-                    ]}
-                    onPress={() => {
-                      setEpisodeTag(option.value);
-                      setTagModalVisible(false);
-                    }}
-                  >
-                    <Text style={[styles.timingModalOptionText, contentTextStyle(content)]}>
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <Pressable
-              style={[styles.timingModalCloseButton, contentTagStyle(content)]}
-              onPress={() => setTagModalVisible(false)}
-            >
-              <Text style={[styles.timingModalCloseButtonText, contentTextStyle(content)]}>閉じる</Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
+        label="予定タグ"
+        value={episodeTag}
+        options={episodeTagOptions}
+        onValueChange={setEpisodeTag}
+        onClose={() => setTagModalVisible(false)}
+        clearLabel="未設定"
+        allowCustomValue
+        customInputPlaceholder="新しいタグ名"
+        customActionLabel="このタグを使う"
+      />
 
       <Modal
         visible={taskMigrateModalVisible}

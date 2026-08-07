@@ -21,12 +21,14 @@ import {
   findEventsOnEpisodeDate,
   formatEpisodeEventMatchLabel,
   searchEventsForEpisodeLink,
+  type EventLinkTimeScope,
 } from '@/utils/eventEpisodeSync';
 
 type EpisodeEventPickModalProps = {
   visible: boolean;
   dateKey: string;
   selectedEventId?: string | null;
+  timeScope?: EventLinkTimeScope;
   onSelect: (eventId: string) => void;
   onClose: () => void;
 };
@@ -35,6 +37,7 @@ export function EpisodeEventPickModal({
   visible,
   dateKey,
   selectedEventId,
+  timeScope = 'pastOrToday',
   onSelect,
   onClose,
 }: EpisodeEventPickModalProps) {
@@ -42,10 +45,16 @@ export function EpisodeEventPickModal({
   const [query, setQuery] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const sameDayEvents = useMemo(() => findEventsOnEpisodeDate(dateKey), [dateKey]);
+  const sameDayEvents = useMemo(
+    () => findEventsOnEpisodeDate(dateKey, { timeScope }),
+    [dateKey, timeScope]
+  );
   const searchHits = useMemo(
-    () => (searchOpen ? searchEventsForEpisodeLink(query, { limit: 40 }) : []),
-    [searchOpen, query]
+    () =>
+      searchOpen
+        ? searchEventsForEpisodeLink(query, { limit: 40, timeScope })
+        : [],
+    [searchOpen, query, timeScope]
   );
 
   const handleClose = () => {
@@ -67,7 +76,9 @@ export function EpisodeEventPickModal({
         <View style={[styles.card, contentSurfaceStyle(content)]}>
           <Text style={[styles.title, contentTextStyle(content)]}>予定を選択</Text>
           <Text style={[styles.description, contentMutedTextStyle(content)]}>
-            同じ日付の予定から選ぶか、予定を探して選んでください。
+            {timeScope === 'todayOrFuture'
+              ? '今日以降の予定から選んでください。期限と同じ日付の予定を先に表示します。'
+              : '同じ日付の予定から選ぶか、予定を探して選んでください。'}
           </Text>
 
           <ScrollView style={styles.options} keyboardShouldPersistTaps="handled">
@@ -102,7 +113,11 @@ export function EpisodeEventPickModal({
               onPress={() => setSearchOpen((prev) => !prev)}
             >
               <Text style={[styles.searchToggleText, contentTextStyle(content)]}>
-                {searchOpen ? '予定を探すを閉じる' : '予定を探す'}
+                {searchOpen
+                  ? '予定を探すを閉じる'
+                  : timeScope === 'todayOrFuture'
+                    ? '今日以降の予定を探す'
+                    : '予定を探す'}
               </Text>
             </Pressable>
 

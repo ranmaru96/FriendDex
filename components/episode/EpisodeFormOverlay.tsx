@@ -30,6 +30,9 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
+import { DATE_PICKER_MAX_FAR, DATE_PICKER_MIN } from '@/utils/datePickerBounds';
+import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
@@ -46,6 +49,7 @@ import { PhotoCropModal, EPISODE_PHOTO_ASPECT } from '@/components/photo/PhotoCr
 import type { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import type { Friend } from '@/types';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
+import { combineLocalDateTime, formatTimeFromDate } from '@/utils/eventHelpers';
 
 type EpisodeFormState = ReturnType<typeof useEpisodeForm>;
 
@@ -63,27 +67,33 @@ type EpisodeFormOverlayProps = {
 function SelectInput({
   value,
   placeholder,
+  modalTitle,
   options,
   onChange,
   style,
   includeEmptyOption = true,
+  allowCustomValue = false,
   variant,
 }: {
   value: string;
   placeholder: string;
+  /** モーダル見出し。未指定時は placeholder を流用 */
+  modalTitle?: string;
   options: Option[];
   onChange: (value: string) => void;
   style?: StyleProp<ViewStyle>;
   includeEmptyOption?: boolean;
+  allowCustomValue?: boolean;
   variant?: 'field' | 'chip';
 }) {
   const kit = useUiKit();
   const content = useContentColors();
   const resolvedVariant = variant ?? (kit.formLayout === 'horizontal' ? 'chip' : 'field');
+  const resolvedModalTitle = modalTitle ?? placeholder;
   const [modalVisible, setModalVisible] = useState(false);
   const selectedLabel = useMemo(() => {
     const selected = options.find((option) => option.value === value);
-    return selected?.label ?? placeholder;
+    return selected?.label ?? (value || placeholder);
   }, [options, placeholder, value]);
 
   const isChip = resolvedVariant === 'chip';
@@ -100,7 +110,12 @@ function SelectInput({
           isChip ? contentPersonTagStyle(content) : contentInputStyle(content),
           style,
         ]}
-        onPress={() => setModalVisible(true)}
+        onPress={() => {
+          dismissKeyboardFocus();
+          setModalVisible(true);
+        }}
+        accessibilityLabel={`${resolvedModalTitle}を選択`}
+        accessibilityRole="button"
       >
         <Text
           style={[
@@ -123,12 +138,15 @@ function SelectInput({
       </Pressable>
       <OptionPickerModal
         visible={modalVisible}
-        label={placeholder}
+        label={resolvedModalTitle}
         value={value}
         options={options}
         onValueChange={onChange}
         onClose={() => setModalVisible(false)}
         clearLabel={includeEmptyOption ? placeholder : null}
+        allowCustomValue={allowCustomValue}
+        customInputPlaceholder="新しいタグ名"
+        customActionLabel="このタグを使う"
       />
     </>
   );
@@ -169,6 +187,11 @@ export function EpisodeFormOverlay({
       ),
     [form.participants, form.friendNameById, friendPhotoById]
   );
+
+  useDismissPickerOnKeyboardShow(form.showDatePicker || form.showTimePicker, () => {
+    form.setShowDatePicker(false);
+    form.setShowTimePicker(false);
+  });
 
   if (!visible) {
     return null;
@@ -213,6 +236,11 @@ export function EpisodeFormOverlay({
                       if (form.isLinkedEventSingleDay) {
                         return;
                       }
+                      dismissKeyboardFocus();
+                      form.setShowTimePicker(false);
+                      if (!form.date) {
+                        form.setDate(formatEpisodeDateToYMD(new Date()));
+                      }
                       form.setShowDatePicker(true);
                     }}
                   >
@@ -229,14 +257,77 @@ export function EpisodeFormOverlay({
                         locale="ja-JP"
                         style={styles.datePickerSelf}
                         {...dateTimePickerProps}
-                        minimumDate={form.episodeDateMinimumDate ?? new Date(1900, 0, 1)}
-                        maximumDate={form.episodeDateMaximumDate}
+                        minimumDate={form.episodeDateMinimumDate ?? DATE_PICKER_MIN}
+                        maximumDate={form.episodeDateMaximumDate ?? DATE_PICKER_MAX_FAR}
                         onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                           if (Platform.OS !== 'ios') form.setShowDatePicker(false);
                           if (selected) form.setDate(formatEpisodeDateToYMD(selected));
                         }}
                       />
                       <Pressable style={[styles.datePickerDone, fieldCorner, contentInputStyle(content)]} onPress={() => form.setShowDatePicker(false)}>
+                        <Text style={[styles.datePickerDoneText, contentTextStyle(content)]}>完了</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
+                  <View style={styles.timeRow}>
+                    <Pressable
+                      style={styles.timeTap}
+                      onPress={() => {
+                        dismissKeyboardFocus();
+                        form.setShowDatePicker(false);
+                        if (!form.time) {
+                          form.setTime(formatTimeFromDate(new Date()));
+                        }
+                        form.setShowTimePicker(true);
+                      }}
+                      hitSlop={6}
+                    >
+                      <Text
+                        style={[
+                          styles.timeTapText,
+                          form.time
+                            ? contentTextStyle(content)
+                            : contentMutedTextStyle(content),
+                        ]}
+                      >
+                        {form.time ? `時刻 ${form.time}` : '時刻（任意）'}
+                      </Text>
+                    </Pressable>
+                    {form.time ? (
+                      <Pressable
+                        onPress={() => {
+                          form.setTime('');
+                          form.setShowTimePicker(false);
+                        }}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="時刻をクリア"
+                      >
+                        <Text style={[styles.timeClearText, contentMutedTextStyle(content)]}>クリア</Text>
+                      </Pressable>
+                    ) : null}
+                  </View>
+                  {form.showTimePicker ? (
+                    <View style={styles.datePickerWrap}>
+                      <DateTimePicker
+                        value={combineLocalDateTime(
+                          form.date || formatEpisodeDateToYMD(new Date()),
+                          form.time || formatTimeFromDate(new Date())
+                        )}
+                        mode="time"
+                        display="spinner"
+                        locale="ja-JP"
+                        style={styles.datePickerSelf}
+                        {...dateTimePickerProps}
+                        onChange={(_event: DateTimePickerEvent, selected?: Date) => {
+                          if (Platform.OS !== 'ios') form.setShowTimePicker(false);
+                          if (selected) form.setTime(formatTimeFromDate(selected));
+                        }}
+                      />
+                      <Pressable
+                        style={[styles.datePickerDone, fieldCorner, contentInputStyle(content)]}
+                        onPress={() => form.setShowTimePicker(false)}
+                      >
                         <Text style={[styles.datePickerDoneText, contentTextStyle(content)]}>完了</Text>
                       </Pressable>
                     </View>
@@ -289,8 +380,10 @@ export function EpisodeFormOverlay({
                 <SelectInput
                   value={form.tag}
                   placeholder="未設定"
+                  modalTitle="予定タグ"
                   options={episodeTagOptions}
                   onChange={form.setTag}
+                  allowCustomValue
                 />
               </FormRow>
 
@@ -562,6 +655,24 @@ const styles = StyleSheet.create({
   episodeDateInput: { justifyContent: 'center' },
   episodeDateText: { fontSize: Typography.base, color: '#111827' },
   episodeDatePlaceholder: { fontSize: Typography.base, color: '#94a3b8' },
+  timeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 4,
+    minHeight: 28,
+  },
+  timeTap: {
+    flexShrink: 1,
+    paddingVertical: 4,
+  },
+  timeTapText: {
+    fontSize: 13,
+  },
+  timeClearText: {
+    fontSize: 13,
+    paddingHorizontal: 4,
+  },
   datePickerWrap: { marginBottom: 8 },
   datePickerSelf: { alignSelf: 'flex-end' },
   datePickerDone: {

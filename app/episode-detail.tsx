@@ -45,6 +45,7 @@ import { Episode, EpisodePhoto, Event, Friend } from '../types';
 import {
   buildParticipantChips,
   canManageEpisode,
+  formatEpisodeDateTimeForDetail,
   resolveEpisodeRecordOwnerId,
   visibilityDisplayLabels,
 } from '../utils/episodeHelpers';
@@ -52,6 +53,7 @@ import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
 } from '../utils/episodeEventLinking';
+import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 
 const LIST_HORIZONTAL_INSET = 12;
@@ -243,6 +245,7 @@ export default function EpisodeDetailScreen() {
       episodeForm.setFormError('エピソードの更新に失敗しました。');
       return;
     }
+    registerSavedEpisodeTag(episodeFields.tag);
     episodeForm.persistPhotos(editingId, true);
     episodeForm.reset();
     setIsEditVisible(false);
@@ -320,6 +323,7 @@ export default function EpisodeDetailScreen() {
               titleMultiline
               title={episode.title}
               date={episode.date}
+              dateLabel={formatEpisodeDateTimeForDetail(episode.date, episode.time)}
               episodeTag={episode.tag}
               chips={chips}
               visibility={visibility}

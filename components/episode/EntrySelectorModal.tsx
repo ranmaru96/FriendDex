@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   FlatList,
   Image,
@@ -39,7 +39,7 @@ const SELECTOR_COLUMNS = 5;
 const SELECTOR_GAP = 6;
 const SELECTOR_CARD_PADDING = 14;
 const SHEET_MIN_RATIO = 0.48;
-const SHEET_MAX_RATIO = 0.94;
+const SHEET_MAX_RATIO = 0.86;
 const SHEET_DEFAULT_RATIO = 0.58;
 
 function SelectorOptionCell({
@@ -198,11 +198,17 @@ export type EntrySelectorModalProps = {
   onToggleGroup: (groupValue: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
+  /** 対象者一覧の上に置く任意の編集欄（グループ名など）。 */
+  headerContent?: ReactNode;
+  /** 対象者一覧の下に置く任意の操作（削除など）。 */
+  footerContent?: ReactNode;
   /**
    * When true, show 個人/所属 tab (e.g. visibility picker).
    * Default false — participant pickers are individuals only.
    */
   enableGroupTab?: boolean;
+  /** true のとき開いた直後から最大高さ（共通項目の対象者選択など）。 */
+  initialExpanded?: boolean;
 };
 
 export function EntrySelectorModal({
@@ -225,13 +231,18 @@ export function EntrySelectorModal({
   onToggleGroup,
   onCancel,
   onConfirm,
+  headerContent,
+  footerContent,
   enableGroupTab = false,
+  initialExpanded = false,
 }: EntrySelectorModalProps) {
   const content = useContentColors();
   const { height: windowHeight, width: screenWidth } = useWindowDimensions();
   const sheetMinHeight = windowHeight * SHEET_MIN_RATIO;
   const sheetMaxHeight = windowHeight * SHEET_MAX_RATIO;
-  const sheetDefaultHeight = windowHeight * SHEET_DEFAULT_RATIO;
+  const sheetDefaultHeight = initialExpanded
+    ? sheetMaxHeight
+    : windowHeight * SHEET_DEFAULT_RATIO;
   const sheetHeight = useSharedValue(sheetDefaultHeight);
   const sheetDragStart = useSharedValue(sheetDefaultHeight);
   const sheetTranslateY = useSharedValue(0);
@@ -322,8 +333,7 @@ export function EntrySelectorModal({
             damping: 28,
             stiffness: 180,
             overshootClamping: true,
-            restDisplacementThreshold: 0.5,
-            restSpeedThreshold: 0.5,
+            energyThreshold: 0.001,
           });
         }),
     [
@@ -479,6 +489,8 @@ export function EntrySelectorModal({
               </>
             ) : null}
 
+            {headerContent}
+
             <View style={styles.selectorHeaderRow}>
               <Text style={[styles.selectorHeaderTitle, contentTextStyle(content)]}>対象者</Text>
               {actionButtons}
@@ -614,6 +626,8 @@ export function EntrySelectorModal({
                 />
               )}
             </View>
+
+            {footerContent}
           </Animated.View>
         </View>
       </GestureHandlerRootView>

@@ -84,6 +84,17 @@ export function createDetailStyles(c: DetailThemeColors) {
     fontWeight: '500',
     color: c.textPrimary,
   },
+  heroNameActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexShrink: 0,
+    gap: 6,
+  },
+  heroRecentMeeting: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: c.textSecondary,
+  },
   heroIconActions: {
     flexDirection: 'row',
     alignItems: 'center',

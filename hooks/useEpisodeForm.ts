@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import * as ImagePicker from 'expo-image-picker';
 import { PHOTO_LIMITS } from '@/constants';
 import {
@@ -18,15 +18,17 @@ import type {
   EpisodeVisibilityMode,
   Friend,
 } from '@/types';
-import { mergeParticipantEntries, normalizeEpisodeTag, toIndividualParticipantEntries } from '@/utils/episodeHelpers';
+import { mergeParticipantEntries, normalizeEpisodeTag, normalizeEpisodeTime, toIndividualParticipantEntries } from '@/utils/episodeHelpers';
 import { getLinkedEventDateBounds } from '@/utils/eventEpisodeBidirectionalSync';
 import {
   formatDateKey,
+  formatTimeFromDate,
   getLocalDateKeysForEvent,
   isEventStartInFuture,
   parseDateKey,
 } from '@/utils/eventHelpers';
 import { profileIdsToFriendIds } from '@/utils/eventParticipantHelpers';
+import { deletePersistedImages } from '@/utils/persistImageFile';
 import {
   EpisodeParticipantDraft,
   EpisodeVisibilityDraft,
@@ -38,6 +40,8 @@ export type EpisodeEventLinkMode = 'none' | 'existing' | 'create_new';
 export type EpisodeSavePayload = {
   title: string;
   date: string;
+  /** HH:mm。未設定は null */
+  time: string | null;
   description: string;
   visibilityMode: EpisodeVisibilityMode;
   participantEntries: EpisodeParticipant[];
@@ -66,7 +70,9 @@ export function useEpisodeForm({
   const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState('');
+  const [time, setTime] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [description, setDescription] = useState('');
   const [participants, setParticipants] = useState<EpisodeParticipantDraft[]>([]);
   const [visibilityMode, setVisibilityMode] = useState<EpisodeVisibilityMode>('private');
@@ -74,6 +80,14 @@ export function useEpisodeForm({
   const [formError, setFormError] = useState('');
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
   const [newPhotoUris, setNewPhotoUris] = useState<string[]>([]);
+  const newPhotoUrisRef = useRef<string[]>([]);
+  /** DB へ登録済みの新規写真 URI。破棄時に実体を消すかの判定に使う。 */
+  const committedPhotoUrisRef = useRef<Set<string>>(new Set());
+
+  const applyNewPhotoUris = useCallback((next: string[]) => {
+    newPhotoUrisRef.current = next;
+    setNewPhotoUris(next);
+  }, []);
   const [photoCropUri, setPhotoCropUri] = useState<string | null>(null);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<number[]>([]);
   const [linkedEventId, setLinkedEventId] = useState<string | null>(null);
@@ -139,17 +153,24 @@ export function useEpisodeForm({
   }, []);
 
   const reset = useCallback(() => {
+    // 保存されずに破棄された写真は実体も消す（DB 登録済みのものは残す）。
+    deletePersistedImages(
+      newPhotoUrisRef.current.filter((uri) => !committedPhotoUrisRef.current.has(uri))
+    );
+    committedPhotoUrisRef.current.clear();
     setFormError('');
     setEditingEpisodeId(null);
     setTitle('');
     setDate(formatEpisodeDateToYMD(new Date()));
+    setTime('');
     setShowDatePicker(false);
+    setShowTimePicker(false);
     setDescription('');
     setParticipants([]);
     setVisibilityMode('private');
     setVisibility([]);
     setPhotos([]);
-    setNewPhotoUris([]);
+    applyNewPhotoUris([]);
     setPhotoCropUri(null);
     setDeletedPhotoIds([]);
     setLinkedEventId(null);
@@ -159,7 +180,7 @@ export function useEpisodeForm({
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
     setSelectorExperienceFilter('');
-  }, []);
+  }, [applyNewPhotoUris]);
 
   const restoreSelectorFromParticipants = useCallback((drafts: EpisodeParticipantDraft[]) => {
     const individuals = new Set<string>();
@@ -302,6 +323,7 @@ export function useEpisodeForm({
         }
       }
       setDate(nextDate);
+      setTime(normalizeEpisodeTime(episode.time) ?? '');
       setDescription(episode.description);
       setParticipants(participantDrafts);
       setVisibilityMode(episode.visibilityMode);
@@ -317,6 +339,7 @@ export function useEpisodeForm({
       setDeletedPhotoIds([]);
       setFormError('');
       setShowDatePicker(false);
+      setShowTimePicker(false);
       setTag(episode.tag ?? '');
     },
     [hiddenParticipantIds]
@@ -336,6 +359,7 @@ export function useEpisodeForm({
       const today = formatDateKey(new Date());
       const keys = getLocalDateKeysForEvent(event).filter((key) => key <= today);
       setDate(keys[0] ?? today);
+      setTime(event.allDay ? '' : formatTimeFromDate(new Date(event.startAt)));
       setTag(event.episodeTag ?? '');
       setDescription('');
       const myselfId = getMyself();
@@ -404,6 +428,7 @@ export function useEpisodeForm({
     return {
       title: normalizedTitle,
       date: normalizedDate,
+      time: normalizeEpisodeTime(time),
       description: description.trim(),
       visibilityMode,
       participantEntries,
@@ -420,6 +445,7 @@ export function useEpisodeForm({
     linkedEventId,
     participants,
     tag,
+    time,
     title,
     visibility,
     visibilityMode,
@@ -474,21 +500,32 @@ export function useEpisodeForm({
     setPhotoCropUri(null);
   }, []);
 
-  const confirmPhotoCrop = useCallback((croppedUri: string) => {
-    setNewPhotoUris((prev) => [...prev, croppedUri]);
-    setPhotoCropUri(null);
-  }, []);
+  const confirmPhotoCrop = useCallback(
+    (croppedUri: string) => {
+      applyNewPhotoUris([...newPhotoUrisRef.current, croppedUri]);
+      setPhotoCropUri(null);
+    },
+    [applyNewPhotoUris]
+  );
 
   const removeExistingPhoto = useCallback((photoId: number) => {
     setDeletedPhotoIds((prev) => (prev.includes(photoId) ? prev : [...prev, photoId]));
   }, []);
 
-  const removeNewPhoto = useCallback((index: number) => {
-    setNewPhotoUris((prev) => prev.filter((_, i) => i !== index));
-  }, []);
+  const removeNewPhoto = useCallback(
+    (index: number) => {
+      const target = newPhotoUrisRef.current[index];
+      if (target && !committedPhotoUrisRef.current.has(target)) {
+        deletePersistedImages([target]);
+      }
+      applyNewPhotoUris(newPhotoUrisRef.current.filter((_, i) => i !== index));
+    },
+    [applyNewPhotoUris]
+  );
 
   const persistPhotos = useCallback(
     (episodeId: string, isEdit: boolean) => {
+      newPhotoUris.forEach((uri) => committedPhotoUrisRef.current.add(uri));
       if (isEdit) {
         deletedPhotoIds.forEach((id) => {
           deleteEpisodePhoto(id);
@@ -526,8 +563,12 @@ export function useEpisodeForm({
     setTitle,
     date,
     setDate,
+    time,
+    setTime,
     showDatePicker,
     setShowDatePicker,
+    showTimePicker,
+    setShowTimePicker,
     description,
     setDescription,
     participants,

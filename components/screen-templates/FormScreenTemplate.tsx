@@ -16,10 +16,16 @@ type FormScreenTemplateProps = {
   onBack?: () => void;
   left?: ReactNode;
   right?: ReactNode;
+  /** 中央タイトルの左側 */
+  titleLeading?: ReactNode;
+  /** 中央タイトルの右側 */
+  titleTrailing?: ReactNode;
   footer?: ReactNode;
   extraScrollHeight?: number;
   scrollContentStyle?: StyleProp<ViewStyle>;
   scrollEnabled?: boolean;
+  /** KeyboardAwareScrollView の taps 透過。デフォルト handled */
+  keyboardShouldPersistTaps?: 'always' | 'handled' | 'never';
 };
 
 export function FormScreenTemplate({
@@ -29,10 +35,13 @@ export function FormScreenTemplate({
   onBack,
   left,
   right,
+  titleLeading,
+  titleTrailing,
   footer,
   extraScrollHeight = 20,
   scrollContentStyle,
   scrollEnabled = true,
+  keyboardShouldPersistTaps = 'handled',
 }: FormScreenTemplateProps) {
   const kit = useUiKit();
   const headerStyles = useSubScreenHeaderStyles();
@@ -51,7 +60,14 @@ export function FormScreenTemplate({
           <View style={styles.titleSideRight}>{right ?? null}</View>
         </View>
       ) : (
-        <ScreenTopBar title={title} onBack={onBack} left={left} right={right} />
+        <ScreenTopBar
+          title={title}
+          onBack={onBack}
+          left={left}
+          right={right}
+          titleLeading={titleLeading}
+          titleTrailing={titleTrailing}
+        />
       )}
 
       <View style={[styles.body, { paddingBottom: bodyKeyboardPad }]}>
@@ -62,7 +78,9 @@ export function FormScreenTemplate({
             { paddingHorizontal: kit.screenPaddingHorizontal },
             scrollContentStyle,
           ]}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps={keyboardShouldPersistTaps}
+          // Keep scroll offset on dismiss — do not snap back to pre-keyboard coords.
+          enableResetScrollToCoords={false}
           // Parent already shrinks by keyboard height; avoid a second keyboard spacer.
           enableOnAndroid={false}
           contentInset={{ bottom: 0 }}

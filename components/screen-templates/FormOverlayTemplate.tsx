@@ -49,6 +49,7 @@ export function FormOverlayTemplate({
             scrollContentStyle,
           ]}
           keyboardShouldPersistTaps="handled"
+          enableResetScrollToCoords={false}
           enableOnAndroid={false}
           contentInset={{ bottom: 0 }}
           extraScrollHeight={extraScrollHeight}

@@ -36,6 +36,18 @@ const TOOL_ENTRIES: ToolEntry[] = [
     icon: 'shuffle-outline',
     route: '/shuffle',
   },
+  {
+    id: 'relationship-map',
+    title: '相関図作成',
+    description: '近日公開したい',
+    icon: 'git-network-outline',
+  },
+  {
+    id: 'want-to-visit',
+    title: '行ってみたい・食べてみたい場所',
+    description: '近日公開したい',
+    icon: 'location-outline',
+  },
 ];
 
 export default function ToolsScreen() {

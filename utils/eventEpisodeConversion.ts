@@ -7,8 +7,9 @@ import {
   markEventAutoEpisodeCreated,
 } from '../db';
 import type { EpisodeParticipant } from '../types';
-import { formatDateKey } from './eventHelpers';
+import { formatDateKey, formatTimeFromDate } from './eventHelpers';
 import { profileIdsToFriendIds } from './eventParticipantHelpers';
+import { normalizeEpisodeTime } from './episodeHelpers';
 
 export const convertPastEventsToAutoEpisodes = (): void => {
   const myselfId = getMyself();
@@ -31,12 +32,15 @@ export const convertPastEventsToAutoEpisodes = (): void => {
       value: friendId,
     }));
 
-    const date = formatDateKey(new Date(event.startAt));
+    const start = new Date(event.startAt);
+    const date = formatDateKey(start);
+    const time = event.allDay ? null : normalizeEpisodeTime(formatTimeFromDate(start));
     const description = event.memo?.trim() ?? '';
 
     const created = createEpisode({
       title: event.title,
       date,
+      ...(time ? { time } : {}),
       description,
       visibilityMode: 'private',
       participantEntries,
