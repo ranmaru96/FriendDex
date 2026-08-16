@@ -24,6 +24,7 @@ import {
 import { useContentColors } from '@/utils/useContentColors';
 import { getAllProfiles, getMyself, initializeDatabase, updateProfile } from '../db';
 import { MBTIType, Profile } from '../types';
+import { isPersonNameValid, resolvePersonNameParts } from '@/utils/personName';
 
 type PublicFieldKey =
   | 'name'
@@ -35,14 +36,15 @@ type PublicFieldKey =
   | 'residence'
   | 'mbti';
 
+type FormFieldKey = Exclude<PublicFieldKey, 'name'>;
+
 type FieldConfig = {
-  key: PublicFieldKey;
+  key: FormFieldKey;
   label: string;
   keyboardType?: 'default' | 'numeric';
 };
 
 const FIELD_CONFIGS: FieldConfig[] = [
-  { key: 'name', label: '名前' },
   { key: 'nickname', label: '通称・あだ名' },
   { key: 'birthday', label: '誕生日' },
   { key: 'height', label: '身長', keyboardType: 'numeric' },
@@ -52,10 +54,14 @@ const FIELD_CONFIGS: FieldConfig[] = [
   { key: 'mbti', label: 'MBTI' },
 ];
 
-type MyProfileForm = Record<PublicFieldKey, string>;
+type MyProfileForm = Record<FormFieldKey, string> & {
+  familyName: string;
+  givenName: string;
+};
 
 const emptyForm = (): MyProfileForm => ({
-  name: '',
+  familyName: '',
+  givenName: '',
   nickname: '',
   birthday: '',
   height: '',
@@ -77,7 +83,8 @@ const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | nu
 };
 
 const profileToForm = (profile: Profile): MyProfileForm => ({
-  name: profile.name,
+  familyName: profile.familyName,
+  givenName: profile.givenName,
   nickname: profile.nickname,
   birthday: profile.birthday,
   height: profile.height != null ? String(profile.height) : '',
@@ -139,7 +146,7 @@ export default function MyProfileScreen() {
 
   const publicFieldSet = useMemo(() => new Set(publicFields), [publicFields]);
 
-  const updateField = (key: PublicFieldKey, value: string) => {
+  const updateField = (key: keyof MyProfileForm, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -156,14 +163,17 @@ export default function MyProfileScreen() {
     if (!profileId) {
       return;
     }
-    if (!form.name.trim()) {
-      Alert.alert('入力エラー', '名前を入力してください。');
+    if (!isPersonNameValid(form.familyName, form.givenName)) {
+      Alert.alert('入力エラー', '苗字か名前のどちらかを入力してください。');
       return;
     }
 
+    const nameParts = resolvePersonNameParts(form);
     initializeDatabase();
     const ok = updateProfile(profileId, {
-      name: form.name.trim(),
+      name: nameParts.name,
+      familyName: nameParts.familyName,
+      givenName: nameParts.givenName,
       nickname: form.nickname.trim(),
       birthday: form.birthday.trim(),
       height: parseOptionalNumber(form.height),
@@ -229,9 +239,44 @@ export default function MyProfileScreen() {
         <Text style={[styles.sectionHint, contentMutedTextStyle(content)]}>各項目の右側スイッチで公開する項目を選べます</Text>
 
         <View style={[styles.formGroup, contentSurfaceStyle(content)]}>
-          {FIELD_CONFIGS.map((field, index) => (
+          <View style={styles.fieldRow}>
+            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>名前を公開</Text>
+            <View style={styles.fieldInputSpacer} />
+            <Switch
+              value={publicFieldSet.has('name')}
+              onValueChange={(enabled) => togglePublicField('name', enabled)}
+              trackColor={switchColors.trackColor}
+              thumbColor={publicFieldSet.has('name') ? Theme.accent : switchColors.thumbColorOff}
+              accessibilityLabel="名前を公開"
+            />
+          </View>
+          <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
+          <View style={styles.fieldRow}>
+            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>苗字</Text>
+            <TextInput
+              value={form.familyName}
+              onChangeText={(text) => updateField('familyName', text)}
+              style={[styles.fieldInput, contentInputStyle(content)]}
+              placeholder="苗字"
+              placeholderTextColor={content.contentTextSecondary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
+          <View style={styles.fieldRow}>
+            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>名前</Text>
+            <TextInput
+              value={form.givenName}
+              onChangeText={(text) => updateField('givenName', text)}
+              style={[styles.fieldInput, contentInputStyle(content)]}
+              placeholder="名前"
+              placeholderTextColor={content.contentTextSecondary}
+              autoCapitalize="none"
+            />
+          </View>
+          {FIELD_CONFIGS.map((field) => (
             <View key={field.key}>
-              {index > 0 ? <View style={[styles.separator, { backgroundColor: content.contentDivider }]} /> : null}
+              <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
               <View style={styles.fieldRow}>
                 <Text style={[styles.fieldLabel, contentTextStyle(content)]}>{field.label}</Text>
                 <TextInput
@@ -313,6 +358,9 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
     fontSize: Typography.base,
     color: Theme.textPrimary,
+  },
+  fieldInputSpacer: {
+    flex: 1,
   },
   separator: {
     height: StyleSheet.hairlineWidth,

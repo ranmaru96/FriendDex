@@ -305,7 +305,6 @@ export default function HomeScreen() {
       <PendingEpisodeReviewModal
         visible={reviewModalVisible}
         items={pendingReviewItems}
-        onClose={() => setReviewModalVisible(false)}
         onChanged={reloadPendingReviews}
         onWrite={handleWritePendingEpisode}
       />

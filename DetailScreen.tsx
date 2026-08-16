@@ -3,7 +3,6 @@ import {
   Alert,
   FlatList,
   Image,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -17,6 +16,7 @@ import {
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { DetailTabKey } from '@/constants/detailThemes';
@@ -25,10 +25,10 @@ import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
 import { TabScreenTemplate } from '@/components/screen-templates';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
+import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
 import { setNextStackAnimation } from '@/utils/tabTransition';
-import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 import { useDetailDesign } from './contexts/DetailDesignContext';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
@@ -40,6 +40,7 @@ import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
 import { pastOrTodayDatePickerBounds } from '@/utils/datePickerBounds';
 import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { contentDateTimePickerProps } from '@/utils/contentStyleHelpers';
+import { deletePersistedImages } from '@/utils/persistImageFile';
 import { computeProfileCompleteness } from '@/utils/profileCompleteness';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import {
@@ -102,6 +103,45 @@ import { registerSavedEpisodeTag } from './utils/episodeTagMaster';
 const EPISODE_PICKER_COLUMNS = 3;
 const EPISODE_PICKER_GAP = 6;
 const DETAIL_SLIDE_MS = 260;
+
+const NOTE_TAB_COPY = {
+  習性: {
+    label: 'habit（習性）',
+    body: 'この人の癖や口癖、習慣',
+    placeholder: '癖や口癖、習慣',
+    empty: '登録済みの習性はありません。',
+    required: '習性を入力してください。',
+  },
+  メモ: {
+    label: 'note（メモ）',
+    body: 'この人に関するその他の情報',
+    placeholder: 'メモ',
+    empty: '登録済みのメモはありません。',
+    required: 'メモを入力してください。',
+  },
+  彼曰く: {
+    label: 'says（彼曰く）',
+    body: 'この人の言っていたこと',
+    placeholder: '言っていたこと',
+    empty: '登録済みの彼曰くはありません。',
+    required: '本文を入力してください。',
+  },
+} as const;
+
+const formatDateToYMD = (d: Date): string => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const parseDateString = (s: string): Date => {
+  const parts = s.split('-').map(Number);
+  if (parts.length === 3 && !parts.some(Number.isNaN)) {
+    return new Date(parts[0], parts[1] - 1, parts[2]);
+  }
+  return new Date();
+};
 
 type AdjacentDirection = 'prev' | 'next';
 /** none=写真なし / pending=読み込み中 / loaded|failed=成否確定 */
@@ -205,21 +245,6 @@ const buildAdjacentSlideSnapshot = (
     showProfileSwitcher: options?.showProfileSwitcher ?? false,
     profileByLabel: options?.profileByLabel ?? '',
   };
-};
-
-const formatDateToYMD = (d: Date): string => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-
-const parseDateString = (s: string): Date => {
-  const parts = s.split('-').map(Number);
-  if (parts.length === 3 && !parts.some(isNaN)) {
-    return new Date(parts[0], parts[1] - 1, parts[2]);
-  }
-  return new Date();
 };
 
 const getSortedEpisodeDates = (friend: Friend): string[] =>
@@ -470,21 +495,21 @@ function DetailAdjacentSlidePanel({
             </View>
             <View style={styles.heroStatsRow}>
               <View style={styles.heroStatCell}>
-                <Text style={styles.heroStatLabel}>EPISODES</Text>
+                <Text style={styles.heroStatLabel}>episodes</Text>
                 <View style={styles.heroStatValueRow}>
                   <Text style={styles.heroStatValue}>{friend.episodes.length}</Text>
                   <Text style={styles.heroStatUnit}>件</Text>
                 </View>
               </View>
               <View style={styles.heroStatCell}>
-                <Text style={styles.heroStatLabel}>習性 + 彼曰く</Text>
+                <Text style={styles.heroStatLabel}>habits + says</Text>
                 <View style={styles.heroStatValueRow}>
                   <Text style={styles.heroStatValue}>{habitCount + sayingCount}</Text>
                   <Text style={styles.heroStatUnit}>件</Text>
                 </View>
               </View>
               <View style={styles.heroStatCell}>
-                <Text style={styles.heroStatLabel}>SINCE</Text>
+                <Text style={styles.heroStatLabel}>since</Text>
                 <View style={styles.heroStatValueRow}>
                   <Text style={styles.heroStatValue}>{sinceYear}</Text>
                   <Text style={styles.heroStatUnit}>年〜</Text>
@@ -493,7 +518,7 @@ function DetailAdjacentSlidePanel({
             </View>
             <View style={styles.heroCompletenessSection}>
               <View style={styles.heroCompletenessHeader}>
-                <Text style={styles.heroCompletenessLabel}>PROFILE COMPLETENESS</Text>
+                <Text style={styles.heroCompletenessLabel}>profile completeness</Text>
                 <Text style={styles.heroCompletenessPercent}>
                   {isCompletenessReady ? `${profileCompleteness}%` : ''}
                 </Text>
@@ -571,7 +596,7 @@ function DetailAdjacentSlidePanel({
                 rows={[
                   { title: '所属', values: friend.affiliations },
                   { title: '経験', values: friend.experiences },
-                  { title: '性格', values: friend.personalities },
+                  { title: '特徴', values: friend.personalities },
                   { title: '好物', values: friend.likes },
                   { title: '苦手', values: friend.dislikes },
                 ]}
@@ -625,16 +650,16 @@ export default function DetailScreen() {
       }
     : null;
   const profileCardOuterFlatStyle = isFlatProfileCard
-    ? { borderRadius: 0, borderWidth: 0 }
+    ? { borderRadius: 0, borderWidth: 0, overflow: 'visible' as const }
     : null;
   const profileHeroFlatStyle = isFlatProfileCard
     ? { borderTopLeftRadius: 0, borderTopRightRadius: 0 }
     : null;
   const profileTabSectionFlatStyle = isFlatProfileCard
-    ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 }
+    ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, overflow: 'visible' as const }
     : null;
   const router = useRouter();
-  const { width: screenWidth, height: windowHeight } = useWindowDimensions();
+  const { width: screenWidth } = useWindowDimensions();
   const params = useLocalSearchParams<{ id?: string; tab?: string }>();
   const outgoingSlideX = useSharedValue(0);
   const incomingSlideX = useSharedValue(0);
@@ -647,20 +672,18 @@ export default function DetailScreen() {
     () => new Map()
   );
   const [profileImageStatus, setProfileImageStatus] = useState<ProfileImageStatus>('none');
+  const [heroPhotoCropUri, setHeroPhotoCropUri] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<DetailTabKey>('情報');
   const isEpisodeTab = activeTab === 'エピソード';
   const bottomNavClearance = useBottomNavScrollClearance();
-  const keyboardBottomInset = useKeyboardBottomInset();
   const detailListRef = useRef<FlatList<Episode>>(null);
   const detailScrollOffsetRef = useRef(0);
-  const noteFormAnchorRef = useRef<View>(null);
   const [habitNotes, setHabitNotes] = useState<string[]>([]);
   const [isHabitFormVisible, setIsHabitFormVisible] = useState(false);
   const [editingHabitIndex, setEditingHabitIndex] = useState<number | null>(null);
   const [habitText, setHabitText] = useState('');
-  const [habitInputHeight, setHabitInputHeight] = useState(48);
   const [habitFormError, setHabitFormError] = useState('');
   const [allFriends, setAllFriends] = useState<Friend[]>([]);
   const [episodeFilterSelectedIdsDraft, setEpisodeFilterSelectedIdsDraft] = useState<Set<string>>(
@@ -673,46 +696,29 @@ export default function DetailScreen() {
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
-  const [showSayingDatePicker, setShowSayingDatePicker] = useState(false);
-  useDismissPickerOnKeyboardShow(showSayingDatePicker, () => setShowSayingDatePicker(false));
   const [isSayingFormVisible, setIsSayingFormVisible] = useState(false);
   const [editingSayingId, setEditingSayingId] = useState<string | null>(null);
   const [sayingText, setSayingText] = useState('');
   const [sayingDate, setSayingDate] = useState('');
-  const [sayingInputHeight, setSayingInputHeight] = useState(48);
   const [sayingFormError, setSayingFormError] = useState('');
+  const [showSayingDatePicker, setShowSayingDatePicker] = useState(false);
+  useDismissPickerOnKeyboardShow(showSayingDatePicker, () => setShowSayingDatePicker(false));
 
-  const isNoteFormOpen =
-    ((activeTab === '習性' || activeTab === 'メモ') && isHabitFormVisible) ||
-    (activeTab === '彼曰く' && isSayingFormVisible);
+  const closeHabitForm = () => {
+    setIsHabitFormVisible(false);
+    setEditingHabitIndex(null);
+    setHabitText('');
+    setHabitFormError('');
+  };
 
-  const scrollNoteFormAboveKeyboard = useCallback(() => {
-    if (keyboardBottomInset <= 0) {
-      return;
-    }
-    noteFormAnchorRef.current?.measureInWindow((_x, y, _width, height) => {
-      const keyboardTop = windowHeight - keyboardBottomInset;
-      const formBottom = y + height;
-      const overlap = formBottom - (keyboardTop - 16);
-      if (overlap <= 0) {
-        return;
-      }
-      detailListRef.current?.scrollToOffset({
-        offset: Math.max(0, detailScrollOffsetRef.current + overlap),
-        animated: true,
-      });
-    });
-  }, [keyboardBottomInset, windowHeight]);
-
-  useEffect(() => {
-    if (!isNoteFormOpen || keyboardBottomInset <= 0) {
-      return;
-    }
-    const timer = setTimeout(() => {
-      scrollNoteFormAboveKeyboard();
-    }, 80);
-    return () => clearTimeout(timer);
-  }, [isNoteFormOpen, keyboardBottomInset, scrollNoteFormAboveKeyboard]);
+  const closeSayingForm = () => {
+    setIsSayingFormVisible(false);
+    setEditingSayingId(null);
+    setSayingText('');
+    setSayingDate('');
+    setSayingFormError('');
+    setShowSayingDatePicker(false);
+  };
 
   const friendId = useMemo(() => {
     if (Array.isArray(params.id)) {
@@ -889,7 +895,6 @@ export default function DetailScreen() {
     setIsHabitFormVisible(false);
     setEditingHabitIndex(null);
     setHabitText('');
-    setHabitInputHeight(48);
     setHabitFormError('');
     setIsEpisodeParticipantPickerOpen(false);
     setIsEpisodeFormVisible(false);
@@ -898,9 +903,7 @@ export default function DetailScreen() {
     setEditingSayingId(null);
     setSayingText('');
     setSayingDate('');
-    setSayingInputHeight(48);
     setSayingFormError('');
-    setShowSayingDatePicker(false);
   }, [friendId, episodeForm.reset]);
 
   const friendNameById = useMemo(() => {
@@ -1211,7 +1214,7 @@ export default function DetailScreen() {
     const text = sayingText.trim();
     const date = sayingDate.trim();
     if (!text) {
-      setSayingFormError('本文を入力してください。');
+      setSayingFormError(NOTE_TAB_COPY.彼曰く.required);
       return;
     }
     if (editingSayingId) {
@@ -1233,7 +1236,6 @@ export default function DetailScreen() {
     setEditingSayingId(null);
     setSayingText('');
     setSayingDate('');
-    setSayingInputHeight(48);
     setShowSayingDatePicker(false);
     loadFriend();
   };
@@ -1243,8 +1245,6 @@ export default function DetailScreen() {
     setEditingSayingId(null);
     setSayingText('');
     setSayingDate('');
-    setSayingInputHeight(48);
-    setShowSayingDatePicker(false);
     setIsSayingFormVisible(true);
   };
 
@@ -1253,8 +1253,6 @@ export default function DetailScreen() {
     setEditingSayingId(saying.id);
     setSayingText(saying.text);
     setSayingDate(saying.date);
-    setSayingInputHeight(48);
-    setShowSayingDatePicker(false);
     setIsSayingFormVisible(true);
   };
 
@@ -1275,8 +1273,6 @@ export default function DetailScreen() {
             setEditingSayingId(null);
             setSayingText('');
             setSayingDate('');
-            setSayingInputHeight(48);
-            setShowSayingDatePicker(false);
           }
           loadFriend();
         },
@@ -1299,6 +1295,8 @@ export default function DetailScreen() {
     const normalizedTraits = nextTraits.map((item) => item.trim()).filter((item) => item.length > 0);
     const success = updateFriend(friend.id, {
       name: friend.name,
+      familyName: friend.familyName,
+      givenName: friend.givenName,
       nickname: friend.nickname,
       origin: friend.origin,
       residence: friend.residence,
@@ -1323,11 +1321,64 @@ export default function DetailScreen() {
     }
   };
 
+  const persistHeroPhoto = (nextPhotoUri: string | null) => {
+    if (!friend) {
+      return;
+    }
+    const previousUri = friend.photoUri;
+    const success = updateFriend(friend.id, {
+      name: friend.name,
+      familyName: friend.familyName,
+      givenName: friend.givenName,
+      nickname: friend.nickname,
+      origin: friend.origin,
+      residence: friend.residence,
+      mbti: friend.mbti,
+      birthday: friend.birthday,
+      height: friend.height,
+      weight: friend.weight,
+      category: friend.category,
+      description: friend.description,
+      photoUri: nextPhotoUri,
+      affiliations: friend.affiliations,
+      personalities: friend.personalities,
+      experiences: friend.experiences,
+      traits: friend.traits,
+      likes: friend.likes,
+      dislikes: friend.dislikes,
+      episodes: friend.episodes,
+      sayings: friend.sayings,
+    });
+    if (!success) {
+      Alert.alert('エラー', '写真の保存に失敗しました。');
+      if (nextPhotoUri && nextPhotoUri !== previousUri) {
+        deletePersistedImages([nextPhotoUri]);
+      }
+      return;
+    }
+    if (previousUri && previousUri !== nextPhotoUri) {
+      deletePersistedImages([previousUri]);
+    }
+    setFriend((prev) => (prev ? { ...prev, photoUri: nextPhotoUri } : prev));
+    setProfileImageStatus(nextPhotoUri?.trim() ? 'loaded' : 'none');
+  };
+
+  const onPickHeroPhoto = async () => {
+    dismissKeyboardFocus();
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 1,
+      allowsEditing: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setHeroPhotoCropUri(result.assets[0].uri);
+    }
+  };
+
   const startCreateHabit = () => {
     setIsHabitFormVisible(true);
     setEditingHabitIndex(null);
     setHabitText('');
-    setHabitInputHeight(48);
     setHabitFormError('');
   };
 
@@ -1335,14 +1386,15 @@ export default function DetailScreen() {
     setIsHabitFormVisible(true);
     setEditingHabitIndex(index);
     setHabitText(habitNotes[index] ?? '');
-    setHabitInputHeight(48);
     setHabitFormError('');
   };
 
   const handleSaveHabit = () => {
     const text = habitText.trim();
     if (!text) {
-      setHabitFormError('習性を入力してください。');
+      setHabitFormError(
+        activeTab === 'メモ' ? NOTE_TAB_COPY.メモ.required : NOTE_TAB_COPY.習性.required
+      );
       return;
     }
     const next = [...habitNotes];
@@ -1356,7 +1408,6 @@ export default function DetailScreen() {
     setIsHabitFormVisible(false);
     setEditingHabitIndex(null);
     setHabitText('');
-    setHabitInputHeight(48);
     setHabitFormError('');
   };
 
@@ -1374,7 +1425,6 @@ export default function DetailScreen() {
             setIsHabitFormVisible(false);
             setEditingHabitIndex(null);
             setHabitText('');
-            setHabitInputHeight(48);
             setHabitFormError('');
           }
         },
@@ -1466,6 +1516,7 @@ export default function DetailScreen() {
             visibilityMode={canManage ? episode.visibilityMode : undefined}
             posterName={canManage ? null : posterName}
             photoUris={episodePhotoUrisById.get(episode.id) ?? []}
+            unfilled={episode.pendingReview === true}
             onPress={() =>
               router.push({
                 pathname: '/episode-detail',
@@ -1561,6 +1612,7 @@ export default function DetailScreen() {
             <View style={styles.episodeCardRow1}>
               <Text style={styles.episodeCardTitle} numberOfLines={1}>
                 {episode.title || '-'}
+                {episode.pendingReview === true ? '（未記入）' : ''}
               </Text>
               <Text style={styles.episodeCardDateText}>{formatEpisodeDateForCard(episode.date)}</Text>
               {canManage ? (
@@ -1655,6 +1707,7 @@ export default function DetailScreen() {
     const episodeInput = {
       ...episodeFields,
       eventId: resolved.eventId,
+      pendingReview: false,
     };
 
     if (episodeForm.editingEpisodeId) {
@@ -1866,16 +1919,14 @@ export default function DetailScreen() {
                 initialNumToRender={6}
                 maxToRenderPerBatch={6}
                 windowSize={7}
-                removeClippedSubviews
+                removeClippedSubviews={isEpisodeTab}
                 showsVerticalScrollIndicator
                 onScroll={(event) => {
                   detailScrollOffsetRef.current = event.nativeEvent.contentOffset.y;
                 }}
                 scrollEventThrottle={16}
                 contentContainerStyle={{
-                  paddingBottom:
-                    (bottomNavClearance > 0 ? 60 : Spacing.lg) +
-                    (isNoteFormOpen ? keyboardBottomInset : 0),
+                  paddingBottom: bottomNavClearance > 0 ? 60 : Spacing.lg,
                 }}
                 ListHeaderComponentStyle={{ marginBottom: 0 }}
                 ListEmptyComponent={
@@ -1963,11 +2014,14 @@ export default function DetailScreen() {
           ]}
         >
           <View style={styles.heroIdentityRow}>
-            <View
+            <Pressable
               style={[
                 styles.heroPhotoOuterFrame,
                 heroPhotoOuterStyle,
               ]}
+              onPress={onPickHeroPhoto}
+              accessibilityRole="button"
+              accessibilityLabel={friend.photoUri ? '写真を変更' : '写真を登録'}
             >
               <View style={[styles.heroPhotoInnerFrame, heroPhotoInnerStyle]}>
                 {friend.photoUri && profileImageStatus !== 'failed' ? (
@@ -1980,11 +2034,15 @@ export default function DetailScreen() {
                   />
                 ) : (
                   <View style={styles.heroPhotoPlaceholder}>
-                    <Text style={styles.heroPhotoPlaceholderText}>No Image</Text>
+                    <Ionicons name="camera-outline" size={28} color={c.textMuted} />
+                    <Text style={styles.heroPhotoPlaceholderText}>写真を登録</Text>
                   </View>
                 )}
+                <View style={styles.heroPhotoCameraBadge} pointerEvents="none">
+                  <Ionicons name="camera-outline" size={14} color="#FFFFFF" />
+                </View>
               </View>
-            </View>
+            </Pressable>
             <View style={styles.heroIdentityCol}>
               <View style={styles.heroNameRow}>
                 <Text style={styles.heroName} numberOfLines={2}>
@@ -2050,21 +2108,21 @@ export default function DetailScreen() {
 
           <View style={styles.heroStatsRow}>
             <View style={styles.heroStatCell}>
-              <Text style={styles.heroStatLabel}>EPISODES</Text>
+              <Text style={styles.heroStatLabel}>episodes</Text>
               <View style={styles.heroStatValueRow}>
                 <Text style={styles.heroStatValue}>{friend.episodes.length}</Text>
                 <Text style={styles.heroStatUnit}>件</Text>
               </View>
             </View>
             <View style={styles.heroStatCell}>
-              <Text style={styles.heroStatLabel}>習性 + 彼曰く</Text>
+              <Text style={styles.heroStatLabel}>habits + says</Text>
               <View style={styles.heroStatValueRow}>
                 <Text style={styles.heroStatValue}>{habitNotes.length + sortedSayings.length}</Text>
                 <Text style={styles.heroStatUnit}>件</Text>
               </View>
             </View>
             <View style={styles.heroStatCell}>
-              <Text style={styles.heroStatLabel}>SINCE</Text>
+              <Text style={styles.heroStatLabel}>since</Text>
               <View style={styles.heroStatValueRow}>
                 <Text style={styles.heroStatValue}>{sinceYear}</Text>
                 <Text style={styles.heroStatUnit}>年〜</Text>
@@ -2074,7 +2132,7 @@ export default function DetailScreen() {
 
           <View style={styles.heroCompletenessSection}>
             <View style={styles.heroCompletenessHeader}>
-              <Text style={styles.heroCompletenessLabel}>PROFILE COMPLETENESS</Text>
+              <Text style={styles.heroCompletenessLabel}>profile completeness</Text>
               <Text style={styles.heroCompletenessPercent}>
                 {isProfileCompletenessReady ? `${profileCompleteness}%` : ''}
               </Text>
@@ -2250,7 +2308,7 @@ export default function DetailScreen() {
               rows={[
                 { title: '所属', values: friend.affiliations },
                 { title: '経験', values: friend.experiences },
-                { title: '性格', values: friend.personalities },
+                { title: '特徴', values: friend.personalities },
                 { title: '好物', values: friend.likes },
                 { title: '苦手', values: friend.dislikes },
               ]}
@@ -2284,17 +2342,19 @@ export default function DetailScreen() {
           )}
 
           {(activeTab === '習性' || activeTab === 'メモ') && (
-            <View style={styles.tabPane}>
-            <View style={styles.sayingTopRow}>
-              <View />
+            <View style={[styles.tabPane, isHabitFormVisible ? styles.noteTabPaneWithForm : null]}>
+            <View style={styles.noteTabHeader}>
+              <Text style={styles.noteTabLine} numberOfLines={1}>
+                <Text style={styles.noteTabLabel}>
+                  {activeTab === 'メモ' ? NOTE_TAB_COPY.メモ.label : NOTE_TAB_COPY.習性.label}：
+                </Text>
+                {activeTab === 'メモ' ? NOTE_TAB_COPY.メモ.body : NOTE_TAB_COPY.習性.body}
+              </Text>
               <Pressable
-                style={styles.episodeAddButton}
+                style={styles.noteTabAddButton}
                 onPress={() => {
                   if (isHabitFormVisible && editingHabitIndex === null) {
-                    setIsHabitFormVisible(false);
-                    setHabitText('');
-                    setHabitInputHeight(48);
-                    setHabitFormError('');
+                    closeHabitForm();
                   } else {
                     startCreateHabit();
                   }
@@ -2306,48 +2366,42 @@ export default function DetailScreen() {
               </Pressable>
             </View>
 
-            {isHabitFormVisible && (
-              <View ref={noteFormAnchorRef} collapsable={false} style={styles.sayingFormCard}>
+            {isHabitFormVisible ? (
+              <View style={styles.sayingFormCard}>
                 <TextInput
-                  style={[styles.sayingTextInput, { height: Math.max(48, habitInputHeight) }]}
-                  placeholder="習性（自由記入）"
+                  style={styles.sayingTextInput}
+                  placeholder={
+                    activeTab === 'メモ'
+                      ? NOTE_TAB_COPY.メモ.placeholder
+                      : NOTE_TAB_COPY.習性.placeholder
+                  }
                   placeholderTextColor={c.inputPlaceholder}
                   multiline
                   value={habitText}
-                  onContentSizeChange={(event) => {
-                    setHabitInputHeight(event.nativeEvent.contentSize.height + 20);
-                    if (keyboardBottomInset > 0) {
-                      setTimeout(() => scrollNoteFormAboveKeyboard(), 50);
-                    }
-                  }}
                   onChangeText={setHabitText}
-                  onFocus={() => {
-                    setTimeout(() => scrollNoteFormAboveKeyboard(), 80);
-                  }}
                 />
-                <View style={styles.sayingActionRow}>
-                  <Pressable
-                    style={styles.episodeCancelButton}
-                    onPress={() => {
-                      setIsHabitFormVisible(false);
-                      setEditingHabitIndex(null);
-                      setHabitText('');
-                      setHabitInputHeight(48);
-                      setHabitFormError('');
-                    }}
-                  >
-                    <Text style={styles.episodeCancelButtonText}>閉じる</Text>
-                  </Pressable>
-                  <Pressable style={styles.episodeCreateButton} onPress={handleSaveHabit}>
-                    <Text style={styles.episodeCreateButtonText}>登録</Text>
-                  </Pressable>
+                {habitFormError ? <Text style={styles.episodeErrorText}>{habitFormError}</Text> : null}
+                <View style={styles.noteComposerActions}>
+                  <View style={styles.noteComposerBtnWrap}>
+                    <Pressable style={styles.noteComposerGhost} onPress={closeHabitForm}>
+                      <Text style={styles.noteComposerGhostText}>閉じる</Text>
+                    </Pressable>
+                  </View>
+                  <View style={styles.noteComposerBtnWrap}>
+                    <Pressable style={styles.noteComposerPrimary} onPress={handleSaveHabit}>
+                      <Text style={styles.noteComposerPrimaryText}>
+                        {editingHabitIndex != null ? '更新' : '登録'}
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
-            )}
-            {habitFormError ? <Text style={styles.episodeErrorText}>{habitFormError}</Text> : null}
+            ) : null}
 
             {habitNotes.length === 0 ? (
-              <Text style={styles.emptyEpisodeText}>登録済みの習性はありません。</Text>
+              <Text style={styles.emptyEpisodeText}>
+                {activeTab === 'メモ' ? NOTE_TAB_COPY.メモ.empty : NOTE_TAB_COPY.習性.empty}
+              </Text>
             ) : (
               habitNotes.map((note, index) => (
                 <Pressable
@@ -2365,19 +2419,17 @@ export default function DetailScreen() {
           )}
 
           {activeTab === '彼曰く' && (
-            <View style={styles.tabPane}>
-            <View style={styles.sayingTopRow}>
-              <View />
+            <View style={[styles.tabPane, isSayingFormVisible ? styles.noteTabPaneWithForm : null]}>
+            <View style={styles.noteTabHeader}>
+              <Text style={styles.noteTabLine} numberOfLines={1}>
+                <Text style={styles.noteTabLabel}>{NOTE_TAB_COPY.彼曰く.label}：</Text>
+                {NOTE_TAB_COPY.彼曰く.body}
+              </Text>
               <Pressable
-                style={styles.episodeAddButton}
+                style={styles.noteTabAddButton}
                 onPress={() => {
                   if (isSayingFormVisible && !editingSayingId) {
-                    setIsSayingFormVisible(false);
-                    setSayingFormError('');
-                    setSayingText('');
-                    setSayingDate('');
-                    setSayingInputHeight(48);
-                    setShowSayingDatePicker(false);
+                    closeSayingForm();
                   } else {
                     startCreateSaying();
                   }
@@ -2389,27 +2441,18 @@ export default function DetailScreen() {
               </Pressable>
             </View>
 
-            {isSayingFormVisible && (
-              <View ref={noteFormAnchorRef} collapsable={false} style={styles.sayingFormCard}>
+            {isSayingFormVisible ? (
+              <View style={styles.sayingFormCard}>
                 <TextInput
-                  style={[styles.sayingTextInput, { height: Math.max(48, sayingInputHeight) }]}
-                  placeholder="彼曰く（自由記入）"
+                  style={styles.sayingTextInput}
+                  placeholder={NOTE_TAB_COPY.彼曰く.placeholder}
                   placeholderTextColor={c.inputPlaceholder}
                   multiline
                   value={sayingText}
-                  onContentSizeChange={(event) => {
-                    setSayingInputHeight(event.nativeEvent.contentSize.height + 20);
-                    if (keyboardBottomInset > 0) {
-                      setTimeout(() => scrollNoteFormAboveKeyboard(), 50);
-                    }
-                  }}
                   onChangeText={setSayingText}
-                  onFocus={() => {
-                    setTimeout(() => scrollNoteFormAboveKeyboard(), 80);
-                  }}
                 />
                 <Pressable
-                  style={[styles.episodeInput, styles.sayingDateInput]}
+                  style={styles.sayingDateInput}
                   onPress={() => {
                     dismissKeyboardFocus();
                     if (!sayingDate) {
@@ -2419,54 +2462,56 @@ export default function DetailScreen() {
                   }}
                 >
                   <Text style={sayingDate ? styles.episodeDateText : styles.episodeDatePlaceholder}>
-                    {sayingDate || 'YYYY-MM-DD（任意）'}
+                    {sayingDate || '日付（任意）'}
                   </Text>
                 </Pressable>
-                {showSayingDatePicker && (
-                  <View style={styles.datePickerWrap}>
-                    <DateTimePicker
-                      value={parseDateString(sayingDate)}
-                      mode="date"
-                      display="spinner"
-                      locale="ja-JP"
-                      style={styles.datePickerSelf}
-                      {...dateTimePickerProps}
-                      {...pastOrTodayDatePickerBounds()}
-                      onChange={(_event: DateTimePickerEvent, selected?: Date) => {
-                        if (Platform.OS !== 'ios') setShowSayingDatePicker(false);
-                        if (selected) setSayingDate(formatDateToYMD(selected));
-                      }}
-                    />
-                    <Pressable style={styles.datePickerDone} onPress={() => setShowSayingDatePicker(false)}>
+                {showSayingDatePicker ? (
+                  <>
+                    <View style={styles.datePickerWrap}>
+                      <DateTimePicker
+                        value={parseDateString(sayingDate)}
+                        mode="date"
+                        display="spinner"
+                        locale="ja-JP"
+                        style={styles.datePickerSelf}
+                        {...dateTimePickerProps}
+                        {...pastOrTodayDatePickerBounds()}
+                        onChange={(_event: DateTimePickerEvent, selected?: Date) => {
+                          if (Platform.OS !== 'ios') setShowSayingDatePicker(false);
+                          if (selected) setSayingDate(formatDateToYMD(selected));
+                        }}
+                      />
+                    </View>
+                    <Pressable
+                      style={styles.datePickerDone}
+                      onPress={() => setShowSayingDatePicker(false)}
+                    >
                       <Text style={styles.datePickerDoneText}>完了</Text>
                     </Pressable>
+                  </>
+                ) : null}
+                {sayingFormError ? (
+                  <Text style={styles.episodeErrorText}>{sayingFormError}</Text>
+                ) : null}
+                <View style={styles.noteComposerActions}>
+                  <View style={styles.noteComposerBtnWrap}>
+                    <Pressable style={styles.noteComposerGhost} onPress={closeSayingForm}>
+                      <Text style={styles.noteComposerGhostText}>閉じる</Text>
+                    </Pressable>
                   </View>
-                )}
-                <View style={styles.sayingActionRow}>
-                  <Pressable
-                    style={styles.episodeCancelButton}
-                    onPress={() => {
-                      setIsSayingFormVisible(false);
-                      setEditingSayingId(null);
-                      setSayingText('');
-                      setSayingDate('');
-                      setSayingInputHeight(48);
-                      setShowSayingDatePicker(false);
-                      setSayingFormError('');
-                    }}
-                  >
-                    <Text style={styles.episodeCancelButtonText}>閉じる</Text>
-                  </Pressable>
-                  <Pressable style={styles.episodeCreateButton} onPress={handleSaveSayings}>
-                    <Text style={styles.episodeCreateButtonText}>登録</Text>
-                  </Pressable>
+                  <View style={styles.noteComposerBtnWrap}>
+                    <Pressable style={styles.noteComposerPrimary} onPress={handleSaveSayings}>
+                      <Text style={styles.noteComposerPrimaryText}>
+                        {editingSayingId ? '更新' : '登録'}
+                      </Text>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
-            )}
-            {sayingFormError ? <Text style={styles.episodeErrorText}>{sayingFormError}</Text> : null}
+            ) : null}
 
             {sortedSayings.length === 0 ? (
-              <Text style={styles.emptyEpisodeText}>登録済みの彼曰くはありません。</Text>
+              <Text style={styles.emptyEpisodeText}>{NOTE_TAB_COPY.彼曰く.empty}</Text>
             ) : (
               sortedSayings.map((saying: Saying) => (
                 <Pressable
@@ -2508,6 +2553,16 @@ export default function DetailScreen() {
           setIsEpisodeFormVisible(false);
         }}
         onSave={handleSaveEpisode}
+      />
+      <PhotoCropModal
+        visible={heroPhotoCropUri != null}
+        uri={heroPhotoCropUri}
+        aspectRatio={1}
+        onCancel={() => setHeroPhotoCropUri(null)}
+        onConfirm={(croppedUri) => {
+          persistHeroPhoto(croppedUri);
+          setHeroPhotoCropUri(null);
+        }}
       />
     </>
   );

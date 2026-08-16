@@ -415,6 +415,13 @@ export default function AppSettingsScreen() {
           </View>
           <View style={[styles.separator, themed.separator]} />
           <View style={styles.roadmapBlock}>
+            <Text style={[styles.roadmapTitle, themed.rowLabel]}>あなたの～は？</Text>
+            <Text style={[styles.roadmapBody, themed.hint]}>
+              ・ver001以降の構想。特定の質問に対する対象者の回答を記載する。
+            </Text>
+          </View>
+          <View style={[styles.separator, themed.separator]} />
+          <View style={styles.roadmapBlock}>
             <Text style={[styles.roadmapTitle, themed.rowLabel]}>ウィジェット機能追加</Text>
             <Text style={[styles.roadmapBody, themed.hint]}>
               ・ver001以降の構想。ホーム画面ウィジェット対応。

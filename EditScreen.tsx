@@ -48,6 +48,7 @@ import {
 } from './db';
 import { FriendInput, MBTIType, MBTI_TYPES } from './types';
 import { filterLabelSuggestions, findMatchingRegisteredLabel } from '@/utils/labelSuggestions';
+import { isPersonNameValid, joinPersonName, resolvePersonNameParts } from '@/utils/personName';
 
 const PHOTO_SIZE = 80;
 const INPUT_H = 36;
@@ -102,6 +103,8 @@ const mbtiOptions: Option[] = [{ label: '未選択', value: '' }, ...MBTI_TYPES.
 
 const EMPTY_FORM: FriendInput = {
   name: '',
+  familyName: '',
+  givenName: '',
   nickname: '',
   origin: '',
   residence: '',
@@ -426,6 +429,9 @@ export default function EditScreen() {
   const params = useLocalSearchParams<{
     id?: string;
     name?: string;
+    familyName?: string;
+    givenName?: string;
+    hasSplitName?: string;
     nickname?: string;
     birthday?: string;
     height?: string;
@@ -480,9 +486,16 @@ export default function EditScreen() {
     setDislikeSuggestions(getMergedCommonItemLabels('dislike'));
     if (!friendId) {
       if (fromScan) {
+        const nameParts = resolvePersonNameParts({
+          familyName: getParam(params.hasSplitName) === '1' ? getParam(params.familyName) : undefined,
+          givenName: getParam(params.hasSplitName) === '1' ? getParam(params.givenName) : undefined,
+          name: getParam(params.name),
+        });
         setForm({
           ...EMPTY_FORM,
-          name: getParam(params.name),
+          name: nameParts.name,
+          familyName: nameParts.familyName,
+          givenName: nameParts.givenName,
           nickname: getParam(params.nickname),
           birthday: getParam(params.birthday),
           height: parseOptionalNumber(getParam(params.height)),
@@ -505,6 +518,8 @@ export default function EditScreen() {
     savedPhotoUriRef.current = friend.photoUri;
     setForm({
       name: friend.name,
+      familyName: friend.familyName,
+      givenName: friend.givenName,
       nickname: friend.nickname,
       origin: friend.origin,
       residence: friend.residence,
@@ -524,7 +539,7 @@ export default function EditScreen() {
       episodes: friend.episodes,
       sayings: friend.sayings,
     });
-  }, [friendId, fromScan, params.birthday, params.height, params.mbti, params.name, params.nickname, params.origin, params.residence, params.weight, router]);
+  }, [friendId, fromScan, params.birthday, params.familyName, params.givenName, params.hasSplitName, params.height, params.mbti, params.name, params.nickname, params.origin, params.residence, params.weight, router]);
 
   useFocusEffect(
     useCallback(() => {
@@ -582,9 +597,9 @@ export default function EditScreen() {
     setForm((prev) => ({ ...prev, [key]: Number.isNaN(parsed) ? null : parsed }));
   };
 
-  const trimmedName = form.name.trim();
-  const nameIsValid = trimmedName.length > 0;
+  const nameIsValid = isPersonNameValid(form.familyName, form.givenName);
   const showNameError = nameSaveAttempted && !nameIsValid;
+  const displayNamePreview = joinPersonName(form.familyName, form.givenName);
 
   const handleSave = () => {
     if (!nameIsValid) {
@@ -592,9 +607,12 @@ export default function EditScreen() {
       return;
     }
 
+    const nameParts = resolvePersonNameParts(form);
     const payload: FriendInput = {
       ...form,
-      name: trimmedName,
+      name: nameParts.name,
+      familyName: nameParts.familyName,
+      givenName: nameParts.givenName,
       nickname: form.nickname.trim(),
       origin: form.origin.trim(),
       residence: form.residence.trim(),
@@ -699,17 +717,23 @@ export default function EditScreen() {
       <FormScreenBody>
         <FormScreenSection>
           <Pressable
-            style={styles.basicInfoToggle}
+            style={[
+              styles.basicInfoToggle,
+              {
+                backgroundColor: content.contentInputBg,
+                borderColor: basicInfoExpanded ? content.contentBorder : content.contentText,
+              },
+            ]}
             onPress={() => setBasicInfoExpanded((open) => !open)}
             accessibilityRole="button"
             accessibilityState={{ expanded: basicInfoExpanded }}
-            accessibilityLabel="基本情報"
+            accessibilityLabel={basicInfoExpanded ? '基本情報を閉じる' : '基本情報を開く'}
           >
             <View style={styles.basicInfoToggleMain}>
               <Text style={[styles.basicInfoToggleTitle, contentTextStyle(content)]}>基本情報</Text>
               {!basicInfoExpanded ? (
                 <Text style={[styles.basicInfoToggleSummary, contentMutedTextStyle(content)]} numberOfLines={1}>
-                  {[form.name.trim() || '名前未設定', form.nickname.trim(), form.category.trim()]
+                  {[displayNamePreview || '名前未設定', form.nickname.trim(), form.category.trim()]
                     .filter(Boolean)
                     .join(' · ')}
                 </Text>
@@ -719,11 +743,24 @@ export default function EditScreen() {
                 </Text>
               )}
             </View>
-            <Ionicons
-              name={basicInfoExpanded ? 'chevron-up' : 'chevron-down'}
-              size={18}
-              color={content.contentTextSecondary}
-            />
+            <View
+              style={[
+                styles.basicInfoToggleAction,
+                {
+                  backgroundColor: 'transparent',
+                  borderColor: content.contentBorder,
+                },
+              ]}
+            >
+              <Text style={[styles.basicInfoToggleActionText, contentTextStyle(content)]}>
+                {basicInfoExpanded ? '閉じる' : '開く'}
+              </Text>
+              <Ionicons
+                name={basicInfoExpanded ? 'chevron-up' : 'chevron-down'}
+                size={16}
+                color={content.contentText}
+              />
+            </View>
           </Pressable>
 
           {basicInfoExpanded ? (
@@ -754,17 +791,28 @@ export default function EditScreen() {
 
             <View style={styles.profileNameFields}>
               <View style={styles.nameFieldBlock}>
+                <FormRow label="苗字">
+                  <TextInput
+                    value={form.familyName}
+                    onChangeText={(text) => updateText('familyName', text)}
+                    style={[styles.input, contentInputStyle(content), showNameError && styles.inputNameError]}
+                    placeholder="苗字"
+                    placeholderTextColor={content.contentTextSecondary}
+                  />
+                </FormRow>
                 <FormRow label="名前">
                   <TextInput
-                    value={form.name}
-                    onChangeText={(text) => updateText('name', text)}
+                    value={form.givenName}
+                    onChangeText={(text) => updateText('givenName', text)}
                     style={[styles.input, contentInputStyle(content), showNameError && styles.inputNameError]}
-                    placeholder="苗字 名前"
+                    placeholder="名前"
                     placeholderTextColor={content.contentTextSecondary}
                   />
                 </FormRow>
                 {showNameError ? (
-                  <Text style={[styles.nameErrorText, { marginLeft: fieldIndent }]}>名前は必須項目です</Text>
+                  <Text style={[styles.nameErrorText, { marginLeft: fieldIndent }]}>
+                    苗字か名前のどちらかを入力してください
+                  </Text>
                 ) : null}
               </View>
               <FormRow label="通称">
@@ -918,10 +966,10 @@ export default function EditScreen() {
           resetKey={friendId || 'new'}
         />
         <DynamicInputList
-          title="性格"
+          title="特徴"
           values={form.personalities}
           onChange={(values) => setForm((prev) => ({ ...prev, personalities: values }))}
-          placeholder="性格を登録する"
+          placeholder="特徴を登録する"
           suggestionCandidates={personalitySuggestions}
           resetKey={friendId || 'new'}
         />
@@ -1188,9 +1236,12 @@ const styles = StyleSheet.create({
   basicInfoToggle: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingVertical: 4,
-    marginBottom: 4,
+    gap: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderWidth: 1.5,
+    borderRadius: Radius.sm,
   },
   basicInfoToggleMain: {
     flex: 1,
@@ -1198,8 +1249,8 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   basicInfoToggleTitle: {
-    fontSize: 15,
-    fontWeight: '700',
+    fontSize: 16,
+    fontWeight: '800',
   },
   basicInfoToggleSummary: {
     fontSize: 12,
@@ -1208,6 +1259,19 @@ const styles = StyleSheet.create({
   basicInfoToggleHint: {
     fontSize: 12,
     lineHeight: 16,
+  },
+  basicInfoToggleAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: Radius.sm,
+    borderWidth: 1,
+  },
+  basicInfoToggleActionText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   descriptionInput: {
     minHeight: 72,

@@ -1106,6 +1106,7 @@ export default function EventScreen() {
                       chips={chips}
                       visibilityMode={episode.visibilityMode}
                       photoUris={episodePhotoUrisById.get(episode.id)}
+                      unfilled={episode.pendingReview === true}
                       onPress={() => handleOpenLinkedEpisode(episode)}
                       style={styles.linkedEpisodeCard}
                     />

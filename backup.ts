@@ -11,6 +11,8 @@ import { createBackupPayload, importBackupPayload, initializeDatabase } from './
 import {
   FRIENDDEX_BACKUP_TABLE_NAMES,
   FRIENDDEX_BACKUP_V1_TABLE_NAMES,
+  FRIENDDEX_BACKUP_V4_TABLE_NAMES,
+  FRIENDDEX_BACKUP_V5_TABLE_NAMES,
   FriendDexBackup,
   FriendDexBackupTableName,
 } from './types';
@@ -26,12 +28,35 @@ const isBackupRow = (value: unknown): value is Record<string, string | number | 
   );
 };
 
+const requiredTablesForVersion = (version: FriendDexBackup['version']): readonly string[] => {
+  if (version === 6) {
+    return FRIENDDEX_BACKUP_TABLE_NAMES;
+  }
+  if (version === 5) {
+    return FRIENDDEX_BACKUP_V5_TABLE_NAMES;
+  }
+  if (version === 4 || version === 3) {
+    return FRIENDDEX_BACKUP_V4_TABLE_NAMES;
+  }
+  if (version === 2) {
+    return [...FRIENDDEX_BACKUP_V1_TABLE_NAMES, 'episode_photos'];
+  }
+  return FRIENDDEX_BACKUP_V1_TABLE_NAMES;
+};
+
 export const isFriendDexBackup = (value: unknown): value is FriendDexBackup => {
   if (!value || typeof value !== 'object') {
     return false;
   }
   const candidate = value as Partial<FriendDexBackup>;
-  if (candidate.version !== 1 && candidate.version !== 2 && candidate.version !== 3 && candidate.version !== 4) {
+  if (
+    candidate.version !== 1 &&
+    candidate.version !== 2 &&
+    candidate.version !== 3 &&
+    candidate.version !== 4 &&
+    candidate.version !== 5 &&
+    candidate.version !== 6
+  ) {
     return false;
   }
   if (typeof candidate.exportedAt !== 'string') {
@@ -40,12 +65,7 @@ export const isFriendDexBackup = (value: unknown): value is FriendDexBackup => {
   if (!candidate.tables || typeof candidate.tables !== 'object') {
     return false;
   }
-  const requiredTables =
-    candidate.version === 4 || candidate.version === 3
-      ? FRIENDDEX_BACKUP_TABLE_NAMES
-      : candidate.version === 2
-        ? ([...FRIENDDEX_BACKUP_V1_TABLE_NAMES, 'episode_photos'] as const)
-        : FRIENDDEX_BACKUP_V1_TABLE_NAMES;
+  const requiredTables = requiredTablesForVersion(candidate.version);
   return requiredTables.every((tableName) => {
     const rows = candidate.tables?.[tableName as FriendDexBackupTableName];
     return Array.isArray(rows) && rows.every(isBackupRow);

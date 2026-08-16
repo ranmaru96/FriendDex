@@ -54,6 +54,8 @@ const FIELD_LABELS: Record<string, string> = {
 type QrPayload = {
   userId: string;
   publicFields: string[];
+  familyName?: string;
+  givenName?: string;
 } & Partial<Record<QrKey, string | number | null>>;
 
 const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | null): string => {
@@ -79,6 +81,11 @@ const buildQrData = (profile: Profile): QrPayload => {
       data[key as QrKey] = profile[key as QrKey];
     }
   });
+
+  if (publicFields.includes('name')) {
+    data.familyName = profile.familyName;
+    data.givenName = profile.givenName;
+  }
 
   return data;
 };

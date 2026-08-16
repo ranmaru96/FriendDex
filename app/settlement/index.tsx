@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { InteractionManager, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Theme, Radius, Spacing } from '@/constants/theme';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
@@ -142,7 +142,10 @@ export default function SettlementScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadFriends();
+      const task = InteractionManager.runAfterInteractions(() => {
+        loadFriends();
+      });
+      return () => task.cancel();
     }, [loadFriends])
   );
 
@@ -290,7 +293,7 @@ export default function SettlementScreen() {
     setFormError('');
     setTitle('');
     setParticipants([]);
-    router.push({ pathname: '/settlement/[roomId]', params: { roomId: room.id } });
+    router.push({ pathname: '/settlement-room', params: { roomId: room.id } });
   }, [counterpartyFriendIds, createRoom, router, title]);
 
   const transferSections = useMemo(() => {
@@ -382,8 +385,6 @@ export default function SettlementScreen() {
         header={
           <PillTabBar tabs={SETTLEMENT_TABS} activeTab={activeTab} onTabChange={setActiveTab} perTabColors />
         }
-        keyboardAware={activeTab === 'groups' || activeTab === 'individual'}
-        extraScrollHeight={24}
         scrollContentStyle={styles.scrollContent}
       >
         <View
@@ -476,7 +477,7 @@ export default function SettlementScreen() {
                   key={room.id}
                   room={room}
                   onPress={() =>
-                    router.push({ pathname: '/settlement/[roomId]', params: { roomId: room.id } })
+                    router.push({ pathname: '/settlement-room', params: { roomId: room.id } })
                   }
                 />
               ))
@@ -491,7 +492,7 @@ export default function SettlementScreen() {
                     room={room}
                     settled
                     onPress={() =>
-                      router.push({ pathname: '/settlement/[roomId]', params: { roomId: room.id } })
+                      router.push({ pathname: '/settlement-room', params: { roomId: room.id } })
                     }
                   />
                 ))}
@@ -649,6 +650,7 @@ export default function SettlementScreen() {
 
 const styles = StyleSheet.create({
   scrollContent: {
+    paddingTop: Spacing.md,
     paddingBottom: 40,
     gap: Spacing.md,
   },

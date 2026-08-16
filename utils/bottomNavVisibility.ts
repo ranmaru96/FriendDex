@@ -12,6 +12,9 @@ const HIDE_HEADER_PATHS = [
   'scan',
   'qr-import',
   'shuffle',
+  'settlement',
+  'settlement-room',
+  'relationship-map',
   'follows',
   'friends',
   'task-edit',
@@ -52,7 +55,14 @@ export function getActiveTab(pathname: string): BottomNavTabKey | null {
   /** 設定などは下部タブを出すが、どのタブ上でもない（タップで各タブへ移れる） */
   if (pathname.includes('/appsettings')) return null;
   if (pathname.includes('/calendar')) return 'calendar';
-  if (pathname.includes('/shuffle') || pathname.includes('/settlement')) return 'tools';
+  if (
+    pathname.includes('/shuffle') ||
+    pathname.includes('/settlement') ||
+    pathname.includes('/settlement-room') ||
+    pathname.includes('/relationship-map')
+  ) {
+    return 'tools';
+  }
   if (pathname.includes('/episode')) return 'episode';
   if (pathname.includes('/tools')) return 'tools';
   if (

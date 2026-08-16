@@ -12,16 +12,22 @@ import { ScreenTopBar } from '../components/screen/ScreenTopBar';
 import { SharedHeaderFrame } from '../components/screen/SharedHeaderFrame';
 import { AppThemeProvider, useAppTheme } from '../contexts/AppThemeContext';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
+import { SettlementMockProvider } from '../contexts/SettlementMockContext';
 import {
   SharedHeaderChromeProvider,
   useSharedHeaderChrome,
 } from '../contexts/SharedHeaderChromeContext';
 import { UiPreviewProvider, useUiKit } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
-import { getActiveTab, shouldHideBottomNav, shouldHideHeader } from '../utils/bottomNavVisibility';
+import {
+  getActiveTab,
+  shouldHideBottomNav,
+  shouldHideHeader,
+} from '../utils/bottomNavVisibility';
 import { resolveStackAnimation } from '../utils/tabTransition';
 import { initializeDatabase } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
+import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
 
 const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'index',
@@ -39,20 +45,28 @@ function PastEventConversionScheduler() {
 function AppShellHeader() {
   const pathname = usePathname();
   const hideHeader = shouldHideHeader(pathname);
+  const hideBottomNav = shouldHideBottomNav(pathname);
   const kit = useUiKit();
   const { colors } = useAppTheme();
-  const { detailHeader } = useSharedHeaderChrome();
+  const { detailHeader, subToolHeader } = useSharedHeaderChrome();
   const isDetailRoute = pathname.includes('/detail');
   const useSharedChrome = kit.sharedHeaderChrome;
   const showDetailChrome = isDetailRoute && detailHeader != null;
+  /** 下部タブ付きサブツールはヘッダー枠の高さを維持して上下ジャンプを防ぐ */
+  const showSubToolChrome = hideHeader && !hideBottomNav;
 
-  if (useSharedChrome && (isDetailRoute || !hideHeader)) {
+  if (useSharedChrome && (isDetailRoute || !hideHeader || showSubToolChrome)) {
+    const useSubToolBar = showSubToolChrome && !isDetailRoute;
     return (
       <SharedHeaderFrame
         backgroundColor={
-          showDetailChrome ? colors.screenBackground : colors.headerBackground
+          showDetailChrome || useSubToolBar
+            ? colors.screenBackground
+            : colors.headerBackground
         }
-        borderColor={showDetailChrome ? colors.topBarBorder : colors.headerBorder}
+        borderColor={
+          showDetailChrome || useSubToolBar ? colors.topBarBorder : colors.headerBorder
+        }
       >
         {showDetailChrome && detailHeader ? (
           <ScreenTopBar
@@ -98,6 +112,18 @@ function AppShellHeader() {
               </Pressable>
             }
           />
+        ) : useSubToolBar ? (
+          subToolHeader ? (
+            <ScreenTopBar
+              title={subToolHeader.title}
+              variant="plain"
+              onBack={subToolHeader.onBack}
+              right={subToolHeader.right}
+              titleTrailing={subToolHeader.titleTrailing}
+            />
+          ) : (
+            <View style={{ minHeight: SHARED_HEADER_BAR_MIN_HEIGHT }} />
+          )
         ) : (
           <AppHeader embedded />
         )}
@@ -150,9 +176,11 @@ export default function RootLayout() {
           <DetailDesignProvider>
             <UiPreviewProvider>
               <SharedHeaderChromeProvider>
-                <EventNotificationHandler />
-                <PastEventConversionScheduler />
-                <AppShell />
+                <SettlementMockProvider>
+                  <EventNotificationHandler />
+                  <PastEventConversionScheduler />
+                  <AppShell />
+                </SettlementMockProvider>
               </SharedHeaderChromeProvider>
             </UiPreviewProvider>
           </DetailDesignProvider>

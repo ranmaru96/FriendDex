@@ -1,4 +1,5 @@
 import type { Friend, FriendInput, MBTIType } from '@/types';
+import { resolvePersonNameParts } from '@/utils/personName';
 
 export const QR_PUBLIC_FIELD_KEYS = [
   'name',
@@ -17,6 +18,8 @@ export type QrScanPayload = {
   userId: string;
   publicFields: string[];
   name?: string;
+  familyName?: string;
+  givenName?: string;
   nickname?: string;
   birthday?: string;
   height?: number | string | null;
@@ -40,6 +43,8 @@ export const parseQrScanPayload = (data: string): QrScanPayload | null => {
       userId: parsed.userId.trim(),
       publicFields,
       name: typeof parsed.name === 'string' ? parsed.name : undefined,
+      familyName: typeof parsed.familyName === 'string' ? parsed.familyName : undefined,
+      givenName: typeof parsed.givenName === 'string' ? parsed.givenName : undefined,
       nickname: typeof parsed.nickname === 'string' ? parsed.nickname : undefined,
       birthday: typeof parsed.birthday === 'string' ? parsed.birthday : undefined,
       height:
@@ -65,7 +70,12 @@ export const qrPayloadToFriendFields = (payload: QrScanPayload): Partial<FriendI
   const fields: Partial<FriendInput> = {};
   payload.publicFields.forEach((key) => {
     if (!isQrPublicFieldKey(key)) return;
-    if (key === 'name' && payload.name != null) fields.name = payload.name;
+    if (key === 'name' && (payload.name != null || payload.familyName != null || payload.givenName != null)) {
+      const parts = resolvePersonNameParts(payload);
+      fields.name = parts.name;
+      fields.familyName = parts.familyName;
+      fields.givenName = parts.givenName;
+    }
     if (key === 'nickname' && payload.nickname != null) fields.nickname = payload.nickname;
     if (key === 'birthday' && payload.birthday != null) fields.birthday = payload.birthday;
     if (key === 'height' && payload.height != null) fields.height = parsePayloadNumber(payload.height);
@@ -84,6 +94,8 @@ export const mergeFriendInputWithPublicFields = (
 ): FriendInput => {
   const merged: FriendInput = {
     name: existing.name,
+    familyName: existing.familyName,
+    givenName: existing.givenName,
     nickname: existing.nickname,
     origin: existing.origin,
     residence: existing.residence,
@@ -106,7 +118,12 @@ export const mergeFriendInputWithPublicFields = (
 
   publicFields.forEach((key) => {
     if (!isQrPublicFieldKey(key)) return;
-    if (key === 'name') merged.name = incoming.name;
+    if (key === 'name') {
+      const parts = resolvePersonNameParts(incoming);
+      merged.name = parts.name;
+      merged.familyName = parts.familyName;
+      merged.givenName = parts.givenName;
+    }
     if (key === 'nickname') merged.nickname = incoming.nickname;
     if (key === 'birthday') merged.birthday = incoming.birthday;
     if (key === 'height') merged.height = incoming.height;
@@ -140,10 +157,16 @@ const getParam = (value: string | string[] | undefined): string => {
   return value ?? '';
 };
 
+export const qrPayloadDisplayName = (payload: QrScanPayload): string =>
+  resolvePersonNameParts(payload).name;
+
 export const qrPayloadToRouteParams = (payload: QrScanPayload): Record<string, string> => ({
   scannedUserId: payload.userId,
   publicFields: JSON.stringify(payload.publicFields),
   name: payload.name ?? '',
+  familyName: payload.familyName ?? '',
+  givenName: payload.givenName ?? '',
+  hasSplitName: payload.familyName != null || payload.givenName != null ? '1' : '0',
   nickname: payload.nickname ?? '',
   birthday: payload.birthday ?? '',
   height: payload.height?.toString() ?? '',
@@ -167,6 +190,8 @@ export const routeParamsToQrPayload = (
       userId,
       publicFields,
       name: getParam(params.name) || undefined,
+      familyName: getParam(params.hasSplitName) === '1' ? getParam(params.familyName) : undefined,
+      givenName: getParam(params.hasSplitName) === '1' ? getParam(params.givenName) : undefined,
       nickname: getParam(params.nickname) || undefined,
       birthday: getParam(params.birthday) || undefined,
       height: getParam(params.height) || undefined,
@@ -182,8 +207,15 @@ export const routeParamsToQrPayload = (
 
 export const buildFriendInputFromQrPayload = (payload: QrScanPayload): FriendInput => {
   const fromQr = qrPayloadToFriendFields(payload);
+  const nameParts = resolvePersonNameParts({
+    familyName: fromQr.familyName,
+    givenName: fromQr.givenName,
+    name: fromQr.name,
+  });
   return {
-    name: fromQr.name ?? '',
+    name: nameParts.name,
+    familyName: nameParts.familyName,
+    givenName: nameParts.givenName,
     nickname: fromQr.nickname ?? '',
     origin: fromQr.origin ?? '',
     residence: fromQr.residence ?? '',

@@ -425,6 +425,7 @@ export default function EpisodeScreen() {
     const episodeInput = {
       ...episodeFields,
       eventId: resolved.eventId,
+      pendingReview: false,
     };
 
     if (episodeForm.editingEpisodeId) {
@@ -533,6 +534,7 @@ export default function EpisodeScreen() {
                     visibilityMode={canManage ? row.episode.visibilityMode : undefined}
                     posterName={posterName}
                     photoUris={photoUrisByEpisodeId.get(row.episode.id) ?? []}
+                    unfilled={row.episode.pendingReview === true}
                     onPress={openDetail}
                   />
                 );

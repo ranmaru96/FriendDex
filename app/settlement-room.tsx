@@ -306,8 +306,6 @@ export default function SettlementRoomDetailScreen() {
             <Ionicons name="pencil-outline" size={18} color={topBarText} />
           </Pressable>
         }
-        keyboardAware
-        extraScrollHeight={24}
         scrollContentStyle={styles.scrollContent}
       >
         <View style={formStyles.formCard}>
@@ -494,6 +492,7 @@ export default function SettlementRoomDetailScreen() {
 
 const styles = StyleSheet.create({
   scrollContent: {
+    paddingTop: Spacing.md,
     paddingBottom: 40,
     gap: Spacing.md,
   },

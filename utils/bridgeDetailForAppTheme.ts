@@ -6,7 +6,7 @@ import type { DetailDesignBundle, DetailThemeColors, InfoChipStyle } from '@/con
 const BLACK_INFO_CHIP_STYLES: Record<string, InfoChipStyle> = {
   所属: { backgroundColor: 'transparent', borderColor: '#a78bfa', color: '#c4b5fd', borderWidth: 1.5 },
   経験: { backgroundColor: 'transparent', borderColor: '#4ade80', color: '#86efac', borderWidth: 1.5 },
-  性格: { backgroundColor: 'transparent', borderColor: '#60a5fa', color: '#93c5fd', borderWidth: 1.5 },
+  特徴: { backgroundColor: 'transparent', borderColor: '#60a5fa', color: '#93c5fd', borderWidth: 1.5 },
   好物: { backgroundColor: 'transparent', borderColor: '#fbbf24', color: '#fde68a', borderWidth: 1.5 },
   苦手: { backgroundColor: 'transparent', borderColor: '#f87171', color: '#fca5a5', borderWidth: 1.5 },
   公開先: { backgroundColor: 'transparent', borderColor: 'rgba(255,255,255,0.28)', color: '#A8A8A8', borderWidth: 1.5 },

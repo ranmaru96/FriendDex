@@ -93,6 +93,8 @@ export type EpisodeListCardProps = {
   embedded?: boolean;
   /** タイトルを折り返して全文表示（エピソード詳細ページ用） */
   titleMultiline?: boolean;
+  /** 自動生成後に未記載のとき、タイトル横へ（未記入）を付ける */
+  unfilled?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -117,6 +119,7 @@ export function EpisodeListCard({
   onDelete,
   embedded = false,
   titleMultiline = false,
+  unfilled = false,
   style,
 }: EpisodeListCardProps) {
   const kit = useUiKit();
@@ -233,7 +236,7 @@ export function EpisodeListCard({
         ]}
       >
         <View style={titleMultiline ? undefined : styles.photoRightTitleRow}>
-          <EpisodeCardTitle title={title} multiline={titleMultiline} fillRow={false} />
+          <EpisodeCardTitle title={title} multiline={titleMultiline} fillRow={false} unfilled={unfilled} />
         </View>
         {photoRightMetaRow}
       </Pressable>
@@ -401,7 +404,7 @@ export function EpisodeListCard({
           pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
         ]}
       >
-        <EpisodeCardTitle title={title} multiline={titleMultiline} />
+        <EpisodeCardTitle title={title} multiline={titleMultiline} unfilled={unfilled} />
         <Text style={[styles.episodeCardDateText, { color: content.contentTextSecondary }]}>
           {resolvedDateLabel}
         </Text>

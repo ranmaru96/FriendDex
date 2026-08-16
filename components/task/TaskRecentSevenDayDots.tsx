@@ -16,8 +16,9 @@ function todayAccentColor(isBlack: boolean): string {
 type TaskRecentSevenDayDotsProps = {
   days: RecentSevenDayItem[];
   content: AppThemeContentColorFields;
-  /** 一覧向けは小さく、詳細向けは通常 */
+  /** 一覧向けは小さく、詳細向けは通常。comfortable は編集一覧向け */
   compact?: boolean;
+  comfortable?: boolean;
   showCaptions?: boolean;
 };
 
@@ -26,20 +27,21 @@ export function TaskRecentSevenDayDots({
   days,
   content,
   compact = true,
+  comfortable = false,
   showCaptions = false,
 }: TaskRecentSevenDayDotsProps) {
   const isBlack = useAppThemeOptional()?.variant === 'black';
   const fill = taskCompletionFillColor(Boolean(isBlack));
   const todayAccent = todayAccentColor(Boolean(isBlack));
-  const size = compact ? 12 : 28;
-  const outerSize = size + (compact ? 6 : 8);
+  const size = comfortable ? 16 : compact ? 12 : 28;
+  const outerSize = size + (comfortable ? 7 : compact ? 6 : 8);
 
   if (days.length === 0) {
     return null;
   }
 
   return (
-    <View style={[styles.row, compact ? styles.rowCompact : styles.rowDetail]}>
+    <View style={[styles.row, compact || comfortable ? styles.rowCompact : styles.rowDetail]}>
       {days.map((item) => {
         const done = item.done;
         const today = item.isToday;

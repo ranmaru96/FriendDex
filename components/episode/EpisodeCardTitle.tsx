@@ -10,12 +10,15 @@ type EpisodeCardTitleProps = {
    * 写真右レイアウトの縦積みでは false にして、固定高さ時にタイトル〜日付の隙間が開かないようにする。
    */
   fillRow?: boolean;
+  /** 自動生成後に未記載のとき、タイトル横へ（未記入）を付ける */
+  unfilled?: boolean;
 };
 
 export function EpisodeCardTitle({
   title,
   multiline = false,
   fillRow = true,
+  unfilled = false,
 }: EpisodeCardTitleProps) {
   const content = useContentColors();
   const displayTitle = title.trim() || '-';
@@ -27,17 +30,38 @@ export function EpisodeCardTitle({
         multiline ? styles.episodeCardTitleWrapMultiline : null,
       ]}
     >
-      <View style={[styles.episodeCardTitleUnderline, { borderBottomColor: content.contentBorder }]}>
-        <Text
-          style={[
-            styles.episodeCardTitle,
-            { color: content.contentText },
-            multiline ? null : styles.episodeCardTitleSingleLine,
-          ]}
-          numberOfLines={multiline ? undefined : 1}
-        >
-          {displayTitle}
-        </Text>
+      <View
+        style={[
+          styles.episodeCardTitleUnderline,
+          { borderBottomColor: content.contentBorder },
+          unfilled ? styles.episodeCardTitleUnderlineFill : null,
+        ]}
+      >
+        <View style={styles.episodeCardTitleRow}>
+          <Text
+            style={[
+              styles.episodeCardTitle,
+              { color: content.contentText },
+              multiline ? null : styles.episodeCardTitleSingleLine,
+              styles.episodeCardTitleText,
+            ]}
+            numberOfLines={multiline ? undefined : 1}
+          >
+            {displayTitle}
+          </Text>
+          {unfilled ? (
+            <Text
+              style={[
+                styles.episodeCardUnfilled,
+                { color: content.contentTextSecondary },
+                multiline ? null : styles.episodeCardTitleSingleLine,
+              ]}
+              numberOfLines={1}
+            >
+              （未記入）
+            </Text>
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -65,9 +89,26 @@ const styles = StyleSheet.create({
     paddingBottom: 4,
     borderBottomWidth: 1,
   },
+  episodeCardTitleUnderlineFill: {
+    alignSelf: 'stretch',
+  },
   episodeCardTitle: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  episodeCardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    maxWidth: '100%',
+  },
+  episodeCardTitleText: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  episodeCardUnfilled: {
+    flexShrink: 0,
+    fontSize: 13,
+    fontWeight: '600',
   },
   /** 一覧カード: TITLE_ROW_HEIGHT(23) = line 18 + underline pad 4 + border 1 */
   episodeCardTitleSingleLine: {

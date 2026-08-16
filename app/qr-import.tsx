@@ -30,6 +30,7 @@ import {
   buildFriendInputFromQrPayload,
   getPublicFieldLabels,
   namesLikelyMatch,
+  qrPayloadDisplayName,
   qrPayloadToRouteParams,
   routeParamsToQrPayload,
 } from '@/utils/qrScanHelpers';
@@ -44,6 +45,9 @@ export default function QrImportScreen() {
     scannedUserId?: string;
     publicFields?: string;
     name?: string;
+    familyName?: string;
+    givenName?: string;
+    hasSplitName?: string;
     nickname?: string;
     birthday?: string;
     height?: string;
@@ -89,7 +93,7 @@ export default function QrImportScreen() {
     const highlighted = new Set<string>();
     if (!payload) return highlighted;
     friends.forEach((friend) => {
-      if (namesLikelyMatch(payload.name, friend.name)) {
+      if (namesLikelyMatch(qrPayloadDisplayName(payload), friend.name)) {
         highlighted.add(friend.id);
       }
     });
@@ -176,7 +180,7 @@ export default function QrImportScreen() {
     return null;
   }
 
-  const displayName = payload.name?.trim() || '（名前なし）';
+  const displayName = qrPayloadDisplayName(payload).trim() || '（名前なし）';
 
   return (
     <SubToolScreenTemplate useTopBar={false} scrollable={false} contentStyle={styles.container}>

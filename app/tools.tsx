@@ -1,6 +1,15 @@
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { Spacing } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useContentColors } from '@/utils/useContentColors';
@@ -17,6 +26,8 @@ type ToolEntry = {
   description: string;
   icon: keyof typeof Ionicons.glyphMap;
   route?: string;
+  /** 遷移開始が重いとき、カード上にローディングを出す */
+  showOpenLoading?: boolean;
 };
 
 const TOOL_ENTRIES: ToolEntry[] = [
@@ -27,6 +38,7 @@ const TOOL_ENTRIES: ToolEntry[] = [
       'グループ精算と、グループ不要の個別貸し借り登録。清算タブで会ごと・人ごとの精算を確認できます。',
     icon: 'cash-outline',
     route: '/settlement',
+    showOpenLoading: true,
   },
   {
     id: 'shuffle',
@@ -39,8 +51,9 @@ const TOOL_ENTRIES: ToolEntry[] = [
   {
     id: 'relationship-map',
     title: '相関図作成',
-    description: '近日公開したい',
+    description: '人物をグリッド上に配置して、関係を整理する相関図を作成します。',
     icon: 'git-network-outline',
+    route: '/relationship-map',
   },
   {
     id: 'want-to-visit',
@@ -48,12 +61,38 @@ const TOOL_ENTRIES: ToolEntry[] = [
     description: '近日公開したい',
     icon: 'location-outline',
   },
+  {
+    id: 'your-answer',
+    title: 'あなたの～は？',
+    description: '近日公開したい',
+    icon: 'chatbubble-ellipses-outline',
+  },
 ];
 
 export default function ToolsScreen() {
   const router = useRouter();
   const kit = useUiKit();
   const content = useContentColors();
+  const [openingId, setOpeningId] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      setOpeningId(null);
+    }, [])
+  );
+
+  const openTool = (entry: ToolEntry) => {
+    if (!entry.route || openingId) return;
+    if (entry.showOpenLoading) {
+      setOpeningId(entry.id);
+      // くるくるを先に描画してから push（遷移開始の遅延でも「押した」が分かる）
+      requestAnimationFrame(() => {
+        router.push(entry.route!);
+      });
+      return;
+    }
+    router.push(entry.route);
+  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
@@ -70,38 +109,46 @@ export default function ToolsScreen() {
           </Text>
         ) : null}
 
-        {TOOL_ENTRIES.map((entry) => (
-          <Pressable
-            key={entry.id}
-            style={[
-              styles.toolCard,
-              contentSurfaceStyle(content),
-              { borderRadius: kit.toolScreenCardBorderRadius },
-            ]}
-            disabled={!entry.route}
-            onPress={() => {
-              if (entry.route) {
-                router.push(entry.route);
-              }
-            }}
-          >
-            <View
+        {TOOL_ENTRIES.map((entry) => {
+          const isOpening = openingId === entry.id;
+          return (
+            <Pressable
+              key={entry.id}
               style={[
-                styles.toolIconWrap,
-                contentTagStyle(content),
-                { borderRadius: kit.toolScreenIconBorderRadius },
+                styles.toolCard,
+                contentSurfaceStyle(content),
+                { borderRadius: kit.toolScreenCardBorderRadius },
+                isOpening && styles.toolCardOpening,
               ]}
+              disabled={!entry.route || openingId != null}
+              onPress={() => openTool(entry)}
             >
-              <Ionicons name={entry.icon} size={22} color={content.contentTextSecondary} />
-            </View>
-            <View style={styles.toolTextWrap}>
-              <Text style={[styles.toolTitle, contentTextStyle(content)]}>{entry.title}</Text>
-              <Text style={[styles.toolDescription, contentMutedTextStyle(content)]}>
-                {entry.description}
-              </Text>
-            </View>
-          </Pressable>
-        ))}
+              <View
+                style={[
+                  styles.toolIconWrap,
+                  contentTagStyle(content),
+                  { borderRadius: kit.toolScreenIconBorderRadius },
+                ]}
+              >
+                <Ionicons name={entry.icon} size={22} color={content.contentTextSecondary} />
+              </View>
+              <View style={styles.toolTextWrap}>
+                <Text style={[styles.toolTitle, contentTextStyle(content)]}>{entry.title}</Text>
+                <Text style={[styles.toolDescription, contentMutedTextStyle(content)]}>
+                  {entry.description}
+                </Text>
+              </View>
+              {isOpening ? (
+                <View style={styles.openingOverlay} pointerEvents="none">
+                  <View
+                    style={[styles.openingOverlayDim, { backgroundColor: kit.screenBackground }]}
+                  />
+                  <ActivityIndicator color={content.contentTextSecondary} />
+                </View>
+              ) : null}
+            </Pressable>
+          );
+        })}
       </ScrollView>
     </SafeAreaView>
   );
@@ -130,6 +177,10 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     borderWidth: 1,
     padding: Spacing.md,
+    overflow: 'hidden',
+  },
+  toolCardOpening: {
+    opacity: 0.92,
   },
   toolIconWrap: {
     width: 40,
@@ -149,5 +200,14 @@ const styles = StyleSheet.create({
   toolDescription: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  openingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  openingOverlayDim: {
+    ...StyleSheet.absoluteFillObject,
+    opacity: 0.55,
   },
 });

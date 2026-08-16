@@ -95,7 +95,7 @@ export const mainDetailDesign: DetailDesignBundle = {
   infoChipStyles: {
     所属: { backgroundColor: 'transparent', borderColor: '#7c5cbf', color: '#5c3a9f', borderWidth: 1.5 },
     経験: { backgroundColor: 'transparent', borderColor: '#2a9d5a', color: '#1a6b38', borderWidth: 1.5 },
-    性格: { backgroundColor: 'transparent', borderColor: '#3a7abf', color: '#1a4a8a', borderWidth: 1.5 },
+    特徴: { backgroundColor: 'transparent', borderColor: '#3a7abf', color: '#1a4a8a', borderWidth: 1.5 },
     好物: { backgroundColor: 'transparent', borderColor: '#c49a00', color: '#7a5f00', borderWidth: 1.5 },
     苦手: { backgroundColor: 'transparent', borderColor: '#bf4a3a', color: '#8a1a1a', borderWidth: 1.5 },
     公開先: { backgroundColor: 'transparent', borderColor: '#b8b8c4', color: '#888888', borderWidth: 1.5 },

@@ -7,14 +7,13 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
-import { deleteEpisode, getMyself, initializeDatabase } from '@/db';
+import { deleteEpisode, dismissPendingReviewPrompt, getMyself, initializeDatabase } from '@/db';
 import type { PendingReviewEpisodeRef } from '@/types';
 import { resolveEpisodeRecordOwnerId } from '@/utils/episodeHelpers';
 
 type PendingEpisodeReviewModalProps = {
   visible: boolean;
   items: PendingReviewEpisodeRef[];
-  onClose: () => void;
   onChanged: () => void;
   onWrite: (item: PendingReviewEpisodeRef) => void;
 };
@@ -22,7 +21,6 @@ type PendingEpisodeReviewModalProps = {
 export function PendingEpisodeReviewModal({
   visible,
   items,
-  onClose,
   onChanged,
   onWrite,
 }: PendingEpisodeReviewModalProps) {
@@ -34,6 +32,12 @@ export function PendingEpisodeReviewModal({
   }
 
   const progressLabel = items.length > 1 ? `残り ${items.length} 件` : '';
+
+  const handleLater = () => {
+    initializeDatabase();
+    dismissPendingReviewPrompt(currentItem.episode.id);
+    onChanged();
+  };
 
   const handleDelete = () => {
     Alert.alert('本当に削除しますか？', 'この自動生成エピソードを削除します。', [
@@ -61,7 +65,7 @@ export function PendingEpisodeReviewModal({
   };
 
   return (
-    <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
+    <Modal transparent animationType="fade" visible={visible} onRequestClose={handleLater}>
       <View style={styles.backdrop}>
         <View style={[styles.card, contentSurfaceStyle(content)]}>
           <Text style={[styles.heading, contentTextStyle(content)]}>
@@ -76,7 +80,7 @@ export function PendingEpisodeReviewModal({
           <Text style={[styles.meta, contentMutedTextStyle(content)]}>{currentItem.episode.date}</Text>
 
           <View style={styles.actions}>
-            <Pressable style={[styles.secondaryButton, contentInputStyle(content)]} onPress={onClose}>
+            <Pressable style={[styles.secondaryButton, contentInputStyle(content)]} onPress={handleLater}>
               <Text style={[styles.secondaryButtonText, contentTextStyle(content)]}>後で</Text>
             </Pressable>
             <Pressable style={styles.dangerButton} onPress={handleDelete}>

@@ -49,18 +49,18 @@ import {
 import { useContentColors } from '@/utils/useContentColors';
 
 /** 公開先は概念・データ種別として残し、導入までタブ表示のみ隠す。予定タグはカレンダー側管理のため除外。 */
-type CommonItemTabKey = '所属' | '経験' | '性格' | '好物' | '苦手' | '公開先';
+type CommonItemTabKey = '所属' | '経験' | '特徴' | '好物' | '苦手' | '公開先';
 type Option = { label: string; value: string };
 
 const TAGS_SCROLL_MAX_HEIGHT = Math.max(120, Dimensions.get('window').height - 280);
 const TAB_TAG_DIVIDER_INSET = Spacing.md;
 
-const VISIBLE_TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '性格', '好物', '苦手'];
+const VISIBLE_TAB_ORDER: CommonItemTabKey[] = ['所属', '経験', '特徴', '好物', '苦手'];
 
 const TAB_ICONS: Record<CommonItemTabKey, ComponentProps<typeof Ionicons>['name']> = {
   所属: 'people-outline',
   経験: 'school-outline',
-  性格: 'happy-outline',
+  特徴: 'happy-outline',
   好物: 'heart-outline',
   苦手: 'thumbs-down-outline',
   公開先: 'eye-outline',
@@ -76,7 +76,7 @@ const DEFAULT_CHIP_STYLE = {
 const TAB_KIND_MAP: Record<CommonItemTabKey, CommonItemKind> = {
   所属: 'affiliation',
   経験: 'experience',
-  性格: 'personality',
+  特徴: 'personality',
   好物: 'like',
   苦手: 'dislike',
   公開先: 'visibility_group',

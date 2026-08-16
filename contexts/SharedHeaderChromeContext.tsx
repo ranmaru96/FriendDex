@@ -17,26 +17,42 @@ export type SharedDetailHeaderConfig = {
   mutedIconColor: string;
 };
 
+export type SharedSubToolHeaderConfig = {
+  title?: string;
+  onBack?: () => void;
+  right?: ReactNode;
+  titleTrailing?: ReactNode;
+};
+
 type SharedHeaderChromeContextValue = {
   detailHeader: SharedDetailHeaderConfig | null;
   setDetailHeader: (config: SharedDetailHeaderConfig | null) => void;
+  subToolHeader: SharedSubToolHeaderConfig | null;
+  setSubToolHeader: (config: SharedSubToolHeaderConfig | null) => void;
 };
 
 const SharedHeaderChromeContext = createContext<SharedHeaderChromeContextValue | null>(null);
 
 export function SharedHeaderChromeProvider({ children }: { children: ReactNode }) {
   const [detailHeader, setDetailHeaderState] = useState<SharedDetailHeaderConfig | null>(null);
+  const [subToolHeader, setSubToolHeaderState] = useState<SharedSubToolHeaderConfig | null>(null);
 
   const setDetailHeader = useCallback((config: SharedDetailHeaderConfig | null) => {
     setDetailHeaderState(config);
+  }, []);
+
+  const setSubToolHeader = useCallback((config: SharedSubToolHeaderConfig | null) => {
+    setSubToolHeaderState(config);
   }, []);
 
   const value = useMemo(
     () => ({
       detailHeader,
       setDetailHeader,
+      subToolHeader,
+      setSubToolHeader,
     }),
-    [detailHeader, setDetailHeader]
+    [detailHeader, setDetailHeader, subToolHeader, setSubToolHeader]
   );
 
   return (

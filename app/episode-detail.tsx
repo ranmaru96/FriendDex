@@ -328,6 +328,7 @@ export default function EpisodeDetailScreen() {
               chips={chips}
               visibility={visibility}
               visibilityMode={episode.visibilityMode}
+              unfilled={episode.pendingReview === true}
               eventTitle={parentEvent?.title.trim() || null}
               eventEpisodeTag={parentEvent?.episodeTag}
               onEventPress={
@@ -342,15 +343,6 @@ export default function EpisodeDetailScreen() {
               style={styles.episodeHeaderPreview}
             />
 
-            {hasDescription ? (
-              <>
-                <SectionDivider style={sectionDividerStyle} />
-                <PanelSection style={styles.detailSection}>
-                  <Text style={[styles.descriptionText, contentTextStyle(content)]}>{episode.description}</Text>
-                </PanelSection>
-              </>
-            ) : null}
-
             {hasPhotos ? (
               <>
                 <SectionDivider style={sectionDividerStyle} />
@@ -364,6 +356,15 @@ export default function EpisodeDetailScreen() {
                       {photos.map((photo, index) => renderPhotoFrame(photo, index))}
                     </ScrollView>
                   </View>
+                </PanelSection>
+              </>
+            ) : null}
+
+            {hasDescription ? (
+              <>
+                <SectionDivider style={sectionDividerStyle} />
+                <PanelSection style={styles.detailSection}>
+                  <Text style={[styles.descriptionText, contentTextStyle(content)]}>{episode.description}</Text>
                 </PanelSection>
               </>
             ) : null}
