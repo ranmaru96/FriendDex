@@ -13,6 +13,8 @@ import {
   FRIENDDEX_BACKUP_V1_TABLE_NAMES,
   FRIENDDEX_BACKUP_V4_TABLE_NAMES,
   FRIENDDEX_BACKUP_V5_TABLE_NAMES,
+  FRIENDDEX_BACKUP_V6_TABLE_NAMES,
+  FRIENDDEX_BACKUP_V7_TABLE_NAMES,
   FriendDexBackup,
   FriendDexBackupTableName,
 } from './types';
@@ -29,8 +31,14 @@ const isBackupRow = (value: unknown): value is Record<string, string | number | 
 };
 
 const requiredTablesForVersion = (version: FriendDexBackup['version']): readonly string[] => {
-  if (version === 6) {
+  if (version === 8) {
     return FRIENDDEX_BACKUP_TABLE_NAMES;
+  }
+  if (version === 7) {
+    return FRIENDDEX_BACKUP_V7_TABLE_NAMES;
+  }
+  if (version === 6) {
+    return FRIENDDEX_BACKUP_V6_TABLE_NAMES;
   }
   if (version === 5) {
     return FRIENDDEX_BACKUP_V5_TABLE_NAMES;
@@ -55,7 +63,9 @@ export const isFriendDexBackup = (value: unknown): value is FriendDexBackup => {
     candidate.version !== 3 &&
     candidate.version !== 4 &&
     candidate.version !== 5 &&
-    candidate.version !== 6
+    candidate.version !== 6 &&
+    candidate.version !== 7 &&
+    candidate.version !== 8
   ) {
     return false;
   }

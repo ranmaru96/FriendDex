@@ -318,6 +318,12 @@ export type Task = {
    */
   trackCompletions: boolean;
   completedAt: string | null;
+  /** リマインド（初期OFF）。グループ内の定期はグループ設定を使う */
+  remindEnabled: boolean;
+  /** 臨時のみ。0=期限当日、1〜30=何日前 */
+  remindDaysBefore: number | null;
+  /** `HH:mm` ローカル時刻 */
+  remindTime: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -333,6 +339,9 @@ export type TaskInput = {
   eventId?: string | null;
   groupId?: string | null;
   trackCompletions?: boolean;
+  remindEnabled?: boolean;
+  remindDaysBefore?: number | null;
+  remindTime?: string | null;
 };
 
 /** 1グループに入れられるタスクの上限（定期・臨時とも） */
@@ -351,6 +360,9 @@ export type TaskGroup = {
   recurrenceUnit: TaskRecurrenceUnit | null;
   recurrenceConfig: TaskRecurrenceConfig | null;
   sortOrder: number;
+  /** 定期グループのみ。要対応日の時刻リマインド */
+  remindEnabled: boolean;
+  remindTime: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -362,6 +374,8 @@ export type TaskGroupInput = {
   recurrenceUnit?: TaskRecurrenceUnit | null;
   recurrenceConfig?: TaskRecurrenceConfig | null;
   sortOrder?: number;
+  remindEnabled?: boolean;
+  remindTime?: string | null;
 };
 
 export type TaskCompletion = {
@@ -439,6 +453,60 @@ export type Relationship = {
   style: RelationshipArrowStyle;
 };
 
+/** 「あなたの～は？」の質問 */
+export type YourQuestion = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type YourQuestionInput = {
+  title: string;
+};
+
+/** 1質問 × 1人物の回答 */
+export type YourQuestionAnswer = {
+  id: string;
+  questionId: string;
+  friendId: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type YourQuestionAnswerInput = {
+  questionId: string;
+  friendId: string;
+  body: string;
+};
+
+/** 行ってみたい・食べてみたい */
+export type WishlistKind = 'visit' | 'eat';
+
+export type WishlistItem = {
+  id: string;
+  kind: WishlistKind;
+  name: string;
+  purposeTags: string[];
+  location: string | null;
+  cuisine: string | null;
+  memo: string | null;
+  link: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type WishlistItemInput = {
+  kind: WishlistKind;
+  name: string;
+  purposeTags?: string[];
+  location?: string | null;
+  cuisine?: string | null;
+  memo?: string | null;
+  link?: string | null;
+};
+
 export type RelationshipInput = {
   mapId: string;
   fromType: RelationshipEndpointType;
@@ -479,8 +547,8 @@ export const FRIENDDEX_BACKUP_V5_TABLE_NAMES = [
   'shuffle_pools',
 ] as const;
 
-/** 現行バックアップ対象（v6: 相関図を追加） */
-export const FRIENDDEX_BACKUP_TABLE_NAMES = [
+/** v6: 相関図 */
+export const FRIENDDEX_BACKUP_V6_TABLE_NAMES = [
   ...FRIENDDEX_BACKUP_V5_TABLE_NAMES,
   'relationship_maps',
   'relationship_map_members',
@@ -489,12 +557,25 @@ export const FRIENDDEX_BACKUP_TABLE_NAMES = [
   'relationships',
 ] as const;
 
+/** v7: あなたの～は？ */
+export const FRIENDDEX_BACKUP_V7_TABLE_NAMES = [
+  ...FRIENDDEX_BACKUP_V6_TABLE_NAMES,
+  'your_questions',
+  'your_question_answers',
+] as const;
+
+/** 現行バックアップ対象（v8: 行ってみたい・食べてみたい） */
+export const FRIENDDEX_BACKUP_TABLE_NAMES = [
+  ...FRIENDDEX_BACKUP_V7_TABLE_NAMES,
+  'wishlist_items',
+] as const;
+
 export type FriendDexBackupTableName = (typeof FRIENDDEX_BACKUP_TABLE_NAMES)[number];
 
 export type FriendDexBackupRow = Record<string, string | number | null>;
 
 export type FriendDexBackup = {
-  version: 1 | 2 | 3 | 4 | 5 | 6;
+  version: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
   exportedAt: string;
   tables: Record<(typeof FRIENDDEX_BACKUP_V1_TABLE_NAMES)[number], FriendDexBackupRow[]> & {
     episode_photos?: FriendDexBackupRow[];
@@ -516,6 +597,9 @@ export type FriendDexBackup = {
     relationship_groups?: FriendDexBackupRow[];
     relationship_group_members?: FriendDexBackupRow[];
     relationships?: FriendDexBackupRow[];
+    your_questions?: FriendDexBackupRow[];
+    your_question_answers?: FriendDexBackupRow[];
+    wishlist_items?: FriendDexBackupRow[];
   };
 };
 

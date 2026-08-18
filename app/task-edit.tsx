@@ -18,6 +18,7 @@ import {
   FormScreenTemplate,
 } from '@/components/screen-templates';
 import { FormRow } from '@/components/ui/FormRow';
+import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
 import { DayRollPicker, MonthDayRollPicker, RollScrollLockProvider, useRollScrollLock } from '@/components/ui/RollSelect';
 import { EpisodeEventLinkField } from '@/components/episode/EpisodeEventLinkField';
@@ -78,6 +79,13 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
+import { TaskRemindFields } from '@/components/task/TaskRemindFields';
+import { requestNotificationPermissionOnFirstCreate } from '@/utils/eventNotifications';
+import {
+  DEFAULT_REMIND_TIME,
+  clampRemindTimeToNow,
+  syncTaskReminders,
+} from '@/utils/taskNotifications';
 
 const GROUP_NONE = '';
 const GROUP_NEW = '__new__';
@@ -159,6 +167,9 @@ export default function TaskEditScreen() {
   const [groupPickerVisible, setGroupPickerVisible] = useState(false);
   const [trackCompletions, setTrackCompletions] = useState(true);
   const [initialTrackCompletions, setInitialTrackCompletions] = useState(true);
+  const [remindEnabled, setRemindEnabled] = useState(false);
+  const [remindDaysBefore, setRemindDaysBefore] = useState(0);
+  const [remindTime, setRemindTime] = useState(DEFAULT_REMIND_TIME);
   const [ready, setReady] = useState(false);
 
   useFocusEffect(
@@ -204,6 +215,9 @@ export default function TaskEditScreen() {
         setNewGroupTitle('');
         setTrackCompletions(task.trackCompletions);
         setInitialTrackCompletions(task.trackCompletions);
+        setRemindEnabled(task.remindEnabled);
+        setRemindDaysBefore(task.remindDaysBefore ?? 0);
+        setRemindTime(task.remindTime ?? DEFAULT_REMIND_TIME);
         setCompletions(task.kind === 'recurring' ? getTaskCompletions(taskId) : []);
       } else if (presetEventId) {
         setKind('temporary');
@@ -213,12 +227,18 @@ export default function TaskEditScreen() {
         setDueDate(event ? eventStartDateKey(event) : '');
         setGroupSelect(GROUP_NONE);
         setNewGroupTitle('');
+        setRemindEnabled(false);
+        setRemindDaysBefore(0);
+        setRemindTime(DEFAULT_REMIND_TIME);
         setCompletions([]);
       } else {
         setEventLinkMode('none');
         setKind(presetKind ?? 'temporary');
         setGroupSelect(presetGroupId || GROUP_NONE);
         setNewGroupTitle('');
+        setRemindEnabled(false);
+        setRemindDaysBefore(0);
+        setRemindTime(DEFAULT_REMIND_TIME);
         setCompletions([]);
       }
       setReady(true);
@@ -368,6 +388,13 @@ export default function TaskEditScreen() {
       }
     }
 
+    const joiningRecurringGroup = Boolean(resolvedGroupId) && effectiveKind === 'recurring';
+    const nextRemindEnabled = joiningRecurringGroup
+      ? false
+      : effectiveKind === 'temporary'
+        ? Boolean(dueDate.trim()) && remindEnabled
+        : pace === 'scheduled' && remindEnabled;
+
     const input: TaskInput = {
       kind: effectiveKind,
       title: trimmed,
@@ -379,6 +406,9 @@ export default function TaskEditScreen() {
       eventId: resolvedEventId,
       groupId: resolvedGroupId,
       trackCompletions: effectiveKind === 'recurring' ? nextTrack : true,
+      remindEnabled: nextRemindEnabled,
+      remindDaysBefore: nextRemindEnabled && effectiveKind === 'temporary' ? remindDaysBefore : null,
+      remindTime: nextRemindEnabled ? clampRemindTimeToNow(remindTime || DEFAULT_REMIND_TIME) : null,
     };
 
     if (isEditing && initialTrackCompletions && !nextTrack && effectiveKind === 'recurring') {
@@ -398,6 +428,12 @@ export default function TaskEditScreen() {
         return;
       }
     }
+    void (async () => {
+      if (nextRemindEnabled) {
+        await requestNotificationPermissionOnFirstCreate();
+      }
+      await syncTaskReminders();
+    })();
     router.back();
   };
 
@@ -475,6 +511,7 @@ export default function TaskEditScreen() {
 
   const confirmDeleteFinally = () => {
     deleteTask(taskId);
+    void syncTaskReminders();
     router.back();
   };
 
@@ -755,7 +792,12 @@ export default function TaskEditScreen() {
                       { borderWidth: 1 },
                       pace === item.key ? contentSelectedOptionStyle(content) : null,
                     ]}
-                    onPress={() => setPace(item.key)}
+                    onPress={() => {
+                      setPace(item.key);
+                      if (item.key === 'unpaced') {
+                        setRemindEnabled(false);
+                      }
+                    }}
                   >
                     <Text style={contentTextStyle(content)}>{item.label}</Text>
                   </Pressable>
@@ -767,6 +809,27 @@ export default function TaskEditScreen() {
                 </Text>
               ) : null}
             </FormScreenSection>
+
+            {groupSelect !== GROUP_NONE ? (
+              <FormScreenSection>
+                <Text style={[styles.hint, contentMutedTextStyle(content), { marginTop: 0 }]}>
+                  リマインドはグループの設定が使われます。グループに入れると、このタスク側の時刻設定は解除されます。
+                </Text>
+              </FormScreenSection>
+            ) : pace === 'scheduled' ? (
+              <FormScreenSection>
+                <TaskRemindFields
+                  mode="time-only"
+                  enabled={remindEnabled}
+                  daysBefore={remindDaysBefore}
+                  time={remindTime}
+                  onEnabledChange={setRemindEnabled}
+                  onDaysBeforeChange={setRemindDaysBefore}
+                  onTimeChange={setRemindTime}
+                  hint="対象日の当日に通知します"
+                />
+              </FormScreenSection>
+            ) : null}
 
             {pace === 'scheduled' ? (
               <>
@@ -912,12 +975,11 @@ export default function TaskEditScreen() {
                         {showMonthDayPicker ? (
                           <View style={styles.pickerWrap}>
                             <DayRollPicker day={monthDay} onChange={setMonthDay} />
-                            <Pressable
-                              style={[styles.pickerDoneButton, contentTagStyle(content)]}
+                            <PickerDoneOverlay
+                              style={contentTagStyle(content)}
+                              textStyle={contentTextStyle(content)}
                               onPress={() => setShowMonthDayPicker(false)}
-                            >
-                              <Text style={[styles.pickerDoneText, contentTextStyle(content)]}>完了</Text>
-                            </Pressable>
+                            />
                           </View>
                         ) : null}
                       </View>
@@ -987,12 +1049,11 @@ export default function TaskEditScreen() {
                             setYearDay(day);
                           }}
                         />
-                        <Pressable
-                          style={[styles.pickerDoneButton, contentTagStyle(content)]}
+                        <PickerDoneOverlay
+                          style={contentTagStyle(content)}
+                          textStyle={contentTextStyle(content)}
                           onPress={() => setShowYearDatePicker(false)}
-                        >
-                          <Text style={[styles.pickerDoneText, contentTextStyle(content)]}>完了</Text>
-                        </Pressable>
+                        />
                       </View>
                     ) : null}
                   </FormScreenSection>
@@ -1031,6 +1092,7 @@ export default function TaskEditScreen() {
                       onPress={() => {
                         setDueDate('');
                         setShowDuePicker(false);
+                        setRemindEnabled(false);
                       }}
                     >
                       <Text style={contentTextStyle(content)}>クリア</Text>
@@ -1058,15 +1120,28 @@ export default function TaskEditScreen() {
                       setDueDate(formatDateKey(selected));
                     }}
                   />
-                  <Pressable
-                    style={[styles.pickerDoneButton, contentTagStyle(content)]}
+                  <PickerDoneOverlay
+                    style={contentTagStyle(content)}
+                    textStyle={contentTextStyle(content)}
                     onPress={() => setShowDuePicker(false)}
-                  >
-                    <Text style={[styles.pickerDoneText, contentTextStyle(content)]}>完了</Text>
-                  </Pressable>
+                  />
                 </View>
               ) : null}
             </FormScreenSection>
+            {dueDate ? (
+              <FormScreenSection>
+                <TaskRemindFields
+                  mode="temporary"
+                  enabled={remindEnabled}
+                  daysBefore={remindDaysBefore}
+                  time={remindTime}
+                  onEnabledChange={setRemindEnabled}
+                  onDaysBeforeChange={setRemindDaysBefore}
+                  onTimeChange={setRemindTime}
+                  hint="期限の何日前の、指定した時刻に通知します。グループに入っている場合は通知にグループ名も出ます。"
+                />
+              </FormScreenSection>
+            ) : null}
             <FormScreenSection>
               <FormRow
                 label={'対応する\n予定'}
@@ -1308,20 +1383,9 @@ const styles = StyleSheet.create({
   },
   pickerWrap: {
     marginTop: 8,
-    gap: 8,
   },
   picker: {
     alignSelf: 'stretch',
-  },
-  pickerDoneButton: {
-    alignSelf: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-  },
-  pickerDoneText: {
-    fontWeight: '700',
-    fontSize: 13,
   },
   historyEmpty: {
     marginTop: 0,

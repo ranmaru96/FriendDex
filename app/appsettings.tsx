@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   Modal,
   Pressable,
@@ -20,11 +20,13 @@ import {
 import { CompletedTaskRetention, Profile } from '../types';
 import { COMPLETED_TASK_RETENTION_OPTIONS } from '@/utils/taskHelpers';
 import { APP_THEME_OPTIONS, isMonochromeAppTheme } from '@/constants/appThemes';
+import { DESIGN_PATTERN_OPTIONS, usesOffsetChrome } from '@/constants/designPatterns';
 import {
   EPISODE_LIST_PHOTO_LAYOUT_OPTIONS,
   UI_PREVIEW_OPTIONS,
 } from '@/constants/uiKit';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { OffsetCard } from '@/components/ui/OffsetCard';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { useAppTheme } from '../contexts/AppThemeContext';
 import { useUiKit, useUiPreview } from '../contexts/UiPreviewContext';
@@ -141,9 +143,24 @@ const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | nu
   return profiles.find((profile) => profile.friendId === myselfFriendId)?.id ?? '';
 };
 
+function SettingsGroup({
+  children,
+  themedGroup,
+  isCodex,
+}: {
+  children: ReactNode;
+  themedGroup: object | null;
+  isCodex: boolean;
+}) {
+  if (isCodex) {
+    return <OffsetCard style={{ marginHorizontal: 16 }}>{children}</OffsetCard>;
+  }
+  return <View style={[styles.group, themedGroup]}>{children}</View>;
+}
+
 export default function AppSettingsScreen() {
   const router = useRouter();
-  const { variant: appThemeVariant, setVariant: setAppThemeVariant, colors: appThemeColors } =
+  const { variant: appThemeVariant, setVariant: setAppThemeVariant, colors: appThemeColors, patternId, setPatternId } =
     useAppTheme();
   const isMonochromeTheme = isMonochromeAppTheme(appThemeVariant);
   const {
@@ -168,8 +185,7 @@ export default function AppSettingsScreen() {
             group: {
               borderWidth: 1,
               borderColor: appThemeColors.headerBorder,
-              backgroundColor:
-                appThemeVariant === 'black' ? '#1c1c1c' : Theme.bgSurface,
+              backgroundColor: appThemeColors.contentCard,
             },
             separator: {
               height: 1,
@@ -239,7 +255,7 @@ export default function AppSettingsScreen() {
       scrollContentStyle={styles.scrollContent}
     >
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>本人設定</Text>
-        <View style={[styles.group, themed.group]}>
+        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
           {profiles.length === 0 ? (
             <View style={styles.row}>
               <Text style={[styles.emptyText, themed.emptyText]}>プロフィールを登録してください</Text>
@@ -254,10 +270,10 @@ export default function AppSettingsScreen() {
               />
             </View>
           )}
-        </View>
+        </SettingsGroup>
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>アプリ全体テーマ</Text>
-        <View style={[styles.group, themed.group]}>
+        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
           {APP_THEME_OPTIONS.map((option, index) => (
             <View key={option.value}>
               {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
@@ -269,13 +285,32 @@ export default function AppSettingsScreen() {
               </Pressable>
             </View>
           ))}
-        </View>
+        </SettingsGroup>
         <Text style={[styles.hint, themed.hint]}>
-          全画面のベース背景・サブ画面トップバー色を切り替えます（ホワイト / ブラック）
+          明るさを切り替えます。コーデックスはホワイト＝紙／ブラック＝HUD、静かな図鑑はホワイト＝紙／ブラック＝夜です。
+        </Text>
+
+        <Text style={[styles.sectionHeader, themed.sectionHeader]}>デザインパターン</Text>
+        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
+          {DESIGN_PATTERN_OPTIONS.map((option, index) => (
+            <View key={option.id}>
+              {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
+              <Pressable style={styles.row} onPress={() => setPatternId(option.id)}>
+                <View style={{ flex: 1, paddingRight: 12 }}>
+                  <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
+                  <Text style={[styles.patternSummary, themed.hint]}>{option.summary}</Text>
+                </View>
+                {patternId === option.id ? <Text style={styles.selectedMark}>✓</Text> : null}
+              </Pressable>
+            </View>
+          ))}
+        </SettingsGroup>
+        <Text style={[styles.hint, themed.hint]}>
+          色と形（ずらし影）を全画面に反映します。角ブラケットはコーデックスの主なカードのみです。
         </Text>
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>UI プレビュー</Text>
-        <View style={[styles.group, themed.group]}>
+        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
           {UI_PREVIEW_OPTIONS.map((option, index) => (
             <View key={option.value}>
               {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
@@ -287,7 +322,7 @@ export default function AppSettingsScreen() {
               </Pressable>
             </View>
           ))}
-        </View>
+        </SettingsGroup>
         <Text style={[styles.hint, themed.hint]}>
           アプリ全体のレイアウト・枠・フォームの試作版を切り替えます。Detail
           の配色とは別の設定です。Home↔Detail のヘッダー枠共有は Stable /
@@ -297,7 +332,7 @@ export default function AppSettingsScreen() {
         {uiPreviewVariant === 'preview' ? (
           <>
             <Text style={[styles.sectionHeader, themed.sectionHeader]}>エピソードカード写真（試作）</Text>
-            <View style={[styles.group, themed.group]}>
+            <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
               {EPISODE_LIST_PHOTO_LAYOUT_OPTIONS.map((option, index) => (
                 <View key={option.value}>
                   {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
@@ -312,7 +347,7 @@ export default function AppSettingsScreen() {
                   </Pressable>
                 </View>
               ))}
-            </View>
+            </SettingsGroup>
             <Text style={[styles.hint, themed.hint]}>
               Preview モード時のみ。一覧カード右側の写真の高さ・枚数レイアウトを切り替えます
             </Text>
@@ -320,7 +355,7 @@ export default function AppSettingsScreen() {
         ) : null}
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>タスク</Text>
-        <View style={[styles.group, themed.group]}>
+        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
           {COMPLETED_TASK_RETENTION_OPTIONS.map((option, index) => (
             <View key={option.value}>
               {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
@@ -337,24 +372,24 @@ export default function AppSettingsScreen() {
               </Pressable>
             </View>
           ))}
-        </View>
+        </SettingsGroup>
         <Text style={[styles.hint, themed.hint]}>
           完了した臨時タスクを自動削除するまでの期間です（デフォルト1か月）
         </Text>
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>フォロー</Text>
-        <View style={[styles.group, themed.group]}>
+        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
           <Pressable style={styles.row} onPress={() => router.push('/follows')}>
             <Text style={[styles.rowLabel, themed.rowLabel]}>フォロー一覧</Text>
             <Text style={[styles.rowChevron, themed.hint]}>›</Text>
           </Pressable>
-        </View>
+        </SettingsGroup>
         <Text style={[styles.hint, themed.hint]}>
           QRコードで追加した人など、フォロー関連の確認はここから開きます
         </Text>
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>バックアップ</Text>
-        <View style={[styles.group, themed.group]}>
+        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
           <Pressable style={styles.row} onPress={confirmAndExportBackup}>
             <Text style={[styles.rowLabel, themed.rowLabel]}>バックアップを書き出す</Text>
           </Pressable>
@@ -362,11 +397,11 @@ export default function AppSettingsScreen() {
           <Pressable style={styles.row} onPress={confirmAndImportBackup}>
             <Text style={[styles.rowLabel, themed.rowLabel]}>バックアップから復元する</Text>
           </Pressable>
-        </View>
+        </SettingsGroup>
         <Text style={[styles.hint, themed.hint]}>自動バックアップは起動時に自動実行されます</Text>
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>今後の構想</Text>
-        <View style={[styles.group, themed.group]}>
+        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
           <View style={styles.roadmapBlock}>
             <Text style={[styles.roadmapTitle, themed.rowLabel]}>一覧FABのフォローアイコン</Text>
             <Text style={[styles.roadmapBody, themed.hint]}>
@@ -410,7 +445,7 @@ export default function AppSettingsScreen() {
               行ってみたい・食べてみたい場所
             </Text>
             <Text style={[styles.roadmapBody, themed.hint]}>
-              ・ver001以降の構想。行きたい場所や飲食店を登録・管理する。
+              ・ツールから利用可能。行きたい場所（名前・目的タグ）と食べたい店（場所フォルダ・料理の種類）を記録する。
             </Text>
           </View>
           <View style={[styles.separator, themed.separator]} />
@@ -446,7 +481,7 @@ export default function AppSettingsScreen() {
               ・ver001以降の構想。エピソード・メモ等への音声入力対応。
             </Text>
           </View>
-        </View>
+        </SettingsGroup>
         <Text style={[styles.hint, themed.hint]}>
           実装優先度や仕様が固まり次第、ここから着手予定のメモです
         </Text>
@@ -487,6 +522,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#0f172a',
     fontWeight: '500',
+  },
+  patternSummary: {
+    marginTop: 4,
+    fontSize: 12,
+    lineHeight: 16,
   },
   rowChevron: {
     fontSize: 22,

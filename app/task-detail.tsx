@@ -31,6 +31,7 @@ import {
   contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
+import { syncTaskReminders } from '@/utils/taskNotifications';
 import { Radius } from '@/constants/theme';
 import { StreakFlameIcon } from '@/components/ui/StreakFlameIcon';
 import { TaskRecentSevenDayDots, taskCompletionFillColor } from '@/components/task/TaskRecentSevenDayDots';
@@ -131,6 +132,7 @@ export default function TaskDetailScreen() {
   const confirmDeleteFinally = () => {
     if (!task) return;
     deleteTask(task.id);
+    void syncTaskReminders();
     router.back();
   };
 
@@ -173,6 +175,7 @@ export default function TaskDetailScreen() {
     } else {
       completeTemporaryTask(task.id);
     }
+    void syncTaskReminders();
     reload();
   };
 

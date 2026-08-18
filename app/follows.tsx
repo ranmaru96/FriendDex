@@ -11,11 +11,15 @@ import {
   contentSurfaceStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { usesOffsetChrome } from '@/constants/designPatterns';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 
 export default function FollowsScreen() {
   const kit = useUiKit();
   const content = useContentColors();
+  const isCodex = usesOffsetChrome(useAppThemeOptional()?.patternId);
   const listPaddingHorizontal = kit.listScreenPaddingHorizontal;
   const borderRadius = kit.friendsScreenBorderRadius;
   const router = useRouter();
@@ -48,13 +52,14 @@ export default function FollowsScreen() {
             QRコードを読み取って追加した人がここに表示されます。
           </Text>
         ) : (
-          qrFriends.map((friend) => (
+          qrFriends.map((friend) => {
+            const row = (
             <Pressable
-              key={friend.id}
               style={[
                 styles.friendRow,
-                contentSurfaceStyle(content),
-                { borderRadius, borderWidth: 1 },
+                isCodex
+                  ? null
+                  : [contentSurfaceStyle(content), { borderRadius, borderWidth: 1 }],
               ]}
               onPress={() => router.push({ pathname: '/detail', params: { id: friend.id } })}
             >
@@ -72,7 +77,9 @@ export default function FollowsScreen() {
                 {formatScannedAtLabel(friend.scannedAt)}
               </Text>
             </Pressable>
-          ))
+            );
+            return isCodex ? <OffsetCard key={friend.id}>{row}</OffsetCard> : <View key={friend.id}>{row}</View>;
+          })
         )}
       </ScrollView>
     </SafeAreaView>

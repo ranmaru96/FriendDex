@@ -50,6 +50,13 @@ import {
   RelationshipMapInput,
   RelationshipMapMember,
   RelationshipMapMemberInput,
+  YourQuestion,
+  YourQuestionAnswer,
+  YourQuestionAnswerInput,
+  YourQuestionInput,
+  WishlistItem,
+  WishlistItemInput,
+  WishlistKind,
 } from './types';
 import { deletePersistedImages } from './utils/persistImageFile';
 import { normalizeEpisodeTag, normalizeEpisodeTime, compareEpisodesByEventDateTime } from './utils/episodeHelpers';
@@ -57,6 +64,7 @@ import { buildDefaultShufflePoolLabel, buildShuffleMemberSetKey, normalizeShuffl
 import { retentionToCutoffIso } from './utils/taskHelpers';
 import { mergeFriendInputWithPublicFields } from './utils/qrScanHelpers';
 import { resolvePersonNameParts } from './utils/personName';
+import { normalizeDesignPatternId, type DesignPatternId } from '@/constants/designPatterns';
 import type {
   MockSettlementExpense,
   MockSettlementRoom,
@@ -219,6 +227,9 @@ const RELATIONSHIP_MAP_MEMBERS_TABLE = 'relationship_map_members';
 const RELATIONSHIP_GROUPS_TABLE = 'relationship_groups';
 const RELATIONSHIP_GROUP_MEMBERS_TABLE = 'relationship_group_members';
 const RELATIONSHIPS_TABLE = 'relationships';
+const YOUR_QUESTIONS_TABLE = 'your_questions';
+const YOUR_QUESTION_ANSWERS_TABLE = 'your_question_answers';
+const WISHLIST_ITEMS_TABLE = 'wishlist_items';
 const MYSELF_KEY = 'myself_friend_id';
 
 const db = SQLite.openDatabaseSync(DB_NAME);
@@ -889,6 +900,10 @@ export const initializeDatabase = (): void => {
       due_date TEXT,
       event_id TEXT,
       group_id TEXT,
+      track_completions INTEGER NOT NULL DEFAULT 1,
+      remind_enabled INTEGER NOT NULL DEFAULT 0,
+      remind_days_before INTEGER,
+      remind_time TEXT,
       completed_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -911,6 +926,15 @@ export const initializeDatabase = (): void => {
       `ALTER TABLE ${TASKS_TABLE} ADD COLUMN track_completions INTEGER NOT NULL DEFAULT 1;`
     );
   }
+  if (!taskColumns.has('remind_enabled')) {
+    db.execSync(`ALTER TABLE ${TASKS_TABLE} ADD COLUMN remind_enabled INTEGER NOT NULL DEFAULT 0;`);
+  }
+  if (!taskColumns.has('remind_days_before')) {
+    db.execSync(`ALTER TABLE ${TASKS_TABLE} ADD COLUMN remind_days_before INTEGER;`);
+  }
+  if (!taskColumns.has('remind_time')) {
+    db.execSync(`ALTER TABLE ${TASKS_TABLE} ADD COLUMN remind_time TEXT;`);
+  }
   db.execSync(`CREATE INDEX IF NOT EXISTS idx_${TASKS_TABLE}_group_id ON ${TASKS_TABLE}(group_id);`);
 
   db.execSync(`
@@ -921,6 +945,8 @@ export const initializeDatabase = (): void => {
       pace TEXT,
       recurrence_unit TEXT,
       recurrence_config TEXT,
+      remind_enabled INTEGER NOT NULL DEFAULT 0,
+      remind_time TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -943,6 +969,14 @@ export const initializeDatabase = (): void => {
   }
   if (!taskGroupColumns.has('recurrence_config')) {
     db.execSync(`ALTER TABLE ${TASK_GROUPS_TABLE} ADD COLUMN recurrence_config TEXT;`);
+  }
+  if (!taskGroupColumns.has('remind_enabled')) {
+    db.execSync(
+      `ALTER TABLE ${TASK_GROUPS_TABLE} ADD COLUMN remind_enabled INTEGER NOT NULL DEFAULT 0;`
+    );
+  }
+  if (!taskGroupColumns.has('remind_time')) {
+    db.execSync(`ALTER TABLE ${TASK_GROUPS_TABLE} ADD COLUMN remind_time TEXT;`);
   }
   db.execSync(
     `CREATE INDEX IF NOT EXISTS idx_${TASK_GROUPS_TABLE}_kind ON ${TASK_GROUPS_TABLE}(kind);`
@@ -1046,6 +1080,67 @@ export const initializeDatabase = (): void => {
   db.execSync(
     `CREATE INDEX IF NOT EXISTS idx_${RELATIONSHIPS_TABLE}_map_id ON ${RELATIONSHIPS_TABLE}(map_id);`
   );
+
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${YOUR_QUESTIONS_TABLE} (
+      id TEXT PRIMARY KEY NOT NULL,
+      title TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${YOUR_QUESTIONS_TABLE}_updated_at ON ${YOUR_QUESTIONS_TABLE}(updated_at);`
+  );
+
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${YOUR_QUESTION_ANSWERS_TABLE} (
+      id TEXT PRIMARY KEY NOT NULL,
+      question_id TEXT NOT NULL,
+      friend_id TEXT NOT NULL,
+      body TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${YOUR_QUESTION_ANSWERS_TABLE}_question_id ON ${YOUR_QUESTION_ANSWERS_TABLE}(question_id);`
+  );
+  db.execSync(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_${YOUR_QUESTION_ANSWERS_TABLE}_question_friend ON ${YOUR_QUESTION_ANSWERS_TABLE}(question_id, friend_id);`
+  );
+
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${WISHLIST_ITEMS_TABLE} (
+      id TEXT PRIMARY KEY NOT NULL,
+      kind TEXT NOT NULL,
+      name TEXT NOT NULL,
+      purpose_tags TEXT NOT NULL DEFAULT '[]',
+      location TEXT,
+      cuisine TEXT,
+      memo TEXT,
+      link TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${WISHLIST_ITEMS_TABLE}_kind ON ${WISHLIST_ITEMS_TABLE}(kind);`
+  );
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${WISHLIST_ITEMS_TABLE}_location ON ${WISHLIST_ITEMS_TABLE}(location);`
+  );
+
+  const wishlistTableInfo = db.getAllSync<{ name: string }>(
+    `PRAGMA table_info(${WISHLIST_ITEMS_TABLE});`
+  );
+  const wishlistColumns = new Set(wishlistTableInfo.map((column) => column.name));
+  if (!wishlistColumns.has('memo')) {
+    db.execSync(`ALTER TABLE ${WISHLIST_ITEMS_TABLE} ADD COLUMN memo TEXT;`);
+  }
+  if (!wishlistColumns.has('link')) {
+    db.execSync(`ALTER TABLE ${WISHLIST_ITEMS_TABLE} ADD COLUMN link TEXT;`);
+  }
 
 const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COMMON_ITEM_OPTIONS_TABLE});`);
   const commonColumns = new Set(commonTableInfo.map((c) => c.name));
@@ -1616,6 +1711,7 @@ export const getMyself = (): string | null => {
 export const DETAIL_DESIGN_VARIANT_KEY = 'detail_design_variant';
 export const UI_PREVIEW_VARIANT_KEY = 'ui_preview_variant';
 export const APP_THEME_VARIANT_KEY = 'app_theme_variant';
+export const DESIGN_PATTERN_KEY = 'design_pattern_id';
 export const UI_CALENDAR_EVENT_TIME_DISPLAY_KEY = 'ui_calendar_event_time_display';
 export const UI_CALENDAR_EVENT_CARD_STYLE_KEY = 'ui_calendar_event_card_style';
 export const UI_EPISODE_LIST_PHOTO_LAYOUT_KEY = 'ui_episode_list_photo_layout';
@@ -1665,6 +1761,14 @@ export const getAppThemeVariant = (): 'default' | 'white' | 'black' => {
 
 export const setAppThemeVariant = (variant: 'default' | 'white' | 'black'): void => {
   setAppSetting(APP_THEME_VARIANT_KEY, variant);
+};
+
+export const getDesignPatternId = (): DesignPatternId => {
+  return normalizeDesignPatternId(getAppSetting(DESIGN_PATTERN_KEY));
+};
+
+export const setDesignPatternId = (patternId: DesignPatternId): void => {
+  setAppSetting(DESIGN_PATTERN_KEY, patternId);
 };
 
 export const getCalendarEventTimeDisplayOverride = (): 'column' => {
@@ -1899,6 +2003,7 @@ export const deleteFriend = (id: string): boolean => {
   const result = db.runSync(`DELETE FROM ${PROFILES_TABLE} WHERE friendId = ?;`, [id]);
   if (result.changes > 0) {
     deletePersistedImages(uris);
+    db.runSync(`DELETE FROM ${YOUR_QUESTION_ANSWERS_TABLE} WHERE friend_id = ?;`, [id]);
   }
   return result.changes > 0;
 };
@@ -4308,6 +4413,9 @@ const BACKUP_TABLE_SQL: Record<FriendDexBackupTableName, string> = {
   relationship_groups: RELATIONSHIP_GROUPS_TABLE,
   relationship_group_members: RELATIONSHIP_GROUP_MEMBERS_TABLE,
   relationships: RELATIONSHIPS_TABLE,
+  your_questions: YOUR_QUESTIONS_TABLE,
+  your_question_answers: YOUR_QUESTION_ANSWERS_TABLE,
+  wishlist_items: WISHLIST_ITEMS_TABLE,
 };
 
 const toBackupRow = (row: Record<string, unknown>): FriendDexBackupRow => {
@@ -4325,7 +4433,7 @@ const dumpBackupTable = (sqlTable: string): FriendDexBackupRow[] =>
 
 export const createBackupPayload = (): FriendDexBackup => {
   return {
-    version: 6,
+    version: 8,
     exportedAt: nowIso(),
     tables: {
       friend_profiles: dumpBackupTable(PROFILES_TABLE),
@@ -4350,6 +4458,9 @@ export const createBackupPayload = (): FriendDexBackup => {
       relationship_groups: dumpBackupTable(RELATIONSHIP_GROUPS_TABLE),
       relationship_group_members: dumpBackupTable(RELATIONSHIP_GROUP_MEMBERS_TABLE),
       relationships: dumpBackupTable(RELATIONSHIPS_TABLE),
+      your_questions: dumpBackupTable(YOUR_QUESTIONS_TABLE),
+      your_question_answers: dumpBackupTable(YOUR_QUESTION_ANSWERS_TABLE),
+      wishlist_items: dumpBackupTable(WISHLIST_ITEMS_TABLE),
     },
   };
 };
@@ -4404,6 +4515,9 @@ type TaskRow = {
   event_id: string | null;
   group_id: string | null;
   track_completions: number | null;
+  remind_enabled: number | null;
+  remind_days_before: number | null;
+  remind_time: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -4416,6 +4530,8 @@ type TaskGroupRow = {
   pace: string | null;
   recurrence_unit: string | null;
   recurrence_config: string | null;
+  remind_enabled: number | null;
+  remind_time: string | null;
   sort_order: number;
   created_at: string;
   updated_at: string;
@@ -4459,6 +4575,12 @@ const rowToTask = (row: TaskRow): Task => ({
   groupId: row.group_id?.trim() || null,
   trackCompletions: row.track_completions == null ? true : Boolean(row.track_completions),
   completedAt: row.completed_at,
+  remindEnabled: row.remind_enabled === 1,
+  remindDaysBefore:
+    row.remind_days_before == null
+      ? null
+      : Math.min(30, Math.max(0, Math.floor(Number(row.remind_days_before)))),
+  remindTime: row.remind_time?.trim() || null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -4487,6 +4609,8 @@ const rowToTaskGroup = (row: TaskGroupRow): TaskGroup => {
     recurrenceUnit,
     recurrenceConfig: pace === 'scheduled' ? parseTaskRecurrenceConfig(row.recurrence_config) : null,
     sortOrder: row.sort_order ?? 0,
+    remindEnabled: row.remind_enabled === 1,
+    remindTime: row.remind_time?.trim() || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -4681,13 +4805,15 @@ export const createTaskGroup = (input: TaskGroupInput): TaskGroup | null => {
     recurrenceUnit,
     recurrenceConfig,
     sortOrder,
+    remindEnabled: false,
+    remindTime: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
   db.runSync(
     `INSERT INTO ${TASK_GROUPS_TABLE} (
-      id, title, kind, pace, recurrence_unit, recurrence_config, sort_order, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      id, title, kind, pace, recurrence_unit, recurrence_config, remind_enabled, remind_time, sort_order, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
     [
       group.id,
       group.title,
@@ -4695,6 +4821,8 @@ export const createTaskGroup = (input: TaskGroupInput): TaskGroup | null => {
       group.pace,
       group.recurrenceUnit,
       group.recurrenceConfig ? JSON.stringify(group.recurrenceConfig) : null,
+      group.remindEnabled ? 1 : 0,
+      group.remindTime,
       group.sortOrder,
       group.createdAt,
       group.updatedAt,
@@ -4732,9 +4860,22 @@ export const updateTaskGroup = (groupId: string, input: TaskGroupInput): boolean
         ? input.recurrenceConfig
         : existing.recurrenceConfig ?? {}
       : null;
+  const remindEnabled =
+    kind === 'recurring'
+      ? input.remindEnabled !== undefined
+        ? Boolean(input.remindEnabled)
+        : existing.remindEnabled
+      : false;
+  const remindTime =
+    kind === 'recurring' && remindEnabled
+      ? input.remindTime !== undefined
+        ? input.remindTime?.trim() || '08:00'
+        : existing.remindTime || '08:00'
+      : null;
   const result = db.runSync(
     `UPDATE ${TASK_GROUPS_TABLE}
      SET title = ?, pace = ?, recurrence_unit = ?, recurrence_config = ?,
+         remind_enabled = ?, remind_time = ?,
          sort_order = COALESCE(?, sort_order), updated_at = ?
      WHERE id = ?;`,
     [
@@ -4742,6 +4883,8 @@ export const updateTaskGroup = (groupId: string, input: TaskGroupInput): boolean
       pace,
       recurrenceUnit,
       recurrenceConfig ? JSON.stringify(recurrenceConfig) : null,
+      remindEnabled ? 1 : 0,
+      remindTime,
       input.sortOrder ?? null,
       nowIso(),
       normalizedId,
@@ -4789,6 +4932,13 @@ export const createTask = (input: TaskInput): Task | null => {
       return null;
     }
   }
+  const joiningRecurringGroup = Boolean(groupId) && input.kind === 'recurring';
+  const remindEnabled = joiningRecurringGroup ? false : Boolean(input.remindEnabled);
+  const remindDaysBefore =
+    input.kind === 'temporary' && remindEnabled && input.dueDate?.trim()
+      ? Math.min(30, Math.max(0, Math.floor(input.remindDaysBefore ?? 0)))
+      : null;
+  const remindTime = remindEnabled ? input.remindTime?.trim() || '08:00' : null;
   const trackCompletions = input.kind === 'recurring' ? input.trackCompletions !== false : true;
   const task: Task = {
     id: uuidv4(),
@@ -4804,14 +4954,17 @@ export const createTask = (input: TaskInput): Task | null => {
     groupId,
     trackCompletions,
     completedAt: null,
+    remindEnabled,
+    remindDaysBefore,
+    remindTime,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
   db.runSync(
     `INSERT INTO ${TASKS_TABLE} (
       id, kind, title, memo, pace, recurrence_unit, recurrence_config, due_date, event_id, group_id,
-      track_completions, completed_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);`,
+      track_completions, remind_enabled, remind_days_before, remind_time, completed_at, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?);`,
     [
       task.id,
       task.kind,
@@ -4824,6 +4977,9 @@ export const createTask = (input: TaskInput): Task | null => {
       task.eventId,
       task.groupId,
       task.trackCompletions ? 1 : 0,
+      task.remindEnabled ? 1 : 0,
+      task.remindDaysBefore,
+      task.remindTime,
       task.createdAt,
       task.updatedAt,
     ]
@@ -4837,7 +4993,8 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
   if (!normalizedId || !title) {
     return false;
   }
-  if (!getTask(normalizedId)) {
+  const current = getTask(normalizedId);
+  if (!current) {
     return false;
   }
   const memo = input.memo?.trim() ?? '';
@@ -4860,10 +5017,24 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
     }
   }
   const trackCompletions = input.kind === 'recurring' ? input.trackCompletions !== false : true;
+  const joiningRecurringGroup = Boolean(groupId) && input.kind === 'recurring';
+  const remindEnabled = joiningRecurringGroup
+    ? false
+    : input.remindEnabled !== undefined
+      ? Boolean(input.remindEnabled)
+      : current.remindEnabled;
+  const remindDaysBefore =
+    input.kind === 'temporary' && remindEnabled && dueDate
+      ? Math.min(30, Math.max(0, Math.floor(input.remindDaysBefore ?? current.remindDaysBefore ?? 0)))
+      : null;
+  const remindTime = remindEnabled
+    ? input.remindTime?.trim() || current.remindTime || '08:00'
+    : null;
   const result = db.runSync(
     `UPDATE ${TASKS_TABLE}
      SET kind = ?, title = ?, memo = ?, pace = ?, recurrence_unit = ?, recurrence_config = ?,
-         due_date = ?, event_id = ?, group_id = ?, track_completions = ?, updated_at = ?
+         due_date = ?, event_id = ?, group_id = ?, track_completions = ?,
+         remind_enabled = ?, remind_days_before = ?, remind_time = ?, updated_at = ?
      WHERE id = ?;`,
     [
       input.kind,
@@ -4876,6 +5047,9 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
       eventId,
       groupId,
       trackCompletions ? 1 : 0,
+      remindEnabled ? 1 : 0,
+      remindDaysBefore,
+      remindTime,
       nowIso(),
       normalizedId,
     ]
@@ -4906,9 +5080,12 @@ export const setTaskGroupId = (taskId: string, groupId: string | null): boolean 
       return false;
     }
   }
+  const joiningRecurringGroup = Boolean(nextGroupId) && task.kind === 'recurring';
   const result = db.runSync(
-    `UPDATE ${TASKS_TABLE} SET group_id = ?, updated_at = ? WHERE id = ?;`,
-    [nextGroupId, nowIso(), normalizedId]
+    `UPDATE ${TASKS_TABLE} SET group_id = ?, remind_enabled = ?, remind_days_before = ?, remind_time = ?, updated_at = ? WHERE id = ?;`,
+    joiningRecurringGroup
+      ? [nextGroupId, 0, null, null, nowIso(), normalizedId]
+      : [nextGroupId, task.remindEnabled ? 1 : 0, task.remindDaysBefore, task.remindTime, nowIso(), normalizedId]
   );
   return result.changes > 0;
 };
@@ -5822,3 +5999,380 @@ export const deleteRelationship = (relationshipId: string): boolean => {
   }
   return result.changes > 0;
 };
+
+// --- Your questions (あなたの～は？) ---
+
+type YourQuestionRow = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type YourQuestionAnswerRow = {
+  id: string;
+  question_id: string;
+  friend_id: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
+const rowToYourQuestion = (row: YourQuestionRow): YourQuestion => ({
+  id: row.id,
+  title: row.title,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const rowToYourQuestionAnswer = (row: YourQuestionAnswerRow): YourQuestionAnswer => ({
+  id: row.id,
+  questionId: row.question_id,
+  friendId: row.friend_id,
+  body: row.body,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const touchYourQuestionUpdatedAt = (questionId: string): void => {
+  db.runSync(`UPDATE ${YOUR_QUESTIONS_TABLE} SET updated_at = ? WHERE id = ?;`, [nowIso(), questionId]);
+};
+
+export const getYourQuestions = (): YourQuestion[] => {
+  const rows = db.getAllSync<YourQuestionRow>(
+    `SELECT * FROM ${YOUR_QUESTIONS_TABLE} ORDER BY updated_at DESC;`
+  );
+  return rows.map(rowToYourQuestion);
+};
+
+export const getYourQuestion = (questionId: string): YourQuestion | null => {
+  const normalizedId = questionId.trim();
+  if (!normalizedId) {
+    return null;
+  }
+  const row = db.getFirstSync<YourQuestionRow>(`SELECT * FROM ${YOUR_QUESTIONS_TABLE} WHERE id = ?;`, [
+    normalizedId,
+  ]);
+  return row ? rowToYourQuestion(row) : null;
+};
+
+export const createYourQuestion = (input: YourQuestionInput): YourQuestion | null => {
+  const title = input.title.trim();
+  if (!title) {
+    return null;
+  }
+  const timestamp = nowIso();
+  const question: YourQuestion = {
+    id: uuidv4(),
+    title,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  db.runSync(
+    `INSERT INTO ${YOUR_QUESTIONS_TABLE} (id, title, created_at, updated_at) VALUES (?, ?, ?, ?);`,
+    [question.id, question.title, question.createdAt, question.updatedAt]
+  );
+  return question;
+};
+
+export const updateYourQuestionTitle = (questionId: string, title: string): boolean => {
+  const normalizedId = questionId.trim();
+  const normalizedTitle = title.trim();
+  if (!normalizedId || !normalizedTitle) {
+    return false;
+  }
+  const result = db.runSync(
+    `UPDATE ${YOUR_QUESTIONS_TABLE} SET title = ?, updated_at = ? WHERE id = ?;`,
+    [normalizedTitle, nowIso(), normalizedId]
+  );
+  return result.changes > 0;
+};
+
+export const deleteYourQuestion = (questionId: string): boolean => {
+  const normalizedId = questionId.trim();
+  if (!normalizedId) {
+    return false;
+  }
+  db.execSync('BEGIN IMMEDIATE;');
+  try {
+    db.runSync(`DELETE FROM ${YOUR_QUESTION_ANSWERS_TABLE} WHERE question_id = ?;`, [normalizedId]);
+    const result = db.runSync(`DELETE FROM ${YOUR_QUESTIONS_TABLE} WHERE id = ?;`, [normalizedId]);
+    db.execSync('COMMIT;');
+    return result.changes > 0;
+  } catch (error) {
+    db.execSync('ROLLBACK;');
+    throw error;
+  }
+};
+
+export const getYourQuestionAnswers = (questionId: string): YourQuestionAnswer[] => {
+  const normalizedId = questionId.trim();
+  if (!normalizedId) {
+    return [];
+  }
+  const rows = db.getAllSync<YourQuestionAnswerRow>(
+    `SELECT * FROM ${YOUR_QUESTION_ANSWERS_TABLE} WHERE question_id = ? ORDER BY updated_at DESC;`,
+    [normalizedId]
+  );
+  return rows.map(rowToYourQuestionAnswer);
+};
+
+export const getAllYourQuestionAnswers = (): YourQuestionAnswer[] => {
+  const rows = db.getAllSync<YourQuestionAnswerRow>(
+    `SELECT * FROM ${YOUR_QUESTION_ANSWERS_TABLE} ORDER BY updated_at DESC;`
+  );
+  return rows.map(rowToYourQuestionAnswer);
+};
+
+export const upsertYourQuestionAnswer = (
+  input: YourQuestionAnswerInput
+): YourQuestionAnswer | null => {
+  const questionId = input.questionId.trim();
+  const friendId = input.friendId.trim();
+  const body = input.body.trim();
+  if (!questionId || !friendId || !body) {
+    return null;
+  }
+  if (!getYourQuestion(questionId)) {
+    return null;
+  }
+  const timestamp = nowIso();
+  const existing = db.getFirstSync<YourQuestionAnswerRow>(
+    `SELECT * FROM ${YOUR_QUESTION_ANSWERS_TABLE} WHERE question_id = ? AND friend_id = ? LIMIT 1;`,
+    [questionId, friendId]
+  );
+  if (existing) {
+    db.runSync(
+      `UPDATE ${YOUR_QUESTION_ANSWERS_TABLE} SET body = ?, updated_at = ? WHERE id = ?;`,
+      [body, timestamp, existing.id]
+    );
+    touchYourQuestionUpdatedAt(questionId);
+    return {
+      ...rowToYourQuestionAnswer(existing),
+      body,
+      updatedAt: timestamp,
+    };
+  }
+  const answer: YourQuestionAnswer = {
+    id: uuidv4(),
+    questionId,
+    friendId,
+    body,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  db.runSync(
+    `INSERT INTO ${YOUR_QUESTION_ANSWERS_TABLE} (id, question_id, friend_id, body, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?);`,
+    [answer.id, answer.questionId, answer.friendId, answer.body, answer.createdAt, answer.updatedAt]
+  );
+  touchYourQuestionUpdatedAt(questionId);
+  return answer;
+};
+
+export const deleteYourQuestionAnswer = (answerId: string): boolean => {
+  const normalizedId = answerId.trim();
+  if (!normalizedId) {
+    return false;
+  }
+  const existing = db.getFirstSync<YourQuestionAnswerRow>(
+    `SELECT * FROM ${YOUR_QUESTION_ANSWERS_TABLE} WHERE id = ?;`,
+    [normalizedId]
+  );
+  if (!existing) {
+    return false;
+  }
+  const result = db.runSync(`DELETE FROM ${YOUR_QUESTION_ANSWERS_TABLE} WHERE id = ?;`, [normalizedId]);
+  if (result.changes > 0) {
+    touchYourQuestionUpdatedAt(existing.question_id);
+  }
+  return result.changes > 0;
+};
+
+// --- Wishlist (行ってみたい・食べてみたい) ---
+
+type WishlistItemRow = {
+  id: string;
+  kind: string;
+  name: string;
+  purpose_tags: string;
+  location: string | null;
+  cuisine: string | null;
+  memo: string | null;
+  link: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const isWishlistKind = (value: string): value is WishlistKind =>
+  value === 'visit' || value === 'eat';
+
+const rowToWishlistItem = (row: WishlistItemRow): WishlistItem => ({
+  id: row.id,
+  kind: isWishlistKind(row.kind) ? row.kind : 'visit',
+  name: row.name,
+  purposeTags: fromJson(row.purpose_tags),
+  location: row.location?.trim() || null,
+  cuisine: row.cuisine?.trim() || null,
+  memo: row.memo?.trim() || null,
+  link: row.link?.trim() || null,
+  createdAt: row.created_at,
+  updatedAt: row.updated_at,
+});
+
+const normalizeWishlistPurposeTags = (kind: WishlistKind, tags: string[] | undefined): string[] => {
+  if (kind !== 'visit') {
+    return [];
+  }
+  const seen = new Set<string>();
+  const result: string[] = [];
+  (tags ?? []).forEach((tag) => {
+    const normalized = tag.trim();
+    if (!normalized || seen.has(normalized)) {
+      return;
+    }
+    seen.add(normalized);
+    result.push(normalized);
+  });
+  return result;
+};
+
+const normalizeWishlistNullableLabel = (
+  kind: WishlistKind,
+  expected: WishlistKind,
+  value?: string | null
+): string | null => {
+  if (kind !== expected) {
+    return null;
+  }
+  const normalized = value?.trim() ?? '';
+  return normalized || null;
+};
+
+const normalizeWishlistOptionalText = (value?: string | null): string | null => {
+  const normalized = value?.trim() ?? '';
+  return normalized || null;
+};
+
+export const getWishlistItems = (kind?: WishlistKind): WishlistItem[] => {
+  const rows =
+    kind == null
+      ? db.getAllSync<WishlistItemRow>(
+          `SELECT * FROM ${WISHLIST_ITEMS_TABLE} ORDER BY updated_at DESC;`
+        )
+      : db.getAllSync<WishlistItemRow>(
+          `SELECT * FROM ${WISHLIST_ITEMS_TABLE} WHERE kind = ? ORDER BY updated_at DESC;`,
+          [kind]
+        );
+  return rows.map(rowToWishlistItem);
+};
+
+export const getWishlistItem = (itemId: string): WishlistItem | null => {
+  const normalizedId = itemId.trim();
+  if (!normalizedId) {
+    return null;
+  }
+  const row = db.getFirstSync<WishlistItemRow>(`SELECT * FROM ${WISHLIST_ITEMS_TABLE} WHERE id = ?;`, [
+    normalizedId,
+  ]);
+  return row ? rowToWishlistItem(row) : null;
+};
+
+export const createWishlistItem = (input: WishlistItemInput): WishlistItem | null => {
+  const name = input.name.trim();
+  if (!name) {
+    return null;
+  }
+  const timestamp = nowIso();
+  const item: WishlistItem = {
+    id: uuidv4(),
+    kind: input.kind,
+    name,
+    purposeTags: normalizeWishlistPurposeTags(input.kind, input.purposeTags),
+    location: normalizeWishlistNullableLabel(input.kind, 'eat', input.location),
+    cuisine: normalizeWishlistNullableLabel(input.kind, 'eat', input.cuisine),
+    memo: normalizeWishlistOptionalText(input.memo),
+    link: normalizeWishlistOptionalText(input.link),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  db.runSync(
+    `INSERT INTO ${WISHLIST_ITEMS_TABLE} (id, kind, name, purpose_tags, location, cuisine, memo, link, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    [
+      item.id,
+      item.kind,
+      item.name,
+      toJson(item.purposeTags),
+      item.location,
+      item.cuisine,
+      item.memo,
+      item.link,
+      item.createdAt,
+      item.updatedAt,
+    ]
+  );
+  return item;
+};
+
+export const updateWishlistItem = (itemId: string, input: WishlistItemInput): boolean => {
+  const normalizedId = itemId.trim();
+  const name = input.name.trim();
+  if (!normalizedId || !name) {
+    return false;
+  }
+  const purposeTags = normalizeWishlistPurposeTags(input.kind, input.purposeTags);
+  const location = normalizeWishlistNullableLabel(input.kind, 'eat', input.location);
+  const cuisine = normalizeWishlistNullableLabel(input.kind, 'eat', input.cuisine);
+  const memo = normalizeWishlistOptionalText(input.memo);
+  const link = normalizeWishlistOptionalText(input.link);
+  const result = db.runSync(
+    `UPDATE ${WISHLIST_ITEMS_TABLE} SET kind = ?, name = ?, purpose_tags = ?, location = ?, cuisine = ?, memo = ?, link = ?, updated_at = ? WHERE id = ?;`,
+    [input.kind, name, toJson(purposeTags), location, cuisine, memo, link, nowIso(), normalizedId]
+  );
+  return result.changes > 0;
+};
+
+export const deleteWishlistItem = (itemId: string): boolean => {
+  const normalizedId = itemId.trim();
+  if (!normalizedId) {
+    return false;
+  }
+  const result = db.runSync(`DELETE FROM ${WISHLIST_ITEMS_TABLE} WHERE id = ?;`, [normalizedId]);
+  return result.changes > 0;
+};
+
+export const getDistinctWishlistPurposeTags = (): string[] => {
+  const rows = db.getAllSync<{ purpose_tags: string }>(
+    `SELECT purpose_tags FROM ${WISHLIST_ITEMS_TABLE} WHERE kind = 'visit';`
+  );
+  const seen = new Set<string>();
+  rows.forEach((row) => {
+    fromJson(row.purpose_tags).forEach((tag) => {
+      const normalized = tag.trim();
+      if (normalized) {
+        seen.add(normalized);
+      }
+    });
+  });
+  return Array.from(seen).sort((a, b) => a.localeCompare(b, 'ja'));
+};
+
+export const getDistinctWishlistLocations = (): string[] => {
+  const rows = db.getAllSync<{ location: string | null }>(
+    `SELECT DISTINCT location FROM ${WISHLIST_ITEMS_TABLE} WHERE kind = 'eat' AND location IS NOT NULL AND TRIM(location) != '';`
+  );
+  return rows
+    .map((row) => row.location?.trim() ?? '')
+    .filter((value) => value.length > 0)
+    .sort((a, b) => a.localeCompare(b, 'ja'));
+};
+
+export const getDistinctWishlistCuisines = (): string[] => {
+  const rows = db.getAllSync<{ cuisine: string | null }>(
+    `SELECT DISTINCT cuisine FROM ${WISHLIST_ITEMS_TABLE} WHERE kind = 'eat' AND cuisine IS NOT NULL AND TRIM(cuisine) != '';`
+  );
+  return rows
+    .map((row) => row.cuisine?.trim() ?? '')
+    .filter((value) => value.length > 0)
+    .sort((a, b) => a.localeCompare(b, 'ja'));
+};
+

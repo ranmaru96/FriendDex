@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import type { EventNotificationData } from '@/utils/eventNotifications';
 import { ensureNotificationInfrastructure } from '@/utils/eventNotifications';
+import { isTaskNotificationData } from '@/utils/taskNotifications';
 
 const isEventNotificationData = (value: unknown): value is EventNotificationData => {
   if (!value || typeof value !== 'object') {
@@ -20,6 +21,11 @@ export function EventNotificationHandler() {
 
     const navigateFromNotification = (response: Notifications.NotificationResponse) => {
       const rawData = response.notification.request.content.data;
+      if (isTaskNotificationData(rawData)) {
+        router.push('/tasks');
+        return;
+      }
+
       if (!isEventNotificationData(rawData)) {
         return;
       }

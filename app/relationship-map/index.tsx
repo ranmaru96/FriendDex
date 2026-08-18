@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { OffsetCard } from '@/components/ui/OffsetCard';
 import { Radius, Spacing } from '@/constants/theme';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
@@ -116,19 +117,19 @@ export default function RelationshipMapListScreen() {
         scrollContentStyle={styles.scrollContent}
       >
         {maps.length === 0 ? (
-          <View style={[styles.emptyCard, contentSurfaceStyle(content)]}>
+          <OffsetCard contentStyle={styles.emptyCardPad}>
             <Text style={[styles.emptyTitle, contentTextStyle(content)]}>相関図がありません</Text>
             <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
               右上の＋から新しい相関図を作成できます。
             </Text>
-          </View>
+          </OffsetCard>
         ) : (
           maps.map((map) => {
             const meta = metaByMapId[map.id];
             return (
+              <OffsetCard key={map.id}>
               <Pressable
-                key={map.id}
-                style={[styles.card, contentSurfaceStyle(content)]}
+                style={styles.cardPad}
                 onPress={() => router.push(`/relationship-map/${map.id}`)}
                 onLongPress={() => confirmDeleteMap(map)}
               >
@@ -142,6 +143,7 @@ export default function RelationshipMapListScreen() {
                   人物 {meta?.memberCount ?? 0}人 · 更新 {formatRelationshipMapUpdatedAt(map.updatedAt)}
                 </Text>
               </Pressable>
+              </OffsetCard>
             );
           })
         )}
@@ -186,9 +188,7 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
     gap: Spacing.md,
   },
-  emptyCard: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
+  emptyCardPad: {
     padding: Spacing.lg,
     gap: Spacing.sm,
   },
@@ -200,9 +200,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
   },
-  card: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
+  cardPad: {
     padding: Spacing.md,
     gap: 4,
   },

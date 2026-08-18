@@ -7,6 +7,7 @@ import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { screenTopBarIconButtonStyle } from '@/components/screen/ScreenTopBar';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { SettlementTransferRow } from '@/components/settlement';
+import { MoneyLoanFormCard } from '@/components/money-loan/MoneyLoanFormCard';
 import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { useSettlementMock } from '@/contexts/SettlementMockContext';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
@@ -308,12 +309,12 @@ export default function SettlementRoomDetailScreen() {
         }
         scrollContentStyle={styles.scrollContent}
       >
-        <View style={formStyles.formCard}>
+        <MoneyLoanFormCard>
           <Text style={formStyles.sectionTitleOnCard}>メンバー</Text>
           <ParticipantChipList chips={memberChips} compact layout="wrap" />
-        </View>
+        </MoneyLoanFormCard>
 
-        <View style={formStyles.formCard}>
+        <MoneyLoanFormCard>
           <Text style={formStyles.sectionTitleOnCard}>支出を追加</Text>
         <View style={formStyles.formRow}>
           <Text style={formStyles.formLabel}>タイトル</Text>
@@ -407,7 +408,7 @@ export default function SettlementRoomDetailScreen() {
         <Pressable style={formStyles.primaryButton} onPress={handleAddExpense}>
           <Text style={formStyles.primaryButtonText}>支出を登録</Text>
         </Pressable>
-      </View>
+      </MoneyLoanFormCard>
 
       <Text style={formStyles.sectionTitleOnBase}>支出一覧</Text>
       {room.expenses.length === 0 ? (
@@ -433,7 +434,7 @@ export default function SettlementRoomDetailScreen() {
       )}
 
       {displayTransfers.length > 0 ? (
-        <View style={formStyles.formCard}>
+        <MoneyLoanFormCard>
           <Text style={formStyles.sectionTitleOnCard}>清算案</Text>
           {displayTransfers.map((transfer) => (
             <SettlementTransferRow
@@ -443,7 +444,7 @@ export default function SettlementRoomDetailScreen() {
               onToggle={() => toggleTransferCompleted(transfer.key)}
             />
           ))}
-        </View>
+        </MoneyLoanFormCard>
       ) : null}
       </SubToolScreenTemplate>
 

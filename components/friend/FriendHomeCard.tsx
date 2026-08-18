@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { HomeCardElevation, Radius } from '@/constants/theme';
-import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { HomeCardElevation } from '@/constants/theme';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { withAlpha } from '@/utils/colorHelpers';
 import { useContentColors } from '@/utils/useContentColors';
@@ -45,13 +46,11 @@ export function FriendHomeCard({
   style,
 }: FriendHomeCardProps) {
   const kit = useUiKit();
-  const appTheme = useAppThemeOptional();
+  const { shape } = useAppTheme();
   const content = useContentColors();
   const [imageError, setImageError] = useState(false);
-  /** 予定カード（edge 区切り／EdgePanel）と同じ枠色 */
-  const cardBorderColor = content.contentTextSecondary;
-  const cardBorderWidth = 1;
-  const cardElevation = appTheme?.colors.homeCardElevation ?? HomeCardElevation;
+  const cardBorderWidth = shape.cardBorderWidth;
+  const photoRadius = shape.cardBorderRadius;
   const normalizedBirthdayBadge = birthdayBadgeText?.trim() ? birthdayBadgeText.trim() : null;
   const birthdayBadgeStyle = {
     backgroundColor: withAlpha(content.contentCard, 0.95),
@@ -61,15 +60,6 @@ export function FriendHomeCard({
     backgroundColor: withAlpha(content.contentCard, 0.45),
   };
   const badgeTextStyle = { color: content.contentText };
-
-  const cardOuterStyle = [
-    styles.cardOuter,
-    {
-      backgroundColor: content.contentCard,
-      borderColor: cardBorderColor,
-      borderWidth: cardBorderWidth,
-    },
-  ];
 
   const inner = (
     <>
@@ -89,15 +79,24 @@ export function FriendHomeCard({
         style={[
           styles.photoOuterFrame,
           {
-            borderColor: cardBorderColor,
+            borderColor: content.contentBorder,
             borderWidth: cardBorderWidth,
+            borderRadius: photoRadius,
             marginTop: -cardBorderWidth,
             marginLeft: -cardBorderWidth,
             marginRight: -cardBorderWidth,
           },
         ]}
       >
-        <View style={[styles.photoInnerFrame, { borderColor: content.contentPhotoInnerBorder }]}>
+        <View
+          style={[
+            styles.photoInnerFrame,
+            {
+              borderColor: content.contentPhotoInnerBorder,
+              borderRadius: Math.max(0, photoRadius - 2),
+            },
+          ]}
+        >
           {friend.photoUri && !imageError ? (
             <Image
               source={{ uri: friend.photoUri }}
@@ -132,40 +131,34 @@ export function FriendHomeCard({
   );
 
   return (
-    <View style={[styles.cardShadow, cardElevation, width != null ? { width } : null, style]}>
+    <OffsetCard
+      style={[
+        width != null ? { width } : null,
+        shape.offsetDistance === 0 ? HomeCardElevation : null,
+        style,
+      ]}
+      contentStyle={styles.cardOuter}
+    >
       {onPress || onLongPress ? (
-        <Pressable
-          style={cardOuterStyle}
-          onPress={onPress}
-          onLongPress={onLongPress}
-          delayLongPress={delayLongPress}
-        >
+        <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={delayLongPress}>
           {inner}
         </Pressable>
       ) : (
-        <View style={cardOuterStyle}>{inner}</View>
+        inner
       )}
-    </View>
+    </OffsetCard>
   );
 }
 
 const styles = StyleSheet.create({
-  cardShadow: {
-    borderRadius: Radius.md,
-    backgroundColor: 'transparent',
-  },
   cardOuter: {
-    borderRadius: Radius.md,
-    overflow: 'hidden',
     paddingBottom: 4,
   },
   photoOuterFrame: {
-    borderRadius: Radius.md,
     overflow: 'hidden',
   },
   photoInnerFrame: {
     borderWidth: 2,
-    borderRadius: Radius.md - 2,
     overflow: 'hidden',
   },
   myselfBadge: {

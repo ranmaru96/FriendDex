@@ -15,6 +15,8 @@ import {
 import { EpisodeTagsModal } from '@/components/episode/EpisodeTagsModal';
 import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { usesOffsetChrome } from '@/constants/designPatterns';
 import { CompactSectionHeader } from '@/components/ui/CompactSectionHeader';
 import { MetaTitleRow, type MetaTitleRowLayout } from '@/components/ui/MetaTitleRow';
 import { HomeCardElevation, Radius, Spacing, Theme } from '@/constants/theme';
@@ -176,6 +178,7 @@ function CalendarEventCardBody({
 export default function CalendarScreen() {
   const kit = useUiKit();
   const appTheme = useAppThemeOptional();
+  const isOffsetPattern = usesOffsetChrome(appTheme?.patternId);
   const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
   const content = useContentColors();
   const flushTop = isMonochrome;
@@ -513,44 +516,58 @@ export default function CalendarScreen() {
 
             {eventsForSelectedDate.length === 0 ? (
               <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
-                <View style={[styles.eventShadow, roundedEventCardElevation]}>
-                  <View
-                    style={[
-                      styles.emptyCard,
-                      contentCardSurface,
-                      styles.roundedEventCard,
-                    ]}
-                  >
-                    <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
-                    <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
+                {isOffsetPattern ? (
+                  <OffsetCard>
+                    <View style={styles.emptyCardCodex}>
+                      <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
+                      <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
+                    </View>
+                  </OffsetCard>
+                ) : (
+                  <View style={[styles.eventShadow, roundedEventCardElevation]}>
+                    <View
+                      style={[
+                        styles.emptyCard,
+                        contentCardSurface,
+                        styles.roundedEventCard,
+                      ]}
+                    >
+                      <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
+                      <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
+                    </View>
                   </View>
-                </View>
+                )}
               </View>
             ) : (
               <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
                 {eventsForSelectedDate.map((event) => {
                   const participants = participantsByEventId.get(event.id) ?? [];
-                  return (
-                    <View
-                      key={event.id}
-                      style={[styles.eventShadow, roundedEventCardElevation]}
-                    >
-                      <CalendarEventCardBody
-                        event={event}
-                        participants={participants}
-                        episodeCount={(episodesByEventId.get(event.id) ?? []).length}
-                        selectedDate={selectedDate}
-                        metaLayout={eventMetaLayout}
-                        isCompactEventCard={isCompactEventCard}
-                        memoDisplay={kit.calendarEventMemoDisplay}
-                        onOpen={() => handleOpenEvent(event.id)}
-                        style={[
-                          styles.eventCard,
-                          contentCardSurface,
-                          isCompactEventCard ? styles.eventCardCompact : null,
-                          styles.roundedEventCard,
-                        ]}
-                      />
+                  const body = (
+                    <CalendarEventCardBody
+                      event={event}
+                      participants={participants}
+                      episodeCount={(episodesByEventId.get(event.id) ?? []).length}
+                      selectedDate={selectedDate}
+                      metaLayout={eventMetaLayout}
+                      isCompactEventCard={isCompactEventCard}
+                      memoDisplay={kit.calendarEventMemoDisplay}
+                      onOpen={() => handleOpenEvent(event.id)}
+                      style={[
+                        styles.eventCard,
+                        contentCardSurface,
+                        isCompactEventCard ? styles.eventCardCompact : null,
+                        styles.roundedEventCard,
+                        isOffsetPattern
+                          ? { borderWidth: 0, borderRadius: 0, backgroundColor: 'transparent' }
+                          : null,
+                      ]}
+                    />
+                  );
+                  return isOffsetPattern ? (
+                    <OffsetCard key={event.id}>{body}</OffsetCard>
+                  ) : (
+                    <View key={event.id} style={[styles.eventShadow, roundedEventCardElevation]}>
+                      {body}
                     </View>
                   );
                 })}
@@ -711,6 +728,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Theme.border,
     padding: Spacing.lg,
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  emptyCardCodex: {
+    padding: Spacing.md,
     alignItems: 'center',
     gap: Spacing.sm,
   },

@@ -17,6 +17,7 @@ import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
+import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
@@ -901,12 +902,11 @@ export default function EditScreen() {
                     if (selected) updateText('birthday', formatDateToYMD(selected));
                   }}
                 />
-                <Pressable
-                  style={[styles.datePickerDone, contentTagStyle(content)]}
+                <PickerDoneOverlay
+                  style={contentTagStyle(content)}
+                  textStyle={contentTextStyle(content)}
                   onPress={() => setShowBirthdayPicker(false)}
-                >
-                  <Text style={[styles.datePickerDoneText, contentTextStyle(content)]}>完了</Text>
-                </Pressable>
+                />
               </View>
             ) : null}
             <View style={styles.twinRow}>
@@ -1195,19 +1195,6 @@ const styles = StyleSheet.create({
   datePickerWrap: {},
   datePickerSelf: {
     alignSelf: 'flex-start',
-  },
-  datePickerDone: {
-    alignSelf: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: Radius.sm,
-    backgroundColor: Theme.background,
-    marginTop: 4,
-  },
-  datePickerDoneText: {
-    color: Theme.textPrimary,
-    fontWeight: '600',
-    fontSize: Typography.sm,
   },
   selectButton: {
     flex: 1,

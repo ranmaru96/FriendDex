@@ -44,6 +44,9 @@ import {
   groupTracksCompletions,
   trackingMembers,
 } from '@/utils/taskGroupHelpers';
+import { TaskRemindFields } from '@/components/task/TaskRemindFields';
+import { requestNotificationPermissionOnFirstCreate } from '@/utils/eventNotifications';
+import { DEFAULT_REMIND_TIME, clampRemindTimeToNow, syncTaskReminders } from '@/utils/taskNotifications';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   contentInputStyle,
@@ -211,6 +214,29 @@ export default function TaskGroupScreen() {
     [group]
   );
 
+  const persistGroupRemind = (enabled: boolean, time: string) => {
+    if (!group || group.kind !== 'recurring') return;
+    updateTaskGroup(group.id, {
+      title: group.title,
+      kind: group.kind,
+      pace: group.pace,
+      recurrenceUnit: group.recurrenceUnit,
+      recurrenceConfig: group.recurrenceConfig,
+      remindEnabled: enabled,
+      remindTime: enabled ? clampRemindTimeToNow(time || DEFAULT_REMIND_TIME) : null,
+    });
+    const loaded = getTaskGroup(group.id);
+    if (loaded) {
+      setGroup(loaded);
+    }
+    void (async () => {
+      if (enabled) {
+        await requestNotificationPermissionOnFirstCreate();
+      }
+      await syncTaskReminders();
+    })();
+  };
+
   const saveTitle = () => {
     if (!group) return;
     const title = titleDraft.trim();
@@ -228,6 +254,7 @@ export default function TaskGroupScreen() {
       recurrenceConfig: group.recurrenceConfig,
     });
     setEditingTitle(false);
+    void syncTaskReminders();
     reload();
   };
 
@@ -258,6 +285,7 @@ export default function TaskGroupScreen() {
       return;
     }
     setEditingSchedule(false);
+    void syncTaskReminders();
     reload();
   };
 
@@ -273,6 +301,7 @@ export default function TaskGroupScreen() {
           style: 'destructive',
           onPress: () => {
             deleteTaskGroup(group.id);
+            void syncTaskReminders();
             router.back();
           },
         },
@@ -288,6 +317,7 @@ export default function TaskGroupScreen() {
         style: 'destructive',
         onPress: () => {
           deleteTask(task.id);
+          void syncTaskReminders();
           reload();
         },
       },
@@ -301,11 +331,13 @@ export default function TaskGroupScreen() {
       } else {
         completeTemporaryTask(task.id);
       }
+      void syncTaskReminders();
       reload();
       return;
     }
     const done = isRecurringDoneOn(task, todayYmd);
     setRecurringDoneOn(task, todayYmd, !done);
+    void syncTaskReminders();
     reload();
   };
 
@@ -599,6 +631,26 @@ export default function TaskGroupScreen() {
                 </Text>
               </View>
             )}
+          </FormScreenSection>
+        ) : null}
+
+        {group.kind === 'recurring' ? (
+          <FormScreenSection>
+            <TaskRemindFields
+              mode="time-only"
+              enabled={group.remindEnabled}
+              daysBefore={0}
+              time={group.remindTime ?? DEFAULT_REMIND_TIME}
+              onEnabledChange={(value) =>
+                persistGroupRemind(
+                  value,
+                  clampRemindTimeToNow(group.remindTime ?? DEFAULT_REMIND_TIME)
+                )
+              }
+              onDaysBeforeChange={() => undefined}
+              onTimeChange={(time) => persistGroupRemind(true, time)}
+              hint="グループが要対応の日（赤枠）に、この時刻で通知します。メンバー個別の時刻は使いません。"
+            />
           </FormScreenSection>
         ) : null}
 

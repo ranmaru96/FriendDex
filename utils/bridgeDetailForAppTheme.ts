@@ -1,5 +1,11 @@
 import type { AppThemeContentColorFields } from '@/constants/appThemes/contentColors';
 import type { AppThemeVariant } from '@/constants/appThemes/types';
+import {
+  usesOffsetChrome,
+  type DesignPatternColors,
+  type DesignPatternId,
+  type DesignPatternShape,
+} from '@/constants/designPatterns';
 import type { DetailDesignBundle, DetailThemeColors, InfoChipStyle } from '@/constants/detailThemes/types';
 
 /** ブラック App テーマ時、人物タグは暗い塗り＋明るい枠・文字 */
@@ -143,39 +149,74 @@ function bridgeDetailColorsForWhite(
   };
 }
 
+export type DetailPatternOverlay = {
+  id: DesignPatternId;
+  colors: DesignPatternColors;
+  shape: DesignPatternShape;
+};
+
+function overlayCodexDetail(
+  colors: DetailThemeColors,
+  pattern: DetailPatternOverlay
+): DetailThemeColors {
+  const p = pattern.colors;
+  return {
+    ...colors,
+    accent: p.accent,
+    onAccent: p.addBtnInk,
+    btnPrimaryBg: p.addBtn,
+    btnPrimaryText: p.addBtnInk,
+    primaryButtonBg: p.addBtn,
+    primaryButtonText: p.addBtnInk,
+    habitAddButtonBg: p.addBtn,
+    habitAddButtonBorder: p.accent,
+    roleToggleActiveBg: p.chipOn,
+    roleToggleActiveText: p.chipOnInk,
+    profileCardBorderWidth: pattern.shape.cardBorderWidth,
+  };
+}
+
 /**
  * App モノクロ時、Detail / 共通項目の面・文字を AppTheme に揃える。
  * ブラックは人物タグ色も反転。ホワイトは面色のみ（カテゴリ色は維持）。
+ * コーデックス時は主ボタン／アクセントのみ上乗せ（カテゴリ色は維持）。
  */
 export function bridgeDetailBundleForAppTheme(
   bundle: DetailDesignBundle,
   appVariant: AppThemeVariant,
   content: AppThemeContentColorFields,
-  screenBackground: string
+  screenBackground: string,
+  pattern?: DetailPatternOverlay | null
 ): DetailDesignBundle {
+  let next: DetailDesignBundle;
   if (appVariant === 'white') {
-    return {
+    next = {
       ...bundle,
       colors: bridgeDetailColorsForWhite(bundle.colors, content, screenBackground),
     };
+  } else if (appVariant === 'black') {
+    const infoChipStyles: Record<string, InfoChipStyle> = { ...bundle.infoChipStyles };
+    for (const [key, style] of Object.entries(BLACK_INFO_CHIP_STYLES)) {
+      infoChipStyles[key] = style;
+    }
+    next = {
+      ...bundle,
+      colors: bridgeDetailColors(bundle.colors, content, screenBackground),
+      infoChipStyles,
+      detailTabs: bundle.detailTabs.map((tab) => ({
+        ...tab,
+        color: BLACK_TAB_COLORS[tab.key] ?? tab.color,
+      })),
+    };
+  } else {
+    next = bundle;
   }
 
-  if (appVariant !== 'black') {
-    return bundle;
+  if (usesOffsetChrome(pattern?.id)) {
+    return {
+      ...next,
+      colors: overlayCodexDetail(next.colors, pattern),
+    };
   }
-
-  const infoChipStyles: Record<string, InfoChipStyle> = { ...bundle.infoChipStyles };
-  for (const [key, style] of Object.entries(BLACK_INFO_CHIP_STYLES)) {
-    infoChipStyles[key] = style;
-  }
-
-  return {
-    ...bundle,
-    colors: bridgeDetailColors(bundle.colors, content, screenBackground),
-    infoChipStyles,
-    detailTabs: bundle.detailTabs.map((tab) => ({
-      ...tab,
-      color: BLACK_TAB_COLORS[tab.key] ?? tab.color,
-    })),
-  };
+  return next;
 }

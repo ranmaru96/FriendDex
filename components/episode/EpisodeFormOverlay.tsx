@@ -46,6 +46,7 @@ import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { EpisodeEventLinkField } from '@/components/episode/EpisodeEventLinkField';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { PhotoCropModal, EPISODE_PHOTO_ASPECT } from '@/components/photo/PhotoCropModal';
+import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import type { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import type { Friend } from '@/types';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
@@ -264,9 +265,11 @@ export function EpisodeFormOverlay({
                           if (selected) form.setDate(formatEpisodeDateToYMD(selected));
                         }}
                       />
-                      <Pressable style={[styles.datePickerDone, fieldCorner, contentInputStyle(content)]} onPress={() => form.setShowDatePicker(false)}>
-                        <Text style={[styles.datePickerDoneText, contentTextStyle(content)]}>完了</Text>
-                      </Pressable>
+                      <PickerDoneOverlay
+                        style={[fieldCorner, contentInputStyle(content)]}
+                        textStyle={contentTextStyle(content)}
+                        onPress={() => form.setShowDatePicker(false)}
+                      />
                     </View>
                   ) : null}
                   <View style={styles.timeRow}>
@@ -324,12 +327,11 @@ export function EpisodeFormOverlay({
                           if (selected) form.setTime(formatTimeFromDate(selected));
                         }}
                       />
-                      <Pressable
-                        style={[styles.datePickerDone, fieldCorner, contentInputStyle(content)]}
+                      <PickerDoneOverlay
+                        style={[fieldCorner, contentInputStyle(content)]}
+                        textStyle={contentTextStyle(content)}
                         onPress={() => form.setShowTimePicker(false)}
-                      >
-                        <Text style={[styles.datePickerDoneText, contentTextStyle(content)]}>完了</Text>
-                      </Pressable>
+                      />
                     </View>
                   ) : null}
                 </View>
@@ -675,15 +677,6 @@ const styles = StyleSheet.create({
   },
   datePickerWrap: { marginBottom: 8 },
   datePickerSelf: { alignSelf: 'flex-end' },
-  datePickerDone: {
-    alignSelf: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 6,
-    borderRadius: Radius.sm,
-    backgroundColor: '#e2e8f0',
-    marginTop: 8,
-  },
-  datePickerDoneText: { color: '#0f172a', fontWeight: '600', fontSize: Typography.base },
   linkToEventButton: {
     alignSelf: 'flex-start',
     marginBottom: 8,

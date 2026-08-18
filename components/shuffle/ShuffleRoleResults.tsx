@@ -1,7 +1,8 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Radius, Theme } from '@/constants/theme';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { Theme } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
-import { contentSurfaceStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
+import { contentTextStyle } from '@/utils/contentStyleHelpers';
 import { ShuffleResultCards } from './ShuffleResultCards';
 import type { Friend } from '../../types';
 import type { ShuffleRoleAssignment } from '../../utils/shuffleHelpers';
@@ -26,7 +27,7 @@ export function ShuffleRoleResults({
   return (
     <View style={styles.container}>
       {assignments.map((assignment, index) => (
-        <View key={`${assignment.roleName}-${index}`} style={[styles.roleBlock, contentSurfaceStyle(content)]}>
+        <OffsetCard key={`${assignment.roleName}-${index}`} brackets contentStyle={styles.roleBlock}>
           <View style={styles.roleHeader}>
             <Text style={[styles.roleTitle, contentTextStyle(content)]}>{assignment.roleName}</Text>
             <Text style={styles.roleCount}>{assignment.memberIds.length}人</Text>
@@ -36,7 +37,7 @@ export function ShuffleRoleResults({
             friendsById={friendsById}
             myselfId={myselfId}
           />
-        </View>
+        </OffsetCard>
       ))}
     </View>
   );
@@ -48,8 +49,6 @@ const styles = StyleSheet.create({
   },
   roleBlock: {
     gap: 10,
-    borderWidth: 1,
-    borderRadius: Radius.md,
     padding: 10,
   },
   roleHeader: {

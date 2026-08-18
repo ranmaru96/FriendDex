@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { StyleSheet, View } from 'react-native';
+import { OffsetCard } from '@/components/ui/OffsetCard';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { Spacing } from '@/constants/theme';
 
@@ -19,24 +20,7 @@ type SectionDividerProps = {
 };
 
 export function Panel({ children, style }: PanelProps) {
-  const kit = useUiKit();
-
-  return (
-    <View
-      style={[
-        styles.panel,
-        {
-          backgroundColor: kit.panelBackground,
-          borderColor: kit.panelBorderColor,
-          borderWidth: kit.panelBorderWidth,
-          borderRadius: kit.panelBorderRadius,
-        },
-        style,
-      ]}
-    >
-      {children}
-    </View>
-  );
+  return <OffsetCard style={style}>{children}</OffsetCard>;
 }
 
 export function PanelSection({ children, style }: PanelSectionProps) {
@@ -77,9 +61,6 @@ export function SectionDivider({ style }: SectionDividerProps) {
 }
 
 const styles = StyleSheet.create({
-  panel: {
-    overflow: 'hidden',
-  },
   hairlineDivider: {
     height: StyleSheet.hairlineWidth,
   },

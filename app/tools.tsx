@@ -10,6 +10,9 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { usesOffsetChrome } from '@/constants/designPatterns';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { Spacing } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useContentColors } from '@/utils/useContentColors';
@@ -58,14 +61,16 @@ const TOOL_ENTRIES: ToolEntry[] = [
   {
     id: 'want-to-visit',
     title: '行ってみたい・食べてみたい場所',
-    description: '近日公開したい',
+    description: '行きたい場所と食べたい店を記録して、あとから見返せます。',
     icon: 'location-outline',
+    route: '/wishlist',
   },
   {
     id: 'your-answer',
     title: 'あなたの～は？',
-    description: '近日公開したい',
+    description: '質問ごとに、人物の回答を記録します。',
     icon: 'chatbubble-ellipses-outline',
+    route: '/your-answer',
   },
 ];
 
@@ -73,6 +78,7 @@ export default function ToolsScreen() {
   const router = useRouter();
   const kit = useUiKit();
   const content = useContentColors();
+  const isCodex = usesOffsetChrome(useAppThemeOptional()?.patternId);
   const [openingId, setOpeningId] = useState<string | null>(null);
 
   useFocusEffect(
@@ -111,42 +117,52 @@ export default function ToolsScreen() {
 
         {TOOL_ENTRIES.map((entry) => {
           const isOpening = openingId === entry.id;
-          return (
-            <Pressable
-              key={entry.id}
-              style={[
-                styles.toolCard,
-                contentSurfaceStyle(content),
-                { borderRadius: kit.toolScreenCardBorderRadius },
-                isOpening && styles.toolCardOpening,
-              ]}
-              disabled={!entry.route || openingId != null}
-              onPress={() => openTool(entry)}
-            >
-              <View
+          const card = (
+              <Pressable
                 style={[
-                  styles.toolIconWrap,
-                  contentTagStyle(content),
-                  { borderRadius: kit.toolScreenIconBorderRadius },
+                  styles.toolCard,
+                  isCodex
+                    ? null
+                    : [
+                        contentSurfaceStyle(content),
+                        { borderRadius: kit.toolScreenCardBorderRadius, borderWidth: 1 },
+                      ],
+                  isOpening && styles.toolCardOpening,
                 ]}
+                disabled={!entry.route || openingId != null}
+                onPress={() => openTool(entry)}
               >
-                <Ionicons name={entry.icon} size={22} color={content.contentTextSecondary} />
-              </View>
-              <View style={styles.toolTextWrap}>
-                <Text style={[styles.toolTitle, contentTextStyle(content)]}>{entry.title}</Text>
-                <Text style={[styles.toolDescription, contentMutedTextStyle(content)]}>
-                  {entry.description}
-                </Text>
-              </View>
-              {isOpening ? (
-                <View style={styles.openingOverlay} pointerEvents="none">
-                  <View
-                    style={[styles.openingOverlayDim, { backgroundColor: kit.screenBackground }]}
-                  />
-                  <ActivityIndicator color={content.contentTextSecondary} />
+                <View
+                  style={[
+                    styles.toolIconWrap,
+                    contentTagStyle(content),
+                    { borderRadius: kit.toolScreenIconBorderRadius },
+                  ]}
+                >
+                  <Ionicons name={entry.icon} size={22} color={content.contentTextSecondary} />
                 </View>
-              ) : null}
-            </Pressable>
+                <View style={styles.toolTextWrap}>
+                  <Text style={[styles.toolTitle, contentTextStyle(content)]}>{entry.title}</Text>
+                  <Text style={[styles.toolDescription, contentMutedTextStyle(content)]}>
+                    {entry.description}
+                  </Text>
+                </View>
+                {isOpening ? (
+                  <View style={styles.openingOverlay} pointerEvents="none">
+                    <View
+                      style={[styles.openingOverlayDim, { backgroundColor: kit.screenBackground }]}
+                    />
+                    <ActivityIndicator color={content.contentTextSecondary} />
+                  </View>
+                ) : null}
+              </Pressable>
+          );
+          return isCodex ? (
+            <OffsetCard key={entry.id} brackets contentStyle={isOpening ? styles.toolCardOpening : undefined}>
+              {card}
+            </OffsetCard>
+          ) : (
+            <View key={entry.id}>{card}</View>
           );
         })}
       </ScrollView>
@@ -175,9 +191,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Spacing.md,
-    borderWidth: 1,
     padding: Spacing.md,
-    overflow: 'hidden',
   },
   toolCardOpening: {
     opacity: 0.92,

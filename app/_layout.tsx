@@ -19,6 +19,7 @@ import {
 } from '../contexts/SharedHeaderChromeContext';
 import { UiPreviewProvider, useUiKit } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
+import { useTaskReminderSchedule } from '../hooks/useTaskReminderSchedule';
 import {
   getActiveTab,
   shouldHideBottomNav,
@@ -39,6 +40,7 @@ const BOTTOM_TAB_ROUTE_NAMES = new Set([
 
 function PastEventConversionScheduler() {
   usePastEventConversionSchedule();
+  useTaskReminderSchedule();
   return null;
 }
 
@@ -140,7 +142,8 @@ function AppShellHeader() {
 
 function AppShell() {
   const pathname = usePathname();
-  const hideBottomNav = shouldHideBottomNav(pathname);
+  const { suppressBottomNav } = useSharedHeaderChrome();
+  const hideBottomNav = shouldHideBottomNav(pathname) || suppressBottomNav;
   const activeTab = getActiveTab(pathname);
   const { colors } = useAppTheme();
 

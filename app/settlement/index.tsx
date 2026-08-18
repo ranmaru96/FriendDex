@@ -16,6 +16,7 @@ import {
   SettlementTransferRow,
 } from '@/components/settlement';
 import { MoneyLoanRecentCounterpartyChips } from '@/components/money-loan/MoneyLoanRecentCounterpartyChips';
+import { MoneyLoanFormCard } from '@/components/money-loan/MoneyLoanFormCard';
 import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { useSettlementMock } from '@/contexts/SettlementMockContext';
 import {
@@ -412,7 +413,7 @@ export default function SettlementScreen() {
               />
             ))}
 
-            <View style={formStyles.formCard}>
+            <MoneyLoanFormCard>
               <Text style={formStyles.sectionTitleOnCard}>グループを作成</Text>
               <View style={formStyles.formRow}>
                 <Text style={formStyles.formLabel}>タイトル</Text>
@@ -462,7 +463,7 @@ export default function SettlementScreen() {
               <Pressable style={formStyles.primaryButton} onPress={handleCreateRoom}>
                 <Text style={formStyles.primaryButtonText}>グループを作成</Text>
               </Pressable>
-            </View>
+            </MoneyLoanFormCard>
 
             <Text style={formStyles.sectionTitleOnBase}>参加中のグループ</Text>
             {roomPartitions.active.length === 0 ? (
@@ -503,7 +504,7 @@ export default function SettlementScreen() {
 
         {activeTab === 'balances' ? (
           <>
-            <View style={formStyles.formCard}>
+            <MoneyLoanFormCard>
               <Text style={formStyles.sectionTitleOnCard}>表示</Text>
               <View style={formStyles.modeRow}>
                 {(['room', 'person'] as const).map((mode) => {
@@ -523,7 +524,7 @@ export default function SettlementScreen() {
                   );
                 })}
               </View>
-            </View>
+            </MoneyLoanFormCard>
 
             {balanceViewMode === 'room' ? (
               transferSections.length === 0 ? (

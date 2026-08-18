@@ -18,6 +18,8 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { usesOffsetChrome } from '@/constants/designPatterns';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { ListScreenTemplate } from '@/components/screen-templates';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -74,6 +76,7 @@ import {
   contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
+import { syncTaskReminders } from '@/utils/taskNotifications';
 import { Radius } from '@/constants/theme';
 import type { AppThemeContentColorFields } from '@/constants/appThemes/contentColors';
 
@@ -119,11 +122,27 @@ function resolveDropTarget(pageY: number, zones: DropZoneRect[]): DropTargetId |
   return undefined;
 }
 
+function groupInstanceKey(groupId: string, keySuffix?: string): string {
+  return `${groupId}${keySuffix ?? ''}`;
+}
+
 function DragGrip({ color }: { color: string }) {
   return (
     <View style={styles.dragGrip} pointerEvents="none" accessibilityElementsHidden>
       <View style={[styles.dragGripDot, { backgroundColor: color }]} />
     </View>
+  );
+}
+
+function MemberAccentBar({ color, thick }: { color: string; thick?: boolean }) {
+  return (
+    <View
+      style={[
+        styles.memberAccentBar,
+        thick ? styles.memberAccentBarThick : null,
+        { backgroundColor: color },
+      ]}
+    />
   );
 }
 
@@ -176,7 +195,9 @@ function RecurringTaskRow({
   const dates = task.trackCompletions ? getTaskCompletionDatesSet(task.id) : new Set<string>();
   const label = formatRecurrenceLabel(task.pace, task.recurrenceUnit, task.recurrenceConfig);
   const paceBesideTitle = catalog ? catalogPaceLabel(task) : '';
-  const isBlack = useAppThemeOptional()?.variant === 'black';
+  const appTheme = useAppThemeOptional();
+  const isBlack = appTheme?.variant === 'black';
+  const isCodex = usesOffsetChrome(appTheme?.patternId);
   const checkedColor = taskCompletionFillColor(Boolean(isBlack));
   const scheduledDays = task.trackCompletions
     ? getRecentScheduledDotItems(task, dates, new Date())
@@ -256,24 +277,32 @@ function RecurringTaskRow({
     opacity: dragging.value ? 0.92 : 1,
   }));
 
-  const nested = catalog && indented;
+  const nested = indented;
+  const useOffset = isCodex && !nested;
+  const showAccentBar = nested && !catalog;
+  const accentBarColor = muted
+    ? TASK_ACCENT.dim
+    : doneToday
+      ? checkedColor
+      : accent ?? content.contentBorder;
 
-  const body = (
-    <Animated.View
+  const inner = (
+    <View
       style={[
         styles.row,
         catalog && !nested ? styles.catalogRow : null,
-        nested ? styles.catalogNestedRow : contentSurfaceStyle(content),
+        nested ? styles.catalogNestedRow : useOffset ? null : contentSurfaceStyle(content),
         {
-          borderWidth: nested ? 0 : catalog || dimmed ? 1 : accentBorderWidth(accent, showingRequiredRed),
-          borderRadius: nested ? 8 : 10,
+          borderWidth: nested || useOffset ? 0 : catalog || dimmed ? 1 : accentBorderWidth(accent, showingRequiredRed),
+          borderRadius: nested || useOffset ? 0 : 10,
           borderColor: catalog ? content.contentBorder : borderColor,
         },
-        !nested && indented ? styles.rowIndented : null,
         dimmed ? styles.dimmedBlock : null,
-        animatedStyle,
       ]}
     >
+      {showAccentBar ? (
+        <MemberAccentBar color={accentBarColor} thick={showingRequiredRed} />
+      ) : null}
       {catalog ? (
         dragEnabled ? (
           <DragGrip color={content.contentTextSecondary} />
@@ -341,6 +370,16 @@ function RecurringTaskRow({
           </View>
         ) : null}
       </Pressable>
+    </View>
+  );
+
+  const body = (
+    <Animated.View style={animatedStyle}>
+      {useOffset ? (
+        <OffsetCard borderColor={catalog ? undefined : borderColor}>{inner}</OffsetCard>
+      ) : (
+        inner
+      )}
     </Animated.View>
   );
 
@@ -384,6 +423,7 @@ function TemporaryTaskRow({
   onDragMove,
   onDragEnd,
 }: TemporaryTaskRowProps) {
+  const isCodex = usesOffsetChrome(useAppThemeOptional()?.patternId);
   const memoPreview = task.memo.trim();
   const dueUrgency = task.dueDate ? getTaskDueUrgency(task.dueDate) : null;
   const borderColor = completed ? TASK_ACCENT.dim : accent ?? content.contentBorder;
@@ -454,24 +494,28 @@ function TemporaryTaskRow({
     opacity: dragging.value ? 0.92 : 1,
   }));
 
-  const nested = catalog && indented;
+  const nested = indented;
+  const useOffset = isCodex && !nested;
+  const showAccentBar = nested && !catalog;
+  const accentBarColor = completed ? TASK_ACCENT.dim : accent ?? content.contentBorder;
 
-  const body = (
-    <Animated.View
+  const inner = (
+    <View
       style={[
         styles.row,
         catalog && !nested ? styles.catalogRow : null,
-        nested ? styles.catalogNestedRow : contentSurfaceStyle(content),
+        nested ? styles.catalogNestedRow : useOffset ? null : contentSurfaceStyle(content),
         {
-          borderWidth: nested ? 0 : catalog || completed ? 1 : accentBorderWidth(accent, showingRequiredRed),
-          borderRadius: nested ? 8 : 10,
+          borderWidth: nested || useOffset ? 0 : catalog || completed ? 1 : accentBorderWidth(accent, showingRequiredRed),
+          borderRadius: nested || useOffset ? 0 : 10,
           borderColor: catalog ? content.contentBorder : borderColor,
         },
-        completed ? styles.dimmedBlock : null,
-        !nested && indented ? styles.rowIndented : null,
-        animatedStyle,
+        completed && !indented ? styles.dimmedBlock : null,
       ]}
     >
+      {showAccentBar ? (
+        <MemberAccentBar color={accentBarColor} thick={showingRequiredRed} />
+      ) : null}
       {catalog ? (
         dragEnabled ? (
           <DragGrip color={content.contentTextSecondary} />
@@ -552,6 +596,16 @@ function TemporaryTaskRow({
           </View>
         ) : null}
       </Pressable>
+    </View>
+  );
+
+  const body = (
+    <Animated.View style={animatedStyle}>
+      {useOffset ? (
+        <OffsetCard borderColor={catalog ? undefined : borderColor}>{inner}</OffsetCard>
+      ) : (
+        inner
+      )}
     </Animated.View>
   );
 
@@ -568,6 +622,7 @@ export default function TasksScreen() {
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
   const isBlack = appTheme?.variant === 'black';
+  const isCodex = usesOffsetChrome(appTheme?.patternId);
   const checkedColor = taskCompletionFillColor(Boolean(isBlack));
   const [segment, setSegment] = useState<Segment>('today');
   const [recurring, setRecurring] = useState<Task[]>([]);
@@ -644,6 +699,39 @@ export default function TasksScreen() {
   );
 
   const {
+    bundles: completedTodayTemporaryBundles,
+    ungrouped: completedTodayTemporaryUngrouped,
+  } = useMemo(
+    () =>
+      partitionTasksByGroup(completedTodayTemporary, temporaryGroups, {
+        includeEmptyGroups: false,
+      }),
+    [completedTodayTemporary, temporaryGroups]
+  );
+
+  const temporaryGroupTodayProgress = useMemo(() => {
+    const openCount = new Map<string, number>();
+    for (const task of temporary) {
+      const id = task.groupId?.trim();
+      if (!id) continue;
+      openCount.set(id, (openCount.get(id) ?? 0) + 1);
+    }
+    const doneCount = new Map<string, number>();
+    for (const task of completedTodayTemporary) {
+      const id = task.groupId?.trim();
+      if (!id) continue;
+      doneCount.set(id, (doneCount.get(id) ?? 0) + 1);
+    }
+    const progress = new Map<string, { done: number; total: number }>();
+    for (const id of new Set([...openCount.keys(), ...doneCount.keys()])) {
+      const done = doneCount.get(id) ?? 0;
+      const open = openCount.get(id) ?? 0;
+      progress.set(id, { done, total: done + open });
+    }
+    return progress;
+  }, [temporary, completedTodayTemporary]);
+
+  const {
     bundles: actionRequiredTemporaryBundles,
     ungrouped: actionRequiredTemporaryUngrouped,
   } = useMemo(() => {
@@ -690,6 +778,17 @@ export default function TasksScreen() {
     [temporary, temporaryGroups, completionTick, segment]
   );
 
+  const {
+    bundles: libraryCompletedTemporaryBundles,
+    ungrouped: libraryCompletedTemporaryUngrouped,
+  } = useMemo(
+    () =>
+      partitionTasksByGroup(completedTemporary, temporaryGroups, {
+        includeEmptyGroups: false,
+      }),
+    [completedTemporary, temporaryGroups]
+  );
+
   const isLibrary = segment !== 'today';
 
   const toggleExpanded = (groupId: string) => {
@@ -719,6 +818,7 @@ export default function TasksScreen() {
   const toggleRecurring = (task: Task) => {
     const done = isRecurringDoneOn(task, todayYmd);
     setRecurringDoneOn(task, todayYmd, !done);
+    void syncTaskReminders();
     reload();
   };
 
@@ -728,6 +828,7 @@ export default function TasksScreen() {
     } else {
       completeTemporaryTask(task.id);
     }
+    void syncTaskReminders();
     reload();
   };
 
@@ -739,6 +840,7 @@ export default function TasksScreen() {
         style: 'destructive',
         onPress: () => {
           deleteTask(task.id);
+          void syncTaskReminders();
           reload();
         },
       },
@@ -785,7 +887,11 @@ export default function TasksScreen() {
       setScrollEnabled(false);
       setHoverDropId(undefined);
       if (task.groupId) {
-        setExpandedGroupIds((prev) => new Set(prev).add(task.groupId!));
+        setCollapsedLibraryGroupIds((prev) => {
+          const next = new Set(prev);
+          next.delete(groupInstanceKey(task.groupId!, '-lib'));
+          return next;
+        });
       }
       // 展開後レイアウトを待ってからゾーン再計測
       requestAnimationFrame(() => {
@@ -841,13 +947,13 @@ export default function TasksScreen() {
           );
           return;
         }
-        setExpandedGroupIds((prev) => new Set(prev).add(nextGroupId));
         setCollapsedLibraryGroupIds((prev) => {
           const next = new Set(prev);
-          next.delete(nextGroupId);
+          next.delete(groupInstanceKey(nextGroupId, '-lib'));
           return next;
         });
         reload();
+        void syncTaskReminders();
       });
     },
     [refreshDropZones, reload]
@@ -880,16 +986,33 @@ export default function TasksScreen() {
     />
   );
 
+  const renderMembersWithRules = (memberNodes: ReactNode, ruleStyle: object) =>
+    Children.toArray(memberNodes).map((child, index) => (
+      <Fragment key={index}>
+        {index > 0 ? (
+          <View style={[ruleStyle, { backgroundColor: content.contentBorder }]} />
+        ) : null}
+        {child}
+      </Fragment>
+    ));
+
   const renderLibraryGroupCard = (
     group: TaskGroup,
     members: Task[],
-    options: { keySuffix?: string; registerDropZone?: boolean; expanded?: boolean },
+    options: {
+      keySuffix?: string;
+      registerDropZone?: boolean;
+      expanded?: boolean;
+      completed?: boolean;
+    },
     memberNodes: ReactNode
   ) => {
-    const isHover = draggingTaskId != null && hoverDropId === group.id;
-    const registerDropZone = options.registerDropZone !== false;
+    const isHover =
+      !options.completed && draggingTaskId != null && hoverDropId === group.id;
+    const registerDropZone = options.registerDropZone !== false && !options.completed;
     const expanded = options.expanded !== false;
     const showMembers = expanded && members.length > 0;
+    const instanceKey = groupInstanceKey(group.id, options.keySuffix);
     return (
       <View
         key={`${group.id}${options.keySuffix ?? ''}`}
@@ -907,26 +1030,42 @@ export default function TasksScreen() {
           styles.catalogGroupCard,
           contentSurfaceStyle(content),
           { borderColor: content.contentBorder },
+          options.completed ? styles.dimmedBlock : null,
           isHover
             ? {
                 borderWidth: 2,
                 borderColor: content.contentText,
               }
             : null,
+          isCodex ? { borderWidth: 0, borderRadius: 0, overflow: 'visible' as const, backgroundColor: 'transparent' } : null,
         ]}
       >
         <Pressable
           style={styles.catalogGroupHeadRow}
-          onPress={() => toggleLibraryGroupExpanded(group.id)}
+          onPress={() => toggleLibraryGroupExpanded(instanceKey)}
           accessibilityRole="button"
           accessibilityState={{ expanded }}
           accessibilityLabel={`${group.title}グループを${expanded ? '閉じる' : '開く'}`}
         >
           <View style={styles.checkboxHit}>
-            <Ionicons name="layers-outline" size={20} color={content.contentText} />
+            <Ionicons
+              name="layers-outline"
+              size={20}
+              color={
+                options.completed ? content.contentTextSecondary : content.contentText
+              }
+            />
           </View>
           <View style={styles.rowMain}>
-            <Text style={[styles.catalogGroupTitle, contentTextStyle(content)]}>{group.title}</Text>
+            <Text
+              style={[
+                styles.catalogGroupTitle,
+                options.completed ? contentMutedTextStyle(content) : contentTextStyle(content),
+                options.completed ? styles.completedTemporaryTitle : null,
+              ]}
+            >
+              {group.title}
+            </Text>
             {isHover ? (
               <Text style={[styles.dropHint, contentTextStyle(content)]}>ここにドロップ</Text>
             ) : members.length === 0 ? (
@@ -956,20 +1095,16 @@ export default function TasksScreen() {
           <>
             <View style={[styles.catalogGroupRule, { backgroundColor: content.contentBorder }]} />
             <View style={styles.catalogGroupMembers}>
-              {Children.toArray(memberNodes).map((child, index) => (
-                <Fragment key={index}>
-                  {index > 0 ? (
-                    <View
-                      style={[styles.catalogMemberRule, { backgroundColor: content.contentBorder }]}
-                    />
-                  ) : null}
-                  {child}
-                </Fragment>
-              ))}
+              {renderMembersWithRules(memberNodes, styles.catalogMemberRule)}
             </View>
           </>
         ) : null}
       </View>
+    );
+    return isCodex ? (
+      <OffsetCard key={`${group.id}${options.keySuffix ?? ''}`}>{groupCard}</OffsetCard>
+    ) : (
+      groupCard
     );
   };
 
@@ -1041,7 +1176,28 @@ export default function TasksScreen() {
       );
     }
 
-    return (
+    const memberNodes = showChildren
+      ? children.map((task) => {
+          const dueToday = isRecurringDueOnDate(task, today);
+          let memberAccent = muted ? TASK_ACCENT.dim : accent;
+          if (!muted) {
+            if (isRecurringTaskRequiredOnDate(task, today)) {
+              memberAccent = TASK_ACCENT.required;
+            } else if (isRecurringTaskFree(task)) {
+              memberAccent = TASK_ACCENT.free;
+            }
+          }
+          return renderRecurringRow(
+            task,
+            dueToday,
+            true,
+            muted || !dueToday,
+            memberAccent
+          );
+        })
+      : [];
+
+    const groupCard = (
       <View
         key={`${group.id}${options.keySuffix ?? ''}`}
         ref={(node) => {
@@ -1055,33 +1211,25 @@ export default function TasksScreen() {
           }
         }}
         style={[
-          styles.groupBlock,
+          styles.catalogGroupCard,
+          contentSurfaceStyle(content),
+          {
+            borderWidth: muted ? 1 : accentBorderWidth(accent, showingRequiredRed),
+            borderColor,
+          },
           muted ? styles.dimmedBlock : null,
           isHover
             ? {
-                borderRadius: 12,
                 borderWidth: 2,
                 borderColor: content.contentText,
-                backgroundColor: content.contentCard,
-                padding: 4,
-                marginHorizontal: -4,
               }
             : null,
+          isCodex ? { borderWidth: 0, borderRadius: 0, overflow: 'visible' as const, backgroundColor: 'transparent' } : null,
         ]}
       >
         <Pressable
-          style={[
-            styles.row,
-            styles.groupHeaderRow,
-            contentSurfaceStyle(content),
-            {
-              borderWidth: muted ? 1 : accentBorderWidth(accent, showingRequiredRed),
-              borderRadius: 10,
-              borderColor,
-            },
-            isHover ? styles.groupHeaderRowHover : null,
-          ]}
-          onPress={() => toggleExpanded(group.id)}
+          style={styles.row}
+          onPress={() => toggleExpanded(groupInstanceKey(group.id, options.keySuffix))}
           onLongPress={() => openGroupScreen(group)}
         >
           <View style={styles.checkboxHit}>
@@ -1124,27 +1272,25 @@ export default function TasksScreen() {
             />
           </View>
         </Pressable>
-        {showChildren
-          ? children.map((task) => {
-              const dueToday = isRecurringDueOnDate(task, today);
-              let memberAccent = muted ? TASK_ACCENT.dim : accent;
-              if (!muted) {
-                if (isRecurringTaskRequiredOnDate(task, today)) {
-                  memberAccent = TASK_ACCENT.required;
-                } else if (isRecurringTaskFree(task)) {
-                  memberAccent = TASK_ACCENT.free;
-                }
-              }
-              return renderRecurringRow(
-                task,
-                dueToday,
-                true,
-                muted || !dueToday,
-                memberAccent
-              );
-            })
-          : null}
+        {memberNodes.length > 0 ? (
+          <>
+            <View style={[styles.catalogGroupRule, { backgroundColor: content.contentBorder }]} />
+            <View style={styles.todayGroupMembers}>
+              {renderMembersWithRules(memberNodes, styles.todayMemberRule)}
+            </View>
+          </>
+        ) : null}
       </View>
+    );
+    return isCodex ? (
+      <OffsetCard
+        key={`${group.id}${options.keySuffix ?? ''}`}
+        borderColor={isHover ? content.contentText : borderColor}
+      >
+        {groupCard}
+      </OffsetCard>
+    ) : (
+      groupCard
     );
   };
 
@@ -1207,10 +1353,16 @@ export default function TasksScreen() {
     const borderColor = accent ?? content.contentBorder;
     const showingRequiredRed = !completed && options.accent === TASK_ACCENT.required;
     const registerDropZone = options.registerDropZone === true;
-    const isHover = draggingTaskId != null && hoverDropId === group.id;
+    const isHover = !completed && draggingTaskId != null && hoverDropId === group.id;
     const nearestDue = getNearestTemporaryGroupDueDate(members);
     const dueUrgency = nearestDue ? getTaskDueUrgency(nearestDue) : null;
-    const meta = members.length === 0 ? 'ドロップで追加' : '';
+    const progress = temporaryGroupTodayProgress.get(group.id);
+    const meta =
+      members.length === 0
+        ? 'ドロップで追加'
+        : !isLibrary && progress && progress.done > 0
+          ? `今日 ${progress.done}/${progress.total}`
+          : '';
 
     if (isLibrary) {
       return renderLibraryGroupCard(
@@ -1220,7 +1372,7 @@ export default function TasksScreen() {
         members.map((task) => renderTemporaryRow(task, completed, true))
       );
     }
-    return (
+    const groupCard = (
       <View
         key={`${group.id}${options.keySuffix ?? ''}`}
         ref={(node) => {
@@ -1234,33 +1386,25 @@ export default function TasksScreen() {
           }
         }}
         style={[
-          styles.groupBlock,
+          styles.catalogGroupCard,
+          contentSurfaceStyle(content),
+          {
+            borderWidth: completed ? 1 : accentBorderWidth(accent, showingRequiredRed),
+            borderColor,
+          },
           completed ? styles.dimmedBlock : null,
           isHover
             ? {
-                borderRadius: 12,
                 borderWidth: 2,
                 borderColor: content.contentText,
-                backgroundColor: content.contentCard,
-                padding: 4,
-                marginHorizontal: -4,
               }
             : null,
+          isCodex ? { borderWidth: 0, borderRadius: 0, overflow: 'visible' as const, backgroundColor: 'transparent' } : null,
         ]}
       >
         <Pressable
-          style={[
-            styles.row,
-            styles.groupHeaderRow,
-            contentSurfaceStyle(content),
-            {
-              borderWidth: completed ? 1 : accentBorderWidth(accent, showingRequiredRed),
-              borderRadius: 10,
-              borderColor,
-            },
-            isHover ? styles.groupHeaderRowHover : null,
-          ]}
-          onPress={() => toggleExpanded(group.id)}
+          style={styles.row}
+          onPress={() => toggleExpanded(groupInstanceKey(group.id, options.keySuffix))}
           onLongPress={() => openGroupScreen(group)}
         >
           <View style={styles.checkboxHit}>
@@ -1283,7 +1427,7 @@ export default function TasksScreen() {
               >
                 {group.title}
               </Text>
-              {nearestDue ? (
+              {nearestDue && !completed ? (
                 <View
                   style={[
                     styles.dueChip,
@@ -1311,9 +1455,11 @@ export default function TasksScreen() {
                 </View>
               ) : null}
             </View>
-            <Text style={[styles.rowMetaNear, contentMutedTextStyle(content)]} numberOfLines={1}>
-              {meta}
-            </Text>
+            {meta ? (
+              <Text style={[styles.rowMetaNear, contentMutedTextStyle(content)]} numberOfLines={1}>
+                {meta}
+              </Text>
+            ) : null}
             {isHover ? (
               <Text style={[styles.dropHint, contentTextStyle(content)]}>ここにドロップ</Text>
             ) : null}
@@ -1326,10 +1472,28 @@ export default function TasksScreen() {
             />
           </View>
         </Pressable>
-        {options.expanded
-          ? members.map((task) => renderTemporaryRow(task, completed, true, accent))
-          : null}
+        {options.expanded && members.length > 0 ? (
+          <>
+            <View style={[styles.catalogGroupRule, { backgroundColor: content.contentBorder }]} />
+            <View style={styles.todayGroupMembers}>
+              {renderMembersWithRules(
+                members.map((task) => renderTemporaryRow(task, completed, true, accent)),
+                styles.todayMemberRule
+              )}
+            </View>
+          </>
+        ) : null}
       </View>
+    );
+    return isCodex ? (
+      <OffsetCard
+        key={`${group.id}${options.keySuffix ?? ''}`}
+        borderColor={isHover ? content.contentText : borderColor}
+      >
+        {groupCard}
+      </OffsetCard>
+    ) : (
+      groupCard
     );
   };
 
@@ -1479,7 +1643,7 @@ export default function TasksScreen() {
               <>
                 {actionRequiredRecurringBundles.map((bundle) =>
                   renderGroupHeader(bundle.group, bundle.members, {
-                    expanded: expandedGroupIds.has(bundle.group.id),
+                    expanded: expandedGroupIds.has(groupInstanceKey(bundle.group.id, '-today-required')),
                     keySuffix: '-today-required',
                     accent: TASK_ACCENT.required,
                   })
@@ -1489,7 +1653,7 @@ export default function TasksScreen() {
                 )}
                 {actionRequiredTemporaryBundles.map((bundle) =>
                   renderTemporaryGroupHeader(bundle.group, bundle.members, {
-                    expanded: expandedGroupIds.has(bundle.group.id),
+                    expanded: expandedGroupIds.has(groupInstanceKey(bundle.group.id, '-today-action-temp')),
                     keySuffix: '-today-action-temp',
                     accent: TASK_ACCENT.required,
                   })
@@ -1509,7 +1673,7 @@ export default function TasksScreen() {
               <>
                 {freeRecurringBundles.map((bundle) =>
                   renderGroupHeader(bundle.group, bundle.members, {
-                    expanded: expandedGroupIds.has(bundle.group.id),
+                    expanded: expandedGroupIds.has(groupInstanceKey(bundle.group.id, '-today-free')),
                     keySuffix: '-today-free',
                     accent: TASK_ACCENT.free,
                   })
@@ -1530,7 +1694,7 @@ export default function TasksScreen() {
               <>
                 {openIncompleteTemporaryBundles.map((bundle) =>
                   renderTemporaryGroupHeader(bundle.group, bundle.members, {
-                    expanded: expandedGroupIds.has(bundle.group.id),
+                    expanded: expandedGroupIds.has(groupInstanceKey(bundle.group.id, '-today-open')),
                     keySuffix: '-today-open',
                     accent: TASK_ACCENT.incomplete,
                   })
@@ -1548,9 +1712,19 @@ export default function TasksScreen() {
                 今日完了したタスクはありません
               </Text>
             ) : (
-              completedTodayTemporary.map((task) =>
-                renderTemporaryRow(task, true, false, TASK_ACCENT.dim)
-              )
+              <>
+                {completedTodayTemporaryBundles.map((bundle) =>
+                  renderTemporaryGroupHeader(bundle.group, bundle.members, {
+                    expanded: expandedGroupIds.has(groupInstanceKey(bundle.group.id, '-today-done-temp')),
+                    keySuffix: '-today-done-temp',
+                    completed: true,
+                    accent: TASK_ACCENT.dim,
+                  })
+                )}
+                {completedTodayTemporaryUngrouped.map((task) =>
+                  renderTemporaryRow(task, true, false, TASK_ACCENT.dim)
+                )}
+              </>
             )}
           </View>
         ) : null}
@@ -1563,7 +1737,7 @@ export default function TasksScreen() {
               <>
                 {bundles.map((bundle) =>
                   renderGroupHeader(bundle.group, bundle.members, {
-                    expanded: !collapsedLibraryGroupIds.has(bundle.group.id),
+                    expanded: !collapsedLibraryGroupIds.has(groupInstanceKey(bundle.group.id, '-lib')),
                     keySuffix: '-lib',
                     registerDropZone: true,
                   })
@@ -1595,7 +1769,7 @@ export default function TasksScreen() {
               <>
                 {libraryTemporaryBundles.map((bundle) =>
                   renderTemporaryGroupHeader(bundle.group, bundle.members, {
-                    expanded: !collapsedLibraryGroupIds.has(bundle.group.id),
+                    expanded: !collapsedLibraryGroupIds.has(groupInstanceKey(bundle.group.id, '-lib')),
                     keySuffix: '-lib',
                     registerDropZone: true,
                   })
@@ -1614,7 +1788,17 @@ export default function TasksScreen() {
                   <>
                     <View style={[styles.completedDivider, { backgroundColor: content.contentBorder }]} />
                     {renderSectionTitle('完了済み', TASK_ACCENT.dim, { muted: true })}
-                    {completedTemporary.map((task) =>
+                    {libraryCompletedTemporaryBundles.map((bundle) =>
+                      renderTemporaryGroupHeader(bundle.group, bundle.members, {
+                        expanded: !collapsedLibraryGroupIds.has(
+                          groupInstanceKey(bundle.group.id, '-lib-done')
+                        ),
+                        keySuffix: '-lib-done',
+                        completed: true,
+                        registerDropZone: false,
+                      })
+                    )}
+                    {libraryCompletedTemporaryUngrouped.map((task) =>
                       renderTemporaryRow(task, true, false, TASK_ACCENT.dim)
                     )}
                   </>
@@ -1634,6 +1818,24 @@ export default function TasksScreen() {
         >
           <View style={styles.helpOverlay}>
             <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setHelpVisible(false)} />
+            {isCodex ? (
+              <OffsetCard contentStyle={{ padding: 18, gap: 12 }}>
+                <Text style={[styles.helpTitle, contentTextStyle(content)]}>タスクの使い方</Text>
+                <Text style={[styles.helpBody, contentMutedTextStyle(content)]}>
+                  ・普段の確認・チェックは「今日やる事」で行います。{'\n'}
+                  ・右上の「タスクの追加・編集」から定期・臨時を切り替え、追加や並び替えができます。{'\n'}
+                  ・今日やる事は要対応 / 自由対応 / 未完了 / 完了済みに分かれます。{'\n'}
+                  ・要対応は「期限が今日以前の臨時タスク」と「今日必須の定期タスク」です。{'\n'}
+                  ・必須は周期の対象日、自由は周期なし（記録のみ）です。{'\n'}
+                  ・グループにも周期を付けられ、メンバー必須との OR でグループ必須になります。{'\n'}
+                  ・編集画面のグループ枠をタップすると、名前や周期を編集できます。{'\n'}
+                  ・編集画面はチェックなしの一覧です。項目を長押しし、グループへドロップすると所属を変えられます。
+                </Text>
+                <Pressable style={styles.helpClose} onPress={() => setHelpVisible(false)}>
+                  <Text style={[styles.helpCloseText, contentTextStyle(content)]}>閉じる</Text>
+                </Pressable>
+              </OffsetCard>
+            ) : (
             <View style={[styles.helpCard, contentSurfaceStyle(content)]}>
               <Text style={[styles.helpTitle, contentTextStyle(content)]}>タスクの使い方</Text>
               <Text style={[styles.helpBody, contentMutedTextStyle(content)]}>
@@ -1650,6 +1852,7 @@ export default function TasksScreen() {
                 <Text style={[styles.helpCloseText, contentTextStyle(content)]}>閉じる</Text>
               </Pressable>
             </View>
+            )}
           </View>
         </Modal>
       ) : null}
@@ -1798,6 +2001,24 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: 'transparent',
   },
+  todayGroupMembers: {
+    paddingLeft: 4,
+    paddingRight: 6,
+    paddingBottom: 4,
+  },
+  todayMemberRule: {
+    height: StyleSheet.hairlineWidth,
+    marginLeft: 52,
+  },
+  memberAccentBar: {
+    width: 3,
+    alignSelf: 'stretch',
+    borderRadius: 2,
+    marginVertical: 8,
+  },
+  memberAccentBarThick: {
+    width: 5,
+  },
   catalogUngroupedTitle: {
     fontSize: 13,
     fontWeight: '700',
@@ -1827,17 +2048,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 20,
   },
-  groupBlock: {
-    gap: 6,
-  },
   dimmedBlock: {
     opacity: 0.45,
-  },
-  groupHeaderRow: {
-    borderRadius: 10,
-  },
-  groupHeaderRowHover: {
-    borderWidth: 2,
   },
   row: {
     flexDirection: 'row',
@@ -1852,9 +2064,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-  },
-  rowIndented: {
-    marginLeft: 18,
   },
   checkboxHit: {
     width: 36,

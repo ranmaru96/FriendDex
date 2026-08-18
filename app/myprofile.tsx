@@ -11,6 +11,8 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { usesOffsetChrome } from '@/constants/designPatterns';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
 import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { useAppTheme } from '@/contexts/AppThemeContext';
@@ -105,7 +107,7 @@ const parseOptionalNumber = (value: string): number | null => {
 
 export default function MyProfileScreen() {
   const router = useRouter();
-  const { colors: appTheme } = useAppTheme();
+  const { colors: appTheme, patternId } = useAppTheme();
   const content = useContentColors();
   const switchColors = contentSwitchColors(content);
   const headerStyles = useSubScreenHeaderStyles();
@@ -238,6 +240,71 @@ export default function MyProfileScreen() {
       >
         <Text style={[styles.sectionHint, contentMutedTextStyle(content)]}>各項目の右側スイッチで公開する項目を選べます</Text>
 
+        {usesOffsetChrome(patternId) ? (
+        <OffsetCard style={{ marginBottom: Spacing.lg }} contentStyle={{ overflow: 'hidden' }}>
+        <View style={[styles.formGroup, { borderWidth: 0, borderRadius: 0, marginBottom: 0 }]}>
+          <View style={styles.fieldRow}>
+            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>名前を公開</Text>
+            <View style={styles.fieldInputSpacer} />
+            <Switch
+              value={publicFieldSet.has('name')}
+              onValueChange={(enabled) => togglePublicField('name', enabled)}
+              trackColor={switchColors.trackColor}
+              thumbColor={publicFieldSet.has('name') ? Theme.accent : switchColors.thumbColorOff}
+              accessibilityLabel="名前を公開"
+            />
+          </View>
+          <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
+          <View style={styles.fieldRow}>
+            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>苗字</Text>
+            <TextInput
+              value={form.familyName}
+              onChangeText={(text) => updateField('familyName', text)}
+              style={[styles.fieldInput, contentInputStyle(content)]}
+              placeholder="苗字"
+              placeholderTextColor={content.contentTextSecondary}
+              autoCapitalize="none"
+            />
+          </View>
+          <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
+          <View style={styles.fieldRow}>
+            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>名前</Text>
+            <TextInput
+              value={form.givenName}
+              onChangeText={(text) => updateField('givenName', text)}
+              style={[styles.fieldInput, contentInputStyle(content)]}
+              placeholder="名前"
+              placeholderTextColor={content.contentTextSecondary}
+              autoCapitalize="none"
+            />
+          </View>
+          {FIELD_CONFIGS.map((field) => (
+            <View key={field.key}>
+              <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
+              <View style={styles.fieldRow}>
+                <Text style={[styles.fieldLabel, contentTextStyle(content)]}>{field.label}</Text>
+                <TextInput
+                  value={form[field.key]}
+                  onChangeText={(text) => updateField(field.key, text)}
+                  style={[styles.fieldInput, contentInputStyle(content)]}
+                  keyboardType={field.keyboardType ?? 'default'}
+                  placeholderTextColor={content.contentTextSecondary}
+                  autoCapitalize="none"
+                />
+                <Switch
+                  value={publicFieldSet.has(field.key)}
+                  onValueChange={(enabled) => togglePublicField(field.key, enabled)}
+                  trackColor={switchColors.trackColor}
+                  thumbColor={
+                    publicFieldSet.has(field.key) ? Theme.accent : switchColors.thumbColorOff
+                  }
+                />
+              </View>
+            </View>
+          ))}
+        </View>
+        </OffsetCard>
+        ) : (
         <View style={[styles.formGroup, contentSurfaceStyle(content)]}>
           <View style={styles.fieldRow}>
             <Text style={[styles.fieldLabel, contentTextStyle(content)]}>名前を公開</Text>
@@ -299,6 +366,7 @@ export default function MyProfileScreen() {
             </View>
           ))}
         </View>
+        )}
 
         <Pressable style={styles.primaryButton} onPress={handleSave}>
           <Text style={styles.primaryButtonText}>保存する</Text>

@@ -41,7 +41,7 @@ export default {
       infoPlist: {
         NSPhotoLibraryUsageDescription: "プロフィール写真の選択・保存などのために、写真ライブラリへのアクセスが必要になる場合があります。",
         NSCameraUsageDescription: "QRコードをスキャンして友達を登録するために、カメラへのアクセスが必要です。",
-        NSUserNotificationsUsageDescription: "予定のリマインダーをお知らせするために、通知の許可が必要です。",
+        NSUserNotificationsUsageDescription: "予定とタスクのリマインダーをお知らせするために、通知の許可が必要です。",
         ITSAppUsesNonExemptEncryption: false
       }
     },

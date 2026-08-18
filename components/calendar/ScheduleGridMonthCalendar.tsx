@@ -16,19 +16,20 @@ import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useContentColors } from '@/utils/useContentColors';
 import { YearMonthRollPicker } from '@/components/ui/RollSelect';
+import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import type { Event } from '@/types';
 import {
-  buildScheduleGridChipsForDate,
+  assignScheduleGridLanesForWeek,
+  buildScheduleGridSlotsForDate,
   buildScheduleGridWeeks,
   getScheduleGridBarSpanWidthPx,
   getScheduleGridWeekdayLabels,
   SCHEDULE_GRID_CELL_BLEED,
   SCHEDULE_GRID_EVENT_SLOTS,
-  SCHEDULE_GRID_MAX_EVENTS,
   type ScheduleGridDay,
   type ScheduleGridEventChip,
+  type ScheduleGridWeekLaneLayout,
 } from '@/utils/scheduleGridCalendar';
-import { filterEventsByLocalDate } from '@/utils/eventHelpers';
 
 const GRID_BORDER = Theme.inputBorder;
 /** 当日日付バッジ（オレンジ） */
@@ -79,16 +80,25 @@ function getChipBarStyles(chip: ScheduleGridEventChip, barWidthPx: number | null
       overflow: 'hidden',
       zIndex: 2,
     });
+    switch (chip.span) {
+      case 'start':
+        barStyles.push(styles.eventChipRadiusLeft);
+        break;
+      case 'end':
+        barStyles.push(styles.eventChipRadiusRight);
+        break;
+      case 'middle':
+        break;
+      default:
+        barStyles.push(styles.eventChipSingle);
+        break;
+    }
+    return barStyles;
   }
 
   switch (chip.span) {
     case 'start':
-      barStyles.push(styles.eventChipStart, styles.eventChipRadiusLeft);
-      if (chip.spanDaysInWeek <= 1) {
-        barStyles.push(styles.eventChipConnectRight);
-      } else {
-        barStyles.push(styles.eventChipRadiusRight);
-      }
+      barStyles.push(styles.eventChipStart, styles.eventChipRadiusLeft, styles.eventChipConnectRight);
       break;
     case 'middle':
       barStyles.push(styles.eventChipMiddle, styles.eventChipConnectBoth);
@@ -106,8 +116,9 @@ function getChipBarStyles(chip: ScheduleGridEventChip, barWidthPx: number | null
 
 function EventChip({ chip, cellWidth }: { chip: ScheduleGridEventChip; cellWidth: number }) {
   const spansMultipleDays = chip.label != null && chip.spanDaysInWeek > 1;
+  const continuesRight = chip.span === 'start' || chip.span === 'middle';
   const barWidthPx = spansMultipleDays
-    ? getScheduleGridBarSpanWidthPx(cellWidth, chip.spanDaysInWeek)
+    ? getScheduleGridBarSpanWidthPx(cellWidth, chip.spanDaysInWeek, continuesRight)
     : null;
 
   return (
@@ -124,6 +135,7 @@ function EventChip({ chip, cellWidth }: { chip: ScheduleGridEventChip; cellWidth
 function DayCell({
   day,
   week,
+  weekLayout,
   cellWidth,
   selectedDate,
   todayKey,
@@ -136,6 +148,7 @@ function DayCell({
 }: {
   day: ScheduleGridDay;
   week: ScheduleGridDay[];
+  weekLayout: ScheduleGridWeekLaneLayout;
   cellWidth: number;
   selectedDate: string;
   todayKey: string;
@@ -148,14 +161,11 @@ function DayCell({
 }) {
   const isSelected = day.dateKey === selectedDate;
   const isToday = day.dateKey === todayKey;
-  const chips = useMemo(
-    () => buildScheduleGridChipsForDate(events, day.dateKey, week, cellWidth),
-    [cellWidth, day.dateKey, events, week]
+  const slots = useMemo(
+    () => buildScheduleGridSlotsForDate(events, day.dateKey, week, cellWidth, weekLayout),
+    [cellWidth, day.dateKey, events, week, weekLayout]
   );
-  const overflowCount = useMemo(() => {
-    const total = filterEventsByLocalDate(events, day.dateKey).length;
-    return Math.max(0, total - SCHEDULE_GRID_MAX_EVENTS);
-  }, [day.dateKey, events]);
+  const overflowCount = weekLayout.overflowCountByDate.get(day.dateKey) ?? 0;
 
   const content = useContentColors();
   const dateColor = useMemo(() => {
@@ -171,9 +181,6 @@ function DayCell({
     return content.contentText;
   }, [content.contentText, content.contentTextSecondary, day.dayOfWeek, day.inCurrentMonth]);
 
-  const emptySlots = Math.max(0, SCHEDULE_GRID_EVENT_SLOTS - chips.length);
-  const hasSpanningLabel = chips.some((chip) => chip.label != null && chip.spanDaysInWeek > 1);
-
   return (
     <Pressable
       style={[
@@ -185,9 +192,9 @@ function DayCell({
           backgroundColor: day.inCurrentMonth
             ? content.contentCalendarInMonth
             : content.contentCalendarOutMonth,
+          // 左の曜日を手前にして、はみ出した複数日バーが右セルに隠れないようにする
+          zIndex: 8 - day.dayOfWeek,
         },
-        hasSpanningLabel ? styles.dayCellSpanningLabel : null,
-        isSelected ? styles.dayCellSelected : null,
       ]}
       onPress={() => onDayPress(day.dateKey)}
     >
@@ -244,14 +251,76 @@ function DayCell({
       </View>
 
       <View style={styles.chipColumn}>
-        {chips.map((chip) => (
-          <EventChip key={`${chip.eventId}-${day.dateKey}`} chip={chip} cellWidth={cellWidth} />
-        ))}
-        {Array.from({ length: emptySlots }).map((_, index) => (
-          <View key={`slot-${index}`} style={styles.chipPlaceholder} />
-        ))}
+        {slots.map((chip, index) =>
+          chip ? (
+            <EventChip key={`${chip.eventId}-${day.dateKey}`} chip={chip} cellWidth={cellWidth} />
+          ) : (
+            <View key={`slot-${day.dateKey}-${index}`} style={styles.chipPlaceholder} />
+          )
+        )}
       </View>
     </Pressable>
+  );
+}
+
+function WeekRow({
+  week,
+  weekIndex,
+  weekCount,
+  cellWidth,
+  selectedDate,
+  todayKey,
+  events,
+  onDayPress,
+  gridLineColor,
+  gridLineWidth,
+  birthdayMonthDays,
+}: {
+  week: ScheduleGridDay[];
+  weekIndex: number;
+  weekCount: number;
+  cellWidth: number;
+  selectedDate: string;
+  todayKey: string;
+  events: Event[];
+  onDayPress: (dateKey: string) => void;
+  gridLineColor: string;
+  gridLineWidth: number;
+  birthdayMonthDays?: Set<string>;
+}) {
+  const weekLayout = useMemo(
+    () => assignScheduleGridLanesForWeek(week, events),
+    [events, week]
+  );
+
+  return (
+    <View
+      style={[
+        styles.weekRow,
+        { backgroundColor: gridLineColor },
+        weekIndex < weekCount - 1
+          ? { borderBottomWidth: gridLineWidth, borderBottomColor: gridLineColor }
+          : null,
+      ]}
+    >
+      {week.map((day, dayIndex) => (
+        <DayCell
+          key={day.dateKey}
+          day={day}
+          week={week}
+          weekLayout={weekLayout}
+          cellWidth={cellWidth}
+          selectedDate={selectedDate}
+          todayKey={todayKey}
+          events={events}
+          onDayPress={onDayPress}
+          isLastColumn={dayIndex === 6}
+          gridLineColor={gridLineColor}
+          gridLineWidth={gridLineWidth}
+          hasBirthday={birthdayMonthDays?.has(day.dateKey.slice(5)) ?? false}
+        />
+      ))}
+    </View>
   );
 }
 
@@ -422,14 +491,15 @@ export function ScheduleGridMonthCalendar({
               setDraftMonth(nextMonth);
             }}
           />
-          <Pressable
-            style={[styles.yearMonthDone, { borderColor: content.contentBorder }]}
+          <PickerDoneOverlay
+            style={[
+              styles.yearMonthDone,
+              { borderColor: content.contentBorder, backgroundColor: content.contentCard },
+            ]}
+            textStyle={[styles.yearMonthDoneText, { color: content.contentText }]}
             onPress={confirmYearMonthPicker}
-            accessibilityRole="button"
             accessibilityLabel="年月選択を完了"
-          >
-            <Text style={[styles.yearMonthDoneText, { color: content.contentText }]}>完了</Text>
-          </Pressable>
+          />
         </View>
       ) : null}
 
@@ -470,33 +540,20 @@ export function ScheduleGridMonthCalendar({
 
       <View style={[styles.grid, { backgroundColor: gridLineColor }]} onLayout={handleGridLayout}>
         {weeks.map((week, weekIndex) => (
-          <View
+          <WeekRow
             key={`week-${weekIndex}`}
-            style={[
-              styles.weekRow,
-              { backgroundColor: gridLineColor },
-              weekIndex < weeks.length - 1
-                ? { borderBottomWidth: gridLineWidth, borderBottomColor: gridLineColor }
-                : null,
-            ]}
-          >
-            {week.map((day, dayIndex) => (
-              <DayCell
-                key={day.dateKey}
-                day={day}
-                week={week}
-                cellWidth={cellWidth}
-                selectedDate={selectedDate}
-                todayKey={todayKey}
-                events={events}
-                onDayPress={onDayPress}
-                isLastColumn={dayIndex === 6}
-                gridLineColor={gridLineColor}
-                gridLineWidth={gridLineWidth}
-                hasBirthday={birthdayMonthDays?.has(day.dateKey.slice(5)) ?? false}
-              />
-            ))}
-          </View>
+            week={week}
+            weekIndex={weekIndex}
+            weekCount={weeks.length}
+            cellWidth={cellWidth}
+            selectedDate={selectedDate}
+            todayKey={todayKey}
+            events={events}
+            onDayPress={onDayPress}
+            gridLineColor={gridLineColor}
+            gridLineWidth={gridLineWidth}
+            birthdayMonthDays={birthdayMonthDays}
+          />
         ))}
       </View>
     </View>
@@ -565,10 +622,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 4,
     paddingBottom: 10,
-    gap: 8,
   },
   yearMonthDone: {
-    alignSelf: 'flex-end',
     paddingHorizontal: 12,
     paddingVertical: 7,
     borderRadius: 8,
@@ -628,9 +683,6 @@ const styles = StyleSheet.create({
     borderColor: SELECTED_RING,
     zIndex: 4,
   },
-  dayCellSelected: {
-    zIndex: 6,
-  },
   dateRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -670,9 +722,6 @@ const styles = StyleSheet.create({
   chipColumn: {
     gap: CHIP_GAP,
     overflow: 'visible',
-  },
-  dayCellSpanningLabel: {
-    zIndex: 3,
   },
   eventChip: {
     height: CHIP_HEIGHT,

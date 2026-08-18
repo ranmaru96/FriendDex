@@ -64,10 +64,15 @@ export function truncateScheduleGridTitleByWidth(title: string, maxDisplayWidth:
   return result;
 }
 
-/** 開始日チップが週内で覆うバー幅（セル内容＋セル間ギャップ） */
+/**
+ * 開始日チップが週内で覆うバー幅。
+ * flushEnd のときだけ最終セル右端まで伸ばす（翌週へ続くバー）。
+ * イベント最終日は初日左余白と同じだけ右を空ける。
+ */
 export function getScheduleGridBarSpanWidthPx(
   cellWidth: number,
-  spanDaysInWeek: number
+  spanDaysInWeek: number,
+  flushEnd = false
 ): number {
   if (cellWidth <= 0 || spanDaysInWeek <= 0) {
     return 0;
@@ -75,7 +80,9 @@ export function getScheduleGridBarSpanWidthPx(
   const dayContentWidth = cellWidth - SCHEDULE_GRID_DAY_CELL_PADDING_H * 2;
   const interCellGap = SCHEDULE_GRID_DAY_CELL_PADDING_H * 2;
   return (
-    spanDaysInWeek * dayContentWidth + Math.max(0, spanDaysInWeek - 1) * interCellGap
+    spanDaysInWeek * dayContentWidth +
+    Math.max(0, spanDaysInWeek - 1) * interCellGap +
+    (flushEnd ? SCHEDULE_GRID_DAY_CELL_PADDING_H : 0)
   );
 }
 
@@ -138,15 +145,34 @@ export function isScheduleGridWeekSegmentStart(
   return !weekKeySet.has(keys[idx - 1]);
 }
 
-export function getScheduleGridChipSpan(event: Event, dateKey: string): ScheduleGridChipSpan {
+/** 週区間バーの左／右端が、イベント全体の開始・終了のどれか */
+export function getScheduleGridChipSpan(
+  event: Event,
+  dateKey: string,
+  week: ScheduleGridDay[]
+): ScheduleGridChipSpan {
   const keys = getLocalDateKeysForEvent(event);
   if (keys.length <= 1) {
     return 'single';
   }
-  if (dateKey === keys[0]) {
+
+  const spanDays = getSpanDaysInWeek(event, dateKey, week);
+  const weekKeys = week.map((day) => day.dateKey);
+  const startIdx = weekKeys.indexOf(dateKey);
+  const segmentEndKey =
+    startIdx >= 0
+      ? weekKeys[Math.min(startIdx + spanDays - 1, weekKeys.length - 1)]
+      : dateKey;
+
+  const roundLeft = dateKey === keys[0];
+  const roundRight = segmentEndKey === keys[keys.length - 1];
+  if (roundLeft && roundRight) {
+    return 'single';
+  }
+  if (roundLeft) {
     return 'start';
   }
-  if (dateKey === keys[keys.length - 1]) {
+  if (roundRight) {
     return 'end';
   }
   return 'middle';
@@ -184,27 +210,140 @@ export function buildScheduleGridWeeks(year: number, month: number): ScheduleGri
   return weeks;
 }
 
+export type ScheduleGridWeekLaneLayout = {
+  laneByEventId: Map<string, number>;
+  overflowCountByDate: Map<string, number>;
+};
+
+function eventDaysInWeek(event: Event, week: ScheduleGridDay[]): string[] {
+  const weekKeySet = new Set(week.map((day) => day.dateKey));
+  return getLocalDateKeysForEvent(event).filter((key) => weekKeySet.has(key));
+}
+
+function collectEventsInWeek(week: ScheduleGridDay[], events: Event[]): Event[] {
+  const byId = new Map<string, Event>();
+  week.forEach((day) => {
+    filterEventsByLocalDate(events, day.dateKey).forEach((event) => {
+      if (!byId.has(event.id)) {
+        byId.set(event.id, event);
+      }
+    });
+  });
+  return Array.from(byId.values()).sort((left, right) => {
+    const start = left.startAt.localeCompare(right.startAt);
+    if (start !== 0) {
+      return start;
+    }
+    const longerFirst = right.endAt.localeCompare(left.endAt);
+    if (longerFirst !== 0) {
+      return longerFirst;
+    }
+    return left.id.localeCompare(right.id);
+  });
+}
+
+/**
+ * 週内で複数日バーが同じ行に残るようレーンを先に決める。
+ * 単日予定は空いた行に入り、その日だけの上下は入れ替わってよい。
+ */
+export function assignScheduleGridLanesForWeek(
+  week: ScheduleGridDay[],
+  events: Event[]
+): ScheduleGridWeekLaneLayout {
+  const occupancy: Array<Set<string>> = Array.from(
+    { length: SCHEDULE_GRID_EVENT_SLOTS },
+    () => new Set()
+  );
+  const laneByEventId = new Map<string, number>();
+  const overflowIdsByDate = new Map<string, Set<string>>();
+  week.forEach((day) => overflowIdsByDate.set(day.dateKey, new Set()));
+
+  collectEventsInWeek(week, events).forEach((event) => {
+    const days = eventDaysInWeek(event, week);
+    if (days.length === 0) {
+      return;
+    }
+    let lane = -1;
+    for (let index = 0; index < SCHEDULE_GRID_EVENT_SLOTS; index += 1) {
+      if (days.every((dateKey) => !occupancy[index].has(dateKey))) {
+        lane = index;
+        break;
+      }
+    }
+    if (lane >= 0) {
+      laneByEventId.set(event.id, lane);
+      days.forEach((dateKey) => occupancy[lane].add(dateKey));
+      return;
+    }
+    days.forEach((dateKey) => overflowIdsByDate.get(dateKey)?.add(event.id));
+  });
+
+  const overflowCountByDate = new Map<string, number>();
+  overflowIdsByDate.forEach((ids, dateKey) => {
+    overflowCountByDate.set(dateKey, ids.size);
+  });
+  return { laneByEventId, overflowCountByDate };
+}
+
+function buildChipForEvent(
+  event: Event,
+  dateKey: string,
+  week: ScheduleGridDay[],
+  cellWidth: number
+): ScheduleGridEventChip {
+  const showLabel = isScheduleGridWeekSegmentStart(event, dateKey, week);
+  const spanDaysInWeek = showLabel ? getSpanDaysInWeek(event, dateKey, week) : 1;
+  const maxDisplayWidth = getScheduleGridMaxDisplayWidthForLabel(cellWidth, spanDaysInWeek);
+  return {
+    eventId: event.id,
+    color: getEventCalendarColor(event.episodeTag),
+    label: showLabel
+      ? truncateScheduleGridTitleByWidth(event.title, maxDisplayWidth)
+      : null,
+    span: getScheduleGridChipSpan(event, dateKey, week),
+    spanDaysInWeek,
+  };
+}
+
+/**
+ * 3 スロット。複数日予定は週区間の開始日だけチップを置き、継続日は
+ * 左から伸びるバー用にプレースホルダでレーンを空ける。
+ */
+export function buildScheduleGridSlotsForDate(
+  events: Event[],
+  dateKey: string,
+  week: ScheduleGridDay[],
+  cellWidth: number,
+  layout: ScheduleGridWeekLaneLayout
+): Array<ScheduleGridEventChip | null> {
+  const slots: Array<ScheduleGridEventChip | null> = Array.from(
+    { length: SCHEDULE_GRID_EVENT_SLOTS },
+    () => null
+  );
+  filterEventsByLocalDate(events, dateKey).forEach((event) => {
+    const lane = layout.laneByEventId.get(event.id);
+    if (lane == null || lane < 0 || lane >= SCHEDULE_GRID_EVENT_SLOTS) {
+      return;
+    }
+    if (!isScheduleGridWeekSegmentStart(event, dateKey, week)) {
+      return;
+    }
+    slots[lane] = buildChipForEvent(event, dateKey, week, cellWidth);
+  });
+  return slots;
+}
+
+/** @deprecated レーン割り当て後は buildScheduleGridSlotsForDate を使う */
 export function buildScheduleGridChipsForDate(
   events: Event[],
   dateKey: string,
   week: ScheduleGridDay[],
   cellWidth: number
 ): ScheduleGridEventChip[] {
-  const dayEvents = filterEventsByLocalDate(events, dateKey);
-  return dayEvents.slice(0, SCHEDULE_GRID_MAX_EVENTS).map((event) => {
-    const showLabel = isScheduleGridWeekSegmentStart(event, dateKey, week);
-    const spanDaysInWeek = showLabel ? getSpanDaysInWeek(event, dateKey, week) : 1;
-    const maxDisplayWidth = getScheduleGridMaxDisplayWidthForLabel(cellWidth, spanDaysInWeek);
-    return {
-      eventId: event.id,
-      color: getEventCalendarColor(event.episodeTag),
-      label: showLabel
-        ? truncateScheduleGridTitleByWidth(event.title, maxDisplayWidth)
-        : null,
-      span: getScheduleGridChipSpan(event, dateKey),
-      spanDaysInWeek,
-    };
-  });
+  const layout = assignScheduleGridLanesForWeek(week, events);
+  return buildScheduleGridSlotsForDate(events, dateKey, week, cellWidth, layout).filter(
+    (chip): chip is ScheduleGridEventChip => chip != null
+  );
 }
 
 /** @deprecated 固定スロット高さに移行。互換のため残す */

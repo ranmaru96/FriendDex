@@ -286,6 +286,25 @@ export function collectPastDueDates(
   return dates;
 }
 
+/** 指定日以降で、次に周期が当たる日（その日から走査、最大 maxDays 日） */
+export function findNextScheduledDueDate(
+  task: TaskScheduleLike,
+  from: Date,
+  maxDays = 400
+): Date | null {
+  if (task.pace !== 'scheduled') {
+    return null;
+  }
+  let cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  for (let i = 0; i < maxDays; i += 1) {
+    if (isRecurringDueOnDate(task, cursor)) {
+      return cursor;
+    }
+    cursor = addDays(cursor, 1);
+  }
+  return null;
+}
+
 /**
  * Streak = consecutive scheduled appearance days completed (walking backward from asOf).
  * For unpaced, appearance = every calendar day with at most one completion/day.

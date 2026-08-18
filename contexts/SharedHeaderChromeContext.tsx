@@ -29,6 +29,9 @@ type SharedHeaderChromeContextValue = {
   setDetailHeader: (config: SharedDetailHeaderConfig | null) => void;
   subToolHeader: SharedSubToolHeaderConfig | null;
   setSubToolHeader: (config: SharedSubToolHeaderConfig | null) => void;
+  /** 入力フォーム表示中など、パスに関係なくボトムナビを隠す */
+  suppressBottomNav: boolean;
+  setSuppressBottomNav: (hide: boolean) => void;
 };
 
 const SharedHeaderChromeContext = createContext<SharedHeaderChromeContextValue | null>(null);
@@ -36,6 +39,7 @@ const SharedHeaderChromeContext = createContext<SharedHeaderChromeContextValue |
 export function SharedHeaderChromeProvider({ children }: { children: ReactNode }) {
   const [detailHeader, setDetailHeaderState] = useState<SharedDetailHeaderConfig | null>(null);
   const [subToolHeader, setSubToolHeaderState] = useState<SharedSubToolHeaderConfig | null>(null);
+  const [suppressBottomNav, setSuppressBottomNavState] = useState(false);
 
   const setDetailHeader = useCallback((config: SharedDetailHeaderConfig | null) => {
     setDetailHeaderState(config);
@@ -45,14 +49,27 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
     setSubToolHeaderState(config);
   }, []);
 
+  const setSuppressBottomNav = useCallback((hide: boolean) => {
+    setSuppressBottomNavState(hide);
+  }, []);
+
   const value = useMemo(
     () => ({
       detailHeader,
       setDetailHeader,
       subToolHeader,
       setSubToolHeader,
+      suppressBottomNav,
+      setSuppressBottomNav,
     }),
-    [detailHeader, setDetailHeader, subToolHeader, setSubToolHeader]
+    [
+      detailHeader,
+      setDetailHeader,
+      subToolHeader,
+      setSubToolHeader,
+      suppressBottomNav,
+      setSuppressBottomNav,
+    ]
   );
 
   return (

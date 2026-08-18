@@ -1,9 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Theme, Radius, Spacing } from '@/constants/theme';
+import { Theme, Spacing } from '@/constants/theme';
+import { OffsetCard } from '@/components/ui/OffsetCard';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   contentMutedTextStyle,
-  contentSurfaceStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import type { MockSettlementRoom } from '@/types/settlementMock';
@@ -21,10 +21,11 @@ export function SettlementGroupCard({ room, onPress, settled = false }: Settleme
   const expenseTotal = room.expenses.reduce((sum, expense) => sum + expense.amount, 0);
 
   return (
-    <Pressable
-      style={[styles.card, contentSurfaceStyle(content), settled && styles.cardSettled]}
-      onPress={onPress}
-    >
+    <OffsetCard brackets>
+      <Pressable
+        style={[styles.card, settled && styles.cardSettled]}
+        onPress={onPress}
+      >
       <View style={styles.header}>
         <Text
           style={[
@@ -58,13 +59,12 @@ export function SettlementGroupCard({ room, onPress, settled = false }: Settleme
         <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>支出はまだありません</Text>
       )}
     </Pressable>
+    </OffsetCard>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 4,
   },

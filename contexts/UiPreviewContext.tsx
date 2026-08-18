@@ -18,6 +18,7 @@ import {
   setUiPreviewVariant,
 } from '../db';
 import { useAppTheme } from './AppThemeContext';
+import { usesOffsetChrome } from '@/constants/designPatterns';
 
 type UiPreviewContextValue = {
   variant: UiPreviewVariant;
@@ -35,7 +36,7 @@ type UiPreviewContextValue = {
 const UiPreviewContext = createContext<UiPreviewContextValue | null>(null);
 
 export function UiPreviewProvider({ children }: { children: ReactNode }) {
-  const { colors: appThemeColors } = useAppTheme();
+  const { colors: appThemeColors, patternId, shape } = useAppTheme();
   const [variant, setVariantState] = useState<UiPreviewVariant>('stable');
   const [episodeListPhotoLayout, setEpisodeListPhotoLayoutState] =
     useState<EpisodeListPhotoLayout | null>(null);
@@ -90,6 +91,20 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
       calendarEventTimeDisplay: 'column',
       detailProfileCardStyle: 'flat',
     };
+    if (usesOffsetChrome(patternId)) {
+      next = {
+        ...next,
+        panelBorderRadius: shape.cardBorderRadius,
+        panelBorderWidth: shape.cardBorderWidth,
+        episodeListCardBorderRadius: shape.cardBorderRadius,
+        calendarEventCardBorderRadius: shape.cardBorderRadius,
+        toolScreenCardBorderRadius: shape.cardBorderRadius,
+        friendsScreenBorderRadius: shape.cardBorderRadius,
+        searchAreaFieldBorderRadius: shape.innerRadius,
+        formFieldBorderRadius: shape.innerRadius,
+        formPanelBorderRadius: shape.cardBorderRadius,
+      };
+    }
     const photoLayout = episodeListPhotoLayout ?? next.episodeListPhotoLayout;
     if (photoLayout !== next.episodeListPhotoLayout) {
       next = {
@@ -101,6 +116,8 @@ export function UiPreviewProvider({ children }: { children: ReactNode }) {
     return next;
   }, [
     variant,
+    patternId,
+    shape,
     appThemeColors.screenBackground,
     appThemeColors.topBarText,
     appThemeColors.contentCard,

@@ -14,9 +14,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useDetailDesign } from '../contexts/DetailDesignContext';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
+import { usesOffsetChrome } from '@/constants/designPatterns';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { createDetailStyles } from '../utils/detailStyles';
 import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
+import { OffsetCard } from '@/components/ui/OffsetCard';
 import { TabScreenTemplate } from '@/components/screen-templates';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
@@ -164,10 +166,23 @@ export default function CommonItemsScreen() {
         rawBundle,
         appTheme?.variant ?? 'default',
         content,
-        appTheme?.colors.screenBackground ?? content.contentCard
+        appTheme?.colors.screenBackground ?? content.contentCard,
+        appTheme
+          ? { id: appTheme.patternId, colors: appTheme.patternColors, shape: appTheme.shape }
+          : null
       ),
-    [appTheme?.colors.screenBackground, appTheme?.variant, content, rawBundle]
+    [
+      appTheme,
+      appTheme?.colors.screenBackground,
+      appTheme?.patternColors,
+      appTheme?.patternId,
+      appTheme?.shape,
+      appTheme?.variant,
+      content,
+      rawBundle,
+    ]
   );
+  const isCodex = usesOffsetChrome(appTheme?.patternId);
   const detailStyles = useMemo(() => createDetailStyles(bundle.colors), [bundle.colors]);
   const isFlatCommonItemsPanel = kit.commonItemsPanelBorderRadius === 0;
   const commonItemsPanelStyle = useMemo(
@@ -545,6 +560,24 @@ export default function CommonItemsScreen() {
             onPress={() => setInfoVisible(false)}
             accessibilityLabel="閉じる"
           />
+          {isCodex ? (
+          <OffsetCard style={{ alignSelf: 'stretch' }} contentStyle={{ padding: 18, gap: 12 }}>
+            <Text style={[styles.infoTitle, contentTextStyle(content)]}>共通項目について</Text>
+            <Text style={[styles.infoBody, contentMutedTextStyle(content)]}>
+              {[
+                '・人物プロフィールで使う所属・経験などの候補をまとめて管理します。',
+                '・一覧の絞り込みや、プロフィール編集時の候補に使われます。',
+                '・タグをタップすると編集できます。＋で新規追加できます。',
+              ].join('\n')}
+            </Text>
+            <Pressable
+              style={[styles.infoClose, contentInputStyle(content)]}
+              onPress={() => setInfoVisible(false)}
+            >
+              <Text style={[styles.infoCloseText, contentTextStyle(content)]}>閉じる</Text>
+            </Pressable>
+          </OffsetCard>
+          ) : (
           <View style={[styles.infoCard, contentSurfaceStyle(content)]}>
             <Text style={[styles.infoTitle, contentTextStyle(content)]}>共通項目について</Text>
             <Text style={[styles.infoBody, contentMutedTextStyle(content)]}>
@@ -561,6 +594,7 @@ export default function CommonItemsScreen() {
               <Text style={[styles.infoCloseText, contentTextStyle(content)]}>閉じる</Text>
             </Pressable>
           </View>
+          )}
         </View>
       </Modal>
 

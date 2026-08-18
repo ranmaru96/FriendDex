@@ -15,6 +15,8 @@ const HIDE_HEADER_PATHS = [
   'settlement',
   'settlement-room',
   'relationship-map',
+  'your-answer',
+  'wishlist',
   'follows',
   'friends',
   'task-edit',
@@ -59,7 +61,9 @@ export function getActiveTab(pathname: string): BottomNavTabKey | null {
     pathname.includes('/shuffle') ||
     pathname.includes('/settlement') ||
     pathname.includes('/settlement-room') ||
-    pathname.includes('/relationship-map')
+    pathname.includes('/relationship-map') ||
+    pathname.includes('/your-answer') ||
+    pathname.includes('/wishlist')
   ) {
     return 'tools';
   }

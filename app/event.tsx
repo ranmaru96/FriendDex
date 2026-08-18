@@ -21,6 +21,7 @@ import { formatEpisodeDateToYMD } from '@/components/episode/types';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
+import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
@@ -942,12 +943,11 @@ export default function EventScreen() {
                 {...pickerBounds}
                 onChange={handlePickerChange}
               />
-              <Pressable
-                style={[styles.pickerDoneButton, fieldCorner, contentTagStyle(content)]}
+              <PickerDoneOverlay
+                style={[fieldCorner, contentTagStyle(content)]}
+                textStyle={contentTextStyle(content)}
                 onPress={() => setActivePicker(null)}
-              >
-                <Text style={[styles.pickerDoneText, contentTextStyle(content)]}>完了</Text>
-              </Pressable>
+              />
             </View>
           ) : null}
 
@@ -1424,19 +1424,6 @@ const styles = StyleSheet.create({
   },
   picker: {
     alignSelf: 'flex-end',
-  },
-  pickerDoneButton: {
-    alignSelf: 'flex-end',
-    marginTop: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: 6,
-    borderRadius: 0,
-    backgroundColor: Theme.border,
-  },
-  pickerDoneText: {
-    color: Theme.textPrimary,
-    fontWeight: '600',
-    fontSize: Typography.base,
   },
   deleteLinkWrap: {
     alignSelf: 'center',

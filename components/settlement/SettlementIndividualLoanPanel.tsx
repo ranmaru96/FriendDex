@@ -13,6 +13,7 @@ import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { MoneyLoanRecentCounterpartyChips } from '@/components/money-loan/MoneyLoanRecentCounterpartyChips';
+import { MoneyLoanFormCard } from '@/components/money-loan/MoneyLoanFormCard';
 import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { SettlementPersonAggregateCard } from '@/components/settlement/SettlementPersonAggregateCard';
@@ -409,7 +410,7 @@ export function SettlementIndividualLoanPanel() {
 
   return (
     <>
-      <View style={formStyles.formCard}>
+      <MoneyLoanFormCard>
         <Text style={formStyles.sectionTitleOnCard}>個別の貸し借り</Text>
         <Text style={[styles.hint, { color: content.contentTextSecondary }]}>
           グループを作らず、相手1人との貸し借りを登録できます。
@@ -494,7 +495,7 @@ export function SettlementIndividualLoanPanel() {
         <Pressable style={formStyles.primaryButton} onPress={handleRegister}>
           <Text style={formStyles.primaryButtonText}>登録</Text>
         </Pressable>
-      </View>
+      </MoneyLoanFormCard>
 
       {personAggregates.length === 0 ? (
         <Text style={formStyles.emptyTextOnBase}>まだ貸し借りはありません。</Text>
@@ -569,7 +570,7 @@ export function SettlementIndividualLoanPanel() {
             </Pressable>
           </View>
 
-          <View style={[formStyles.formCard, styles.editCard]}>
+          <MoneyLoanFormCard style={styles.editCard}>
             <View style={formStyles.formRow}>
               <Text style={formStyles.formLabel}>タイトル</Text>
               <TextInput
@@ -645,7 +646,7 @@ export function SettlementIndividualLoanPanel() {
             <Pressable style={styles.deleteButton} onPress={handleDeleteEdit}>
               <Text style={styles.deleteButtonText}>削除</Text>
             </Pressable>
-          </View>
+          </MoneyLoanFormCard>
         </SafeAreaView>
       </Modal>
     </>

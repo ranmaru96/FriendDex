@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode } from 'react';
 import {
   Alert,
   FlatList,
@@ -12,6 +12,8 @@ import {
   useWindowDimensions,
   View,
   type ListRenderItem,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -19,6 +21,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { DetailTabKey } from '@/constants/detailThemes';
 import { DETAIL_TAB_KEYS } from '@/constants/detailThemes/tabs';
 import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
@@ -26,20 +29,24 @@ import { TabScreenTemplate } from '@/components/screen-templates';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
 import { setNextStackAnimation } from '@/utils/tabTransition';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
+import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { useDetailDesign } from './contexts/DetailDesignContext';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
+import { usesOffsetChrome } from '@/constants/designPatterns';
 import { useAppTheme } from './contexts/AppThemeContext';
 import { createDetailStyles } from './utils/detailStyles';
 import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
 import { useContentColors } from '@/utils/useContentColors';
 import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
 import { pastOrTodayDatePickerBounds } from '@/utils/datePickerBounds';
-import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { contentDateTimePickerProps } from '@/utils/contentStyleHelpers';
+import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
 import { deletePersistedImages } from '@/utils/persistImageFile';
 import { computeProfileCompleteness } from '@/utils/profileCompleteness';
 import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
@@ -282,15 +289,17 @@ function MultiValueSummarySection({
   styles,
   infoChipStyles,
   colors: c,
+  useOffsetCard = false,
 }: {
   rows: MultiValueRow[];
   withCard?: boolean;
   styles: ReturnType<typeof createDetailStyles>;
   infoChipStyles: Record<string, { backgroundColor: string; borderColor: string; color: string; borderWidth: number }>;
   colors: ReturnType<typeof useDetailDesign>['bundle']['colors'];
+  useOffsetCard?: boolean;
 }) {
-  return (
-    <View style={withCard ? styles.multiValueCard : styles.multiValuePlainContainer}>
+  const body = (
+    <>
       {rows.map((row, rowIndex) => {
         const chipColors = infoChipStyles[row.title] ?? {
           backgroundColor: 'transparent',
@@ -328,11 +337,47 @@ function MultiValueSummarySection({
           </View>
         );
       })}
-    </View>
+    </>
   );
+
+  if (!withCard) {
+    return <View style={styles.multiValuePlainContainer}>{body}</View>;
+  }
+
+  if (useOffsetCard) {
+    return (
+      <OffsetCard
+        style={{ marginHorizontal: 12, marginBottom: 10 }}
+        contentStyle={{ paddingHorizontal: 12, paddingTop: 8, paddingBottom: 8 }}
+      >
+        {body}
+      </OffsetCard>
+    );
+  }
+
+  return <View style={styles.multiValueCard}>{body}</View>;
 }
 
-/** 前後移動中だけ使う静止スナップショット（退場・入場とも同じ見た目） */
+function OptionalOffsetCard({
+  enabled,
+  brackets = false,
+  style,
+  contentStyle,
+  children,
+}: {
+  enabled: boolean;
+  brackets?: boolean;
+  style?: StyleProp<ViewStyle>;
+  contentStyle?: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  if (!enabled) return <>{children}</>;
+  return (
+    <OffsetCard brackets={brackets} style={style} contentStyle={contentStyle}>
+      {children}
+    </OffsetCard>
+  );
+}
 function DetailAdjacentSlidePanel({
   snapshot,
   styles,
@@ -341,6 +386,7 @@ function DetailAdjacentSlidePanel({
   c,
   isMonochromeTheme,
   isFlatProfileCard,
+  isCodex,
 }: {
   snapshot: AdjacentSlideSnapshot;
   styles: ReturnType<typeof createDetailStyles>;
@@ -349,6 +395,7 @@ function DetailAdjacentSlidePanel({
   c: ReturnType<typeof useDetailDesign>['bundle']['colors'];
   isMonochromeTheme: boolean;
   isFlatProfileCard: boolean;
+  isCodex: boolean;
 }) {
   const {
     friend,
@@ -418,9 +465,24 @@ function DetailAdjacentSlidePanel({
               borderWidth: isFlatProfileCard ? 0 : Theme.homeCardBorderWidth,
               borderRadius: isFlatProfileCard ? 0 : 12,
             },
+            isCodex ? { overflow: 'visible' as const } : null,
           ]}
         >
-          <View style={[styles.hero, isMonochromeTheme ? { paddingTop: 8 } : null]}>
+          <OptionalOffsetCard
+            enabled={isCodex}
+            brackets
+            style={{ marginHorizontal: 12, marginTop: 12, marginBottom: 8 }}
+          >
+          <View
+            style={[
+              styles.hero,
+              isCodex
+                ? { backgroundColor: 'transparent', borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingTop: 8 }
+                : isMonochromeTheme
+                  ? { paddingTop: 8 }
+                  : null,
+            ]}
+          >
             <View style={styles.heroIdentityRow}>
               <View style={[styles.heroPhotoOuterFrame, heroPhotoOuterStyle]}>
                 <View style={[styles.heroPhotoInnerFrame, heroPhotoInnerStyle]}>
@@ -533,6 +595,7 @@ function DetailAdjacentSlidePanel({
               </View>
             </View>
           </View>
+          </OptionalOffsetCard>
           <View style={styles.tabSection}>
             <View style={styles.tabTrack}>
               <View style={styles.tabInner}>
@@ -590,6 +653,7 @@ function DetailAdjacentSlidePanel({
             {activeTab === '情報' ? (
               <MultiValueSummarySection
                 withCard
+                useOffsetCard={isCodex}
                 styles={styles}
                 infoChipStyles={bundle.infoChipStyles}
                 colors={c}
@@ -613,9 +677,10 @@ function DetailAdjacentSlidePanel({
 
 export default function DetailScreen() {
   const { bundle: rawBundle, reload: reloadDetailDesign } = useDetailDesign();
-  const { colors: appTheme, variant: appThemeVariant } = useAppTheme();
+  const { colors: appTheme, variant: appThemeVariant, patternId, patternColors, shape } = useAppTheme();
   const content = useContentColors();
   const isMonochromeTheme = isMonochromeAppTheme(appThemeVariant);
+  const isCodex = usesOffsetChrome(patternId);
   const dateTimePickerProps = contentDateTimePickerProps(appThemeVariant);
   const bundle = useMemo(
     () =>
@@ -623,9 +688,10 @@ export default function DetailScreen() {
         rawBundle,
         appThemeVariant,
         content,
-        appTheme.screenBackground
+        appTheme.screenBackground,
+        { id: patternId, colors: patternColors, shape }
       ),
-    [appTheme.screenBackground, appThemeVariant, content, rawBundle]
+    [appTheme.screenBackground, appThemeVariant, content, patternColors, patternId, rawBundle, shape]
   );
   const c = bundle.colors;
   const styles = useMemo(() => createDetailStyles(c), [c]);
@@ -636,7 +702,7 @@ export default function DetailScreen() {
   const useSharedHeaderChrome = Boolean(kit.sharedHeaderChrome && setSharedDetailHeader);
   const showLocalDetailHeader = !useSharedHeaderChrome;
   const useSharedEpisodeCard = kit.episodeListCardLayout === 'photoRight';
-  const listItemEmbedded = kit.listItemStyle === 'panelSections';
+  const listItemEmbedded = kit.listItemStyle === 'panelSections' && !isCodex;
   const isFlatProfileCard = true;
   const profileChromeSideBorder = isFlatProfileCard ? 0 : Theme.homeCardBorderWidth;
   const profileCardShadowFlatStyle = isFlatProfileCard
@@ -659,7 +725,9 @@ export default function DetailScreen() {
     ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, overflow: 'visible' as const }
     : null;
   const router = useRouter();
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const keyboardBottomInset = useKeyboardBottomInset();
   const params = useLocalSearchParams<{ id?: string; tab?: string }>();
   const outgoingSlideX = useSharedValue(0);
   const incomingSlideX = useSharedValue(0);
@@ -702,9 +770,13 @@ export default function DetailScreen() {
   const [sayingDate, setSayingDate] = useState('');
   const [sayingFormError, setSayingFormError] = useState('');
   const [showSayingDatePicker, setShowSayingDatePicker] = useState(false);
+  const [noteComposerFocused, setNoteComposerFocused] = useState(false);
+  const noteComposerRef = useRef<View>(null);
   useDismissPickerOnKeyboardShow(showSayingDatePicker, () => setShowSayingDatePicker(false));
 
   const closeHabitForm = () => {
+    dismissKeyboardFocus();
+    setNoteComposerFocused(false);
     setIsHabitFormVisible(false);
     setEditingHabitIndex(null);
     setHabitText('');
@@ -712,6 +784,8 @@ export default function DetailScreen() {
   };
 
   const closeSayingForm = () => {
+    dismissKeyboardFocus();
+    setNoteComposerFocused(false);
     setIsSayingFormVisible(false);
     setEditingSayingId(null);
     setSayingText('');
@@ -719,6 +793,45 @@ export default function DetailScreen() {
     setSayingFormError('');
     setShowSayingDatePicker(false);
   };
+
+  const noteComposerOpen =
+    ((activeTab === '習性' || activeTab === 'メモ') && isHabitFormVisible) ||
+    (activeTab === '彼曰く' && isSayingFormVisible);
+  const setSuppressBottomNav = sharedHeaderApi?.setSuppressBottomNav;
+
+  useEffect(() => {
+    setSuppressBottomNav?.(noteComposerOpen);
+    return () => setSuppressBottomNav?.(false);
+  }, [noteComposerOpen, setSuppressBottomNav]);
+
+  useEffect(() => {
+    if (!noteComposerFocused || !noteComposerOpen || keyboardBottomInset <= 0) {
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) {
+        return;
+      }
+      noteComposerRef.current?.measureInWindow((_x, y, _w, height) => {
+        if (cancelled) {
+          return;
+        }
+        const visibleBottom = screenHeight - keyboardBottomInset;
+        const overlap = y + height + 12 - visibleBottom;
+        if (overlap > 8) {
+          detailListRef.current?.scrollToOffset({
+            offset: Math.max(0, detailScrollOffsetRef.current + overlap),
+            animated: true,
+          });
+        }
+      });
+    }, 60);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [noteComposerFocused, noteComposerOpen, keyboardBottomInset, screenHeight]);
 
   const friendId = useMemo(() => {
     if (Array.isArray(params.id)) {
@@ -891,6 +1004,8 @@ export default function DetailScreen() {
   });
 
   useEffect(() => {
+    dismissKeyboardFocus();
+    setNoteComposerFocused(false);
     setActiveTab('情報');
     setIsHabitFormVisible(false);
     setEditingHabitIndex(null);
@@ -904,6 +1019,7 @@ export default function DetailScreen() {
     setSayingText('');
     setSayingDate('');
     setSayingFormError('');
+    setShowSayingDatePicker(false);
   }, [friendId, episodeForm.reset]);
 
   const friendNameById = useMemo(() => {
@@ -1070,6 +1186,8 @@ export default function DetailScreen() {
         return;
       }
 
+      dismissKeyboardFocus();
+      setNoteComposerFocused(false);
       const nextProfiles = getProfilesByFriendId(targetId);
       const outgoingProfileMeta = {
         showProfileSwitcher: selectableProfiles.length > 0,
@@ -1232,11 +1350,7 @@ export default function DetailScreen() {
     }
 
     setSayingFormError('');
-    setIsSayingFormVisible(false);
-    setEditingSayingId(null);
-    setSayingText('');
-    setSayingDate('');
-    setShowSayingDatePicker(false);
+    closeSayingForm();
     loadFriend();
   };
 
@@ -1405,10 +1519,7 @@ export default function DetailScreen() {
     }
     setHabitNotes(next);
     persistTraits(next);
-    setIsHabitFormVisible(false);
-    setEditingHabitIndex(null);
-    setHabitText('');
-    setHabitFormError('');
+    closeHabitForm();
   };
 
   const handleDeleteHabit = (index: number) => {
@@ -1871,6 +1982,7 @@ export default function DetailScreen() {
                   c={c}
                   isMonochromeTheme={isMonochromeTheme}
                   isFlatProfileCard={isFlatProfileCard}
+                  isCodex={isCodex}
                 />
               </Animated.View>
               <Animated.View
@@ -1896,6 +2008,7 @@ export default function DetailScreen() {
                   c={c}
                   isMonochromeTheme={isMonochromeTheme}
                   isFlatProfileCard={isFlatProfileCard}
+                  isCodex={isCodex}
                 />
               </Animated.View>
             </>
@@ -1926,7 +2039,12 @@ export default function DetailScreen() {
                 }}
                 scrollEventThrottle={16}
                 contentContainerStyle={{
-                  paddingBottom: bottomNavClearance > 0 ? 60 : Spacing.lg,
+                  paddingBottom: noteComposerOpen
+                    ? Math.max(insets.bottom, Spacing.lg) +
+                      Math.max(0, keyboardBottomInset - insets.bottom)
+                    : bottomNavClearance > 0
+                      ? 60
+                      : Spacing.lg,
                 }}
                 ListHeaderComponentStyle={{ marginBottom: 0 }}
                 ListEmptyComponent={
@@ -2004,13 +2122,23 @@ export default function DetailScreen() {
                 : null),
             },
             profileCardOuterFlatStyle,
+            isCodex ? { overflow: 'visible' as const } : null,
           ]}
+        >
+        <OptionalOffsetCard
+          enabled={isCodex}
+          brackets
+          style={{ marginHorizontal: 12, marginTop: 12, marginBottom: 8 }}
         >
         <View
           style={[
             styles.hero,
             profileHeroFlatStyle,
-            isMonochromeTheme ? { paddingTop: 8 } : null,
+            isCodex
+              ? { backgroundColor: 'transparent', borderTopLeftRadius: 0, borderTopRightRadius: 0, paddingTop: 8 }
+              : isMonochromeTheme
+                ? { paddingTop: 8 }
+                : null,
           ]}
         >
           <View style={styles.heroIdentityRow}>
@@ -2147,6 +2275,7 @@ export default function DetailScreen() {
             </View>
           </View>
         </View>
+        </OptionalOffsetCard>
 
         <View
           style={[
@@ -2165,7 +2294,10 @@ export default function DetailScreen() {
                 return (
                   <Pressable
                     key={tab.key}
-                    onPress={() => setActiveTab(tab.key)}
+                    onPress={() => {
+                      dismissKeyboardFocus();
+                      setActiveTab(tab.key);
+                    }}
                     style={[
                       styles.tabPill,
                       isActive
@@ -2302,6 +2434,7 @@ export default function DetailScreen() {
           {activeTab === '情報' && (
             <MultiValueSummarySection
               withCard
+              useOffsetCard={isCodex}
               styles={styles}
               infoChipStyles={bundle.infoChipStyles}
               colors={c}
@@ -2316,7 +2449,12 @@ export default function DetailScreen() {
           )}
 
           {activeTab === 'ステータス' && (
-            <View style={styles.tabContentFrame}>
+            <OptionalOffsetCard
+              enabled={isCodex}
+              style={{ marginHorizontal: 12, marginBottom: 10 }}
+              contentStyle={{ paddingHorizontal: 12, paddingBottom: 4 }}
+            >
+            <View style={isCodex ? undefined : styles.tabContentFrame}>
               {[
                 { label: '出身', value: friend.origin.trim() || '—' },
                 { label: '居住地', value: friend.residence.trim() || '—' },
@@ -2339,10 +2477,17 @@ export default function DetailScreen() {
                 </View>
               ))}
             </View>
+            </OptionalOffsetCard>
           )}
 
           {(activeTab === '習性' || activeTab === 'メモ') && (
-            <View style={[styles.tabPane, isHabitFormVisible ? styles.noteTabPaneWithForm : null]}>
+            <View
+              style={[
+                styles.noteTabContentFrame,
+                isHabitFormVisible ? styles.noteTabPaneWithForm : null,
+                isCodex ? { borderWidth: 0, backgroundColor: 'transparent', overflow: 'visible' as const } : null,
+              ]}
+            >
             <View style={styles.noteTabHeader}>
               <Text style={styles.noteTabLine} numberOfLines={1}>
                 <Text style={styles.noteTabLabel}>
@@ -2367,7 +2512,7 @@ export default function DetailScreen() {
             </View>
 
             {isHabitFormVisible ? (
-              <View style={styles.sayingFormCard}>
+              <View ref={noteComposerRef} style={styles.sayingFormCard}>
                 <TextInput
                   style={styles.sayingTextInput}
                   placeholder={
@@ -2379,6 +2524,8 @@ export default function DetailScreen() {
                   multiline
                   value={habitText}
                   onChangeText={setHabitText}
+                  onFocus={() => setNoteComposerFocused(true)}
+                  onBlur={() => setNoteComposerFocused(false)}
                 />
                 {habitFormError ? <Text style={styles.episodeErrorText}>{habitFormError}</Text> : null}
                 <View style={styles.noteComposerActions}>
@@ -2404,22 +2551,34 @@ export default function DetailScreen() {
               </Text>
             ) : (
               habitNotes.map((note, index) => (
+                <OptionalOffsetCard key={`habit-${index}`} enabled={isCodex}>
                 <Pressable
-                  key={`habit-${index}`}
-                  style={styles.habitCard}
+                  style={[
+                    styles.habitCard,
+                    isCodex
+                      ? { borderWidth: 0, backgroundColor: 'transparent', borderRadius: 0, marginBottom: 0 }
+                      : null,
+                  ]}
                   onLongPress={() => handleLongPressHabit(index)}
                   delayLongPress={300}
                 >
                   <View style={styles.habitCardAccent} />
                   <Text style={styles.habitCardText}>{note}</Text>
                 </Pressable>
+                </OptionalOffsetCard>
               ))
             )}
             </View>
           )}
 
           {activeTab === '彼曰く' && (
-            <View style={[styles.tabPane, isSayingFormVisible ? styles.noteTabPaneWithForm : null]}>
+            <View
+              style={[
+                styles.noteTabContentFrame,
+                isSayingFormVisible ? styles.noteTabPaneWithForm : null,
+                isCodex ? { borderWidth: 0, backgroundColor: 'transparent', overflow: 'visible' as const } : null,
+              ]}
+            >
             <View style={styles.noteTabHeader}>
               <Text style={styles.noteTabLine} numberOfLines={1}>
                 <Text style={styles.noteTabLabel}>{NOTE_TAB_COPY.彼曰く.label}：</Text>
@@ -2442,7 +2601,7 @@ export default function DetailScreen() {
             </View>
 
             {isSayingFormVisible ? (
-              <View style={styles.sayingFormCard}>
+              <View ref={noteComposerRef} style={styles.sayingFormCard}>
                 <TextInput
                   style={styles.sayingTextInput}
                   placeholder={NOTE_TAB_COPY.彼曰く.placeholder}
@@ -2450,6 +2609,8 @@ export default function DetailScreen() {
                   multiline
                   value={sayingText}
                   onChangeText={setSayingText}
+                  onFocus={() => setNoteComposerFocused(true)}
+                  onBlur={() => setNoteComposerFocused(false)}
                 />
                 <Pressable
                   style={styles.sayingDateInput}
@@ -2466,29 +2627,26 @@ export default function DetailScreen() {
                   </Text>
                 </Pressable>
                 {showSayingDatePicker ? (
-                  <>
-                    <View style={styles.datePickerWrap}>
-                      <DateTimePicker
-                        value={parseDateString(sayingDate)}
-                        mode="date"
-                        display="spinner"
-                        locale="ja-JP"
-                        style={styles.datePickerSelf}
-                        {...dateTimePickerProps}
-                        {...pastOrTodayDatePickerBounds()}
-                        onChange={(_event: DateTimePickerEvent, selected?: Date) => {
-                          if (Platform.OS !== 'ios') setShowSayingDatePicker(false);
-                          if (selected) setSayingDate(formatDateToYMD(selected));
-                        }}
-                      />
-                    </View>
-                    <Pressable
+                  <View style={styles.datePickerWrap}>
+                    <DateTimePicker
+                      value={parseDateString(sayingDate)}
+                      mode="date"
+                      display="spinner"
+                      locale="ja-JP"
+                      style={styles.datePickerSelf}
+                      {...dateTimePickerProps}
+                      {...pastOrTodayDatePickerBounds()}
+                      onChange={(_event: DateTimePickerEvent, selected?: Date) => {
+                        if (Platform.OS !== 'ios') setShowSayingDatePicker(false);
+                        if (selected) setSayingDate(formatDateToYMD(selected));
+                      }}
+                    />
+                    <PickerDoneOverlay
                       style={styles.datePickerDone}
+                      textStyle={styles.datePickerDoneText}
                       onPress={() => setShowSayingDatePicker(false)}
-                    >
-                      <Text style={styles.datePickerDoneText}>完了</Text>
-                    </Pressable>
-                  </>
+                    />
+                  </View>
                 ) : null}
                 {sayingFormError ? (
                   <Text style={styles.episodeErrorText}>{sayingFormError}</Text>
@@ -2514,9 +2672,14 @@ export default function DetailScreen() {
               <Text style={styles.emptyEpisodeText}>{NOTE_TAB_COPY.彼曰く.empty}</Text>
             ) : (
               sortedSayings.map((saying: Saying) => (
+                <OptionalOffsetCard key={saying.id} enabled={isCodex}>
                 <Pressable
-                  key={saying.id}
-                  style={styles.sayingQuoteCard}
+                  style={[
+                    styles.sayingQuoteCard,
+                    isCodex
+                      ? { borderWidth: 0, backgroundColor: 'transparent', borderRadius: 0, marginBottom: 0 }
+                      : null,
+                  ]}
                   onLongPress={() => handleLongPressSaying(saying)}
                   delayLongPress={300}
                 >
@@ -2526,6 +2689,7 @@ export default function DetailScreen() {
                     {saying.date ? <Text style={styles.sayingQuoteDate}>{saying.date}</Text> : null}
                   </View>
                 </Pressable>
+                </OptionalOffsetCard>
               ))
             )}
             </View>

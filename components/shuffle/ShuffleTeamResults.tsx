@@ -1,9 +1,9 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Radius, Theme } from '@/constants/theme';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { Theme } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   contentMutedTextStyle,
-  contentSurfaceStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { ShuffleResultCards } from './ShuffleResultCards';
@@ -30,7 +30,7 @@ export function ShuffleTeamResults({
   return (
     <View style={styles.container}>
       {teams.map((team) => (
-        <View key={team.teamName} style={[styles.teamBlock, contentSurfaceStyle(content)]}>
+        <OffsetCard key={team.teamName} brackets contentStyle={styles.teamBlock}>
           <View style={styles.teamHeader}>
             <Text style={[styles.teamTitle, contentTextStyle(content)]}>{team.teamName}</Text>
             <Text style={styles.teamCount}>{team.memberIds.length}人</Text>
@@ -44,7 +44,7 @@ export function ShuffleTeamResults({
           ) : (
             <Text style={[styles.emptyTeamText, contentMutedTextStyle(content)]}>メンバーなし</Text>
           )}
-        </View>
+        </OffsetCard>
       ))}
     </View>
   );
@@ -56,8 +56,6 @@ const styles = StyleSheet.create({
   },
   teamBlock: {
     gap: 10,
-    borderWidth: 1,
-    borderRadius: Radius.md,
     padding: 10,
   },
   teamHeader: {

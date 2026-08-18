@@ -3,6 +3,8 @@ import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyl
 import { EpisodeCardTitle } from '@/components/episode/EpisodeCardTitle';
 import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
+import { OffsetCard } from '@/components/ui/OffsetCard';
+import { usesOffsetChrome } from '@/constants/designPatterns';
 import { Radius, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -125,9 +127,18 @@ export function EpisodeListCard({
   const kit = useUiKit();
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
+  const isOffsetPattern = usesOffsetChrome(appTheme?.patternId);
+  const hasBrackets = appTheme?.shape.cornerBrackets === true;
   const participantTap = useTapUnlessHorizontalScroll(onPress);
   const usePhotoLayout = kit.episodeListCardLayout === 'photoRight';
   const photoFrameBorderColor = content.contentText;
+  const photoFrameRadius = isOffsetPattern ? (appTheme?.shape.innerRadius ?? Radius.sm) : Radius.sm;
+  const photoFrameChrome = {
+    borderColor: photoFrameBorderColor,
+    backgroundColor: content.contentPhotoPlaceholder,
+    borderRadius: photoFrameRadius,
+    ...(isOffsetPattern ? { borderWidth: 0 } : null),
+  };
   const episodeCardBackgroundColor =
     appTheme?.variant === 'black' ? content.contentInputBg : content.contentCard;
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
@@ -155,7 +166,6 @@ export function EpisodeListCard({
     const hasPhoto = displayPhotoUris.length > 0;
     const hasParticipants = chips.length > 0;
 
-    const cardRadius = embedded ? 0 : kit.episodeListCardBorderRadius;
     const useTallPhoto = hasPhoto && !embedded && kit.episodeListPhotoLayout === 'tallOne';
     const useDualCompact =
       hasPhoto && !embedded && kit.episodeListPhotoLayout === 'compactTwoSideBySide' && displayPhotoUris.length > 1;
@@ -287,8 +297,7 @@ export function EpisodeListCard({
               {
                 width: TALL_PHOTO_WIDTH,
                 height: TALL_PHOTO_HEIGHT,
-                borderColor: photoFrameBorderColor,
-                backgroundColor: content.contentPhotoPlaceholder,
+                ...photoFrameChrome,
               },
             ]}
           >
@@ -306,10 +315,7 @@ export function EpisodeListCard({
                 style={[
                   styles.photoRightPhotoFrame,
                   styles.photoRightPhotoFrameCompact,
-                  {
-                    borderColor: photoFrameBorderColor,
-                    backgroundColor: content.contentPhotoPlaceholder,
-                  },
+                  photoFrameChrome,
                 ]}
               >
                 <Image source={{ uri }} style={styles.photoRightPhotoImage} resizeMode="cover" />
@@ -321,10 +327,7 @@ export function EpisodeListCard({
             style={[
               styles.photoRightPhotoFrame,
               styles.photoRightPhotoFrameCompact,
-              {
-                borderColor: photoFrameBorderColor,
-                backgroundColor: content.contentPhotoPlaceholder,
-              },
+              photoFrameChrome,
             ]}
           >
             <Image
@@ -337,23 +340,10 @@ export function EpisodeListCard({
       </Pressable>
     ) : null;
 
-    const photoRightContent = (
-      <View
-        style={[
-          styles.episodeCard,
-          embedded && styles.episodeCardEmbedded,
-          !embedded
-            ? {
-                borderRadius: cardRadius,
-                backgroundColor: episodeCardBackgroundColor,
-                borderColor: content.contentBorder,
-              }
-            : null,
-          style,
-        ]}
-      >
+    const photoRightBody = (
+      <>
         {useTallPhoto ? (
-          <View style={styles.photoRightBodyRow}>
+          <View style={[styles.photoRightBodyRow, isOffsetPattern ? styles.photoRightGapCodex : null]}>
             <View
               style={styles.photoRightLeftColumn}
             >
@@ -364,36 +354,62 @@ export function EpisodeListCard({
           </View>
         ) : (
           <>
-            <View style={styles.photoRightTopRow}>
+            <View style={[styles.photoRightTopRow, isOffsetPattern ? styles.photoRightGapCodex : null]}>
               {titleMetaBlock}
               {photoBlock}
             </View>
             {participantBlock}
           </>
         )}
-      </View>
+      </>
     );
 
-    return photoRightContent;
+    if (embedded) {
+      return (
+        <View style={[styles.episodeCard, styles.episodeCardEmbedded, style]}>
+          {photoRightBody}
+        </View>
+      );
+    }
+
+    if (isOffsetPattern) {
+      return (
+        <OffsetCard
+          brackets
+          style={style}
+          contentStyle={[
+            styles.episodeCard,
+            hasBrackets ? styles.episodeCardCodex : null,
+            { backgroundColor: episodeCardBackgroundColor },
+          ]}
+        >
+          {photoRightBody}
+        </OffsetCard>
+      );
+    }
+
+    return (
+      <View
+        style={[
+          styles.episodeCard,
+          {
+            borderRadius: kit.episodeListCardBorderRadius,
+            backgroundColor: episodeCardBackgroundColor,
+            borderColor: content.contentBorder,
+            borderWidth: 1,
+          },
+          style,
+        ]}
+      >
+        {photoRightBody}
+      </View>
+    );
   }
 
   const showMetaRow2 = visibility.length > 0 || normalizedEpisodeTag != null;
 
-  const cardContent = (
-    <View
-      style={[
-        styles.episodeCard,
-        embedded && styles.episodeCardEmbedded,
-        !embedded
-          ? {
-              borderRadius: kit.episodeListCardBorderRadius,
-              backgroundColor: episodeCardBackgroundColor,
-              borderColor: content.contentBorder,
-            }
-          : null,
-        style,
-      ]}
-    >
+  const cardBody = (
+    <>
       <Pressable
         onPress={onPress}
         onLongPress={onLongPress}
@@ -487,21 +503,56 @@ export function EpisodeListCard({
           />
         </Pressable>
       ) : null}
-    </View>
+    </>
   );
 
-  return cardContent;
+  if (embedded) {
+    return <View style={[styles.episodeCard, styles.episodeCardEmbedded, style]}>{cardBody}</View>;
+  }
+
+  if (isOffsetPattern) {
+    return (
+      <OffsetCard
+        brackets
+        style={style}
+        contentStyle={[
+          styles.episodeCard,
+          hasBrackets ? styles.episodeCardCodex : null,
+          { backgroundColor: episodeCardBackgroundColor },
+        ]}
+      >
+        {cardBody}
+      </OffsetCard>
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.episodeCard,
+        {
+          borderRadius: kit.episodeListCardBorderRadius,
+          backgroundColor: episodeCardBackgroundColor,
+          borderColor: content.contentBorder,
+          borderWidth: 1,
+        },
+        style,
+      ]}
+    >
+      {cardBody}
+    </View>
+  );
 }
 
 const styles = StyleSheet.create({
   episodeCard: {
-    backgroundColor: Theme.bgSurface,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: 10,
     paddingLeft: 12,
     paddingRight: 6,
     paddingVertical: 6,
+  },
+  episodeCardCodex: {
+    paddingRight: 8,
+    paddingVertical: 10,
   },
   episodeCardEmbedded: {
     borderWidth: 0,
@@ -518,6 +569,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 3,
+  },
+  photoRightGapCodex: {
+    gap: 8,
   },
   photoRightLeftColumn: {
     flex: 1,

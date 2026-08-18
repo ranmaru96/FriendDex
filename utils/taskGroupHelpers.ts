@@ -165,6 +165,32 @@ export function isGroupRequiredOnDate(
   return members.some((task) => isRecurringTaskRequiredOnDate(task, date));
 }
 
+/** 要対応グループで、まだその日の実施が残っているか（リマインド抑制用） */
+export function isGroupRequiredWorkOpen(
+  group: TaskGroup,
+  members: Task[],
+  date: Date,
+  isDoneOn: (task: Task, ymd: string) => boolean
+): boolean {
+  if (!isGroupRequiredOnDate(group, members, date)) {
+    return false;
+  }
+  const ymd = toYmd(date);
+  const individuallyRequired = members.filter((task) =>
+    isRecurringTaskRequiredOnDate(task, date)
+  );
+  if (individuallyRequired.length > 0) {
+    return individuallyRequired.some((task) => !isDoneOn(task, ymd));
+  }
+  if (isGroupOwnRequiredOnDate(group, date)) {
+    if (members.length === 0) {
+      return true;
+    }
+    return !members.some((task) => isDoneOn(task, ymd));
+  }
+  return false;
+}
+
 /**
  * 定期タブ「本日対象」: 今日チェック可能なメンバーがいる、
  * または空グループでグループ自身が必須日。

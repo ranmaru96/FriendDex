@@ -50,7 +50,16 @@ export function SubToolScreenTemplate({
   const useSharedTopBar = Boolean(kit.sharedHeaderChrome && useTopBar && setSubToolHeader);
   const bottomNavClearance = useBottomNavScrollClearance();
   const horizontalPadding = useScreenPadding ? kit.subToolScreenPaddingHorizontal : 0;
-  const bottomPadding = bottomNavClearance > 0 ? bottomNavClearance : Spacing.lg;
+  const navInShell = bottomNavClearance > 0;
+  const bottomPadding = Spacing.lg;
+  /** BottomNav がシェル側にあるときは bottom inset を取らない（ナビ上の空白で可視領域が減る） */
+  const safeAreaEdges = useSharedTopBar
+    ? navInShell
+      ? (['left', 'right'] as const)
+      : (['left', 'right', 'bottom'] as const)
+    : navInShell
+      ? (['top', 'left', 'right'] as const)
+      : (['top', 'left', 'right', 'bottom'] as const);
 
   useLayoutEffect(() => {
     if (!useSharedTopBar || !setSubToolHeader) return;
@@ -63,9 +72,8 @@ export function SubToolScreenTemplate({
       <KeyboardAwareScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingHorizontal: horizontalPadding },
+          { paddingHorizontal: horizontalPadding, paddingBottom: bottomPadding },
           scrollContentStyle,
-          { paddingBottom: bottomPadding },
         ]}
         keyboardShouldPersistTaps="handled"
         enableOnAndroid
@@ -78,9 +86,8 @@ export function SubToolScreenTemplate({
       <ScrollView
         contentContainerStyle={[
           styles.scrollContent,
-          { paddingHorizontal: horizontalPadding },
+          { paddingHorizontal: horizontalPadding, paddingBottom: bottomPadding },
           scrollContentStyle,
-          { paddingBottom: bottomPadding },
         ]}
         keyboardShouldPersistTaps="handled"
       >
@@ -101,7 +108,7 @@ export function SubToolScreenTemplate({
 
   return (
     <SafeAreaView
-      edges={useSharedTopBar ? (['left', 'right', 'bottom'] as const) : (['top', 'left', 'right', 'bottom'] as const)}
+      edges={safeAreaEdges}
       style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}
     >
       {useTopBar && !useSharedTopBar ? (
