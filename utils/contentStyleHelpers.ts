@@ -26,6 +26,18 @@ export function contentMutedTextStyle(c: AppThemeContentColorFields): TextStyle 
   return { color: c.contentTextSecondary };
 }
 
+/** 塗りつぶし操作ボタン。枠色ではなく本文色で塗り、カード色をインクにする */
+export function contentFilledButtonStyle(c: AppThemeContentColorFields): ViewStyle {
+  return {
+    backgroundColor: c.contentText,
+    borderColor: c.contentText,
+  };
+}
+
+export function contentFilledButtonTextStyle(c: AppThemeContentColorFields): TextStyle {
+  return { color: c.contentCard };
+}
+
 /** 小さなタグ／チップ（人物・予定タグなど） */
 export function contentTagStyle(c: AppThemeContentColorFields): ViewStyle {
   return {

@@ -4,6 +4,7 @@ import type { DateData } from 'react-native-calendars';
 import type { DayProps } from 'react-native-calendars/src/calendar/day';
 import { Theme as AppTheme } from '@/constants/theme';
 import type { CalendarDayMarking, CalendarPeriodMark } from '@/utils/calendarMarking';
+import { JAPANESE_HOLIDAY_TEXT_COLOR } from '@/utils/japaneseHolidays';
 
 type CalendarDayCellProps = DayProps & {
   date?: DateData;
@@ -81,8 +82,11 @@ export const CalendarDayCell = React.memo(function CalendarDayCell({
     if (isToday) {
       return theme?.todayTextColor ?? AppTheme.accent;
     }
+    if (dayMark?.isHoliday) {
+      return JAPANESE_HOLIDAY_TEXT_COLOR;
+    }
     return theme?.dayTextColor ?? AppTheme.textPrimary;
-  }, [isDisabled, isInactive, isSelected, isToday, theme]);
+  }, [dayMark?.isHoliday, isDisabled, isInactive, isSelected, isToday, theme]);
 
   const dayCircleStyle = useMemo(() => {
     const circle: ViewStyle[] = [styles.dayCircle];

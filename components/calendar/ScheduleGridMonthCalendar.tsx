@@ -30,6 +30,7 @@ import {
   type ScheduleGridEventChip,
   type ScheduleGridWeekLaneLayout,
 } from '@/utils/scheduleGridCalendar';
+import { JAPANESE_HOLIDAY_TEXT_COLOR } from '@/utils/japaneseHolidays';
 
 const GRID_BORDER = Theme.inputBorder;
 /** 当日日付バッジ（オレンジ） */
@@ -40,7 +41,6 @@ const SELECTED_RING_WIDTH = 2;
 /** 誕生日アイコン（日付の右） */
 export const BIRTHDAY_ICON_COLOR = '#F2789F';
 const SATURDAY_COLOR = '#2563eb';
-const SUNDAY_COLOR = '#dc2626';
 const CHIP_HEIGHT = 14;
 const CHIP_GAP = 2;
 const DATE_ROW_HEIGHT = 18;
@@ -66,6 +66,8 @@ type ScheduleGridMonthCalendarProps = {
   edgeToEdge?: boolean;
   /** 誕生日がある月日（MM-DD）。年は問わない */
   birthdayMonthDays?: Set<string>;
+  /** 日本の祝日（YYYY-MM-DD → 名称） */
+  holidays?: Record<string, string>;
   /** 予定タグ（共通項目）編集へ */
   onPressEpisodeTags?: () => void;
 };
@@ -145,6 +147,7 @@ function DayCell({
   gridLineColor,
   gridLineWidth,
   hasBirthday,
+  isHoliday,
 }: {
   day: ScheduleGridDay;
   week: ScheduleGridDay[];
@@ -158,6 +161,7 @@ function DayCell({
   gridLineColor: string;
   gridLineWidth: number;
   hasBirthday: boolean;
+  isHoliday: boolean;
 }) {
   const isSelected = day.dateKey === selectedDate;
   const isToday = day.dateKey === todayKey;
@@ -172,14 +176,14 @@ function DayCell({
     if (!day.inCurrentMonth) {
       return content.contentTextSecondary;
     }
-    if (day.dayOfWeek === 0) {
-      return SUNDAY_COLOR;
+    if (day.dayOfWeek === 0 || isHoliday) {
+      return JAPANESE_HOLIDAY_TEXT_COLOR;
     }
     if (day.dayOfWeek === 6) {
       return SATURDAY_COLOR;
     }
     return content.contentText;
-  }, [content.contentText, content.contentTextSecondary, day.dayOfWeek, day.inCurrentMonth]);
+  }, [content.contentText, content.contentTextSecondary, day.dayOfWeek, day.inCurrentMonth, isHoliday]);
 
   return (
     <Pressable
@@ -275,6 +279,7 @@ function WeekRow({
   gridLineColor,
   gridLineWidth,
   birthdayMonthDays,
+  holidays,
 }: {
   week: ScheduleGridDay[];
   weekIndex: number;
@@ -287,6 +292,7 @@ function WeekRow({
   gridLineColor: string;
   gridLineWidth: number;
   birthdayMonthDays?: Set<string>;
+  holidays?: Record<string, string>;
 }) {
   const weekLayout = useMemo(
     () => assignScheduleGridLanesForWeek(week, events),
@@ -318,6 +324,7 @@ function WeekRow({
           gridLineColor={gridLineColor}
           gridLineWidth={gridLineWidth}
           hasBirthday={birthdayMonthDays?.has(day.dateKey.slice(5)) ?? false}
+          isHoliday={Boolean(holidays?.[day.dateKey])}
         />
       ))}
     </View>
@@ -334,6 +341,7 @@ export function ScheduleGridMonthCalendar({
   onMonthChange,
   edgeToEdge = false,
   birthdayMonthDays,
+  holidays,
   onPressEpisodeTags,
 }: ScheduleGridMonthCalendarProps) {
   const weeks = useMemo(() => buildScheduleGridWeeks(year, month), [month, year]);
@@ -553,6 +561,7 @@ export function ScheduleGridMonthCalendar({
             gridLineColor={gridLineColor}
             gridLineWidth={gridLineWidth}
             birthdayMonthDays={birthdayMonthDays}
+            holidays={holidays}
           />
         ))}
       </View>
@@ -647,7 +656,7 @@ const styles = StyleSheet.create({
     color: Theme.textSecondary,
   },
   sundayWeekday: {
-    color: SUNDAY_COLOR,
+    color: JAPANESE_HOLIDAY_TEXT_COLOR,
   },
   saturdayWeekday: {
     color: SATURDAY_COLOR,

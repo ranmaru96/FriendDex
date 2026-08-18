@@ -19,6 +19,25 @@ const getScheme = () => {
   return 'frienddex';
 };
 
+const GOOGLE_CLIENT_ID_SUFFIX = '.apps.googleusercontent.com';
+
+const toReversedGoogleScheme = (clientId) => {
+  if (typeof clientId !== 'string' || !clientId.endsWith(GOOGLE_CLIENT_ID_SUFFIX)) {
+    return null;
+  }
+  return `com.googleusercontent.apps.${clientId.slice(0, -GOOGLE_CLIENT_ID_SUFFIX.length)}`;
+};
+
+const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
+const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
+const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
+const googleUrlSchemes = [
+  toReversedGoogleScheme(googleIosClientId),
+  toReversedGoogleScheme(googleAndroidClientId),
+].filter((scheme, index, schemes) => Boolean(scheme) && schemes.indexOf(scheme) === index);
+
+const appSchemes = [getScheme(), ...googleUrlSchemes];
+
 export default {
   expo: {
     name: getAppName(),
@@ -28,7 +47,7 @@ export default {
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     newArchEnabled: true,
-    scheme: getScheme(),
+    scheme: appSchemes.length === 1 ? appSchemes[0] : appSchemes,
     splash: {
       image: "./assets/splash-icon.png",
       resizeMode: "contain",
@@ -52,7 +71,16 @@ export default {
         backgroundColor: "#ffffff"
       },
       edgeToEdgeEnabled: true,
-      predictiveBackGestureEnabled: false
+      predictiveBackGestureEnabled: false,
+      ...(googleUrlSchemes.length > 0
+        ? {
+            intentFilters: googleUrlSchemes.map((scheme) => ({
+              action: 'VIEW',
+              category: ['BROWSABLE', 'DEFAULT'],
+              data: [{ scheme }],
+            })),
+          }
+        : {}),
     },
     web: {
       favicon: "./assets/favicon.png"
@@ -87,13 +115,18 @@ export default {
           icon: "./assets/icon.png",
           color: "#4E9A87"
         }
-      ]
+      ],
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     extra: {
       router: {},
       eas: {
         projectId: "90a1981c-5ddc-4093-ab07-1537c283e285"
-      }
+      },
+      googleIosClientId,
+      googleAndroidClientId,
+      googleWebClientId
     },
     owner: "ranmaru96"
   }

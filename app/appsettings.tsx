@@ -12,10 +12,12 @@ import { confirmAndExportBackup, confirmAndImportBackup } from '../backup';
 import {
   getAllProfiles,
   getCompletedTaskRetention,
-  getMyself,
+  getFriendById,
+  getResolvedMyselfId,
   initializeDatabase,
+  isMyselfLocked,
+  confirmMyself,
   setCompletedTaskRetention,
-  setMyself,
 } from '../db';
 import { CompletedTaskRetention, Profile } from '../types';
 import { COMPLETED_TASK_RETENTION_OPTIONS } from '@/utils/taskHelpers';
@@ -36,6 +38,7 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { GoogleCalendarSettingsSection } from '@/components/google-calendar/GoogleCalendarSettingsSection';
 
 type Option = { label: string; value: string };
 
@@ -171,6 +174,8 @@ export default function AppSettingsScreen() {
   const kit = useUiKit();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [selectedProfileId, setSelectedProfileId] = useState('');
+  const [myselfLocked, setMyselfLocked] = useState(false);
+  const [myselfName, setMyselfName] = useState('');
   const [completedTaskRetention, setCompletedTaskRetentionState] =
     useState<CompletedTaskRetention>('1m');
 
@@ -218,7 +223,11 @@ export default function AppSettingsScreen() {
     initializeDatabase();
     const loadedProfiles = getAllProfiles();
     setProfiles(loadedProfiles);
-    setSelectedProfileId(resolveMyselfProfileId(loadedProfiles, getMyself()));
+    const myselfId = getResolvedMyselfId();
+    setSelectedProfileId(resolveMyselfProfileId(loadedProfiles, myselfId));
+    setMyselfLocked(isMyselfLocked());
+    const myselfFriend = myselfId ? getFriendById(myselfId) : null;
+    setMyselfName(myselfFriend?.name?.trim() || '');
     setCompletedTaskRetentionState(getCompletedTaskRetention());
   }, []);
 
@@ -240,23 +249,30 @@ export default function AppSettingsScreen() {
       return;
     }
     initializeDatabase();
-    const ok = setMyself(profile.friendId);
+    const ok = confirmMyself(profile.friendId);
     if (!ok) {
       return;
     }
     setSelectedProfileId(profileId);
+    setMyselfLocked(true);
+    setMyselfName(profile.name.trim());
   };
 
   return (
     <SubToolScreenTemplate
       title="設定"
       onBack={() => router.back()}
+      titleFramed={false}
       useScreenPadding={false}
       scrollContentStyle={styles.scrollContent}
     >
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>本人設定</Text>
         <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
-          {profiles.length === 0 ? (
+          {myselfLocked ? (
+            <View style={styles.row}>
+              <Text style={[styles.rowLabel, themed.rowLabel]}>{myselfName || '本人'}</Text>
+            </View>
+          ) : profiles.length === 0 ? (
             <View style={styles.row}>
               <Text style={[styles.emptyText, themed.emptyText]}>プロフィールを登録してください</Text>
             </View>
@@ -271,6 +287,9 @@ export default function AppSettingsScreen() {
             </View>
           )}
         </SettingsGroup>
+        {myselfLocked ? (
+          <Text style={[styles.hint, themed.hint]}>本人は確認済みのため変更できません。プロフィールの内容は「自分のプロフィール」から編集できます。</Text>
+        ) : null}
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>アプリ全体テーマ</Text>
         <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
@@ -387,6 +406,8 @@ export default function AppSettingsScreen() {
         <Text style={[styles.hint, themed.hint]}>
           QRコードで追加した人など、フォロー関連の確認はここから開きます
         </Text>
+
+        <GoogleCalendarSettingsSection themed={themed} />
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>バックアップ</Text>
         <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>

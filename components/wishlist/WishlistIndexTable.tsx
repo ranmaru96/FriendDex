@@ -1,17 +1,15 @@
-import { Fragment } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
+import { OffsetCard } from '@/components/ui/OffsetCard';
 import { useContentColors } from '@/utils/useContentColors';
-import {
-  contentMutedTextStyle,
-  contentSurfaceStyle,
-  contentTextStyle,
-} from '@/utils/contentStyleHelpers';
+import { contentMutedTextStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 
 export type WishlistIndexRow = {
   key: string;
   title: string;
   count: number;
+  previews: string[];
 };
 
 type WishlistIndexTableProps = {
@@ -23,55 +21,64 @@ export function WishlistIndexTable({ rows, onPressRow }: WishlistIndexTableProps
   const content = useContentColors();
 
   return (
-    <View style={[styles.table, contentSurfaceStyle(content)]}>
-      {rows.map((row, index) => (
-        <Fragment key={row.key || '__unset'}>
-          {index > 0 ? (
-            <View style={[styles.divider, { backgroundColor: content.contentBorder }]} />
-          ) : null}
+    <View style={styles.list}>
+      {rows.map((row) => (
+        <OffsetCard key={row.key || '__unset'}>
           <Pressable
-            style={styles.row}
+            style={styles.card}
             onPress={() => onPressRow(row.key)}
             accessibilityRole="button"
-            accessibilityLabel={`${row.title}、${row.count}件`}
+            accessibilityLabel={`${row.title}、${row.count}店`}
           >
-            <Text style={[styles.title, contentTextStyle(content)]} numberOfLines={1}>
-              {row.title}
-            </Text>
-            <Text style={[styles.count, contentMutedTextStyle(content)]}>{row.count}件</Text>
-            <Ionicons name="chevron-forward" size={18} color={content.contentTextSecondary} />
+            <View style={styles.topRow}>
+              <Text style={[styles.title, contentTextStyle(content)]} numberOfLines={1}>
+                {row.title}
+              </Text>
+              <Text style={[styles.count, contentMutedTextStyle(content)]}>{row.count}店</Text>
+              <Ionicons name="chevron-forward" size={16} color={content.contentTextSecondary} />
+            </View>
+            {row.previews.length > 0 ? (
+              <View style={styles.previewRow}>
+                {row.previews.map((label) => (
+                  <EpisodeTagChip key={label} label={label} />
+                ))}
+              </View>
+            ) : null}
           </Pressable>
-        </Fragment>
+        </OffsetCard>
       ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  table: {
-    borderWidth: 1,
-    overflow: 'hidden',
+  list: {
+    gap: 8,
   },
-  divider: {
-    height: StyleSheet.hairlineWidth,
-    marginLeft: 16,
+  card: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 6,
   },
-  row: {
-    minHeight: 64,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
   },
   title: {
     flex: 1,
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '800',
+    lineHeight: 24,
     letterSpacing: 0.2,
   },
   count: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
+  },
+  previewRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
   },
 });

@@ -22,6 +22,7 @@ export type SharedSubToolHeaderConfig = {
   onBack?: () => void;
   right?: ReactNode;
   titleTrailing?: ReactNode;
+  titleFramed?: boolean;
 };
 
 type SharedHeaderChromeContextValue = {

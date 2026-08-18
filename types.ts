@@ -86,6 +86,8 @@ export type Event = {
   autoEpisodeCreated: boolean;
   /** 予定用の分類タグ（エピソードとは独立。カレンダー色などに使用） */
   episodeTag: string | null;
+  /** Google カレンダー（FriendDex 専用）上のイベント ID。未同期時は null */
+  googleEventId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -99,7 +101,7 @@ export type PendingReviewEpisodeRef = {
 
 export type EventInput = Omit<
   Event,
-  'id' | 'createdAt' | 'updatedAt' | 'notificationId' | 'autoEpisodeCreated'
+  'id' | 'createdAt' | 'updatedAt' | 'notificationId' | 'autoEpisodeCreated' | 'googleEventId'
 > & {
   autoEpisodeCreated?: boolean;
 };

@@ -107,6 +107,10 @@ import {
   unlinkEpisodesFromEvent,
 } from '../utils/eventEpisodeBidirectionalSync';
 import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
+import {
+  scheduleGoogleCalendarDelete,
+  scheduleGoogleCalendarPush,
+} from '@/utils/googleCalendarSync';
 
 type PickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime' | null;
 
@@ -393,11 +397,13 @@ export default function EventScreen() {
     initializeDatabase();
     const existing = getEvent(eventId);
     await cancelEventNotification(existing?.notificationId);
+    const googleEventId = existing?.googleEventId ?? null;
     const ok = deleteEvent(eventId);
     if (!ok) {
       Alert.alert('エラー', '予定の削除に失敗しました。');
       return;
     }
+    scheduleGoogleCalendarDelete(googleEventId);
     router.back();
   }, [eventId, router]);
 
@@ -605,6 +611,7 @@ export default function EventScreen() {
           clampLinkedEpisodeDatesToEvent(eventId);
         }
         await applySavedEventNotifications(eventId, previousNotificationId);
+        scheduleGoogleCalendarPush(eventId);
         router.back();
         return;
       }
@@ -617,6 +624,7 @@ export default function EventScreen() {
       registerSavedEpisodeTag(input.episodeTag);
       syncEventParticipants(created.id, selectedProfileIds);
       await applySavedEventNotifications(created.id, null);
+      scheduleGoogleCalendarPush(created.id);
       router.back();
     };
 

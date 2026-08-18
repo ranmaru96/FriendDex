@@ -16,6 +16,8 @@ type SubToolScreenTemplateProps = {
   right?: ReactNode;
   /** 中央タイトルの右側（編集ボタンなど） */
   titleTrailing?: ReactNode;
+  /** true のときタイトルを角の〇付き囲いで表示（ツール画面の既定。設定は false） */
+  titleFramed?: boolean;
   /** トップバー直下（PillTabBar など） */
   header?: ReactNode;
   scrollable?: boolean;
@@ -35,6 +37,7 @@ export function SubToolScreenTemplate({
   onBack,
   right,
   titleTrailing,
+  titleFramed = true,
   header,
   scrollable = true,
   keyboardAware = false,
@@ -63,9 +66,9 @@ export function SubToolScreenTemplate({
 
   useLayoutEffect(() => {
     if (!useSharedTopBar || !setSubToolHeader) return;
-    setSubToolHeader({ title, onBack, right, titleTrailing });
+    setSubToolHeader({ title, onBack, right, titleTrailing, titleFramed });
     return () => setSubToolHeader(null);
-  }, [useSharedTopBar, setSubToolHeader, title, onBack, right, titleTrailing]);
+  }, [useSharedTopBar, setSubToolHeader, title, onBack, right, titleTrailing, titleFramed]);
 
   const body = scrollable ? (
     keyboardAware ? (
@@ -112,7 +115,13 @@ export function SubToolScreenTemplate({
       style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}
     >
       {useTopBar && !useSharedTopBar ? (
-        <ScreenTopBar title={title} onBack={onBack} right={right} titleTrailing={titleTrailing} />
+        <ScreenTopBar
+          title={title}
+          onBack={onBack}
+          right={right}
+          titleTrailing={titleTrailing}
+          titleFramed={titleFramed}
+        />
       ) : null}
       {header}
       {body}

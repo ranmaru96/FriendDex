@@ -1,9 +1,10 @@
-import { Stack, usePathname } from 'expo-router';
-import { useEffect } from 'react';
+import { Stack, usePathname, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { isGoogleCalendarNativeAvailable } from '@/lib/googleNativeAvailability';
 import AppHeader from '../AppHeader';
 import { runAutoBackup } from '../backup';
 import BottomNav from '../components/BottomNav';
@@ -26,9 +27,13 @@ import {
   shouldHideHeader,
 } from '../utils/bottomNavVisibility';
 import { resolveStackAnimation } from '../utils/tabTransition';
-import { initializeDatabase } from '../db';
+import { getMyselfSetupPhase, initializeDatabase } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
 import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
+
+if (isGoogleCalendarNativeAvailable()) {
+  require('expo-web-browser').maybeCompleteAuthSession();
+}
 
 const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'index',
@@ -74,6 +79,7 @@ function AppShellHeader() {
           <ScreenTopBar
             title="Profile"
             variant="plain"
+            titleFramed={false}
             onBack={detailHeader.onBack}
             titleLeading={
               <Pressable
@@ -122,6 +128,7 @@ function AppShellHeader() {
               onBack={subToolHeader.onBack}
               right={subToolHeader.right}
               titleTrailing={subToolHeader.titleTrailing}
+              titleFramed={subToolHeader.titleFramed ?? false}
             />
           ) : (
             <View style={{ minHeight: SHARED_HEADER_BAR_MIN_HEIGHT }} />
@@ -142,14 +149,35 @@ function AppShellHeader() {
 
 function AppShell() {
   const pathname = usePathname();
+  const router = useRouter();
   const { suppressBottomNav } = useSharedHeaderChrome();
-  const hideBottomNav = shouldHideBottomNav(pathname) || suppressBottomNav;
-  const activeTab = getActiveTab(pathname);
   const { colors } = useAppTheme();
+  const [setupPhase, setSetupPhase] = useState(() => {
+    initializeDatabase();
+    return getMyselfSetupPhase();
+  });
+  const needsSetup = setupPhase !== 'ready';
+  const onSetupRoute = pathname.includes('setup-myself');
+  const hideBottomNav =
+    shouldHideBottomNav(pathname) || suppressBottomNav || needsSetup || onSetupRoute;
+  const activeTab = getActiveTab(pathname);
+
+  useEffect(() => {
+    initializeDatabase();
+    setSetupPhase(getMyselfSetupPhase());
+  }, [pathname]);
+
+  useEffect(() => {
+    if (needsSetup && !onSetupRoute) {
+      router.replace('/setup-myself');
+    } else if (!needsSetup && onSetupRoute) {
+      router.replace('/');
+    }
+  }, [needsSetup, onSetupRoute, router]);
 
   return (
     <View style={[styles.shell, { backgroundColor: colors.screenBackground }]}>
-      <AppShellHeader />
+      {needsSetup ? null : <AppShellHeader />}
       <View style={styles.content}>
         <Stack
           screenOptions={({ route }) => ({

@@ -1,12 +1,11 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
+import { OffsetCard } from '@/components/ui/OffsetCard';
 import type { WishlistItem } from '@/types';
+import { getHashedEpisodeTagColor } from '@/utils/calendarEventColors';
 import { useContentColors } from '@/utils/useContentColors';
-import {
-  contentMutedTextStyle,
-  contentSurfaceStyle,
-  contentTextStyle,
-} from '@/utils/contentStyleHelpers';
+import { contentMutedTextStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 
 type WishlistShopRowProps = {
   item: WishlistItem;
@@ -24,68 +23,68 @@ export function WishlistShopRow({
   onPressLink,
 }: WishlistShopRowProps) {
   const content = useContentColors();
+  const quoteColor = getHashedEpisodeTagColor(item.cuisine || item.name);
 
   return (
-    <Pressable
-      style={[styles.row, contentSurfaceStyle(content)]}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      accessibilityLabel={`${item.name}を編集`}
-    >
-      <View style={styles.body}>
-        <Text style={[styles.name, contentTextStyle(content)]}>{item.name}</Text>
-        {meta ? (
-          <Text style={[styles.meta, contentMutedTextStyle(content)]} numberOfLines={1}>
-            {meta}
+    <OffsetCard>
+      <Pressable
+        style={styles.card}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        accessibilityLabel={`${item.name}を編集`}
+      >
+        <View style={styles.header}>
+          <Text style={[styles.name, contentTextStyle(content)]} numberOfLines={1}>
+            {item.name}
           </Text>
-        ) : null}
+          {meta ? <EpisodeTagChip label={meta} /> : null}
+          {item.link && onPressLink ? (
+            <Pressable
+              onPress={onPressLink}
+              hitSlop={8}
+              accessibilityRole="link"
+              accessibilityLabel="リンクを開く"
+            >
+              <Ionicons name="open-outline" size={16} color={content.contentText} />
+            </Pressable>
+          ) : null}
+        </View>
         {item.memo ? (
-          <Text style={[styles.memo, contentMutedTextStyle(content)]} numberOfLines={2}>
-            {item.memo}
-          </Text>
+          <View style={[styles.quote, { borderLeftColor: quoteColor }]}>
+            <Text style={[styles.quoteText, contentMutedTextStyle(content)]} numberOfLines={1}>
+              {item.memo}
+            </Text>
+          </View>
         ) : null}
-      </View>
-      {item.link && onPressLink ? (
-        <Pressable
-          onPress={onPressLink}
-          hitSlop={8}
-          accessibilityRole="link"
-          accessibilityLabel="リンクを開く"
-          style={styles.linkBtn}
-        >
-          <Ionicons name="open-outline" size={18} color={content.contentText} />
-        </Pressable>
-      ) : null}
-    </Pressable>
+      </Pressable>
+    </OffsetCard>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    borderWidth: 1,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
+  card: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 6,
   },
-  body: {
-    flex: 1,
-    gap: 4,
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   name: {
-    fontSize: 17,
-    fontWeight: '700',
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '800',
+    lineHeight: 20,
   },
-  meta: {
-    fontSize: 12,
-    fontWeight: '600',
+  quote: {
+    borderLeftWidth: 3,
+    paddingLeft: 8,
   },
-  memo: {
+  quoteText: {
     fontSize: 13,
     lineHeight: 18,
-  },
-  linkBtn: {
-    paddingTop: 2,
+    fontWeight: '600',
   },
 });

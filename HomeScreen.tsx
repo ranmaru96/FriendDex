@@ -33,6 +33,7 @@ import {
   getMyself,
   getPendingReviewEpisodes,
   initializeDatabase,
+  isMyselfLocked,
   searchFriends,
 } from './db';
 import { usePersistedFilter, FILTER_KEYS } from '@/hooks/usePersistedFilter';
@@ -144,6 +145,11 @@ export default function HomeScreen() {
   const mbtiOptions = useMemo(() => toOptions(MBTI_TYPES as string[]), []);
 
   const handleLongPressDeleteProfile = useCallback((friend: Friend) => {
+    initializeDatabase();
+    if (isMyselfLocked() && getMyself() === friend.id) {
+      Alert.alert('削除できません', '本人の人物カードは削除できません。');
+      return;
+    }
     const executeDelete = () => {
       initializeDatabase();
       const profile = getDefaultProfile(friend.id);

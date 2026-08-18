@@ -380,10 +380,11 @@ export function getScheduleGridMonthRangeIso(
 
 const WEEKDAY_SHORT = ['日', '月', '火', '水', '木', '金', '土'] as const;
 
-export function formatScheduleGridSelectedLabel(dateKey: string): string {
+export function formatScheduleGridSelectedLabel(dateKey: string, holidayName?: string | null): string {
   const date = parseDateKey(dateKey);
   const month = date.getMonth() + 1;
   const day = date.getDate();
   const weekday = WEEKDAY_SHORT[date.getDay()];
-  return `${month}月${day}日（${weekday}）`;
+  const holiday = holidayName?.trim() ? `・${holidayName.trim()}` : '';
+  return `${month}月${day}日（${weekday}${holiday}）`;
 }

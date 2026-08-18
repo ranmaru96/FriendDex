@@ -99,6 +99,16 @@ export function groupWishlistEatByCuisine(items: WishlistItem[]): WishlistEatFol
   return groupWishlistEatBy(items, (item) => item.cuisine ?? '', UNSET_WISHLIST_CUISINE_LABEL);
 }
 
+export function eatFolderPreviewLabels(
+  folder: WishlistEatFolder,
+  browse: 'area' | 'cuisine'
+): string[] {
+  const values = folder.items.map((item) =>
+    browse === 'area' ? item.cuisine ?? '' : item.location ?? ''
+  );
+  return uniqueWishlistLabels(values).slice(0, 4);
+}
+
 export function matchesWishlistQuery(item: WishlistItem, query: string): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) {

@@ -65,12 +65,15 @@ import {
   getAllDayDateKeysFromEvent,
   parseDateKey,
 } from '@/utils/eventHelpers';
+import { scheduleGoogleCalendarPush } from '@/utils/googleCalendarSync';
 import { useContentColors } from '@/utils/useContentColors';
 import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
 import { openRangeDatePickerBounds } from '@/utils/datePickerBounds';
 import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import {
   contentDateTimePickerProps,
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -377,6 +380,7 @@ export default function TaskEditScreen() {
           Alert.alert('エラー', '予定の作成に失敗しました');
           return;
         }
+        scheduleGoogleCalendarPush(createdEvent.id);
         resolvedEventId = createdEvent.id;
       } else if (eventLinkMode === 'existing') {
         const linked = eventId.trim();
@@ -670,9 +674,7 @@ export default function TaskEditScreen() {
                       style={[
                         styles.kindSegmentItem,
                         selected
-                          ? {
-                              backgroundColor: content.contentText,
-                            }
+                          ? contentFilledButtonStyle(content)
                           : null,
                       ]}
                       disabled={lockedToEvent}
@@ -702,10 +704,10 @@ export default function TaskEditScreen() {
                       <Text
                         style={[
                           styles.kindSegmentText,
-                          {
-                            color: selected ? content.contentCard : content.contentTextSecondary,
-                            fontWeight: selected ? '700' : '600',
-                          },
+                          selected
+                            ? contentFilledButtonTextStyle(content)
+                            : { color: content.contentTextSecondary },
+                          { fontWeight: selected ? '700' : '600' },
                           !selected && lockedToEvent ? styles.kindSegmentTextLocked : null,
                         ]}
                       >

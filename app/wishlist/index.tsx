@@ -29,6 +29,7 @@ import {
 import {
   DEFAULT_EAT_CUISINES,
   DEFAULT_VISIT_PURPOSE_TAGS,
+  eatFolderPreviewLabels,
   formatWishlistIndex,
   groupWishlistEatByCuisine,
   groupWishlistEatItems,
@@ -207,7 +208,7 @@ export default function WishlistScreen() {
   };
 
   const screenTitle =
-    kind === 'eat' && selectedFolder ? selectedFolder.label : '行ってみたい・食べてみたい';
+    kind === 'eat' && selectedFolder ? selectedFolder.label : '行ってみたい・食べてみたい場所';
 
   const searchPlaceholder =
     kind === 'visit'
@@ -425,7 +426,7 @@ export default function WishlistScreen() {
               </Text>
               <Text style={[styles.plainEmptyHint, contentMutedTextStyle(content)]}>
                 {items.length === 0
-                  ? '右上の＋から店を記録すると、エリアや種類の表に並びます。'
+                  ? '右上の＋から店を記録すると、エリアのガイドができます。'
                   : '検索を変えてみてください。'}
               </Text>
             </View>
@@ -435,6 +436,7 @@ export default function WishlistScreen() {
                 key: folder.key,
                 title: folder.label,
                 count: folder.items.length,
+                previews: eatFolderPreviewLabels(folder, eatBrowse),
               }))}
               onPressRow={setSelectedEatKey}
             />

@@ -162,6 +162,7 @@ type EventRow = {
   notification_id: string | null;
   auto_episode_created: number;
   episode_tag: string | null;
+  google_event_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -231,6 +232,7 @@ const YOUR_QUESTIONS_TABLE = 'your_questions';
 const YOUR_QUESTION_ANSWERS_TABLE = 'your_question_answers';
 const WISHLIST_ITEMS_TABLE = 'wishlist_items';
 const MYSELF_KEY = 'myself_friend_id';
+const MYSELF_CONFIRMED_KEY = 'myself_confirmed';
 
 const db = SQLite.openDatabaseSync(DB_NAME);
 
@@ -552,6 +554,7 @@ const rowToEvent = (row: EventRow): Event => ({
   notificationId: row.notification_id,
   autoEpisodeCreated: row.auto_episode_created === 1,
   episodeTag: normalizeEpisodeTag(row.episode_tag),
+  googleEventId: row.google_event_id?.trim() ? row.google_event_id.trim() : null,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
 });
@@ -713,6 +716,7 @@ export const initializeDatabase = (): void => {
       notify_enabled INTEGER NOT NULL DEFAULT 1,
       notification_id TEXT,
       auto_episode_created INTEGER NOT NULL DEFAULT 0,
+      google_event_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -737,6 +741,10 @@ export const initializeDatabase = (): void => {
     {
       column: 'episode_tag',
       sql: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN episode_tag TEXT;`,
+    },
+    {
+      column: 'google_event_id',
+      sql: `ALTER TABLE ${EVENTS_TABLE} ADD COLUMN google_event_id TEXT;`,
     },
   ];
   db.execSync('BEGIN IMMEDIATE;');
@@ -1708,6 +1716,58 @@ export const getMyself = (): string | null => {
   return row?.value ?? null;
 };
 
+export const getResolvedMyselfId = (): string | null => {
+  const id = getMyself();
+  if (!id || !getFriendById(id)) {
+    return null;
+  }
+  return id;
+};
+
+export const isMyselfConfirmed = (): boolean => {
+  return getAppSetting(MYSELF_CONFIRMED_KEY) === '1';
+};
+
+export const setMyselfConfirmed = (confirmed: boolean): void => {
+  if (confirmed) {
+    setAppSetting(MYSELF_CONFIRMED_KEY, '1');
+    return;
+  }
+  deleteAppSetting(MYSELF_CONFIRMED_KEY);
+};
+
+/** 確認済みかつ本人カードが残っているとき、付け替え・削除を禁止する */
+export const isMyselfLocked = (): boolean => {
+  return isMyselfConfirmed() && getResolvedMyselfId() != null;
+};
+
+export type MyselfSetupPhase = 'register' | 'pick' | 'confirm' | 'ready';
+
+export const getMyselfSetupPhase = (): MyselfSetupPhase => {
+  const myselfId = getResolvedMyselfId();
+  const friendCount = getAllFriends().length;
+  if (!myselfId) {
+    return friendCount === 0 ? 'register' : 'pick';
+  }
+  if (!isMyselfConfirmed()) {
+    return 'confirm';
+  }
+  return 'ready';
+};
+
+/** 本人を確定する（選択または新規作成のあと） */
+export const confirmMyself = (friendId: string): boolean => {
+  if (isMyselfLocked() && getResolvedMyselfId() !== friendId.trim()) {
+    return false;
+  }
+  const ok = setMyself(friendId);
+  if (!ok) {
+    return false;
+  }
+  setMyselfConfirmed(true);
+  return true;
+};
+
 export const DETAIL_DESIGN_VARIANT_KEY = 'detail_design_variant';
 export const UI_PREVIEW_VARIANT_KEY = 'ui_preview_variant';
 export const APP_THEME_VARIANT_KEY = 'app_theme_variant';
@@ -1717,6 +1777,10 @@ export const UI_CALENDAR_EVENT_CARD_STYLE_KEY = 'ui_calendar_event_card_style';
 export const UI_EPISODE_LIST_PHOTO_LAYOUT_KEY = 'ui_episode_list_photo_layout';
 export const UI_DETAIL_PROFILE_CARD_STYLE_KEY = 'ui_detail_profile_card_style';
 export const COMPLETED_TASK_RETENTION_KEY = 'completed_task_retention';
+export const GOOGLE_CALENDAR_ID_KEY = 'google_calendar_id';
+export const GOOGLE_CALENDAR_EMAIL_KEY = 'google_account_email';
+export const GOOGLE_CALENDAR_LAST_SYNC_AT_KEY = 'google_calendar_last_sync_at';
+export const GOOGLE_CALENDAR_LAST_ERROR_KEY = 'google_calendar_last_error';
 
 export const getAppSetting = (key: string): string | null => {
   const row = db.getFirstSync<{ value: string }>(`SELECT value FROM ${SETTINGS_TABLE} WHERE key = ?;`, [key]);
@@ -1728,6 +1792,10 @@ export const setAppSetting = (key: string, value: string): void => {
     `INSERT INTO ${SETTINGS_TABLE} (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
     [key, value]
   );
+};
+
+export const deleteAppSetting = (key: string): void => {
+  db.runSync(`DELETE FROM ${SETTINGS_TABLE} WHERE key = ?;`, [key]);
 };
 
 export const getDetailDesignVariant = (): 'main' => {
@@ -1831,11 +1899,18 @@ export const setCompletedTaskRetention = (retention: CompletedTaskRetention): vo
 
 export const setMyself = (friendId: string | null): boolean => {
   if (friendId === null) {
+    if (isMyselfLocked()) {
+      return false;
+    }
     db.runSync(`DELETE FROM ${SETTINGS_TABLE} WHERE key = ?;`, [MYSELF_KEY]);
+    setMyselfConfirmed(false);
     return true;
   }
   const normalized = friendId.trim();
   if (!normalized) {
+    return false;
+  }
+  if (isMyselfLocked() && getResolvedMyselfId() !== normalized) {
     return false;
   }
   const exists = db.getFirstSync<{ id: string }>(
@@ -1994,6 +2069,9 @@ export const updateProfile = (profileId: string, input: ProfileSelfUpdateInput):
 };
 
 export const deleteFriend = (id: string): boolean => {
+  if (isMyselfLocked() && getResolvedMyselfId() === id) {
+    return false;
+  }
   const uris = db
     .getAllSync<{ photoUri: string | null }>(
       `SELECT photoUri FROM ${PROFILES_TABLE} WHERE friendId = ?;`,
@@ -2014,8 +2092,11 @@ export const deleteProfileById = (profileId: string): boolean => {
     return false;
   }
   if (row.isDefault === 1) {
-    const myselfFriendId = getMyself();
+    const myselfFriendId = getResolvedMyselfId();
     if (myselfFriendId === row.friendId) {
+      if (isMyselfLocked()) {
+        return false;
+      }
       setMyself(null);
     }
   }
@@ -3462,7 +3543,9 @@ export const updateGroupOption = (
   return true;
 };
 
-const normalizeEventInput = (input: EventInput): Omit<Event, 'id' | 'createdAt' | 'updatedAt'> => ({
+const normalizeEventInput = (
+  input: EventInput
+): Omit<Event, 'id' | 'createdAt' | 'updatedAt' | 'googleEventId'> => ({
   title: input.title.trim(),
   startAt: input.startAt.trim(),
   endAt: input.endAt?.trim() ? input.endAt.trim() : null,
@@ -3508,6 +3591,7 @@ export const createEvent = (input: EventInput): Event | null => {
     id,
     ...normalized,
     notificationId: null,
+    googleEventId: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -3608,6 +3692,23 @@ export const updateEvent = (eventId: string, input: EventInput): boolean => {
     ]
   );
   return result.changes > 0;
+};
+
+export const updateEventGoogleEventId = (eventId: string, googleEventId: string | null): boolean => {
+  const normalizedEventId = eventId.trim();
+  if (!normalizedEventId) {
+    return false;
+  }
+  const normalizedGoogleEventId = googleEventId?.trim() ? googleEventId.trim() : null;
+  const result = db.runSync(
+    `UPDATE ${EVENTS_TABLE} SET google_event_id = ?, updated_at = ? WHERE id = ?;`,
+    [normalizedGoogleEventId, nowIso(), normalizedEventId]
+  );
+  return result.changes > 0;
+};
+
+export const clearAllEventGoogleEventIds = (): void => {
+  db.runSync(`UPDATE ${EVENTS_TABLE} SET google_event_id = NULL, updated_at = ?;`, [nowIso()]);
 };
 
 export const updateEventNotificationId = (eventId: string, notificationId: string | null): boolean => {

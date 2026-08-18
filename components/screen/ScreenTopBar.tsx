@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View, type TextStyle, type ViewStyle } from 'react-native';
 import { Radius, Spacing, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { ToolTitlePlaque } from '@/components/screen/ToolTitlePlaque';
 
 type ScreenTopBarProps = {
   title?: string;
@@ -13,6 +14,8 @@ type ScreenTopBarProps = {
   titleLeading?: ReactNode;
   /** 中央タイトルの右側 */
   titleTrailing?: ReactNode;
+  /** true のときタイトルを角の〇付き囲いで表示（ツール画面のみ） */
+  titleFramed?: boolean;
   /** subScreen: screenBase 背景＋テーマ文字色。plain: 背景なし（カメラ黒画面など） */
   variant?: 'subScreen' | 'plain';
   style?: ViewStyle;
@@ -28,6 +31,7 @@ export function ScreenTopBar({
   right,
   titleLeading,
   titleTrailing,
+  titleFramed = false,
   variant = 'subScreen',
   style,
   backTextStyle,
@@ -46,6 +50,8 @@ export function ScreenTopBar({
         <Text style={[styles.backText, { color: topBarText }, backTextStyle]}>{backLabel}</Text>
       </Pressable>
     ) : null);
+  const hasTitleAdornment = titleLeading != null || titleTrailing != null;
+  const trimmedTitle = title?.trim() ?? '';
 
   return (
     <View
@@ -60,19 +66,24 @@ export function ScreenTopBar({
       ]}
     >
       <View style={styles.sideLeft}>{leftContent}</View>
-      {titleLeading != null || titleTrailing != null ? (
-        <View style={styles.titleRow}>
-          <View style={styles.titleSide}>{titleLeading ?? null}</View>
-          <Text style={[styles.title, { color: topBarText }, titleStyle]} numberOfLines={1}>
-            {title ?? ''}
-          </Text>
-          <View style={styles.titleSide}>{titleTrailing ?? null}</View>
+      <View style={styles.titleSlot}>
+        {hasTitleAdornment ? <View style={styles.titleSide}>{titleLeading ?? null}</View> : null}
+        <View style={styles.titleCenter}>
+          {trimmedTitle ? (
+            titleFramed ? (
+              <ToolTitlePlaque title={trimmedTitle} titleStyle={titleStyle} />
+            ) : (
+              <Text
+                style={[styles.plainTitle, { color: topBarText }, titleStyle]}
+                numberOfLines={2}
+              >
+                {trimmedTitle}
+              </Text>
+            )
+          ) : null}
         </View>
-      ) : (
-        <Text style={[styles.title, { color: topBarText }, titleStyle]} numberOfLines={1}>
-          {title ?? ''}
-        </Text>
-      )}
+        {hasTitleAdornment ? <View style={styles.titleSide}>{titleTrailing ?? null}</View> : null}
+      </View>
       <View style={styles.sideRight}>{right ?? null}</View>
     </View>
   );
@@ -103,12 +114,17 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: 'center',
   },
-  titleRow: {
+  titleSlot: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     minWidth: 0,
-    gap: 2,
+  },
+  titleCenter: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   titleSide: {
     width: 28,
@@ -119,9 +135,8 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  title: {
-    flex: 1,
-    fontSize: 17,
+  plainTitle: {
+    fontSize: 15,
     fontWeight: '700',
     textAlign: 'center',
   },

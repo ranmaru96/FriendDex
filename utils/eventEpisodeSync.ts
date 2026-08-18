@@ -17,6 +17,7 @@ import {
 } from './eventHelpers';
 import { normalizeEpisodeTag } from './episodeHelpers';
 import { friendIdsToProfileIds, syncEventParticipants } from './eventParticipantHelpers';
+import { scheduleGoogleCalendarPush } from './googleCalendarSync';
 
 export type EpisodeEventMatch = {
   event: Event;
@@ -224,5 +225,6 @@ export const createEventFromEpisode = (input: EpisodeEventSyncInput): Event | nu
   }
 
   syncEventParticipants(created.id, participantProfileIds);
+  scheduleGoogleCalendarPush(created.id);
   return created;
 };

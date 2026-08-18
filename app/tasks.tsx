@@ -71,6 +71,8 @@ import {
 } from '@/utils/taskGroupHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentMutedTextStyle,
   contentSurfaceStyle,
   contentTagStyle,
@@ -1546,18 +1548,12 @@ export default function TasksScreen() {
               </Text>
             </View>
             <Pressable
-              style={[
-                styles.todayEditButton,
-                {
-                  borderColor: content.contentBorder,
-                  backgroundColor: content.contentBorder,
-                },
-              ]}
+              style={[styles.todayEditButton, contentFilledButtonStyle(content)]}
               onPress={() => setSegment('recurring')}
               accessibilityRole="button"
               accessibilityLabel="タスクの追加・編集"
             >
-              <Text style={[styles.todayEditButtonText, contentTextStyle(content)]}>
+              <Text style={[styles.todayEditButtonText, contentFilledButtonTextStyle(content)]}>
                 タスクの追加・編集
               </Text>
             </Pressable>
@@ -1592,7 +1588,7 @@ export default function TasksScreen() {
                     key={item.key}
                     style={[
                       styles.librarySegmentItem,
-                      selected ? { backgroundColor: content.contentText } : null,
+                      selected ? contentFilledButtonStyle(content) : null,
                     ]}
                     onPress={() => setSegment(item.key)}
                     accessibilityRole="tab"

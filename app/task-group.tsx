@@ -49,6 +49,8 @@ import { requestNotificationPermissionOnFirstCreate } from '@/utils/eventNotific
 import { DEFAULT_REMIND_TIME, clampRemindTimeToNow, syncTaskReminders } from '@/utils/taskNotifications';
 import { useContentColors } from '@/utils/useContentColors';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -450,38 +452,26 @@ export default function TaskGroupScreen() {
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[
-                      styles.saveScheduleBtn,
-                      {
-                        backgroundColor: content.contentText,
-                        borderColor: content.contentText,
-                      },
-                    ]}
+                    style={[styles.saveScheduleBtn, contentFilledButtonStyle(content)]}
                     onPress={saveSchedule}
                     activeOpacity={0.75}
                     accessibilityRole="button"
                     accessibilityLabel="周期を保存"
                   >
-                    <Text style={[styles.saveScheduleBtnText, { color: content.contentCard }]}>
+                    <Text style={[styles.saveScheduleBtnText, contentFilledButtonTextStyle(content)]}>
                       保存
                     </Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <TouchableOpacity
-                  style={[
-                    styles.saveScheduleBtn,
-                    {
-                      backgroundColor: content.contentText,
-                      borderColor: content.contentText,
-                    },
-                  ]}
+                  style={[styles.saveScheduleBtn, contentFilledButtonStyle(content)]}
                   onPress={beginEditSchedule}
                   activeOpacity={0.75}
                   accessibilityRole="button"
                   accessibilityLabel="周期を編集"
                 >
-                  <Text style={[styles.saveScheduleBtnText, { color: content.contentCard }]}>
+                  <Text style={[styles.saveScheduleBtnText, contentFilledButtonTextStyle(content)]}>
                     編集
                   </Text>
                 </TouchableOpacity>

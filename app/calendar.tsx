@@ -24,6 +24,7 @@ import type { CalendarEventMemoDisplay } from '@/constants/uiKit/types';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
+import { useJapaneseHolidays } from '@/hooks/useJapaneseHolidays';
 import { useTapUnlessHorizontalScroll } from '@/hooks/useTapUnlessHorizontalScroll';
 import { useContentColors } from '@/utils/useContentColors';
 import {
@@ -232,6 +233,7 @@ export default function CalendarScreen() {
     () => getBirthdayFriendsForDateKey(birthdayFriendsByMonthDay, selectedDate),
     [birthdayFriendsByMonthDay, selectedDate]
   );
+  const { holidays, holidayNameFor, refresh: refreshHolidays } = useJapaneseHolidays();
 
   const loadMonthEvents = useCallback(
     (year: number, month: number) => {
@@ -264,7 +266,8 @@ export default function CalendarScreen() {
     useCallback(() => {
       loadMonthEvents(visibleMonth.year, visibleMonth.month);
       setBirthdayFriendsByMonthDay(buildBirthdayFriendsByMonthDay(getAllFriends()));
-    }, [loadMonthEvents, visibleMonth.month, visibleMonth.year])
+      refreshHolidays();
+    }, [loadMonthEvents, refreshHolidays, visibleMonth.month, visibleMonth.year])
   );
 
   useEffect(() => {
@@ -281,10 +284,10 @@ export default function CalendarScreen() {
   );
 
   const markedDates = useMemo(
-    () => buildCalendarMarkedDates(monthEvents, selectedDate),
+    () => buildCalendarMarkedDates(monthEvents, selectedDate, holidays, visibleMonth),
     // episodeTagStyleEpoch: 色だけ変えたときも帯色を取り直す
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [monthEvents, selectedDate, episodeTagStyleEpoch]
+    [monthEvents, selectedDate, episodeTagStyleEpoch, holidays, visibleMonth]
   );
 
   const handleDayPress = (day: DateData) => {
@@ -396,12 +399,14 @@ export default function CalendarScreen() {
   };
 
   const selectedDateLabel = useMemo(() => {
+    const holidayName = holidayNameFor(selectedDate);
     if (isScheduleGrid) {
-      return formatScheduleGridSelectedLabel(selectedDate);
+      return formatScheduleGridSelectedLabel(selectedDate, holidayName);
     }
     const [year, month, day] = selectedDate.split('-').map(Number);
-    return `${year}年${month}月${day}日`;
-  }, [isScheduleGrid, selectedDate]);
+    const base = `${year}年${month}月${day}日`;
+    return holidayName ? `${base}（${holidayName}）` : base;
+  }, [holidayNameFor, isScheduleGrid, selectedDate]);
 
   return (
     <>
@@ -430,6 +435,7 @@ export default function CalendarScreen() {
             onMonthChange={handleScheduleGridMonthChange}
             edgeToEdge={isEdgeToEdge}
             birthdayMonthDays={birthdayMonthDays}
+            holidays={holidays}
             onPressEpisodeTags={() => setEpisodeTagsModalVisible(true)}
           />
         ) : (

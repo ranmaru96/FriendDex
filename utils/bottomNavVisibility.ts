@@ -24,6 +24,7 @@ const HIDE_HEADER_PATHS = [
   'task-group',
   'appsettings',
   'commonitems',
+  'setup-myself',
 ];
 
 const HIDE_BOTTOM_NAV_PATHS = [
@@ -39,6 +40,7 @@ const HIDE_BOTTOM_NAV_PATHS = [
   'task-detail',
   'task-group',
   'commonitems',
+  'setup-myself',
 ];
 
 export function shouldHideHeader(pathname: string): boolean {
