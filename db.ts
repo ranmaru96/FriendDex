@@ -2220,7 +2220,7 @@ export const episodeMatchesParticipantFilter = (
     return false;
   }
   const episodeIds = expandParticipantEntriesToFriendIds(episodeEntries);
-  return filterIds.some((id) => episodeIds.includes(id));
+  return filterIds.every((id) => episodeIds.includes(id));
 };
 
 const ensureRequiredParticipants = (

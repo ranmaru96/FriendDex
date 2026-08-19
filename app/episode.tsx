@@ -306,7 +306,7 @@ export default function EpisodeScreen() {
       }
       if (filterFriendIds.size > 0) {
         const episodeFriendIds = getEpisodeParticipantFriendIds(row.episode);
-        const matches = episodeFriendIds.some((id) => filterFriendIds.has(id));
+        const matches = [...filterFriendIds].every((id) => episodeFriendIds.includes(id));
         if (!matches) {
           return false;
         }

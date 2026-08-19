@@ -7,8 +7,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
 import { FRIENDEX_GOOGLE_CALENDAR_SUMMARY } from '@/constants/googleCalendar';
 import { Theme } from '@/constants/theme';
 import {
@@ -18,6 +16,7 @@ import {
   saveGoogleTokens,
   tokensFromAuthSession,
 } from '@/lib/googleAuth';
+import { isGoogleCalendarNativeAvailable } from '@/lib/googleNativeAvailability';
 import {
   completeGoogleCalendarConnect,
   disconnectGoogleCalendar,
@@ -25,7 +24,14 @@ import {
   pushAllLocalEventsToGoogleCalendar,
 } from '@/utils/googleCalendarSync';
 
-WebBrowser.maybeCompleteAuthSession();
+let Google: typeof import('expo-auth-session/providers/google') | null = null;
+try {
+  if (isGoogleCalendarNativeAvailable()) {
+    Google = require('expo-auth-session/providers/google') as typeof import('expo-auth-session/providers/google');
+  }
+} catch {
+  Google = null;
+}
 
 export type GoogleCalendarSettingsThemed = {
   sectionHeader: object | null;
@@ -55,6 +61,17 @@ export function GoogleCalendarConnectControls({
 }: {
   themed: GoogleCalendarSettingsThemed;
 }) {
+  if (!Google) {
+    return null;
+  }
+  return <GoogleCalendarConnectControlsInner themed={themed} />;
+}
+
+function GoogleCalendarConnectControlsInner({
+  themed,
+}: {
+  themed: GoogleCalendarSettingsThemed;
+}) {
   const [busy, setBusy] = useState(false);
   const [snapshot, setSnapshot] = useState(getGoogleCalendarConnectionSnapshot);
   const handledResponseKey = useRef<string | null>(null);
@@ -62,7 +79,7 @@ export function GoogleCalendarConnectControls({
   const clientIds = useMemo(() => getGoogleClientIds(), []);
   const nativeRedirectUri = useMemo(() => getGoogleNativeRedirectUri(), []);
 
-  const [request, response, promptAsync] = Google.useAuthRequest(
+  const [request, response, promptAsync] = Google!.useAuthRequest(
     {
       iosClientId: clientIds.iosClientId,
       androidClientId: clientIds.androidClientId,

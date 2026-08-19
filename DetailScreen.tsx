@@ -11,6 +11,7 @@ import {
   TextInput,
   useWindowDimensions,
   View,
+  type ImageStyle,
   type ListRenderItem,
   type StyleProp,
   type ViewStyle,
@@ -30,6 +31,8 @@ import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
 import { OffsetCard } from '@/components/ui/OffsetCard';
+import { DetailInkTabBar } from '@/components/detail/DetailOffsetTabPreview';
+import { DetailTabAddButton } from '@/components/detail/DetailTabAddButton';
 import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
@@ -49,7 +52,6 @@ import { contentDateTimePickerProps } from '@/utils/contentStyleHelpers';
 import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
 import { deletePersistedImages } from '@/utils/persistImageFile';
 import { computeProfileCompleteness } from '@/utils/profileCompleteness';
-import { sortFriendsBySelectedIds } from '@/utils/selectionSortHelpers';
 import {
   getAllFriendsInDefaultOrder,
   sortFriendsByDefaultOrder,
@@ -91,6 +93,7 @@ import {
   resolveEpisodeRecordOwnerId,
 } from './utils/episodeHelpers';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
+import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import { usePersistedFilter, FILTER_KEYS } from '@/hooks/usePersistedFilter';
@@ -107,8 +110,6 @@ import {
 } from './utils/episodeEventLinking';
 import { registerSavedEpisodeTag } from './utils/episodeTagMaster';
 
-const EPISODE_PICKER_COLUMNS = 3;
-const EPISODE_PICKER_GAP = 6;
 const DETAIL_SLIDE_MS = 260;
 
 const NOTE_TAB_COPY = {
@@ -117,6 +118,8 @@ const NOTE_TAB_COPY = {
     body: 'この人の癖や口癖、習慣',
     placeholder: '癖や口癖、習慣',
     empty: '登録済みの習性はありません。',
+    emptyNone: 'この人の癖や口癖、習慣はまだありません。',
+    emptyMiss: '該当する習性はありません。',
     required: '習性を入力してください。',
   },
   メモ: {
@@ -124,6 +127,8 @@ const NOTE_TAB_COPY = {
     body: 'この人に関するその他の情報',
     placeholder: 'メモ',
     empty: '登録済みのメモはありません。',
+    emptyNone: 'この人に関するその他の情報はまだありません。',
+    emptyMiss: '該当するメモはありません。',
     required: 'メモを入力してください。',
   },
   彼曰く: {
@@ -131,9 +136,26 @@ const NOTE_TAB_COPY = {
     body: 'この人の言っていたこと',
     placeholder: '言っていたこと',
     empty: '登録済みの彼曰くはありません。',
+    emptyNone: 'この人の言っていたことはまだありません。',
+    emptyMiss: '該当する彼曰くはありません。',
     required: '本文を入力してください。',
   },
 } as const;
+
+type NoteTabCopyKey = keyof typeof NOTE_TAB_COPY;
+
+const textMatchesQuery = (haystack: string, query: string): boolean => {
+  const tokens = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+  if (tokens.length === 0) {
+    return true;
+  }
+  const hay = haystack.toLowerCase();
+  return tokens.every((token) => hay.includes(token));
+};
 
 const formatDateToYMD = (d: Date): string => {
   const y = d.getFullYear();
@@ -392,6 +414,35 @@ function OptionalOffsetCard({
     </OffsetCard>
   );
 }
+
+/** コーデックス／図鑑は人物カードと同じ角丸で枠なし。モノクロームは二重枠のまま。 */
+function getHeroPhotoChrome(
+  isOffsetPattern: boolean,
+  photoRadius: number,
+  appThemeVariant: string,
+  contentColors: { contentTextSecondary: string; contentPhotoInnerBorder: string },
+  profileCardBorderColor: string
+) {
+  if (isOffsetPattern) {
+    const clip = { borderWidth: 0 as const, borderRadius: photoRadius };
+    return { outer: clip, inner: clip, media: { borderRadius: photoRadius } as ImageStyle };
+  }
+  return {
+    outer:
+      appThemeVariant === 'white'
+        ? {
+            borderColor: contentColors.contentTextSecondary,
+            borderWidth: 1 as const,
+          }
+        : { borderColor: profileCardBorderColor },
+    inner:
+      appThemeVariant === 'white'
+        ? { borderColor: contentColors.contentPhotoInnerBorder }
+        : null,
+    media: null as ImageStyle | null,
+  };
+}
+
 function DetailAdjacentSlidePanel({
   snapshot,
   styles,
@@ -425,19 +476,15 @@ function DetailAdjacentSlidePanel({
     profileByLabel,
   } = snapshot;
   const contentColors = useContentColors();
-  const { variant: appThemeVariant } = useAppTheme();
+  const { variant: appThemeVariant, shape } = useAppTheme();
   const profileCardBorderColor = contentColors.contentBorder;
-  const heroPhotoOuterStyle =
-    appThemeVariant === 'white'
-      ? {
-          borderColor: contentColors.contentTextSecondary,
-          borderWidth: 1 as const,
-        }
-      : { borderColor: profileCardBorderColor };
-  const heroPhotoInnerStyle =
-    appThemeVariant === 'white'
-      ? { borderColor: contentColors.contentPhotoInnerBorder }
-      : null;
+  const heroPhotoChrome = getHeroPhotoChrome(
+    isCodex,
+    shape.cardBorderRadius,
+    appThemeVariant,
+    contentColors,
+    profileCardBorderColor
+  );
   const birthdayLabel = (() => {
     if (!friend.birthday.trim()) return '';
     const formatted = formatEpisodeDateForCard(friend.birthday);
@@ -447,6 +494,92 @@ function DetailAdjacentSlidePanel({
   const photoUri = friend.photoUri?.trim() ?? '';
   const showPhoto = Boolean(photoUri) && !photoFailed && profileImageStatus !== 'failed';
   const isCompletenessReady = profileImageStatus !== 'pending';
+  const inkActiveColor =
+    bundle.tabMode === 'perTab'
+      ? (detailTabs.find((tab) => tab.key === activeTab)?.color ?? c.accent)
+      : c.accent;
+  const slideTabBar = isCodex ? (
+    <DetailInkTabBar
+      tabs={detailTabs}
+      activeTab={activeTab}
+      activeColor={inkActiveColor}
+      inactiveColor={c.tabInactive}
+      iconColor={c.tabInactive}
+    />
+  ) : (
+    <View style={styles.tabTrack}>
+      <View style={styles.tabInner}>
+        {detailTabs.map((tab) => {
+          const isActive = activeTab === tab.key;
+          const activeColor = bundle.tabMode === 'perTab' ? tab.color : c.accent;
+          const inactiveIconBg = bundle.tabMode === 'perTab' ? tab.color : c.tabInactive;
+          return (
+            <View
+              key={tab.key}
+              style={[
+                styles.tabPill,
+                isActive
+                  ? { borderColor: activeColor, backgroundColor: activeColor }
+                  : null,
+              ]}
+            >
+              <View style={styles.tabPillContent}>
+                <View
+                  style={[
+                    styles.tabPillIconCircle,
+                    isActive
+                      ? styles.tabPillIconCircleActive
+                      : { backgroundColor: inactiveIconBg },
+                  ]}
+                >
+                  {tab.iconSet === 'material' ? (
+                    <MaterialCommunityIcons
+                      name={tab.icon as ComponentProps<typeof MaterialCommunityIcons>['name']}
+                      size={16}
+                      color={c.onAccent}
+                    />
+                  ) : (
+                    <Ionicons
+                      name={tab.icon as ComponentProps<typeof Ionicons>['name']}
+                      size={16}
+                      color={c.onAccent}
+                    />
+                  )}
+                </View>
+                <Text
+                  style={[
+                    styles.tabPillCaption,
+                    isActive ? styles.tabPillCaptionActive : styles.tabPillCaptionInactive,
+                  ]}
+                >
+                  {tab.caption}
+                </Text>
+              </View>
+            </View>
+          );
+        })}
+      </View>
+    </View>
+  );
+  const slideTabBody =
+    activeTab === '情報' ? (
+      <MultiValueSummarySection
+        withCard
+        useOffsetCard={isCodex}
+        styles={styles}
+        infoChipStyles={bundle.infoChipStyles}
+        colors={c}
+        rows={[
+          { title: '所属', values: friend.affiliations },
+          { title: '経験', values: friend.experiences },
+          { title: '特徴', values: friend.personalities },
+          { title: '好物', values: friend.likes },
+          { title: '苦手', values: friend.dislikes },
+        ]}
+      />
+    ) : (
+      <View style={[styles.tabPane, { minHeight: 80 }]} />
+    );
 
   return (
     <ScrollView
@@ -498,17 +631,17 @@ function DetailAdjacentSlidePanel({
             ]}
           >
             <View style={styles.heroIdentityRow}>
-              <View style={[styles.heroPhotoOuterFrame, heroPhotoOuterStyle]}>
-                <View style={[styles.heroPhotoInnerFrame, heroPhotoInnerStyle]}>
+              <View style={[styles.heroPhotoOuterFrame, heroPhotoChrome.outer]}>
+                <View style={[styles.heroPhotoInnerFrame, heroPhotoChrome.inner]}>
                   {showPhoto ? (
                     <Image
                       source={{ uri: photoUri }}
-                      style={styles.heroPhoto}
+                      style={[styles.heroPhoto, heroPhotoChrome.media]}
                       resizeMode="cover"
                       onError={() => setPhotoFailed(true)}
                     />
                   ) : (
-                    <View style={styles.heroPhotoPlaceholder}>
+                    <View style={[styles.heroPhotoPlaceholder, heroPhotoChrome.media]}>
                       <Text style={styles.heroPhotoPlaceholderText}>No Image</Text>
                     </View>
                   )}
@@ -612,78 +745,23 @@ function DetailAdjacentSlidePanel({
             </View>
           </View>
           </OptionalOffsetCard>
-          <View style={styles.tabSection}>
-            <View style={styles.tabTrack}>
-              <View style={styles.tabInner}>
-                {detailTabs.map((tab) => {
-                  const isActive = activeTab === tab.key;
-                  const activeColor = bundle.tabMode === 'perTab' ? tab.color : c.accent;
-                  const inactiveIconBg = bundle.tabMode === 'perTab' ? tab.color : c.tabInactive;
-                  return (
-                    <View
-                      key={tab.key}
-                      style={[
-                        styles.tabPill,
-                        isActive
-                          ? { borderColor: activeColor, backgroundColor: activeColor }
-                          : null,
-                      ]}
-                    >
-                      <View style={styles.tabPillContent}>
-                        <View
-                          style={[
-                            styles.tabPillIconCircle,
-                            isActive
-                              ? styles.tabPillIconCircleActive
-                              : { backgroundColor: inactiveIconBg },
-                          ]}
-                        >
-                          {tab.iconSet === 'material' ? (
-                            <MaterialCommunityIcons
-                              name={tab.icon as ComponentProps<typeof MaterialCommunityIcons>['name']}
-                              size={16}
-                              color={c.onAccent}
-                            />
-                          ) : (
-                            <Ionicons
-                              name={tab.icon as ComponentProps<typeof Ionicons>['name']}
-                              size={16}
-                              color={c.onAccent}
-                            />
-                          )}
-                        </View>
-                        <Text
-                          style={[
-                            styles.tabPillCaption,
-                            isActive ? styles.tabPillCaptionActive : styles.tabPillCaptionInactive,
-                          ]}
-                        >
-                          {tab.caption}
-                        </Text>
-                      </View>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-            {activeTab === '情報' ? (
-              <MultiValueSummarySection
-                withCard
-                useOffsetCard={isCodex}
-                styles={styles}
-                infoChipStyles={bundle.infoChipStyles}
-                colors={c}
-                rows={[
-                  { title: '所属', values: friend.affiliations },
-                  { title: '経験', values: friend.experiences },
-                  { title: '特徴', values: friend.personalities },
-                  { title: '好物', values: friend.likes },
-                  { title: '苦手', values: friend.dislikes },
-                ]}
-              />
-            ) : (
-              <View style={[styles.tabPane, { minHeight: 80 }]} />
-            )}
+          <View
+            style={[
+              styles.tabSection,
+              isCodex
+                ? {
+                    backgroundColor: 'transparent',
+                    overflow: 'visible' as const,
+                    borderBottomLeftRadius: 0,
+                    borderBottomRightRadius: 0,
+                  }
+                : null,
+            ]}
+          >
+            <>
+                {slideTabBar}
+                {slideTabBody}
+              </>
           </View>
         </View>
       </View>
@@ -766,16 +844,27 @@ export default function DetailScreen() {
   const detailScrollOffsetRef = useRef(0);
   const [habitNotes, setHabitNotes] = useState<string[]>([]);
   const [memoNotes, setMemoNotes] = useState<string[]>([]);
+  const [noteSearchByTab, setNoteSearchByTab] = useState<Record<NoteTabCopyKey, string>>({
+    習性: '',
+    メモ: '',
+    彼曰く: '',
+  });
   const [isHabitFormVisible, setIsHabitFormVisible] = useState(false);
   const [editingHabitIndex, setEditingHabitIndex] = useState<number | null>(null);
   const [habitText, setHabitText] = useState('');
   const [habitFormError, setHabitFormError] = useState('');
   const [allFriends, setAllFriends] = useState<Friend[]>([]);
-  const [episodeFilterSelectedIdsDraft, setEpisodeFilterSelectedIdsDraft] = useState<Set<string>>(
+  const [filterSelectorVisible, setFilterSelectorVisible] = useState(false);
+  const [filterSelectorTab, setFilterSelectorTab] = useState<'individual' | 'group'>('individual');
+  const [filterSelectedIndividualIds, setFilterSelectedIndividualIds] = useState<Set<string>>(
     () => new Set()
   );
-  const [isEpisodeParticipantPickerOpen, setIsEpisodeParticipantPickerOpen] = useState(false);
-  const [episodePickerGridWidth, setEpisodePickerGridWidth] = useState(0);
+  const [filterSelectedGroupValues, setFilterSelectedGroupValues] = useState<Set<string>>(
+    () => new Set()
+  );
+  const [filterSelectorNameFilter, setFilterSelectorNameFilter] = useState('');
+  const [filterSelectorAffiliationFilter, setFilterSelectorAffiliationFilter] = useState('');
+  const [filterSelectorExperienceFilter, setFilterSelectorExperienceFilter] = useState('');
   const [episodeTitleDraft, setEpisodeTitleDraft] = useState('');
   const [isEpisodeFormVisible, setIsEpisodeFormVisible] = useState(false);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
@@ -929,8 +1018,7 @@ export default function DetailScreen() {
 
   useEffect(() => {
     setEpisodeTitleDraft(detailEpisodeFilter.title);
-    setEpisodeFilterSelectedIdsDraft(new Set(detailEpisodeFilter.participantIds));
-  }, [detailEpisodeFilter.title, detailEpisodeFilter.participantIds]);
+  }, [detailEpisodeFilter.title]);
 
   useFocusEffect(
     useCallback(() => {
@@ -1029,8 +1117,8 @@ export default function DetailScreen() {
     setEditingHabitIndex(null);
     setHabitText('');
     setHabitFormError('');
-    setIsEpisodeParticipantPickerOpen(false);
     setIsEpisodeFormVisible(false);
+    setFilterSelectorVisible(false);
     episodeForm.reset();
     setIsSayingFormVisible(false);
     setEditingSayingId(null);
@@ -1085,18 +1173,6 @@ export default function DetailScreen() {
     }
     return friendNameById.get(selectedProfile.authorUserId) ?? '';
   }, [selectedProfile, myselfId, friendNameById]);
-  const episodePickerCardWidth = useMemo(() => {
-    if (episodePickerGridWidth <= 0) {
-      return undefined;
-    }
-    const totalGap = EPISODE_PICKER_GAP * (EPISODE_PICKER_COLUMNS - 1);
-    return (episodePickerGridWidth - totalGap) / EPISODE_PICKER_COLUMNS;
-  }, [episodePickerGridWidth]);
-
-  const episodePickerFriends = useMemo(
-    () => sortFriendsBySelectedIds(allFriends, episodeFilterSelectedIdsDraft),
-    [allFriends, episodeFilterSelectedIdsDraft]
-  );
 
   const episodeParticipantFilterSummary = useMemo(() => {
     if (episodeFilterSelectedIds.size === 0) {
@@ -1111,18 +1187,6 @@ export default function DetailScreen() {
     return `${names.length}名`;
   }, [episodeFilterSelectedIds, friendNameById]);
 
-  const toggleEpisodeFilterParticipant = useCallback((id: string) => {
-    setEpisodeFilterSelectedIdsDraft((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, []);
-
   const sortedEpisodes = useMemo(() => {
     if (!friend) return [];
     return [...friend.episodes].sort(compareEpisodesByEventDateTime);
@@ -1132,7 +1196,7 @@ export default function DetailScreen() {
     return sortedEpisodes.filter((episode) => {
       if (episodeFilterSelectedIds.size > 0) {
         const participantIds = getEpisodeParticipantFriendIds(episode);
-        const matchesSelected = Array.from(episodeFilterSelectedIds).some((id) =>
+        const matchesSelected = Array.from(episodeFilterSelectedIds).every((id) =>
           participantIds.includes(id)
         );
         if (!matchesSelected) return false;
@@ -1175,17 +1239,13 @@ export default function DetailScreen() {
   const isProfileCompletenessReady = profileImageStatus !== 'pending';
 
   const profileCardBorderColor = content.contentBorder;
-  const heroPhotoOuterStyle =
-    appThemeVariant === 'white'
-      ? {
-          borderColor: content.contentTextSecondary,
-          borderWidth: 1 as const,
-        }
-      : { borderColor: profileCardBorderColor };
-  const heroPhotoInnerStyle =
-    appThemeVariant === 'white'
-      ? { borderColor: content.contentPhotoInnerBorder }
-      : null;
+  const heroPhotoChrome = getHeroPhotoChrome(
+    isCodex,
+    shape.cardBorderRadius,
+    appThemeVariant,
+    content,
+    profileCardBorderColor
+  );
 
   const sinceYear = useMemo(() => (friend ? getEpisodeSinceYear(friend) : '—'), [friend]);
   const recentMeetingEnglish = patternId === 'codex';
@@ -1334,17 +1394,51 @@ export default function DetailScreen() {
   ]);
 
   const openEpisodeParticipantPicker = useCallback(() => {
-    setEpisodeFilterSelectedIdsDraft(new Set(episodeFilterSelectedIds));
-    setIsEpisodeParticipantPickerOpen(true);
+    setFilterSelectedIndividualIds(new Set(episodeFilterSelectedIds));
+    setFilterSelectedGroupValues(new Set());
+    setFilterSelectorTab('individual');
+    setFilterSelectorNameFilter('');
+    setFilterSelectorAffiliationFilter('');
+    setFilterSelectorExperienceFilter('');
+    setFilterSelectorVisible(true);
   }, [episodeFilterSelectedIds]);
 
-  const handleParticipantPickerSearch = useCallback(() => {
+  const handleFilterSelectorCancel = useCallback(() => {
+    setFilterSelectorVisible(false);
+    setFilterSelectorNameFilter('');
+    setFilterSelectorAffiliationFilter('');
+    setFilterSelectorExperienceFilter('');
+  }, []);
+
+  const handleFilterSelectorConfirm = useCallback(() => {
     setDetailEpisodeFilter((prev) => ({
       ...prev,
-      participantIds: Array.from(episodeFilterSelectedIdsDraft),
+      participantIds: Array.from(filterSelectedIndividualIds),
     }));
-    setIsEpisodeParticipantPickerOpen(false);
-  }, [episodeFilterSelectedIdsDraft, setDetailEpisodeFilter]);
+    setFilterSelectedGroupValues(new Set());
+    setFilterSelectorVisible(false);
+    setFilterSelectorNameFilter('');
+    setFilterSelectorAffiliationFilter('');
+    setFilterSelectorExperienceFilter('');
+  }, [filterSelectedIndividualIds, setDetailEpisodeFilter]);
+
+  const toggleFilterSelectorIndividual = useCallback((friendId: string) => {
+    setFilterSelectedIndividualIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(friendId)) next.delete(friendId);
+      else next.add(friendId);
+      return next;
+    });
+  }, []);
+
+  const toggleFilterSelectorGroup = useCallback((groupValue: string) => {
+    setFilterSelectedGroupValues((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupValue)) next.delete(groupValue);
+      else next.add(groupValue);
+      return next;
+    });
+  }, []);
 
   const handleEpisodeTitleSubmit = useCallback(() => {
     setDetailEpisodeFilter((prev) => ({ ...prev, title: episodeTitleDraft }));
@@ -1531,6 +1625,16 @@ export default function DetailScreen() {
   };
 
   const activeNoteItems = activeTab === 'メモ' ? memoNotes : habitNotes;
+  const activeNoteTabKey: NoteTabCopyKey = activeTab === 'メモ' ? 'メモ' : '習性';
+  const visibleNoteItems = useMemo(() => {
+    const items = activeNoteItems.map((text, index) => ({ text, index }));
+    return items.filter((item) => textMatchesQuery(item.text, noteSearchByTab[activeNoteTabKey]));
+  }, [activeNoteItems, activeNoteTabKey, noteSearchByTab]);
+  const visibleSayings = useMemo(() => {
+    return sortedSayings.filter((saying) =>
+      textMatchesQuery(`${saying.text} ${saying.date}`, noteSearchByTab.彼曰く)
+    );
+  }, [noteSearchByTab, sortedSayings]);
 
   const startCreateHabit = () => {
     setIsHabitFormVisible(true);
@@ -1610,6 +1714,30 @@ export default function DetailScreen() {
     );
   };
 
+  const renderNoteTabHeader = (
+    tabKey: NoteTabCopyKey,
+    isOpen: boolean,
+    addLabel: string,
+    onAddPress: () => void
+  ) => (
+    <View style={styles.episodeToolbarRow}>
+      <TextInput
+        style={[styles.episodeFilterField, styles.episodeTitleFilterField]}
+        placeholder="検索"
+        placeholderTextColor={c.inputPlaceholder}
+        value={noteSearchByTab[tabKey]}
+        onChangeText={(value) =>
+          setNoteSearchByTab((prev) => ({ ...prev, [tabKey]: value }))
+        }
+        returnKeyType="search"
+        blurOnSubmit
+        autoCapitalize="none"
+        autoCorrect={false}
+      />
+      <DetailTabAddButton isOpen={isOpen} addLabel={addLabel} onPress={onAddPress} />
+    </View>
+  );
+
   const resetEpisodeForm = () => {
     episodeForm.reset();
   };
@@ -1669,11 +1797,10 @@ export default function DetailScreen() {
       return (
         <View
           style={{
-            backgroundColor: c.tabPaneBackground,
+            backgroundColor: isCodex ? 'transparent' : c.tabPaneBackground,
             borderColor: profileCardBorderColor,
             borderLeftWidth: profileChromeSideBorder,
             borderRightWidth: profileChromeSideBorder,
-            // タブバー（tabTrack marginHorizontal: 12）と同じくカード端から 12
             paddingHorizontal: 12,
           }}
         >
@@ -1721,6 +1848,7 @@ export default function DetailScreen() {
       friend,
       friendNameById,
       friendPhotoById,
+      isCodex,
       listItemEmbedded,
       myselfId,
       profileCardBorderColor,
@@ -1837,7 +1965,7 @@ export default function DetailScreen() {
       <View
         style={{
           height: kit.episodeListCardGap,
-          backgroundColor: c.tabPaneBackground,
+          backgroundColor: isCodex ? 'transparent' : c.tabPaneBackground,
           borderColor: profileCardBorderColor,
           borderLeftWidth: profileChromeSideBorder,
           borderRightWidth: profileChromeSideBorder,
@@ -1846,6 +1974,7 @@ export default function DetailScreen() {
     ),
     [
       c.tabPaneBackground,
+      isCodex,
       kit.episodeListCardGap,
       profileCardBorderColor,
       profileChromeSideBorder,
@@ -2110,7 +2239,7 @@ export default function DetailScreen() {
                   isEpisodeTab ? (
                   <View
                     style={{
-                      backgroundColor: c.tabPaneBackground,
+                      backgroundColor: isCodex ? 'transparent' : c.tabPaneBackground,
                       borderColor: profileCardBorderColor,
                       borderLeftWidth: profileChromeSideBorder,
                       borderRightWidth: profileChromeSideBorder,
@@ -2128,7 +2257,7 @@ export default function DetailScreen() {
                   filteredEpisodes.length === 0 ? (
                     <View
                       style={{
-                        backgroundColor: c.tabPaneBackground,
+                        backgroundColor: isCodex ? 'transparent' : c.tabPaneBackground,
                         borderColor: profileCardBorderColor,
                         borderLeftWidth: profileChromeSideBorder,
                         borderRightWidth: profileChromeSideBorder,
@@ -2141,7 +2270,7 @@ export default function DetailScreen() {
                   ) : (
                     <View
                       style={{
-                        backgroundColor: c.tabPaneBackground,
+                        backgroundColor: isCodex ? 'transparent' : c.tabPaneBackground,
                         borderColor: profileCardBorderColor,
                         borderLeftWidth: profileChromeSideBorder,
                         borderRightWidth: profileChromeSideBorder,
@@ -2204,23 +2333,23 @@ export default function DetailScreen() {
             <Pressable
               style={[
                 styles.heroPhotoOuterFrame,
-                heroPhotoOuterStyle,
+                heroPhotoChrome.outer,
               ]}
               onPress={onPickHeroPhoto}
               accessibilityRole="button"
               accessibilityLabel={friend.photoUri ? '写真を変更' : '写真を登録'}
             >
-              <View style={[styles.heroPhotoInnerFrame, heroPhotoInnerStyle]}>
+              <View style={[styles.heroPhotoInnerFrame, heroPhotoChrome.inner]}>
                 {friend.photoUri && profileImageStatus !== 'failed' ? (
                   <Image
                     source={{ uri: friend.photoUri }}
-                    style={styles.heroPhoto}
+                    style={[styles.heroPhoto, heroPhotoChrome.media]}
                     resizeMode="cover"
                     onLoad={() => setProfileImageStatus('loaded')}
                     onError={() => setProfileImageStatus('failed')}
                   />
                 ) : (
-                  <View style={styles.heroPhotoPlaceholder}>
+                  <View style={[styles.heroPhotoPlaceholder, heroPhotoChrome.media]}>
                     <Ionicons name="camera-outline" size={28} color={c.textMuted} />
                     <Text style={styles.heroPhotoPlaceholderText}>写真を登録</Text>
                   </View>
@@ -2343,8 +2472,36 @@ export default function DetailScreen() {
             styles.tabSection,
             isEpisodeTab ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : null,
             profileTabSectionFlatStyle,
+            isCodex
+              ? {
+                  backgroundColor: 'transparent',
+                  overflow: 'visible' as const,
+                  borderBottomLeftRadius: 0,
+                  borderBottomRightRadius: 0,
+                }
+              : null,
           ]}
         >
+          {isCodex ? (
+            <DetailInkTabBar
+              tabs={detailTabs}
+              activeTab={activeTab}
+              onTabPress={(key) => {
+                dismissKeyboardFocus();
+                if (key !== activeTab) {
+                  closeHabitForm();
+                }
+                setActiveTab(key);
+              }}
+              activeColor={
+                bundle.tabMode === 'perTab'
+                  ? (detailTabs.find((tab) => tab.key === activeTab)?.color ?? c.accent)
+                  : c.accent
+              }
+              inactiveColor={c.tabInactive}
+              iconColor={c.tabInactive}
+            />
+          ) : (
           <View style={styles.tabTrack}>
             <View style={styles.tabInner}>
               {detailTabs.map((tab) => {
@@ -2412,9 +2569,10 @@ export default function DetailScreen() {
               })}
             </View>
           </View>
+          )}
 
 
-          <View style={styles.tabContentArea}>
+          <View style={[styles.tabContentArea, isCodex ? { backgroundColor: 'transparent' } : null]}>
           {activeTab === 'エピソード' && (
             <View style={[styles.tabPane, { paddingBottom: 0 }]}>
             <View style={styles.episodeToolbarRow}>
@@ -2438,8 +2596,9 @@ export default function DetailScreen() {
                 blurOnSubmit
                 autoCapitalize="none"
               />
-              <Pressable
-                style={styles.episodeToolbarAddButton}
+              <DetailTabAddButton
+                isOpen={isEpisodeFormVisible && !episodeForm.editingEpisodeId}
+                addLabel="エピソードを追加"
                 onPress={() => {
                   if (isEpisodeFormVisible && !episodeForm.editingEpisodeId) {
                     episodeForm.reset();
@@ -2448,49 +2607,8 @@ export default function DetailScreen() {
                     startCreateEpisode();
                   }
                 }}
-              >
-                <Text style={styles.episodeAddButtonText}>
-                  {isEpisodeFormVisible && !episodeForm.editingEpisodeId ? '閉じる' : '+ 追加'}
-                </Text>
-              </Pressable>
+              />
             </View>
-
-            {isEpisodeParticipantPickerOpen && (
-              <View style={styles.episodeParticipantPickerPanel}>
-                <View
-                  style={styles.episodeParticipantPickerGrid}
-                  onLayout={(event) => {
-                    const width = event.nativeEvent.layout.width;
-                    if (width > 0) {
-                      setEpisodePickerGridWidth(width);
-                    }
-                  }}
-                >
-                  {episodePickerFriends.map((person) => {
-                    const checked = episodeFilterSelectedIdsDraft.has(person.id);
-                    return (
-                      <Pressable
-                        key={person.id}
-                        style={[styles.episodePersonRow, { width: episodePickerCardWidth }]}
-                        onPress={() => toggleEpisodeFilterParticipant(person.id)}
-                      >
-                        <View
-                          style={[styles.episodePersonCheckbox, checked && styles.episodePersonCheckboxChecked]}
-                        >
-                          {checked ? <Text style={styles.episodePersonCheckmark}>✓</Text> : null}
-                        </View>
-                        <Text style={styles.episodePersonName} numberOfLines={1}>
-                          {person.name}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <Pressable style={styles.episodePickerSearchButton} onPress={handleParticipantPickerSearch}>
-                  <Text style={styles.episodeSearchButtonText}>検索</Text>
-                </Pressable>
-              </View>
-            )}
 
             </View>
           )}
@@ -2549,31 +2667,20 @@ export default function DetailScreen() {
               style={[
                 styles.noteTabContentFrame,
                 isHabitFormVisible ? styles.noteTabPaneWithForm : null,
-                isCodex ? { borderWidth: 0, backgroundColor: 'transparent', overflow: 'visible' as const } : null,
               ]}
             >
-            <View style={styles.noteTabHeader}>
-              <Text style={styles.noteTabLine} numberOfLines={1}>
-                <Text style={styles.noteTabLabel}>
-                  {activeTab === 'メモ' ? NOTE_TAB_COPY.メモ.label : NOTE_TAB_COPY.習性.label}：
-                </Text>
-                {activeTab === 'メモ' ? NOTE_TAB_COPY.メモ.body : NOTE_TAB_COPY.習性.body}
-              </Text>
-              <Pressable
-                style={styles.noteTabAddButton}
-                onPress={() => {
-                  if (isHabitFormVisible && editingHabitIndex === null) {
-                    closeHabitForm();
-                  } else {
-                    startCreateHabit();
-                  }
-                }}
-              >
-                <Text style={styles.episodeAddButtonText}>
-                  {isHabitFormVisible && editingHabitIndex === null ? '閉じる' : '+ 追加'}
-                </Text>
-              </Pressable>
-            </View>
+            {renderNoteTabHeader(
+              activeNoteTabKey,
+              isHabitFormVisible && editingHabitIndex === null,
+              activeTab === 'メモ' ? 'メモを追加' : '習性を追加',
+              () => {
+                if (isHabitFormVisible && editingHabitIndex === null) {
+                  closeHabitForm();
+                } else {
+                  startCreateHabit();
+                }
+              }
+            )}
 
             {isHabitFormVisible ? (
               <View ref={noteComposerRef} style={styles.sayingFormCard}>
@@ -2609,28 +2716,39 @@ export default function DetailScreen() {
               </View>
             ) : null}
 
-            {activeNoteItems.length === 0 ? (
+            {visibleNoteItems.length === 0 ? (
               <Text style={styles.emptyEpisodeText}>
-                {activeTab === 'メモ' ? NOTE_TAB_COPY.メモ.empty : NOTE_TAB_COPY.習性.empty}
+                {activeNoteItems.length === 0
+                  ? NOTE_TAB_COPY[activeNoteTabKey].emptyNone
+                  : NOTE_TAB_COPY[activeNoteTabKey].emptyMiss}
               </Text>
             ) : (
-              activeNoteItems.map((note, index) => (
-                <OptionalOffsetCard key={`${activeTab}-${index}`} enabled={isCodex}>
+              <View style={isCodex ? { gap: kit.episodeListCardGap } : undefined}>
+              {visibleNoteItems.map((item) => (
+                <OptionalOffsetCard key={`${activeTab}-${item.index}`} enabled={isCodex}>
                 <Pressable
                   style={[
                     styles.habitCard,
                     isCodex
-                      ? { borderWidth: 0, backgroundColor: 'transparent', borderRadius: 0, marginBottom: 0 }
+                      ? {
+                          borderWidth: 0,
+                          backgroundColor: 'transparent',
+                          borderRadius: 0,
+                          marginBottom: 0,
+                        }
                       : null,
                   ]}
-                  onLongPress={() => handleLongPressHabit(index)}
+                  onLongPress={() => handleLongPressHabit(item.index)}
                   delayLongPress={300}
                 >
                   <View style={styles.habitCardAccent} />
-                  <Text style={styles.habitCardText}>{note}</Text>
+                  <Text style={styles.habitCardText}>
+                    {item.text}
+                  </Text>
                 </Pressable>
                 </OptionalOffsetCard>
-              ))
+              ))}
+              </View>
             )}
             </View>
           )}
@@ -2640,29 +2758,20 @@ export default function DetailScreen() {
               style={[
                 styles.noteTabContentFrame,
                 isSayingFormVisible ? styles.noteTabPaneWithForm : null,
-                isCodex ? { borderWidth: 0, backgroundColor: 'transparent', overflow: 'visible' as const } : null,
               ]}
             >
-            <View style={styles.noteTabHeader}>
-              <Text style={styles.noteTabLine} numberOfLines={1}>
-                <Text style={styles.noteTabLabel}>{NOTE_TAB_COPY.彼曰く.label}：</Text>
-                {NOTE_TAB_COPY.彼曰く.body}
-              </Text>
-              <Pressable
-                style={styles.noteTabAddButton}
-                onPress={() => {
-                  if (isSayingFormVisible && !editingSayingId) {
-                    closeSayingForm();
-                  } else {
-                    startCreateSaying();
-                  }
-                }}
-              >
-                <Text style={styles.episodeAddButtonText}>
-                  {isSayingFormVisible && !editingSayingId ? '閉じる' : '+ 追加'}
-                </Text>
-              </Pressable>
-            </View>
+            {renderNoteTabHeader(
+              '彼曰く',
+              isSayingFormVisible && !editingSayingId,
+              '彼曰くを追加',
+              () => {
+                if (isSayingFormVisible && !editingSayingId) {
+                  closeSayingForm();
+                } else {
+                  startCreateSaying();
+                }
+              }
+            )}
 
             {isSayingFormVisible ? (
               <View ref={noteComposerRef} style={styles.sayingFormCard}>
@@ -2732,16 +2841,26 @@ export default function DetailScreen() {
               </View>
             ) : null}
 
-            {sortedSayings.length === 0 ? (
-              <Text style={styles.emptyEpisodeText}>{NOTE_TAB_COPY.彼曰く.empty}</Text>
+            {visibleSayings.length === 0 ? (
+              <Text style={styles.emptyEpisodeText}>
+                {sortedSayings.length === 0
+                  ? NOTE_TAB_COPY.彼曰く.emptyNone
+                  : NOTE_TAB_COPY.彼曰く.emptyMiss}
+              </Text>
             ) : (
-              sortedSayings.map((saying: Saying) => (
+              <View style={isCodex ? { gap: kit.episodeListCardGap } : undefined}>
+              {visibleSayings.map((saying: Saying) => (
                 <OptionalOffsetCard key={saying.id} enabled={isCodex}>
                 <Pressable
                   style={[
                     styles.sayingQuoteCard,
                     isCodex
-                      ? { borderWidth: 0, backgroundColor: 'transparent', borderRadius: 0, marginBottom: 0 }
+                      ? {
+                          borderWidth: 0,
+                          backgroundColor: 'transparent',
+                          borderRadius: 0,
+                          marginBottom: 0,
+                        }
                       : null,
                   ]}
                   onLongPress={() => handleLongPressSaying(saying)}
@@ -2754,7 +2873,8 @@ export default function DetailScreen() {
                   </View>
                 </Pressable>
                 </OptionalOffsetCard>
-              ))
+              ))}
+              </View>
             )}
             </View>
           )}
@@ -2781,6 +2901,30 @@ export default function DetailScreen() {
           setIsEpisodeFormVisible(false);
         }}
         onSave={handleSaveEpisode}
+        onPersonCreated={() => setAllFriends(getAllFriendsInDefaultOrder())}
+      />
+      <EntrySelectorModal
+        visible={filterSelectorVisible}
+        selectorTab={filterSelectorTab}
+        onTabChange={setFilterSelectorTab}
+        nameFilter={filterSelectorNameFilter}
+        onNameFilterChange={setFilterSelectorNameFilter}
+        affiliationFilter={filterSelectorAffiliationFilter}
+        onAffiliationFilterChange={setFilterSelectorAffiliationFilter}
+        experienceFilter={filterSelectorExperienceFilter}
+        onExperienceFilterChange={setFilterSelectorExperienceFilter}
+        friends={allFriends}
+        affiliationOptions={affiliationOptions}
+        experienceOptions={experienceOptions}
+        groupOptions={affiliationOptions}
+        selectedIndividualIds={filterSelectedIndividualIds}
+        selectedGroupValues={filterSelectedGroupValues}
+        onToggleIndividual={toggleFilterSelectorIndividual}
+        onToggleGroup={toggleFilterSelectorGroup}
+        onCancel={handleFilterSelectorCancel}
+        onConfirm={handleFilterSelectorConfirm}
+        onPersonCreated={() => setAllFriends(getAllFriendsInDefaultOrder())}
+        enableGroupTab={false}
       />
       <PhotoCropModal
         visible={heroPhotoCropUri != null}

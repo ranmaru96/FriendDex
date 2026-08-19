@@ -46,7 +46,7 @@ export function FriendHomeCard({
   style,
 }: FriendHomeCardProps) {
   const kit = useUiKit();
-  const { shape } = useAppTheme();
+  const { colors: appTheme, variant, shape } = useAppTheme();
   const content = useContentColors();
   const [imageError, setImageError] = useState(false);
   const cardBorderWidth = shape.cardBorderWidth;
@@ -134,7 +134,11 @@ export function FriendHomeCard({
     <OffsetCard
       style={[
         width != null ? { width } : null,
-        shape.offsetDistance === 0 ? HomeCardElevation : null,
+        shape.offsetDistance === 0
+          ? variant === 'white'
+            ? appTheme.homeCardElevation
+            : HomeCardElevation
+          : null,
         style,
       ]}
       contentStyle={styles.cardOuter}

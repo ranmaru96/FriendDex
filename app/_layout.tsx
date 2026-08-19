@@ -32,7 +32,11 @@ import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion
 import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
 
 if (isGoogleCalendarNativeAvailable()) {
-  require('expo-web-browser').maybeCompleteAuthSession();
+  try {
+    require('expo-web-browser').maybeCompleteAuthSession();
+  } catch {
+    // いまのネイティブバイナリに ExpoWebBrowser が無いときは無視する。
+  }
 }
 
 const BOTTOM_TAB_ROUTE_NAMES = new Set([

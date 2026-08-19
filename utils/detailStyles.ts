@@ -372,17 +372,13 @@ export function createDetailStyles(c: DetailThemeColors) {
     paddingBottom: 4,
     overflow: 'hidden',
   },
-  /** habit / says / note。status・info と同じ外枠。フォームが切れないよう overflow は visible */
+  /** habit / says / note。外枠なし。検索＋追加の下にカード。フォームが切れないよう overflow は visible */
   noteTabContentFrame: {
     marginHorizontal: 12,
     marginTop: 0,
     marginBottom: 10,
-    borderWidth: 1,
-    borderColor: c.tabTrackBorder,
-    borderRadius: 10,
-    backgroundColor: c.tabPaneBackground,
-    paddingHorizontal: 12,
-    paddingTop: 8,
+    paddingHorizontal: 0,
+    paddingTop: 0,
     paddingBottom: 8,
     overflow: 'visible',
     alignSelf: 'stretch',
