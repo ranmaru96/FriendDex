@@ -237,7 +237,7 @@ function DayCell({
             style={[
               styles.dateText,
               isSelected ? styles.selectedDateText : null,
-              { color: isSelected ? Theme.accent : dateColor },
+              { color: isSelected ? content.contentText : dateColor },
             ]}
             allowFontScaling={false}
           >

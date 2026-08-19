@@ -629,6 +629,7 @@ export default function YourAnswerScreen() {
         onToggleGroup={toggleSelectorGroup}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        onPersonCreated={() => setFriends(getAllFriendsInDefaultOrder())}
         enableGroupTab={false}
       />
     </>

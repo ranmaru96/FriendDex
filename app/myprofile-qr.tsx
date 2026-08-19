@@ -21,6 +21,8 @@ import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
 import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentMutedTextStyle,
   contentSurfaceStyle,
   contentTagStyle,
@@ -272,8 +274,13 @@ export default function MyProfileQrScreen() {
         {!profile ? (
           <View style={styles.emptyContainer}>
             <Text style={[styles.emptyMessage, contentMutedTextStyle(content)]}>本人設定が完了していません</Text>
-            <Pressable style={styles.primaryButton} onPress={() => router.replace('/appsettings')}>
-              <Text style={styles.primaryButtonText}>設定画面へ戻る</Text>
+            <Pressable
+              style={[styles.primaryButton, contentFilledButtonStyle(content)]}
+              onPress={() => router.replace('/appsettings')}
+            >
+              <Text style={[styles.primaryButtonText, contentFilledButtonTextStyle(content)]}>
+                設定画面へ戻る
+              </Text>
             </Pressable>
           </View>
         ) : !hasPublicFields ? (
@@ -281,8 +288,13 @@ export default function MyProfileQrScreen() {
             <Text style={[styles.emptyMessage, contentMutedTextStyle(content)]}>
               公開する項目がありません。{'\n'}マイプロフィール画面で設定してください。
             </Text>
-            <Pressable style={styles.primaryButton} onPress={() => router.push('/myprofile')}>
-              <Text style={styles.primaryButtonText}>マイプロフィールを編集</Text>
+            <Pressable
+              style={[styles.primaryButton, contentFilledButtonStyle(content)]}
+              onPress={() => router.push('/myprofile')}
+            >
+              <Text style={[styles.primaryButtonText, contentFilledButtonTextStyle(content)]}>
+                マイプロフィールを編集
+              </Text>
             </Pressable>
           </View>
         ) : (
@@ -473,15 +485,12 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     borderRadius: Radius.md,
-    backgroundColor: Theme.btnPrimaryBg,
     borderWidth: 1,
-    borderColor: Theme.btnPrimaryBg,
     paddingVertical: 14,
     alignItems: 'center',
     width: '100%',
   },
   primaryButtonText: {
-    color: Theme.btnPrimaryText,
     fontSize: 16,
     fontWeight: '700',
   },

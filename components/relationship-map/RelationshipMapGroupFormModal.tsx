@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Radius, Spacing, Theme } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
 import {
   contentInputStyle,
@@ -138,7 +138,7 @@ export function RelationshipMapGroupFormModal({
                 <Text style={[styles.buttonText, contentMutedTextStyle(content)]}>キャンセル</Text>
               </Pressable>
               <Pressable style={styles.button} onPress={handleSave}>
-                <Text style={[styles.buttonText, styles.saveText]}>保存</Text>
+                <Text style={[styles.buttonText, styles.saveText, contentTextStyle(content)]}>保存</Text>
               </Pressable>
             </View>
           </View>
@@ -235,7 +235,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
   },
   saveText: {
-    color: Theme.accent,
     fontWeight: '700',
   },
   deleteText: {

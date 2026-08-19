@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
-import { Radius, Spacing, Theme } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -226,7 +228,7 @@ export function ShuffleTeamPanel({
             setError('');
           }}
           trackColor={switchColors.trackColor}
-          thumbColor={useRanks ? Theme.accent : switchColors.thumbColorOff}
+          thumbColor={useRanks ? switchColors.thumbColorOn : switchColors.thumbColorOff}
         />
       </View>
 
@@ -334,8 +336,13 @@ export function ShuffleTeamPanel({
         </View>
       ) : null}
 
-      <Pressable style={styles.shuffleButton} onPress={runTeamShuffle}>
-        <Text style={styles.shuffleButtonText}>シャッフル</Text>
+      <Pressable
+        style={[styles.shuffleButton, contentFilledButtonStyle(content)]}
+        onPress={runTeamShuffle}
+      >
+        <Text style={[styles.shuffleButtonText, contentFilledButtonTextStyle(content)]}>
+          シャッフル
+        </Text>
       </Pressable>
 
       {error ? <Text style={styles.formError}>{error}</Text> : null}
@@ -525,7 +532,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   shuffleButton: {
-    backgroundColor: Theme.accent,
     borderRadius: Radius.md,
     paddingVertical: 12,
     alignItems: 'center',
@@ -533,7 +539,6 @@ const styles = StyleSheet.create({
   shuffleButtonText: {
     fontSize: 15,
     fontWeight: '800',
-    color: Theme.onAccent,
   },
   formError: {
     fontSize: 12,

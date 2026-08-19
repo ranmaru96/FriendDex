@@ -110,6 +110,7 @@ export const mergeFriendInputWithPublicFields = (
     personalities: existing.personalities,
     experiences: existing.experiences,
     traits: existing.traits,
+    notes: existing.notes,
     likes: existing.likes,
     dislikes: existing.dislikes,
     episodes: existing.episodes,
@@ -232,6 +233,7 @@ export const buildFriendInputFromQrPayload = (payload: QrScanPayload): FriendInp
     traits: [''],
     likes: [''],
     dislikes: [''],
+    notes: [],
   };
 };
 
@@ -241,6 +243,80 @@ export const namesLikelyMatch = (qrName: string | undefined, friendName: string)
   if (!normalizedQr || !normalizedFriend) return false;
   return normalizedQr === normalizedFriend;
 };
+
+const longestCommonSubstringLength = (left: string, right: string): number => {
+  const a = left.trim().toLowerCase();
+  const b = right.trim().toLowerCase();
+  if (!a || !b) return 0;
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp: number[][] = Array.from({ length: rows }, () => Array(cols).fill(0));
+  let max = 0;
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      if (a[i - 1] === b[j - 1]) {
+        const next = (dp[i - 1]?.[j - 1] ?? 0) + 1;
+        const row = dp[i];
+        if (row) {
+          row[j] = next;
+        }
+        if (next > max) max = next;
+      }
+    }
+  }
+  return max;
+};
+
+const partMatchScore = (query: string, value: string): number => {
+  const q = query.trim().toLowerCase();
+  const v = value.trim().toLowerCase();
+  if (!q || !v) return 0;
+  if (q === v) return 100;
+  if (v.includes(q) || q.includes(v)) return 40;
+  return longestCommonSubstringLength(q, v);
+};
+
+/** 苗字・名前・通称の一致が多いほど高い。QR既存選択の並び用。 */
+export const scoreFriendNameMatch = (
+  query: {
+    familyName?: string | null;
+    givenName?: string | null;
+    name?: string | null;
+    nickname?: string | null;
+  },
+  friend: {
+    familyName?: string | null;
+    givenName?: string | null;
+    name?: string | null;
+    nickname?: string | null;
+  }
+): number => {
+  const queryParts = resolvePersonNameParts(query);
+  const friendParts = resolvePersonNameParts(friend);
+  let score = 0;
+  score += partMatchScore(queryParts.familyName, friendParts.familyName);
+  score += partMatchScore(queryParts.givenName, friendParts.givenName);
+  const queryNick = (query.nickname ?? '').trim();
+  const friendNick = (friend.nickname ?? '').trim();
+  score += partMatchScore(queryNick, friendNick);
+  score += longestCommonSubstringLength(queryParts.name, friendParts.name);
+  return score;
+};
+
+export const sortFriendsByQrNameMatch = <T extends Friend>(
+  friends: readonly T[],
+  query: {
+    familyName?: string | null;
+    givenName?: string | null;
+    name?: string | null;
+    nickname?: string | null;
+  }
+): T[] =>
+  [...friends].sort((a, b) => {
+    const delta = scoreFriendNameMatch(query, b) - scoreFriendNameMatch(query, a);
+    if (delta !== 0) return delta;
+    return a.name.localeCompare(b.name, 'ja', { sensitivity: 'base' });
+  });
 
 export const formatScannedAtLabel = (scannedAt: string): string => {
   if (!scannedAt.trim()) return '-';

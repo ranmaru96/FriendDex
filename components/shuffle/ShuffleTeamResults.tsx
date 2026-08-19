@@ -1,6 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { OffsetCard } from '@/components/ui/OffsetCard';
-import { Theme } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   contentMutedTextStyle,
@@ -33,7 +32,9 @@ export function ShuffleTeamResults({
         <OffsetCard key={team.teamName} brackets contentStyle={styles.teamBlock}>
           <View style={styles.teamHeader}>
             <Text style={[styles.teamTitle, contentTextStyle(content)]}>{team.teamName}</Text>
-            <Text style={styles.teamCount}>{team.memberIds.length}人</Text>
+            <Text style={[styles.teamCount, contentMutedTextStyle(content)]}>
+              {team.memberIds.length}人
+            </Text>
           </View>
           {team.memberIds.length > 0 ? (
             <ShuffleResultCards
@@ -73,7 +74,6 @@ const styles = StyleSheet.create({
   teamCount: {
     fontSize: 12,
     fontWeight: '700',
-    color: Theme.accent,
     flexShrink: 0,
   },
   emptyTeamText: {

@@ -51,6 +51,7 @@ import {
   parseMoneyLoanBalanceKey,
 } from '@/utils/settlementMoneyLoanBridge';
 import { useContentColors } from '@/utils/useContentColors';
+import { contentTextStyle } from '@/utils/contentStyleHelpers';
 import { useFocusEffect } from 'expo-router';
 
 type Option = { label: string; value: string };
@@ -555,6 +556,7 @@ export function SettlementIndividualLoanPanel() {
         onToggleGroup={toggleSelectorGroup}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        onPersonCreated={loadData}
         enableGroupTab={false}
       />
 
@@ -566,7 +568,7 @@ export function SettlementIndividualLoanPanel() {
             </Pressable>
             <Text style={headerStyles.title}>編集</Text>
             <Pressable style={headerStyles.side} onPress={handleSaveEdit} hitSlop={8}>
-              <Text style={styles.headerSave}>保存</Text>
+              <Text style={[styles.headerSave, contentTextStyle(content)]}>保存</Text>
             </Pressable>
           </View>
 
@@ -669,7 +671,6 @@ const styles = StyleSheet.create({
   headerSave: {
     fontSize: 15,
     fontWeight: '700',
-    color: Theme.accent,
     textAlign: 'right',
   },
   deleteButton: {

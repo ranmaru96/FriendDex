@@ -1,7 +1,9 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Theme, Radius, Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentMutedTextStyle,
   contentSurfaceStyle,
   contentTextStyle,
@@ -36,8 +38,11 @@ export function SettlementInviteCard({ invite, onAccept, onDecline }: Settlement
         <Pressable style={[styles.declineButton, contentSurfaceStyle(content)]} onPress={onDecline}>
           <Text style={[styles.declineText, contentMutedTextStyle(content)]}>辞退</Text>
         </Pressable>
-        <Pressable style={styles.acceptButton} onPress={onAccept}>
-          <Text style={styles.acceptText}>参加</Text>
+        <Pressable
+          style={[styles.acceptButton, contentFilledButtonStyle(content)]}
+          onPress={onAccept}
+        >
+          <Text style={[styles.acceptText, contentFilledButtonTextStyle(content)]}>参加</Text>
         </Pressable>
       </View>
     </View>
@@ -78,11 +83,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.accent,
   },
   acceptText: {
     fontSize: 13,
     fontWeight: '700',
-    color: Theme.topBarText,
   },
 });

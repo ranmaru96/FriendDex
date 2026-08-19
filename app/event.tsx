@@ -25,6 +25,8 @@ import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -835,8 +837,11 @@ export default function EventScreen() {
         title={screenTitle}
         onBack={() => router.back()}
         right={
-          <Pressable style={styles.saveButton} onPress={handleSave}>
-            <Text style={styles.saveButtonText}>保存</Text>
+          <Pressable
+            style={[styles.saveButton, contentFilledButtonStyle(content)]}
+            onPress={handleSave}
+          >
+            <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
           </Pressable>
         }
         extraScrollHeight={140}
@@ -881,7 +886,7 @@ export default function EventScreen() {
               value={allDay}
               onValueChange={setAllDay}
               trackColor={switchColors.trackColor}
-              thumbColor={allDay ? Theme.accent : switchColors.thumbColorOff}
+              thumbColor={allDay ? switchColors.thumbColorOn : switchColors.thumbColorOff}
             />
           </FormRow>
 
@@ -1002,7 +1007,7 @@ export default function EventScreen() {
               value={notifyEnabled}
               onValueChange={setNotifyEnabled}
               trackColor={switchColors.trackColor}
-              thumbColor={notifyEnabled ? Theme.accent : switchColors.thumbColorOff}
+              thumbColor={notifyEnabled ? switchColors.thumbColorOn : switchColors.thumbColorOff}
             />
           </FormRow>
           {notifyEnabled ? (
@@ -1134,8 +1139,11 @@ export default function EventScreen() {
             <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
               <Text style={styles.formCancelButtonText}>キャンセル</Text>
             </Pressable>
-            <Pressable style={styles.formSaveButton} onPress={handleSave}>
-              <Text style={styles.formSaveButtonText}>保存</Text>
+            <Pressable
+              style={[styles.formSaveButton, contentFilledButtonStyle(content)]}
+              onPress={handleSave}
+            >
+              <Text style={[styles.formSaveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
             </Pressable>
           </View>
         </FormScreenSection>
@@ -1302,6 +1310,7 @@ export default function EventScreen() {
         }}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        onPersonCreated={() => setFriends(getAllFriendsInDefaultOrder())}
         enableGroupTab={false}
       />
     </>
@@ -1315,10 +1324,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.btnPrimaryBg,
   },
   saveButtonText: {
-    color: Theme.btnPrimaryText,
     fontWeight: '700',
     fontSize: 13,
   },
@@ -1345,15 +1352,12 @@ const styles = StyleSheet.create({
     fontSize: Typography.base,
   },
   formSaveButton: {
-    backgroundColor: Theme.btnPrimaryBg,
-    borderColor: Theme.btnPrimaryBg,
     borderWidth: 1,
     borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
   formSaveButtonText: {
-    color: Theme.btnPrimaryText,
     fontWeight: '700',
     fontSize: Typography.base,
   },

@@ -1,13 +1,7 @@
 import { StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native';
 import { Radius, Typography } from '@/constants/theme';
-import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { getEventCalendarColor } from '@/utils/calendarEventColors';
-
-/** 共通項目ブラック時の予定タグ塗り（bridgeDetailForAppTheme と揃える） */
-const BLACK_EPISODE_TAG_CHIP = {
-  backgroundColor: 'transparent',
-  color: '#F2F2F2',
-} as const;
+import { useContentColors } from '@/utils/useContentColors';
 
 type EpisodeTagChipProps = {
   label: string;
@@ -31,14 +25,14 @@ export function EpisodeTagChip({
   style,
   textStyle,
 }: EpisodeTagChipProps) {
-  const appTheme = useAppThemeOptional();
+  const content = useContentColors();
   const tagColor = getEventCalendarColor(label);
 
   const resolved =
-    chipStyle ??
-    (appTheme?.variant === 'black'
-      ? BLACK_EPISODE_TAG_CHIP
-      : { backgroundColor: 'transparent', color: '#888888' });
+    chipStyle ?? {
+      backgroundColor: 'transparent',
+      color: content.contentTextSecondary,
+    };
 
   return (
     <View

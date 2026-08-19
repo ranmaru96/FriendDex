@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Radius, Spacing, Theme } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -262,8 +264,13 @@ export function ShuffleRolePanel({
         <Text style={[styles.addRoleButtonText, contentTextStyle(content)]}>＋ 役を追加</Text>
       </Pressable>
 
-      <Pressable style={styles.shuffleButton} onPress={runRoleShuffle}>
-        <Text style={styles.shuffleButtonText}>シャッフル</Text>
+      <Pressable
+        style={[styles.shuffleButton, contentFilledButtonStyle(content)]}
+        onPress={runRoleShuffle}
+      >
+        <Text style={[styles.shuffleButtonText, contentFilledButtonTextStyle(content)]}>
+          シャッフル
+        </Text>
       </Pressable>
 
       {error ? <Text style={styles.formError}>{error}</Text> : null}
@@ -400,7 +407,6 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   shuffleButton: {
-    backgroundColor: Theme.accent,
     borderRadius: Radius.md,
     paddingVertical: 12,
     alignItems: 'center',
@@ -408,7 +414,6 @@ const styles = StyleSheet.create({
   shuffleButtonText: {
     fontSize: 15,
     fontWeight: '800',
-    color: Theme.onAccent,
   },
   formError: {
     fontSize: 12,

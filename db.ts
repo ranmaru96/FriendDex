@@ -37,7 +37,6 @@ import {
   TaskInput,
   TaskKind,
   TaskPace,
-  TASK_GROUP_MEMBER_LIMIT,
   CompletedTaskRetention,
   Relationship,
   RelationshipArrowStyle,
@@ -119,6 +118,7 @@ type ProfileRow = {
   personalities: string;
   experiences: string;
   traits: string;
+  notes?: string | null;
   likes: string;
   dislikes: string;
   episodes: string;
@@ -507,6 +507,7 @@ const rowToProfile = (row: ProfileRow): Profile => {
     personalities: fromJson(row.personalities),
     experiences: fromJson(row.experiences),
     traits: fromJson(row.traits),
+    notes: fromJson(row.notes ?? '[]'),
     likes: fromJson(row.likes),
     dislikes: fromJson(row.dislikes),
     episodes: fromEpisodeJson(row.episodes),
@@ -593,6 +594,7 @@ const applyDefaultProfileToFriend = (friend: Friend, profile: Profile | null): F
     personalities: profile.personalities,
     experiences: profile.experiences,
     traits: profile.traits,
+    notes: profile.notes,
     likes: profile.likes,
     dislikes: profile.dislikes,
     episodes: profile.episodes,
@@ -630,6 +632,7 @@ const defaultProfileRowToFriend = (row: ProfileRow): Friend => {
     personalities: fromJson(row.personalities),
     experiences: fromJson(row.experiences),
     traits: fromJson(row.traits),
+    notes: fromJson(row.notes ?? '[]'),
     likes: fromJson(row.likes),
     dislikes: fromJson(row.dislikes),
     episodes: fromEpisodeJson(row.episodes),
@@ -671,6 +674,7 @@ export const initializeDatabase = (): void => {
       personalities TEXT NOT NULL DEFAULT '[]',
       experiences TEXT NOT NULL DEFAULT '[]',
       traits TEXT NOT NULL DEFAULT '[]',
+      notes TEXT NOT NULL DEFAULT '[]',
       likes TEXT NOT NULL DEFAULT '[]',
       dislikes TEXT NOT NULL DEFAULT '[]',
       episodes TEXT NOT NULL DEFAULT '[]',
@@ -1173,6 +1177,7 @@ const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COM
     { column: 'importSource', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN importSource TEXT NOT NULL DEFAULT 'manual';` },
     { column: 'scannedUserId', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN scannedUserId TEXT NOT NULL DEFAULT '';` },
     { column: 'scannedAt', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN scannedAt TEXT NOT NULL DEFAULT '';` },
+    { column: 'notes', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN notes TEXT NOT NULL DEFAULT '[]';` },
   ];
 
   db.execSync('BEGIN IMMEDIATE;');
@@ -1311,6 +1316,7 @@ const upsertDefaultProfileFromFriend = (friendId: string, input: FriendInput, ti
           personalities = ?,
           experiences = ?,
           traits = ?,
+          notes = ?,
           likes = ?,
           dislikes = ?,
           episodes = ?,
@@ -1333,6 +1339,7 @@ const upsertDefaultProfileFromFriend = (friendId: string, input: FriendInput, ti
         toJson(input.personalities),
         toJson(input.experiences),
         toJson(input.traits),
+        toJson(input.notes ?? []),
         toJson(input.likes),
         toJson(input.dislikes),
         toEpisodeJson(input.episodes ?? []),
@@ -1348,8 +1355,8 @@ const upsertDefaultProfileFromFriend = (friendId: string, input: FriendInput, ti
     `
       INSERT INTO ${PROFILES_TABLE} (
         id, friendId, name, familyName, givenName, authorUserId, source, isDefault, nickname, origin, residence, mbti, birthday, height, weight, category,
-        description, photoUri, affiliations, personalities, experiences, traits, likes, dislikes, episodes, sayings, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        description, photoUri, affiliations, personalities, experiences, traits, notes, likes, dislikes, episodes, sayings, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `,
     [
       uuidv4(),
@@ -1374,6 +1381,7 @@ const upsertDefaultProfileFromFriend = (friendId: string, input: FriendInput, ti
       toJson(input.personalities),
       toJson(input.experiences),
       toJson(input.traits),
+      toJson(input.notes ?? []),
       toJson(input.likes),
       toJson(input.dislikes),
       toEpisodeJson(input.episodes ?? []),
@@ -1394,9 +1402,9 @@ export const createFriend = (input: FriendInput): Friend => {
     `
       INSERT INTO ${PROFILES_TABLE} (
         id, friendId, name, familyName, givenName, authorUserId, source, isDefault, nickname, origin, residence, mbti, birthday, height, weight, category,
-        description, photoUri, affiliations, personalities, experiences, traits, likes, dislikes, episodes, sayings,
+        description, photoUri, affiliations, personalities, experiences, traits, notes, likes, dislikes, episodes, sayings,
         importSource, scannedUserId, scannedAt, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `,
     [
       profileId,
@@ -1421,6 +1429,7 @@ export const createFriend = (input: FriendInput): Friend => {
       toJson(input.personalities),
       toJson(input.experiences),
       toJson(input.traits),
+      toJson(input.notes ?? []),
       toJson(input.likes),
       toJson(input.dislikes),
       toEpisodeJson(input.episodes ?? []),
@@ -1460,9 +1469,9 @@ export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string
     `
       INSERT INTO ${PROFILES_TABLE} (
         id, friendId, name, familyName, givenName, authorUserId, source, isDefault, nickname, origin, residence, mbti, birthday, height, weight, category,
-        description, photoUri, affiliations, personalities, experiences, traits, likes, dislikes, episodes, sayings,
+        description, photoUri, affiliations, personalities, experiences, traits, notes, likes, dislikes, episodes, sayings,
         importSource, scannedUserId, scannedAt, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `,
     [
       profileId,
@@ -1487,6 +1496,7 @@ export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string
       toJson(input.personalities),
       toJson(input.experiences),
       toJson(input.traits),
+      toJson(input.notes ?? []),
       toJson(input.likes),
       toJson(input.dislikes),
       toEpisodeJson(input.episodes ?? []),
@@ -5028,10 +5038,6 @@ export const createTask = (input: TaskInput): Task | null => {
     if (!assertTaskCanJoinGroup(input.kind, groupId)) {
       return null;
     }
-    const existing = getTasksByGroupId(groupId, input.kind);
-    if (existing.length >= TASK_GROUP_MEMBER_LIMIT) {
-      return null;
-    }
   }
   const joiningRecurringGroup = Boolean(groupId) && input.kind === 'recurring';
   const remindEnabled = joiningRecurringGroup ? false : Boolean(input.remindEnabled);
@@ -5111,11 +5117,6 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
     if (!assertTaskCanJoinGroup(input.kind, groupId)) {
       return false;
     }
-    const existing = getTasksByGroupId(groupId, input.kind);
-    const others = existing.filter((item) => item.id !== normalizedId);
-    if (others.length >= TASK_GROUP_MEMBER_LIMIT) {
-      return false;
-    }
   }
   const trackCompletions = input.kind === 'recurring' ? input.trackCompletions !== false : true;
   const joiningRecurringGroup = Boolean(groupId) && input.kind === 'recurring';
@@ -5174,10 +5175,6 @@ export const setTaskGroupId = (taskId: string, groupId: string | null): boolean 
   }
   if (nextGroupId) {
     if (!assertTaskCanJoinGroup(task.kind, nextGroupId)) {
-      return false;
-    }
-    const existing = getTasksByGroupId(nextGroupId, task.kind);
-    if (existing.length >= TASK_GROUP_MEMBER_LIMIT) {
       return false;
     }
   }

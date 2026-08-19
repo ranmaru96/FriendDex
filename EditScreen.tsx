@@ -24,6 +24,8 @@ import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
   contentDateTimePickerProps,
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -70,7 +72,7 @@ type DynamicInputListProps = {
   values: string[];
   onChange: (values: string[]) => void;
   placeholder: string;
-  /** Registered labels for autocomplete (partial match; prefix first) */
+  /** Registered labels for autocomplete (partial + exact; prefix first) */
   suggestionCandidates?: readonly string[];
   /** Remount/reset locks when friend form reloads */
   resetKey?: string;
@@ -120,6 +122,7 @@ const EMPTY_FORM: FriendInput = {
   personalities: [],
   experiences: [],
   traits: [],
+  notes: [],
   likes: [],
   dislikes: [],
 };
@@ -535,6 +538,7 @@ export default function EditScreen() {
       personalities: friend.personalities.length > 0 ? friend.personalities : [],
       experiences: friend.experiences.length > 0 ? friend.experiences : [],
       traits: friend.traits.length > 0 ? friend.traits : [],
+      notes: friend.notes ?? [],
       likes: friend.likes.length > 0 ? friend.likes : [],
       dislikes: friend.dislikes.length > 0 ? friend.dislikes : [],
       episodes: friend.episodes,
@@ -645,6 +649,7 @@ export default function EditScreen() {
         ...payload,
         episodes: existing.episodes,
         sayings: existing.sayings,
+        notes: existing.notes,
       });
       if (!success) {
         Alert.alert('保存エラー', '更新に失敗しました。');
@@ -701,8 +706,12 @@ export default function EditScreen() {
           color={content.contentText}
         />
       ) : null}
-      <Pressable style={styles.saveButton} onPress={handleSave} accessibilityLabel="保存">
-        <Text style={styles.saveButtonText}>保存</Text>
+      <Pressable
+        style={[styles.saveButton, contentFilledButtonStyle(content)]}
+        onPress={handleSave}
+        accessibilityLabel="保存"
+      >
+        <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
       </Pressable>
     </View>
   );
@@ -1003,8 +1012,11 @@ export default function EditScreen() {
             <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
               <Text style={styles.formCancelButtonText}>キャンセル</Text>
             </Pressable>
-            <Pressable style={styles.formSaveButton} onPress={handleSave}>
-              <Text style={styles.formSaveButtonText}>保存</Text>
+            <Pressable
+              style={[styles.formSaveButton, contentFilledButtonStyle(content)]}
+              onPress={handleSave}
+            >
+              <Text style={[styles.formSaveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
             </Pressable>
           </View>
         </FormScreenSection>
@@ -1048,10 +1060,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.btnPrimaryBg,
   },
   saveButtonText: {
-    color: Theme.btnPrimaryText,
     fontWeight: '700',
     fontSize: 13,
   },

@@ -3,6 +3,7 @@ import { StyleSheet, Text, TouchableOpacity, View, type ViewStyle } from 'react-
 import type { DateData } from 'react-native-calendars';
 import type { DayProps } from 'react-native-calendars/src/calendar/day';
 import { Theme as AppTheme } from '@/constants/theme';
+import { useContentColors } from '@/utils/useContentColors';
 import type { CalendarDayMarking, CalendarPeriodMark } from '@/utils/calendarMarking';
 import { JAPANESE_HOLIDAY_TEXT_COLOR } from '@/utils/japaneseHolidays';
 
@@ -63,6 +64,7 @@ export const CalendarDayCell = React.memo(function CalendarDayCell({
   disableAllTouchEventsForDisabledDays,
   disableAllTouchEventsForInactiveDays,
 }: CalendarDayCellProps) {
+  const content = useContentColors();
   const dayMark = toDayMarking(marking);
   const isSelected = dayMark?.selected === true || state === 'selected';
   const isDisabled = state === 'disabled';
@@ -71,29 +73,39 @@ export const CalendarDayCell = React.memo(function CalendarDayCell({
 
   const textColor = useMemo(() => {
     if (isSelected) {
-      return theme?.selectedDayTextColor ?? AppTheme.onAccent;
+      return theme?.selectedDayTextColor ?? content.contentCard;
     }
     if (isDisabled) {
-      return theme?.textDisabledColor ?? AppTheme.textSecondary;
+      return theme?.textDisabledColor ?? content.contentTextSecondary;
     }
     if (isInactive) {
-      return theme?.textInactiveColor ?? AppTheme.textSecondary;
+      return theme?.textInactiveColor ?? content.contentTextSecondary;
     }
     if (isToday) {
-      return theme?.todayTextColor ?? AppTheme.accent;
+      return theme?.todayTextColor ?? content.contentText;
     }
     if (dayMark?.isHoliday) {
       return JAPANESE_HOLIDAY_TEXT_COLOR;
     }
-    return theme?.dayTextColor ?? AppTheme.textPrimary;
-  }, [dayMark?.isHoliday, isDisabled, isInactive, isSelected, isToday, theme]);
+    return theme?.dayTextColor ?? content.contentText;
+  }, [
+    content.contentCard,
+    content.contentText,
+    content.contentTextSecondary,
+    dayMark?.isHoliday,
+    isDisabled,
+    isInactive,
+    isSelected,
+    isToday,
+    theme,
+  ]);
 
   const dayCircleStyle = useMemo(() => {
     const circle: ViewStyle[] = [styles.dayCircle];
     if (isSelected) {
       circle.push({
         backgroundColor:
-          dayMark?.selectedColor ?? theme?.selectedDayBackgroundColor ?? AppTheme.accent,
+          dayMark?.selectedColor ?? theme?.selectedDayBackgroundColor ?? content.contentText,
       });
     } else if (isToday) {
       circle.push({
@@ -101,7 +113,7 @@ export const CalendarDayCell = React.memo(function CalendarDayCell({
       });
     }
     return circle;
-  }, [dayMark?.selectedColor, isSelected, isToday, theme]);
+  }, [content.contentText, dayMark?.selectedColor, isSelected, isToday, theme]);
 
   const shouldDisableTouch =
     (disableAllTouchEventsForDisabledDays && isDisabled) ||

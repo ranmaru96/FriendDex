@@ -1,6 +1,8 @@
 import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSurfaceStyle,
@@ -86,8 +88,13 @@ export function PendingEpisodeReviewModal({
             <Pressable style={styles.dangerButton} onPress={handleDelete}>
               <Text style={styles.dangerButtonText}>削除する</Text>
             </Pressable>
-            <Pressable style={styles.primaryButton} onPress={() => onWrite(currentItem)}>
-              <Text style={styles.primaryButtonText}>記載する</Text>
+            <Pressable
+              style={[styles.primaryButton, contentFilledButtonStyle(content)]}
+              onPress={() => onWrite(currentItem)}
+            >
+              <Text style={[styles.primaryButtonText, contentFilledButtonTextStyle(content)]}>
+                記載する
+              </Text>
             </Pressable>
           </View>
         </View>
@@ -172,11 +179,9 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Theme.accent,
   },
   primaryButtonText: {
     fontSize: Typography.sm,
     fontWeight: '700',
-    color: Theme.onAccent,
   },
 });

@@ -1,9 +1,9 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Radius, Theme } from '@/constants/theme';
+import { Radius } from '@/constants/theme';
 import { ParticipantChip } from '@/components/participant/ParticipantChip';
 import { useContentColors } from '@/utils/useContentColors';
-import { contentSurfaceStyle } from '@/utils/contentStyleHelpers';
+import { contentSurfaceStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
 
 const COLUMN_GAP = 6;
@@ -51,7 +51,7 @@ export function ShuffleOrderResults({
       {columnWidth > 0
         ? chips.map((chip, index) => (
             <View key={chip.id} style={[styles.cell, contentSurfaceStyle(content), { width: columnWidth }]}>
-              <Text style={styles.rank}>{index + 1}</Text>
+              <Text style={[styles.rank, contentTextStyle(content)]}>{index + 1}</Text>
               <View style={styles.chipWrap}>
                 <ParticipantChip chip={chip} compact />
               </View>
@@ -83,7 +83,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 13,
     fontWeight: '800',
-    color: Theme.accent,
     flexShrink: 0,
   },
   chipWrap: {

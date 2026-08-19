@@ -12,6 +12,8 @@ import { useRouter } from 'expo-router';
 import { FormRow } from '@/components/ui/FormRow';
 import { FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -51,6 +53,7 @@ const EMPTY_FRIEND: FriendInput = {
   personalities: [],
   experiences: [],
   traits: [],
+  notes: [],
   likes: [],
   dislikes: [],
 };
@@ -170,10 +173,10 @@ export default function SetupMyselfScreen() {
       footer={
         <View style={styles.footer}>
           <Pressable
-            style={styles.primaryButton}
+            style={[styles.primaryButton, contentFilledButtonStyle(content)]}
             onPress={showRegister ? handleCreate : handlePick}
           >
-            <Text style={styles.primaryButtonText}>
+            <Text style={[styles.primaryButtonText, contentFilledButtonTextStyle(content)]}>
               {showRegister ? '登録してはじめる' : 'この人を本人にする'}
             </Text>
           </Pressable>
@@ -247,7 +250,7 @@ export default function SetupMyselfScreen() {
           onPress={() => setShowRegister((prev) => !prev)}
           style={styles.switchMode}
         >
-          <Text style={[styles.switchModeText, { color: Theme.accent }]}>
+          <Text style={[styles.switchModeText, contentTextStyle(content)]}>
             {showRegister ? '既存の人物カードから選ぶ' : '新しく本人カードを作る'}
           </Text>
         </Pressable>
@@ -318,13 +321,11 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   primaryButton: {
-    backgroundColor: Theme.accent,
     borderRadius: Radius.md,
     paddingVertical: 14,
     alignItems: 'center',
   },
   primaryButtonText: {
-    color: '#ffffff',
     fontSize: 16,
     fontWeight: '700',
   },

@@ -556,6 +556,7 @@ export default function EpisodeScreen() {
           setIsFormVisible(false);
         }}
         onSave={handleSaveEpisode}
+        onPersonCreated={() => setFriends(getAllFriendsInDefaultOrder())}
       />
 
       <EntrySelectorModal
@@ -578,6 +579,7 @@ export default function EpisodeScreen() {
         onToggleGroup={toggleFilterSelectorGroup}
         onCancel={handleFilterSelectorCancel}
         onConfirm={handleFilterSelectorConfirm}
+        onPersonCreated={() => setFriends(getAllFriendsInDefaultOrder())}
         enableGroupTab={false}
       />
 

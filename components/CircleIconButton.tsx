@@ -5,7 +5,6 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useContentColors } from '@/utils/useContentColors';
 
 const BUTTON_SIZE = 36;
@@ -25,12 +24,9 @@ export function CircleIconButton({
   accessibilityLabel,
   style,
 }: CircleIconButtonProps) {
-  const appTheme = useAppThemeOptional();
   const content = useContentColors();
-  const isBlack = appTheme?.variant === 'black';
-  const fill = isBlack ? content.contentCard : '#FFFFFF';
-  const border = isBlack ? content.contentText : '#2f2f2f';
-  const ink = border;
+  const fill = content.contentCard;
+  const border = content.contentText;
 
   return (
     <Pressable
@@ -46,7 +42,7 @@ export function CircleIconButton({
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
     >
-      <Ionicons name={icon} size={20} color={ink} />
+      <Ionicons name={icon} size={20} color={border} />
     </Pressable>
   );
 }

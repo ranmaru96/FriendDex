@@ -661,6 +661,7 @@ export default function CommonItemsScreen() {
         onToggleGroup={() => undefined}
         onCancel={() => setGroupEditorVisible(false)}
         onConfirm={handleSaveGroupEditor}
+        onPersonCreated={() => setAllPersons(getAllFriendsInDefaultOrder())}
         enableGroupTab={false}
         initialExpanded
         headerContent={
@@ -848,9 +849,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  editorIconButtonPrimary: {
-    borderColor: Theme.accent,
-  },
+  editorIconButtonPrimary: {},
   editorIconButtonDisabled: {
     opacity: 0.45,
   },

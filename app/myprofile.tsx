@@ -17,6 +17,8 @@ import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
 import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSurfaceStyle,
@@ -215,8 +217,13 @@ export default function MyProfileScreen() {
         </View>
         <View style={styles.emptyContainer}>
           <Text style={[styles.emptyMessage, contentMutedTextStyle(content)]}>本人設定が完了していません</Text>
-          <Pressable style={styles.settingsButton} onPress={() => router.replace('/appsettings')}>
-            <Text style={styles.settingsButtonText}>設定画面へ戻る</Text>
+          <Pressable
+            style={[styles.settingsButton, contentFilledButtonStyle(content)]}
+            onPress={() => router.replace('/appsettings')}
+          >
+            <Text style={[styles.settingsButtonText, contentFilledButtonTextStyle(content)]}>
+              設定画面へ戻る
+            </Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -250,7 +257,7 @@ export default function MyProfileScreen() {
               value={publicFieldSet.has('name')}
               onValueChange={(enabled) => togglePublicField('name', enabled)}
               trackColor={switchColors.trackColor}
-              thumbColor={publicFieldSet.has('name') ? Theme.accent : switchColors.thumbColorOff}
+              thumbColor={publicFieldSet.has('name') ? switchColors.thumbColorOn : switchColors.thumbColorOff}
               accessibilityLabel="名前を公開"
             />
           </View>
@@ -296,7 +303,7 @@ export default function MyProfileScreen() {
                   onValueChange={(enabled) => togglePublicField(field.key, enabled)}
                   trackColor={switchColors.trackColor}
                   thumbColor={
-                    publicFieldSet.has(field.key) ? Theme.accent : switchColors.thumbColorOff
+                    publicFieldSet.has(field.key) ? switchColors.thumbColorOn : switchColors.thumbColorOff
                   }
                 />
               </View>
@@ -313,7 +320,7 @@ export default function MyProfileScreen() {
               value={publicFieldSet.has('name')}
               onValueChange={(enabled) => togglePublicField('name', enabled)}
               trackColor={switchColors.trackColor}
-              thumbColor={publicFieldSet.has('name') ? Theme.accent : switchColors.thumbColorOff}
+              thumbColor={publicFieldSet.has('name') ? switchColors.thumbColorOn : switchColors.thumbColorOff}
               accessibilityLabel="名前を公開"
             />
           </View>
@@ -359,7 +366,7 @@ export default function MyProfileScreen() {
                   onValueChange={(enabled) => togglePublicField(field.key, enabled)}
                   trackColor={switchColors.trackColor}
                   thumbColor={
-                    publicFieldSet.has(field.key) ? Theme.accent : switchColors.thumbColorOff
+                    publicFieldSet.has(field.key) ? switchColors.thumbColorOn : switchColors.thumbColorOff
                   }
                 />
               </View>
@@ -368,8 +375,11 @@ export default function MyProfileScreen() {
         </View>
         )}
 
-        <Pressable style={styles.primaryButton} onPress={handleSave}>
-          <Text style={styles.primaryButtonText}>保存する</Text>
+        <Pressable
+          style={[styles.primaryButton, contentFilledButtonStyle(content)]}
+          onPress={handleSave}
+        >
+          <Text style={[styles.primaryButtonText, contentFilledButtonTextStyle(content)]}>保存する</Text>
         </Pressable>
 
         <Pressable style={[styles.secondaryButton, contentSurfaceStyle(content)]} onPress={handleShowQr}>
@@ -437,15 +447,12 @@ const styles = StyleSheet.create({
   },
   primaryButton: {
     borderRadius: Radius.md,
-    backgroundColor: Theme.btnPrimaryBg,
     borderWidth: 1,
-    borderColor: Theme.btnPrimaryBg,
     paddingVertical: 14,
     alignItems: 'center',
     marginBottom: Spacing.sm,
   },
   primaryButtonText: {
-    color: Theme.btnPrimaryText,
     fontSize: 16,
     fontWeight: '700',
   },
@@ -476,12 +483,10 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     borderRadius: Radius.md,
-    backgroundColor: Theme.btnPrimaryBg,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
   },
   settingsButtonText: {
-    color: Theme.btnPrimaryText,
     fontSize: 15,
     fontWeight: '700',
   },

@@ -1,4 +1,4 @@
-import { Children, Fragment, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Children, Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
   Modal,
@@ -7,6 +7,8 @@ import {
   StyleSheet,
   Text,
   View,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -15,10 +17,9 @@ import Animated, {
   runOnJS,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
-  withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
-import { OffsetCard } from '@/components/ui/OffsetCard';
+import { OffsetCard, OptionalOffsetCard } from '@/components/ui/OffsetCard';
 import { usesOffsetChrome } from '@/constants/designPatterns';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { ListScreenTemplate } from '@/components/screen-templates';
@@ -31,7 +32,6 @@ import {
   getOpenTemporaryTasks,
   getRecurringTasks,
   getTask,
-  getTasksByGroupId,
   getTaskCompletionDatesSet,
   getTasksCompletionDatesUnion,
   initializeDatabase,
@@ -41,7 +41,6 @@ import {
   setTaskGroupId,
 } from '../db';
 import type { Task, TaskGroup } from '../types';
-import { TASK_GROUP_MEMBER_LIMIT } from '../types';
 import {
   formatRecurrenceLabel,
   formatTaskDueDateLabel,
@@ -66,6 +65,7 @@ import {
   isRecurringTaskRequiredOnDate,
   isTemporaryDueOnOrBefore,
   isTemporaryOpenIncompleteBucket,
+  mergeTemporaryItemsByDueDate,
   partitionTasksByGroup,
   trackingMembers,
 } from '@/utils/taskGroupHelpers';
@@ -97,6 +97,9 @@ const TASK_ACCENT = {
   dim: '#9ca3af',
 } as const;
 
+const DRAG_EDGE_PX = 72;
+const DRAG_SCROLL_PX = 12;
+
 type TaskAccent = (typeof TASK_ACCENT)[keyof typeof TASK_ACCENT];
 
 /** 要対応（赤）枠は他アクセントの倍の太さ */
@@ -106,7 +109,8 @@ const accentBorderWidth = (accent: TaskAccent | undefined, showingRed: boolean):
   return 1;
 };
 
-/** グループ ID。ヒットなしは undefined */
+/** グループ ID。未所属ボックスは UNGROUPED_DROP_ID。ヒットなしは undefined */
+const UNGROUPED_DROP_ID = '__ungrouped__';
 type DropTargetId = string;
 
 type DropZoneRect = {
@@ -132,6 +136,140 @@ function DragGrip({ color }: { color: string }) {
   return (
     <View style={styles.dragGrip} pointerEvents="none" accessibilityElementsHidden>
       <View style={[styles.dragGripDot, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
+type DragRowLayout = { x: number; y: number; width: number; height: number };
+
+type DragOverlayMotion = {
+  left: SharedValue<number>;
+  top: SharedValue<number>;
+  grabX: SharedValue<number>;
+  grabY: SharedValue<number>;
+  hostX: SharedValue<number>;
+  hostY: SharedValue<number>;
+};
+
+function useTaskDragGesture(
+  dragEnabled: boolean,
+  overlay: DragOverlayMotion,
+  notifyStart: (pageX: number, pageY: number) => void,
+  notifyMove: (pageX: number, pageY: number) => void,
+  notifyEnd: (pageX: number, pageY: number) => void
+) {
+  const dragging = useSharedValue(false);
+  const startRef = useRef(notifyStart);
+  const moveRef = useRef(notifyMove);
+  const endRef = useRef(notifyEnd);
+  startRef.current = notifyStart;
+  moveRef.current = notifyMove;
+  endRef.current = notifyEnd;
+
+  const onStart = useCallback((pageX: number, pageY: number) => {
+    startRef.current(pageX, pageY);
+  }, []);
+  const onMove = useCallback((pageX: number, pageY: number) => {
+    moveRef.current(pageX, pageY);
+  }, []);
+  const onEnd = useCallback((pageX: number, pageY: number) => {
+    endRef.current(pageX, pageY);
+  }, []);
+
+  const pan = useMemo(() => {
+    if (!dragEnabled) {
+      return Gesture.Pan().enabled(false);
+    }
+    return Gesture.Pan()
+      .activateAfterLongPress(420)
+      .onStart((event) => {
+        dragging.value = true;
+        runOnJS(onStart)(event.absoluteX, event.absoluteY);
+      })
+      .onUpdate((event) => {
+        overlay.left.value = event.absoluteX - overlay.grabX.value - overlay.hostX.value;
+        overlay.top.value = event.absoluteY - overlay.grabY.value - overlay.hostY.value;
+        runOnJS(onMove)(event.absoluteX, event.absoluteY);
+      })
+      .onEnd((event) => {
+        dragging.value = false;
+        runOnJS(onEnd)(event.absoluteX, event.absoluteY);
+      })
+      .onFinalize((_event, success) => {
+        if (!success) {
+          dragging.value = false;
+          runOnJS(onEnd)(-1, -1);
+        }
+      });
+  }, [dragEnabled, dragging, onEnd, onMove, onStart, overlay]);
+
+  const rowStyle = useAnimatedStyle(() => ({
+    opacity: dragging.value ? 0.35 : 1,
+  }));
+
+  return { pan, rowStyle };
+}
+
+function TaskDragGhost({
+  task,
+  content,
+  width,
+  isCodex,
+  dropLabel,
+}: {
+  task: Task;
+  content: AppThemeContentColorFields;
+  width: number;
+  isCodex: boolean;
+  dropLabel: string | null;
+}) {
+  const dueLabel = task.dueDate ? formatTaskDueDateLabel(task.dueDate) : '';
+  const paceLabel = catalogPaceLabel(task);
+  const meta = dueLabel || paceLabel;
+  const inner = (
+    <View
+      style={[
+        styles.dragGhostCard,
+        contentSurfaceStyle(content),
+        {
+          borderColor: content.contentBorder,
+          width,
+          borderWidth: isCodex ? 0 : 1,
+        },
+      ]}
+    >
+      <DragGrip color={content.contentTextSecondary} />
+      <View style={styles.rowMain}>
+        <Text style={[styles.rowTitle, styles.temporaryTitle, contentTextStyle(content)]} numberOfLines={1}>
+          {task.title}
+        </Text>
+        {meta ? (
+          <Text style={[styles.rowMetaNear, contentMutedTextStyle(content)]} numberOfLines={1}>
+            {meta}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  );
+  const card = isCodex ? <OffsetCard>{inner}</OffsetCard> : inner;
+  return (
+    <View style={{ width }}>
+      {card}
+      {dropLabel ? (
+        <View
+          style={[
+            styles.dragGhostDropLabelWrap,
+            contentFilledButtonStyle(content),
+          ]}
+        >
+          <Text
+            style={[styles.dragGhostDropLabel, contentFilledButtonTextStyle(content)]}
+            numberOfLines={1}
+          >
+            {dropLabel}
+          </Text>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -168,10 +306,11 @@ type RecurringTaskRowProps = {
   todayYmd: string;
   content: AppThemeContentColorFields;
   dragEnabled: boolean;
+  overlay: DragOverlayMotion;
   onOpen: () => void;
   onToggle: () => void;
   onLongPressDelete: () => void;
-  onDragStart: (task: Task) => void;
+  onDragStart: (task: Task, pageX: number, pageY: number, layout: DragRowLayout) => void;
   onDragMove: (pageX: number, pageY: number) => void;
   onDragEnd: (pageX: number, pageY: number) => void;
 };
@@ -186,6 +325,7 @@ function RecurringTaskRow({
   todayYmd,
   content,
   dragEnabled,
+  overlay,
   onOpen,
   onToggle,
   onLongPressDelete,
@@ -214,10 +354,7 @@ function RecurringTaskRow({
       : accent ?? content.contentBorder;
   const showingRequiredRed = !muted && !doneToday && accent === TASK_ACCENT.required;
 
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const scale = useSharedValue(1);
-  const dragging = useSharedValue(false);
+  const rowRef = useRef<View>(null);
   const onDragStartRef = useRef(onDragStart);
   const onDragMoveRef = useRef(onDragMove);
   const onDragEndRef = useRef(onDragEnd);
@@ -225,8 +362,10 @@ function RecurringTaskRow({
   onDragMoveRef.current = onDragMove;
   onDragEndRef.current = onDragEnd;
 
-  const notifyStart = useCallback(() => {
-    onDragStartRef.current(task);
+  const notifyStart = useCallback((pageX: number, pageY: number) => {
+    rowRef.current?.measureInWindow((x, y, width, height) => {
+      onDragStartRef.current(task, pageX, pageY, { x, y, width, height });
+    });
   }, [task]);
   const notifyMove = useCallback((pageX: number, pageY: number) => {
     onDragMoveRef.current(pageX, pageY);
@@ -234,50 +373,7 @@ function RecurringTaskRow({
   const notifyEnd = useCallback((pageX: number, pageY: number) => {
     onDragEndRef.current(pageX, pageY);
   }, []);
-
-  const pan = useMemo(() => {
-    if (!dragEnabled) {
-      return Gesture.Pan().enabled(false);
-    }
-    return Gesture.Pan()
-      .activateAfterLongPress(420)
-      .onStart(() => {
-        dragging.value = true;
-        scale.value = withTiming(1.04, { duration: 120 });
-        runOnJS(notifyStart)();
-      })
-      .onUpdate((event) => {
-        translateX.value = event.translationX;
-        translateY.value = event.translationY;
-        runOnJS(notifyMove)(event.absoluteX, event.absoluteY);
-      })
-      .onEnd((event) => {
-        runOnJS(notifyEnd)(event.absoluteX, event.absoluteY);
-        translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
-        scale.value = withTiming(1, { duration: 120 });
-        dragging.value = false;
-      })
-      .onFinalize((_event, success) => {
-        if (!success) {
-          translateX.value = withSpring(0);
-          translateY.value = withSpring(0);
-          scale.value = withTiming(1, { duration: 120 });
-          dragging.value = false;
-          runOnJS(notifyEnd)(-1, -1);
-        }
-      });
-  }, [dragEnabled, dragging, notifyEnd, notifyMove, notifyStart, scale, translateX, translateY]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-    zIndex: dragging.value ? 20 : 0,
-    opacity: dragging.value ? 0.92 : 1,
-  }));
+  const { pan, rowStyle } = useTaskDragGesture(dragEnabled, overlay, notifyStart, notifyMove, notifyEnd);
 
   const nested = indented;
   const useOffset = isCodex && !nested;
@@ -376,7 +472,7 @@ function RecurringTaskRow({
   );
 
   const body = (
-    <Animated.View style={animatedStyle}>
+    <Animated.View ref={rowRef} collapsable={false} style={rowStyle}>
       {useOffset ? (
         <OffsetCard borderColor={catalog ? undefined : borderColor}>{inner}</OffsetCard>
       ) : (
@@ -401,10 +497,11 @@ type TemporaryTaskRowProps = {
   content: AppThemeContentColorFields;
   checkedColor: string;
   dragEnabled: boolean;
+  overlay: DragOverlayMotion;
   onOpen: () => void;
   onToggle: () => void;
   onLongPressDelete: () => void;
-  onDragStart: (task: Task) => void;
+  onDragStart: (task: Task, pageX: number, pageY: number, layout: DragRowLayout) => void;
   onDragMove: (pageX: number, pageY: number) => void;
   onDragEnd: (pageX: number, pageY: number) => void;
 };
@@ -418,6 +515,7 @@ function TemporaryTaskRow({
   content,
   checkedColor,
   dragEnabled,
+  overlay,
   onOpen,
   onToggle,
   onLongPressDelete,
@@ -431,10 +529,7 @@ function TemporaryTaskRow({
   const borderColor = completed ? TASK_ACCENT.dim : accent ?? content.contentBorder;
   const showingRequiredRed = !completed && accent === TASK_ACCENT.required;
 
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const scale = useSharedValue(1);
-  const dragging = useSharedValue(false);
+  const rowRef = useRef<View>(null);
   const onDragStartRef = useRef(onDragStart);
   const onDragMoveRef = useRef(onDragMove);
   const onDragEndRef = useRef(onDragEnd);
@@ -442,8 +537,10 @@ function TemporaryTaskRow({
   onDragMoveRef.current = onDragMove;
   onDragEndRef.current = onDragEnd;
 
-  const notifyStart = useCallback(() => {
-    onDragStartRef.current(task);
+  const notifyStart = useCallback((pageX: number, pageY: number) => {
+    rowRef.current?.measureInWindow((x, y, width, height) => {
+      onDragStartRef.current(task, pageX, pageY, { x, y, width, height });
+    });
   }, [task]);
   const notifyMove = useCallback((pageX: number, pageY: number) => {
     onDragMoveRef.current(pageX, pageY);
@@ -451,50 +548,7 @@ function TemporaryTaskRow({
   const notifyEnd = useCallback((pageX: number, pageY: number) => {
     onDragEndRef.current(pageX, pageY);
   }, []);
-
-  const pan = useMemo(() => {
-    if (!dragEnabled) {
-      return Gesture.Pan().enabled(false);
-    }
-    return Gesture.Pan()
-      .activateAfterLongPress(420)
-      .onStart(() => {
-        dragging.value = true;
-        scale.value = withTiming(1.04, { duration: 120 });
-        runOnJS(notifyStart)();
-      })
-      .onUpdate((event) => {
-        translateX.value = event.translationX;
-        translateY.value = event.translationY;
-        runOnJS(notifyMove)(event.absoluteX, event.absoluteY);
-      })
-      .onEnd((event) => {
-        runOnJS(notifyEnd)(event.absoluteX, event.absoluteY);
-        translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
-        scale.value = withTiming(1, { duration: 120 });
-        dragging.value = false;
-      })
-      .onFinalize((_event, success) => {
-        if (!success) {
-          translateX.value = withSpring(0);
-          translateY.value = withSpring(0);
-          scale.value = withTiming(1, { duration: 120 });
-          dragging.value = false;
-          runOnJS(notifyEnd)(-1, -1);
-        }
-      });
-  }, [dragEnabled, dragging, notifyEnd, notifyMove, notifyStart, scale, translateX, translateY]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: scale.value },
-    ],
-    zIndex: dragging.value ? 20 : 0,
-    opacity: dragging.value ? 0.92 : 1,
-  }));
+  const { pan, rowStyle } = useTaskDragGesture(dragEnabled, overlay, notifyStart, notifyMove, notifyEnd);
 
   const nested = indented;
   const useOffset = isCodex && !nested;
@@ -602,7 +656,7 @@ function TemporaryTaskRow({
   );
 
   const body = (
-    <Animated.View style={animatedStyle}>
+    <Animated.View ref={rowRef} collapsable={false} style={rowStyle}>
       {useOffset ? (
         <OffsetCard borderColor={catalog ? undefined : borderColor}>{inner}</OffsetCard>
       ) : (
@@ -636,11 +690,45 @@ export default function TasksScreen() {
   const [completionTick, setCompletionTick] = useState(0);
   const [helpVisible, setHelpVisible] = useState(false);
   const [draggingTaskId, setDraggingTaskId] = useState<string | null>(null);
+  const [overlayTask, setOverlayTask] = useState<Task | null>(null);
+  const [overlayWidth, setOverlayWidth] = useState(240);
   const [hoverDropId, setHoverDropId] = useState<DropTargetId | undefined>(undefined);
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const dropZonesRef = useRef<DropZoneRect[]>([]);
   const dropZoneHostsRef = useRef<Map<string, View>>(new Map());
   const draggingTaskIdRef = useRef<string | null>(null);
+  const overlayHostRef = useRef<View>(null);
+  const listScrollRef = useRef<ScrollView>(null);
+  const scrollYRef = useRef(0);
+  const listViewportHeightRef = useRef(0);
+  const listContentHeightRef = useRef(0);
+  const listWindowYRef = useRef(0);
+  const lastDragPageYRef = useRef<number | null>(null);
+  const dragAutoScrollRafRef = useRef<number | null>(null);
+  const overlayLeft = useSharedValue(0);
+  const overlayTop = useSharedValue(0);
+  const overlayGrabX = useSharedValue(0);
+  const overlayGrabY = useSharedValue(0);
+  const overlayHostX = useSharedValue(0);
+  const overlayHostY = useSharedValue(0);
+  const dragOverlay: DragOverlayMotion = useMemo(
+    () => ({
+      left: overlayLeft,
+      top: overlayTop,
+      grabX: overlayGrabX,
+      grabY: overlayGrabY,
+      hostX: overlayHostX,
+      hostY: overlayHostY,
+    }),
+    [overlayGrabX, overlayGrabY, overlayHostX, overlayHostY, overlayLeft, overlayTop]
+  );
+  const overlayStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: overlayLeft.value },
+      { translateY: overlayTop.value },
+      { scale: 1.04 },
+    ],
+  }));
   const todayYmd = toYmd(new Date());
 
   const reload = useCallback(() => {
@@ -791,6 +879,50 @@ export default function TasksScreen() {
     [completedTemporary, temporaryGroups]
   );
 
+  const actionRequiredTemporaryItems = useMemo(
+    () => mergeTemporaryItemsByDueDate(actionRequiredTemporaryBundles, actionRequiredTemporaryUngrouped),
+    [actionRequiredTemporaryBundles, actionRequiredTemporaryUngrouped]
+  );
+
+  const openIncompleteTemporaryItems = useMemo(
+    () => mergeTemporaryItemsByDueDate(openIncompleteTemporaryBundles, openIncompleteTemporaryUngrouped),
+    [openIncompleteTemporaryBundles, openIncompleteTemporaryUngrouped]
+  );
+
+  const draggingSourceGroupId = useMemo(() => {
+    if (!draggingTaskId) {
+      return null;
+    }
+    const task =
+      temporary.find((item) => item.id === draggingTaskId) ??
+      recurring.find((item) => item.id === draggingTaskId);
+    if (!task) {
+      return null;
+    }
+    return task.groupId ?? UNGROUPED_DROP_ID;
+  }, [draggingTaskId, temporary, recurring]);
+
+  const overlayDropLabel = useMemo(() => {
+    if (!overlayTask || hoverDropId == null) {
+      return null;
+    }
+    if (hoverDropId === UNGROUPED_DROP_ID) {
+      return overlayTask.groupId ? '未所属に戻す' : '未所属';
+    }
+    const group = groups.find((item) => item.id === hoverDropId);
+    if (!group) {
+      return null;
+    }
+    return `${group.title} に入れる`;
+  }, [groups, hoverDropId, overlayTask]);
+
+  const libraryGroupExpanded = (groupId: string, suffix: string) => {
+    if (draggingTaskId != null && groupId !== draggingSourceGroupId) {
+      return false;
+    }
+    return !collapsedLibraryGroupIds.has(groupInstanceKey(groupId, suffix));
+  };
+
   const isLibrary = segment !== 'today';
 
   const toggleExpanded = (groupId: string) => {
@@ -881,40 +1013,101 @@ export default function TasksScreen() {
       });
     });
   }, []);
+  const refreshDropZonesRef = useRef(refreshDropZones);
+  refreshDropZonesRef.current = refreshDropZones;
+
+  const stopDragAutoScroll = useCallback(() => {
+    if (dragAutoScrollRafRef.current != null) {
+      cancelAnimationFrame(dragAutoScrollRafRef.current);
+      dragAutoScrollRafRef.current = null;
+    }
+  }, []);
+
+  const tickDragAutoScrollRef = useRef<() => void>(() => {});
+  tickDragAutoScrollRef.current = () => {
+    dragAutoScrollRafRef.current = null;
+    const pageY = lastDragPageYRef.current;
+    if (pageY == null) {
+      return;
+    }
+    const viewTop = listWindowYRef.current;
+    const viewH = listViewportHeightRef.current;
+    const viewBottom = viewTop + viewH;
+    let dy = 0;
+    if (viewH > 0 && pageY < viewTop + DRAG_EDGE_PX) {
+      dy = -DRAG_SCROLL_PX;
+    } else if (viewH > 0 && pageY > viewBottom - DRAG_EDGE_PX) {
+      dy = DRAG_SCROLL_PX;
+    }
+    if (dy === 0) {
+      return;
+    }
+    const maxY = Math.max(0, listContentHeightRef.current - viewH);
+    const nextY = Math.min(maxY, Math.max(0, scrollYRef.current + dy));
+    if (nextY !== scrollYRef.current) {
+      scrollYRef.current = nextY;
+      listScrollRef.current?.scrollTo({ y: nextY, animated: false });
+    }
+    refreshDropZonesRef.current(() => {
+      const y = lastDragPageYRef.current;
+      if (y == null) {
+        return;
+      }
+      setHoverDropId(resolveDropTarget(y, dropZonesRef.current));
+    });
+    dragAutoScrollRafRef.current = requestAnimationFrame(() => {
+      tickDragAutoScrollRef.current();
+    });
+  };
+
+  useEffect(() => () => stopDragAutoScroll(), [stopDragAutoScroll]);
 
   const handleDragStart = useCallback(
-    (task: Task) => {
+    (task: Task, pageX: number, pageY: number, layout: DragRowLayout) => {
       draggingTaskIdRef.current = task.id;
+      overlayHostRef.current?.measureInWindow((hostX, hostY) => {
+        overlayHostX.value = hostX;
+        overlayHostY.value = hostY;
+        overlayGrabX.value = pageX - layout.x;
+        overlayGrabY.value = pageY - layout.y;
+        overlayLeft.value = layout.x - hostX;
+        overlayTop.value = layout.y - hostY;
+        setOverlayTask(task);
+        setOverlayWidth(Math.max(160, layout.width));
+      });
       setDraggingTaskId(task.id);
       setScrollEnabled(false);
       setHoverDropId(undefined);
-      if (task.groupId) {
-        setCollapsedLibraryGroupIds((prev) => {
-          const next = new Set(prev);
-          next.delete(groupInstanceKey(task.groupId!, '-lib'));
-          return next;
-        });
-      }
-      // 展開後レイアウトを待ってからゾーン再計測
       requestAnimationFrame(() => {
         refreshDropZones();
       });
     },
-    [refreshDropZones]
+    [overlayGrabX, overlayGrabY, overlayHostX, overlayHostY, overlayLeft, overlayTop, refreshDropZones]
   );
 
   const handleDragMove = useCallback((pageX: number, pageY: number) => {
     if (pageX < 0 || pageY < 0) {
+      lastDragPageYRef.current = null;
+      stopDragAutoScroll();
       setHoverDropId(undefined);
       return;
     }
+    lastDragPageYRef.current = pageY;
     setHoverDropId(resolveDropTarget(pageY, dropZonesRef.current));
-  }, []);
+    if (dragAutoScrollRafRef.current == null) {
+      dragAutoScrollRafRef.current = requestAnimationFrame(() => {
+        tickDragAutoScrollRef.current();
+      });
+    }
+  }, [stopDragAutoScroll]);
 
   const handleDragEnd = useCallback(
     (pageX: number, pageY: number) => {
       const taskId = draggingTaskIdRef.current;
       draggingTaskIdRef.current = null;
+      lastDragPageYRef.current = null;
+      stopDragAutoScroll();
+      setOverlayTask(null);
       setDraggingTaskId(null);
       setScrollEnabled(true);
       setHoverDropId(undefined);
@@ -930,35 +1123,23 @@ export default function TasksScreen() {
         if (!task) {
           return;
         }
-        const nextGroupId = target;
+        const nextGroupId = target === UNGROUPED_DROP_ID ? null : target;
         if ((task.groupId ?? null) === nextGroupId) {
           return;
-        }
-        if (nextGroupId) {
-          const members = getTasksByGroupId(nextGroupId);
-          if (members.length >= TASK_GROUP_MEMBER_LIMIT) {
-            Alert.alert('グループ上限', `1つのグループに入れられるタスクは${TASK_GROUP_MEMBER_LIMIT}個までです。`);
-            return;
-          }
         }
         const ok = setTaskGroupId(taskId, nextGroupId);
         if (!ok) {
           Alert.alert(
             '移動できません',
-            'グループに入れられませんでした。上限に達しているか、種別が一致しません。'
+            'グループに入れられませんでした。種別が一致しません。'
           );
           return;
         }
-        setCollapsedLibraryGroupIds((prev) => {
-          const next = new Set(prev);
-          next.delete(groupInstanceKey(nextGroupId, '-lib'));
-          return next;
-        });
         reload();
         void syncTaskReminders();
       });
     },
-    [refreshDropZones, reload]
+    [refreshDropZones, reload, stopDragAutoScroll]
   );
 
   const renderRecurringRow = (
@@ -979,6 +1160,7 @@ export default function TasksScreen() {
       todayYmd={todayYmd}
       content={content}
       dragEnabled={isLibrary && segment === 'recurring'}
+      overlay={dragOverlay}
       onOpen={() => router.push({ pathname: '/task-detail', params: { taskId: task.id } })}
       onToggle={() => toggleRecurring(task)}
       onLongPressDelete={() => confirmDelete(task)}
@@ -998,29 +1180,34 @@ export default function TasksScreen() {
       </Fragment>
     ));
 
-  const renderLibraryGroupCard = (
-    group: TaskGroup,
+  const renderLibraryBucketCard = (
+    bucketId: string,
+    title: string,
     members: Task[],
     options: {
       keySuffix?: string;
       registerDropZone?: boolean;
       expanded?: boolean;
       completed?: boolean;
+      showEdit?: boolean;
+      onEdit?: () => void;
+      emptyHint?: string;
     },
     memberNodes: ReactNode
   ) => {
     const isHover =
-      !options.completed && draggingTaskId != null && hoverDropId === group.id;
+      !options.completed && draggingTaskId != null && hoverDropId === bucketId;
     const registerDropZone = options.registerDropZone !== false && !options.completed;
     const expanded = options.expanded !== false;
     const showMembers = expanded && members.length > 0;
-    const instanceKey = groupInstanceKey(group.id, options.keySuffix);
-    return (
+    const showEdit = options.showEdit === true && options.onEdit != null;
+    const instanceKey = groupInstanceKey(bucketId, options.keySuffix);
+    const emptyHint = options.emptyHint ?? 'ドロップで追加';
+    const groupCard = (
       <View
-        key={`${group.id}${options.keySuffix ?? ''}`}
         ref={(node) => {
           if (registerDropZone) {
-            setDropZoneHost(group.id, node);
+            setDropZoneHost(bucketId, node);
           }
         }}
         onLayout={() => {
@@ -1039,15 +1226,22 @@ export default function TasksScreen() {
                 borderColor: content.contentText,
               }
             : null,
-          isCodex ? { borderWidth: 0, borderRadius: 0, overflow: 'visible' as const, backgroundColor: 'transparent' } : null,
+          isCodex
+            ? { borderWidth: 0, borderRadius: 0, overflow: 'visible' as const, backgroundColor: 'transparent' }
+            : null,
         ]}
       >
         <Pressable
           style={styles.catalogGroupHeadRow}
-          onPress={() => toggleLibraryGroupExpanded(instanceKey)}
+          onPress={() => {
+            if (draggingTaskId != null) {
+              return;
+            }
+            toggleLibraryGroupExpanded(instanceKey);
+          }}
           accessibilityRole="button"
           accessibilityState={{ expanded }}
-          accessibilityLabel={`${group.title}グループを${expanded ? '閉じる' : '開く'}`}
+          accessibilityLabel={`${title}を${expanded ? '閉じる' : '開く'}`}
         >
           <View style={styles.checkboxHit}>
             <Ionicons
@@ -1066,27 +1260,29 @@ export default function TasksScreen() {
                 options.completed ? styles.completedTemporaryTitle : null,
               ]}
             >
-              {group.title}
+              {title}
             </Text>
             {isHover ? (
               <Text style={[styles.dropHint, contentTextStyle(content)]}>ここにドロップ</Text>
             ) : members.length === 0 ? (
-              <Text style={[styles.rowMetaNear, contentMutedTextStyle(content)]}>ドロップで追加</Text>
+              <Text style={[styles.rowMetaNear, contentMutedTextStyle(content)]}>{emptyHint}</Text>
             ) : !expanded ? (
               <Text style={[styles.rowMetaNear, contentMutedTextStyle(content)]}>
                 {members.length}件
               </Text>
             ) : null}
           </View>
-          <Pressable
-            style={[styles.catalogGroupEditButton, { borderColor: content.contentBorder }]}
-            onPress={() => openGroupScreen(group)}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel={`${group.title}グループを編集`}
-          >
-            <Text style={[styles.catalogGroupEdit, contentMutedTextStyle(content)]}>編集</Text>
-          </Pressable>
+          {showEdit ? (
+            <Pressable
+              style={[styles.catalogGroupEditButton, { borderColor: content.contentBorder }]}
+              onPress={options.onEdit}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`${title}グループを編集`}
+            >
+              <Text style={[styles.catalogGroupEdit, contentMutedTextStyle(content)]}>編集</Text>
+            </Pressable>
+          ) : null}
           <Ionicons
             name={expanded ? 'chevron-down' : 'chevron-forward'}
             size={18}
@@ -1103,12 +1299,39 @@ export default function TasksScreen() {
         ) : null}
       </View>
     );
-    return isCodex ? (
-      <OffsetCard key={`${group.id}${options.keySuffix ?? ''}`}>{groupCard}</OffsetCard>
-    ) : (
-      groupCard
+    return (
+      <OptionalOffsetCard
+        key={`${bucketId}${options.keySuffix ?? ''}`}
+        enabled={isCodex}
+        borderColor={isHover ? content.contentText : undefined}
+      >
+        {groupCard}
+      </OptionalOffsetCard>
     );
   };
+
+  const renderLibraryGroupCard = (
+    group: TaskGroup,
+    members: Task[],
+    options: {
+      keySuffix?: string;
+      registerDropZone?: boolean;
+      expanded?: boolean;
+      completed?: boolean;
+    },
+    memberNodes: ReactNode
+  ) =>
+    renderLibraryBucketCard(
+      group.id,
+      group.title,
+      members,
+      {
+        ...options,
+        showEdit: true,
+        onEdit: () => openGroupScreen(group),
+      },
+      memberNodes
+    );
 
   const renderGroupHeader = (
     group: TaskGroup,
@@ -1330,6 +1553,7 @@ export default function TasksScreen() {
       content={content}
       checkedColor={checkedColor}
       dragEnabled={isLibrary && segment === 'temporary' && !completed}
+      overlay={dragOverlay}
       onOpen={() => router.push({ pathname: '/task-detail', params: { taskId: task.id } })}
       onToggle={() => toggleTemporary(task, completed)}
       onLongPressDelete={() => confirmDelete(task)}
@@ -1500,6 +1724,7 @@ export default function TasksScreen() {
   };
 
   return (
+    <View ref={overlayHostRef} style={styles.overlayHost} collapsable={false}>
     <ListScreenTemplate
       style={styles.screen}
       fab={
@@ -1618,8 +1843,22 @@ export default function TasksScreen() {
         />
       </View>
       <ScrollView
+        ref={listScrollRef}
         style={styles.list}
         scrollEnabled={scrollEnabled}
+        scrollEventThrottle={16}
+        onScroll={(event: NativeSyntheticEvent<NativeScrollEvent>) => {
+          scrollYRef.current = event.nativeEvent.contentOffset.y;
+        }}
+        onContentSizeChange={(_w, h) => {
+          listContentHeightRef.current = h;
+        }}
+        onLayout={(event) => {
+          listViewportHeightRef.current = event.nativeEvent.layout.height;
+          listScrollRef.current?.measureInWindow((_x, y) => {
+            listWindowYRef.current = y;
+          });
+        }}
         contentContainerStyle={[
           styles.content,
           { paddingHorizontal: kit.listScreenPaddingHorizontal, paddingBottom: 100 },
@@ -1630,13 +1869,31 @@ export default function TasksScreen() {
             {renderSectionTitle('要対応', TASK_ACCENT.required)}
             {actionRequiredRecurringBundles.length === 0 &&
             actionRequiredRecurringUngrouped.length === 0 &&
-            actionRequiredTemporaryBundles.length === 0 &&
-            actionRequiredTemporaryUngrouped.length === 0 ? (
+            actionRequiredTemporaryItems.length === 0 ? (
               <Text style={[styles.empty, contentMutedTextStyle(content)]}>
                 要対応のタスクはありません
               </Text>
             ) : (
               <>
+                {actionRequiredTemporaryItems.map((item) => (
+                  <Fragment
+                    key={
+                      item.type === 'group'
+                        ? `req-g-${item.bundle.group.id}`
+                        : `req-t-${item.task.id}`
+                    }
+                  >
+                    {item.type === 'group'
+                      ? renderTemporaryGroupHeader(item.bundle.group, item.bundle.members, {
+                          expanded: expandedGroupIds.has(
+                            groupInstanceKey(item.bundle.group.id, '-today-action-temp')
+                          ),
+                          keySuffix: '-today-action-temp',
+                          accent: TASK_ACCENT.required,
+                        })
+                      : renderTemporaryRow(item.task, false, false, TASK_ACCENT.required)}
+                  </Fragment>
+                ))}
                 {actionRequiredRecurringBundles.map((bundle) =>
                   renderGroupHeader(bundle.group, bundle.members, {
                     expanded: expandedGroupIds.has(groupInstanceKey(bundle.group.id, '-today-required')),
@@ -1646,16 +1903,6 @@ export default function TasksScreen() {
                 )}
                 {actionRequiredRecurringUngrouped.map((task) =>
                   renderRecurringRow(task, true, false, false, TASK_ACCENT.required)
-                )}
-                {actionRequiredTemporaryBundles.map((bundle) =>
-                  renderTemporaryGroupHeader(bundle.group, bundle.members, {
-                    expanded: expandedGroupIds.has(groupInstanceKey(bundle.group.id, '-today-action-temp')),
-                    keySuffix: '-today-action-temp',
-                    accent: TASK_ACCENT.required,
-                  })
-                )}
-                {actionRequiredTemporaryUngrouped.map((task) =>
-                  renderTemporaryRow(task, false, false, TASK_ACCENT.required)
                 )}
               </>
             )}
@@ -1681,23 +1928,31 @@ export default function TasksScreen() {
             )}
 
             {renderSectionTitle('未完了', TASK_ACCENT.incomplete)}
-            {openIncompleteTemporaryBundles.length === 0 &&
-            openIncompleteTemporaryUngrouped.length === 0 ? (
+            {openIncompleteTemporaryItems.length === 0 ? (
               <Text style={[styles.empty, contentMutedTextStyle(content)]}>
                 未完了のタスクはありません
               </Text>
             ) : (
               <>
-                {openIncompleteTemporaryBundles.map((bundle) =>
-                  renderTemporaryGroupHeader(bundle.group, bundle.members, {
-                    expanded: expandedGroupIds.has(groupInstanceKey(bundle.group.id, '-today-open')),
-                    keySuffix: '-today-open',
-                    accent: TASK_ACCENT.incomplete,
-                  })
-                )}
-                {openIncompleteTemporaryUngrouped.map((task) =>
-                  renderTemporaryRow(task, false, false, TASK_ACCENT.incomplete)
-                )}
+                {openIncompleteTemporaryItems.map((item) => (
+                  <Fragment
+                    key={
+                      item.type === 'group'
+                        ? `open-g-${item.bundle.group.id}`
+                        : `open-t-${item.task.id}`
+                    }
+                  >
+                    {item.type === 'group'
+                      ? renderTemporaryGroupHeader(item.bundle.group, item.bundle.members, {
+                          expanded: expandedGroupIds.has(
+                            groupInstanceKey(item.bundle.group.id, '-today-open')
+                          ),
+                          keySuffix: '-today-open',
+                          accent: TASK_ACCENT.incomplete,
+                        })
+                      : renderTemporaryRow(item.task, false, false, TASK_ACCENT.incomplete)}
+                  </Fragment>
+                ))}
               </>
             )}
 
@@ -1733,21 +1988,26 @@ export default function TasksScreen() {
               <>
                 {bundles.map((bundle) =>
                   renderGroupHeader(bundle.group, bundle.members, {
-                    expanded: !collapsedLibraryGroupIds.has(groupInstanceKey(bundle.group.id, '-lib')),
+                    expanded: libraryGroupExpanded(bundle.group.id, '-lib'),
                     keySuffix: '-lib',
                     registerDropZone: true,
                   })
                 )}
-                {ungrouped.length > 0 ? (
-                  <>
-                    {bundles.length > 0 ? (
-                      <Text style={[styles.catalogUngroupedTitle, contentMutedTextStyle(content)]}>
-                        未所属
-                      </Text>
-                    ) : null}
-                    {ungrouped.map((task) => renderRecurringRow(task, false, false, false))}
-                  </>
-                ) : null}
+                {ungrouped.length > 0 || draggingTaskId != null
+                  ? renderLibraryBucketCard(
+                      UNGROUPED_DROP_ID,
+                      '未所属',
+                      ungrouped,
+                      {
+                        keySuffix: '-lib',
+                        registerDropZone: true,
+                        expanded: libraryGroupExpanded(UNGROUPED_DROP_ID, '-lib'),
+                        showEdit: false,
+                        emptyHint: 'ドロップで外す',
+                      },
+                      ungrouped.map((task) => renderRecurringRow(task, false, true, false))
+                    )
+                  : null}
               </>
             )}
           </View>
@@ -1765,21 +2025,26 @@ export default function TasksScreen() {
               <>
                 {libraryTemporaryBundles.map((bundle) =>
                   renderTemporaryGroupHeader(bundle.group, bundle.members, {
-                    expanded: !collapsedLibraryGroupIds.has(groupInstanceKey(bundle.group.id, '-lib')),
+                    expanded: libraryGroupExpanded(bundle.group.id, '-lib'),
                     keySuffix: '-lib',
                     registerDropZone: true,
                   })
                 )}
-                {libraryTemporaryUngrouped.length > 0 ? (
-                  <>
-                    {libraryTemporaryBundles.length > 0 ? (
-                      <Text style={[styles.catalogUngroupedTitle, contentMutedTextStyle(content)]}>
-                        未所属
-                      </Text>
-                    ) : null}
-                    {libraryTemporaryUngrouped.map((task) => renderTemporaryRow(task, false, false))}
-                  </>
-                ) : null}
+                {libraryTemporaryUngrouped.length > 0 || draggingTaskId != null
+                  ? renderLibraryBucketCard(
+                      UNGROUPED_DROP_ID,
+                      '未所属',
+                      libraryTemporaryUngrouped,
+                      {
+                        keySuffix: '-lib',
+                        registerDropZone: true,
+                        expanded: libraryGroupExpanded(UNGROUPED_DROP_ID, '-lib'),
+                        showEdit: false,
+                        emptyHint: 'ドロップで外す',
+                      },
+                      libraryTemporaryUngrouped.map((task) => renderTemporaryRow(task, false, true))
+                    )
+                  : null}
                 {completedTemporary.length > 0 ? (
                   <>
                     <View style={[styles.completedDivider, { backgroundColor: content.contentBorder }]} />
@@ -1794,9 +2059,25 @@ export default function TasksScreen() {
                         registerDropZone: false,
                       })
                     )}
-                    {libraryCompletedTemporaryUngrouped.map((task) =>
-                      renderTemporaryRow(task, true, false, TASK_ACCENT.dim)
-                    )}
+                    {libraryCompletedTemporaryUngrouped.length > 0
+                      ? renderLibraryBucketCard(
+                          UNGROUPED_DROP_ID,
+                          '未所属',
+                          libraryCompletedTemporaryUngrouped,
+                          {
+                            keySuffix: '-lib-done',
+                            registerDropZone: false,
+                            completed: true,
+                            expanded: !collapsedLibraryGroupIds.has(
+                              groupInstanceKey(UNGROUPED_DROP_ID, '-lib-done')
+                            ),
+                            showEdit: false,
+                          },
+                          libraryCompletedTemporaryUngrouped.map((task) =>
+                            renderTemporaryRow(task, true, true, TASK_ACCENT.dim)
+                          )
+                        )
+                      : null}
                   </>
                 ) : null}
               </>
@@ -1825,7 +2106,7 @@ export default function TasksScreen() {
                   ・必須は周期の対象日、自由は周期なし（記録のみ）です。{'\n'}
                   ・グループにも周期を付けられ、メンバー必須との OR でグループ必須になります。{'\n'}
                   ・編集画面のグループ枠をタップすると、名前や周期を編集できます。{'\n'}
-                  ・編集画面はチェックなしの一覧です。項目を長押しし、グループへドロップすると所属を変えられます。
+                  ・編集画面はチェックなしの一覧です。項目を長押しし、グループへドロップすると所属を変えられます。未所属の箱へドロップするとグループから外れます。
                 </Text>
                 <Pressable style={styles.helpClose} onPress={() => setHelpVisible(false)}>
                   <Text style={[styles.helpCloseText, contentTextStyle(content)]}>閉じる</Text>
@@ -1842,7 +2123,7 @@ export default function TasksScreen() {
                 ・必須は周期の対象日、自由は周期なし（記録のみ）です。{'\n'}
                 ・グループにも周期を付けられ、メンバー必須との OR でグループ必須になります。{'\n'}
                 ・編集画面のグループ枠をタップすると、名前や周期を編集できます。{'\n'}
-                ・編集画面はチェックなしの一覧です。項目を長押しし、グループへドロップすると所属を変えられます。
+                ・編集画面はチェックなしの一覧です。項目を長押しし、グループへドロップすると所属を変えられます。未所属の箱へドロップするとグループから外れます。
               </Text>
               <Pressable style={styles.helpClose} onPress={() => setHelpVisible(false)}>
                 <Text style={[styles.helpCloseText, contentTextStyle(content)]}>閉じる</Text>
@@ -1853,10 +2134,58 @@ export default function TasksScreen() {
         </Modal>
       ) : null}
     </ListScreenTemplate>
+    {overlayTask ? (
+      <Animated.View pointerEvents="none" style={[styles.dragOverlayItem, overlayStyle]}>
+        <TaskDragGhost
+          task={overlayTask}
+          content={content}
+          width={overlayWidth}
+          isCodex={Boolean(isCodex)}
+          dropLabel={overlayDropLabel}
+        />
+      </Animated.View>
+    ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  overlayHost: {
+    flex: 1,
+  },
+  dragOverlayItem: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    zIndex: 80,
+    elevation: 80,
+  },
+  dragGhostCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingRight: 12,
+    borderWidth: 1,
+    borderRadius: 10,
+    gap: 2,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  dragGhostDropLabelWrap: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  dragGhostDropLabel: {
+    fontSize: 13,
+    fontWeight: '800',
+  },
   screen: {
     paddingTop: 0,
   },
@@ -2014,12 +2343,6 @@ const styles = StyleSheet.create({
   },
   memberAccentBarThick: {
     width: 5,
-  },
-  catalogUngroupedTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 8,
-    marginBottom: 2,
   },
   section: {
     gap: 8,

@@ -20,7 +20,7 @@ function normalizeForMatch(value: string): string {
 }
 
 export type FilterLabelSuggestionsOptions = {
-  /** Labels already used elsewhere (or exact current text) to hide from the list */
+  /** Labels already used on this person to hide from the list */
   exclude?: ReadonlySet<string>;
   limit?: number;
 };
@@ -60,7 +60,7 @@ export function findMatchingRegisteredLabel(
 }
 
 /**
- * Partial-match suggestions; prefix matches ranked first.
+ * Partial-match suggestions; exact matches first, then prefix, then the rest.
  * Empty / whitespace-only query → no suggestions.
  * Hiragana and katakana are treated as the same for matching.
  */
@@ -87,9 +87,6 @@ export function filterLabelSuggestions(
     if (exclude?.has(normalized)) {
       continue;
     }
-    if (normalized === trimmed) {
-      continue;
-    }
     const labelKey = normalizeForMatch(normalized);
     if (!labelKey.includes(queryKey)) {
       continue;
@@ -100,6 +97,11 @@ export function filterLabelSuggestions(
   matched.sort((left, right) => {
     const leftKey = normalizeForMatch(left);
     const rightKey = normalizeForMatch(right);
+    const leftExact = leftKey === queryKey;
+    const rightExact = rightKey === queryKey;
+    if (leftExact !== rightExact) {
+      return leftExact ? -1 : 1;
+    }
     const leftPrefix = leftKey.startsWith(queryKey);
     const rightPrefix = rightKey.startsWith(queryKey);
     if (leftPrefix !== rightPrefix) {

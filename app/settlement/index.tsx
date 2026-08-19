@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { InteractionManager, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { Theme, Radius, Spacing } from '@/constants/theme';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
@@ -68,10 +69,10 @@ type SettlementTab = 'groups' | 'balances' | 'individual';
 type BalanceViewMode = 'room' | 'person';
 type Option = { label: string; value: string };
 
-const SETTLEMENT_TABS: PillTabItem<SettlementTab>[] = [
-  { key: 'individual', caption: '個別', icon: 'cash-outline', color: '#e07a2a' },
-  { key: 'groups', caption: 'グループ', icon: 'people-outline', color: Theme.accent },
-  { key: 'balances', caption: '清算', icon: 'swap-horizontal-outline', color: '#4a7fd4' },
+const SETTLEMENT_TAB_DEFS: { key: SettlementTab; caption: string; icon: PillTabItem<SettlementTab>['icon'] }[] = [
+  { key: 'individual', caption: '個別', icon: 'cash-outline' },
+  { key: 'groups', caption: 'グループ', icon: 'people-outline' },
+  { key: 'balances', caption: '清算', icon: 'swap-horizontal-outline' },
 ];
 
 type MockRoom = ReturnType<typeof useSettlementMock>['rooms'][number];
@@ -109,6 +110,15 @@ export default function SettlementScreen() {
   const router = useRouter();
   const formStyles = useMoneyLoanFormStyles();
   const content = useContentColors();
+  const { patternColors } = useAppTheme();
+  const settlementTabs = useMemo<PillTabItem<SettlementTab>[]>(
+    () => [
+      { ...SETTLEMENT_TAB_DEFS[0], color: patternColors.gold },
+      { ...SETTLEMENT_TAB_DEFS[1], color: patternColors.accent },
+      { ...SETTLEMENT_TAB_DEFS[2], color: patternColors.cyan },
+    ],
+    [patternColors.accent, patternColors.cyan, patternColors.gold]
+  );
   const { rooms, invites, createRoom, acceptInvite, declineInvite, isTransferCompleted, toggleTransferCompleted } =
     useSettlementMock();
   const [activeTab, setActiveTab] = useState<SettlementTab>('individual');
@@ -384,7 +394,7 @@ export default function SettlementScreen() {
         title="お金貸し借り管理"
         onBack={() => router.back()}
         header={
-          <PillTabBar tabs={SETTLEMENT_TABS} activeTab={activeTab} onTabChange={setActiveTab} perTabColors />
+          <PillTabBar tabs={settlementTabs} activeTab={activeTab} onTabChange={setActiveTab} perTabColors />
         }
         scrollContentStyle={styles.scrollContent}
       >
@@ -643,6 +653,7 @@ export default function SettlementScreen() {
         onToggleGroup={toggleSelectorGroup}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        onPersonCreated={loadFriends}
         enableGroupTab={false}
       />
     </>

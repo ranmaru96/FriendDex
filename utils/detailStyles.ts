@@ -87,26 +87,32 @@ export function createDetailStyles(c: DetailThemeColors) {
   },
   heroNameRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     gap: 8,
   },
-  heroName: {
+  heroNameTextCol: {
     flex: 1,
+    minWidth: 0,
+    gap: 4,
+  },
+  heroName: {
     fontSize: 22,
     fontWeight: '500',
     color: c.textPrimary,
+    paddingTop: 2,
   },
   heroNameActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: 'column',
+    alignItems: 'flex-end',
     flexShrink: 0,
-    gap: 6,
+    gap: 2,
   },
   heroRecentMeeting: {
     fontSize: 11,
     fontWeight: '600',
     color: c.textSecondary,
+    textAlign: 'right',
   },
   heroIconActions: {
     flexDirection: 'row',

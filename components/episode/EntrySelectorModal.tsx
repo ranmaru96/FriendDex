@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  Alert,
   FlatList,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -12,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import type { AppThemeContentColorFields } from '@/constants/appThemes/contentColors';
-import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView, Pressable as GesturePressable } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
   useAnimatedStyle,
@@ -22,18 +25,28 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Theme, Radius, Typography } from '@/constants/theme';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
+import { createFriend, getAllFriends, initializeDatabase } from '@/db';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
+import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
 import { useContentColors } from '@/utils/useContentColors';
 import type { Option } from '@/components/episode/types';
-import type { Friend } from '@/types';
+import type { Friend, FriendInput } from '@/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import type { ParticipantChipDisplay } from '@/utils/episodeHelpers';
+import {
+  findFriendsWithSameName,
+  isPersonNameValid,
+  joinPersonName,
+  resolvePersonNameParts,
+} from '@/utils/personName';
 
 const SELECTOR_COLUMNS = 5;
 const SELECTOR_GAP = 6;
@@ -42,9 +55,34 @@ const SHEET_MIN_RATIO = 0.48;
 const SHEET_MAX_RATIO = 0.86;
 const SHEET_DEFAULT_RATIO = 0.58;
 
+const EMPTY_FRIEND_INPUT: FriendInput = {
+  name: '',
+  familyName: '',
+  givenName: '',
+  nickname: '',
+  origin: '',
+  residence: '',
+  mbti: '',
+  birthday: '',
+  height: null,
+  weight: null,
+  category: '',
+  description: '',
+  photoUri: null,
+  affiliations: [],
+  personalities: [],
+  experiences: [],
+  traits: [],
+  notes: [],
+  likes: [],
+  dislikes: [],
+};
+
 function SelectorOptionCell({
   label,
   checked,
+  highlighted,
+  highlightColor,
   photoUri,
   width,
   onPress,
@@ -52,6 +90,8 @@ function SelectorOptionCell({
 }: {
   label: string;
   checked: boolean;
+  highlighted?: boolean;
+  highlightColor?: string;
   photoUri?: string | null;
   width: number;
   onPress: () => void;
@@ -59,6 +99,7 @@ function SelectorOptionCell({
 }) {
   const initial = (label.trim().charAt(0) || '?').toUpperCase();
   const uri = photoUri?.trim() || undefined;
+  const showHighlight = Boolean(highlighted && !checked && highlightColor);
 
   return (
     <Pressable
@@ -69,8 +110,17 @@ function SelectorOptionCell({
         styles.selectorPersonRow,
         {
           width,
-          backgroundColor: checked ? content.contentPersonTagBg : content.contentInputBg,
-          borderColor: checked ? content.contentText : content.contentBorder,
+          backgroundColor: checked
+            ? content.contentPersonTagBg
+            : showHighlight
+              ? content.contentPersonTagBg
+              : content.contentInputBg,
+          borderColor: checked
+            ? content.contentText
+            : showHighlight
+              ? highlightColor
+              : content.contentBorder,
+          borderWidth: checked || showHighlight ? 2 : 1,
           opacity: pressed ? 0.88 : 1,
         },
       ]}
@@ -198,6 +248,8 @@ export type EntrySelectorModalProps = {
   onToggleGroup: (groupValue: string) => void;
   onCancel: () => void;
   onConfirm: () => void;
+  /** 人物カードを新規作成したあと、親の一覧を更新する。 */
+  onPersonCreated?: (friend: Friend) => void;
   /** 対象者一覧の上に置く任意の編集欄（グループ名など）。 */
   headerContent?: ReactNode;
   /** 対象者一覧の下に置く任意の操作（削除など）。 */
@@ -209,6 +261,8 @@ export type EntrySelectorModalProps = {
   enableGroupTab?: boolean;
   /** true のとき開いた直後から最大高さ（共通項目の対象者選択など）。 */
   initialExpanded?: boolean;
+  /** 苗字・名前一致など、候補として目立たせる人物 */
+  highlightedIds?: Set<string>;
 };
 
 export function EntrySelectorModal({
@@ -231,12 +285,19 @@ export function EntrySelectorModal({
   onToggleGroup,
   onCancel,
   onConfirm,
+  onPersonCreated,
   headerContent,
   footerContent,
   enableGroupTab = false,
   initialExpanded = false,
+  highlightedIds,
 }: EntrySelectorModalProps) {
   const content = useContentColors();
+  const highlightColor = '#f59e0b';
+  const [createVisible, setCreateVisible] = useState(false);
+  const [createFamilyName, setCreateFamilyName] = useState('');
+  const [createGivenName, setCreateGivenName] = useState('');
+  const [extraFriends, setExtraFriends] = useState<Friend[]>([]);
   const { height: windowHeight, width: screenWidth } = useWindowDimensions();
   const sheetMinHeight = windowHeight * SHEET_MIN_RATIO;
   const sheetMaxHeight = windowHeight * SHEET_MAX_RATIO;
@@ -255,7 +316,12 @@ export function EntrySelectorModal({
       sheetHeight.value = sheetDefaultHeight;
       sheetTranslateY.value = 0;
       backdropOpacity.value = 1;
+      return;
     }
+    setCreateVisible(false);
+    setCreateFamilyName('');
+    setCreateGivenName('');
+    setExtraFriends([]);
   }, [backdropOpacity, isDismissing, sheetDefaultHeight, sheetHeight, sheetTranslateY, visible]);
 
   const itemWidth = useMemo(() => {
@@ -358,9 +424,19 @@ export function EntrySelectorModal({
     opacity: backdropOpacity.value,
   }));
 
+  const directoryFriends = useMemo(() => {
+    const byId = new Map(friends.map((friend) => [friend.id, friend]));
+    extraFriends.forEach((friend) => {
+      if (!byId.has(friend.id)) {
+        byId.set(friend.id, friend);
+      }
+    });
+    return Array.from(byId.values());
+  }, [extraFriends, friends]);
+
   const normalizedNameFilter = nameFilter.trim().toLowerCase();
   const filteredFriends = useMemo(() => {
-    return friends.filter((friend) => {
+    return directoryFriends.filter((friend) => {
       if (normalizedNameFilter && !friend.name.toLowerCase().includes(normalizedNameFilter)) {
         return false;
       }
@@ -372,7 +448,7 @@ export function EntrySelectorModal({
       }
       return true;
     });
-  }, [friends, normalizedNameFilter, affiliationFilter, experienceFilter]);
+  }, [directoryFriends, normalizedNameFilter, affiliationFilter, experienceFilter]);
   const filteredGroups = useMemo(() => {
     return groupOptions.filter((option) =>
       normalizedNameFilter ? option.label.toLowerCase().includes(normalizedNameFilter) : true
@@ -382,7 +458,7 @@ export function EntrySelectorModal({
   const activeTab = enableGroupTab ? selectorTab : 'individual';
 
   const selectedIndividualChips = useMemo((): ParticipantChipDisplay[] => {
-    const friendById = new Map(friends.map((friend) => [friend.id, friend]));
+    const friendById = new Map(directoryFriends.map((friend) => [friend.id, friend]));
     return Array.from(selectedIndividualIds).map((friendId) => {
       const friend = friendById.get(friendId);
       return {
@@ -393,7 +469,7 @@ export function EntrySelectorModal({
         photoUri: friend?.photoUri ?? null,
       };
     });
-  }, [friends, selectedIndividualIds]);
+  }, [directoryFriends, selectedIndividualIds]);
 
   const selectedGroupChips = useMemo((): ParticipantChipDisplay[] => {
     const labelByValue = new Map(groupOptions.map((option) => [option.value, option.label]));
@@ -405,6 +481,86 @@ export function EntrySelectorModal({
   }, [groupOptions, selectedGroupValues]);
 
   const selectedChips = activeTab === 'individual' ? selectedIndividualChips : selectedGroupChips;
+
+  const closeCreateForm = useCallback(() => {
+    dismissKeyboardFocus();
+    setCreateVisible(false);
+    setCreateFamilyName('');
+    setCreateGivenName('');
+  }, []);
+
+  const selectExistingFriend = useCallback(
+    (friend: Friend) => {
+      if (!selectedIndividualIds.has(friend.id)) {
+        onToggleIndividual(friend.id);
+      }
+      closeCreateForm();
+    },
+    [closeCreateForm, onToggleIndividual, selectedIndividualIds]
+  );
+
+  const commitCreateFriend = useCallback(
+    (familyName: string, givenName: string) => {
+      const nameParts = resolvePersonNameParts({ familyName, givenName });
+      initializeDatabase();
+      const created = createFriend({
+        ...EMPTY_FRIEND_INPUT,
+        name: nameParts.name,
+        familyName: nameParts.familyName,
+        givenName: nameParts.givenName,
+      });
+      setExtraFriends((prev) => (prev.some((friend) => friend.id === created.id) ? prev : [...prev, created]));
+      onPersonCreated?.(created);
+      if (!selectedIndividualIds.has(created.id)) {
+        onToggleIndividual(created.id);
+      }
+      closeCreateForm();
+    },
+    [closeCreateForm, onPersonCreated, onToggleIndividual, selectedIndividualIds]
+  );
+
+  const handleSubmitCreate = useCallback(() => {
+    if (!isPersonNameValid(createFamilyName, createGivenName)) {
+      Alert.alert('入力エラー', '苗字か名前のどちらかを入力してください。');
+      return;
+    }
+    const nameParts = resolvePersonNameParts({
+      familyName: createFamilyName,
+      givenName: createGivenName,
+    });
+    initializeDatabase();
+    const duplicates = findFriendsWithSameName(
+      getAllFriends(),
+      nameParts.familyName,
+      nameParts.givenName
+    );
+    if (duplicates.length > 0) {
+      const existing = duplicates[0];
+      const label = joinPersonName(nameParts.familyName, nameParts.givenName);
+      const countNote = duplicates.length > 1 ? `（${duplicates.length}件）` : '';
+      Alert.alert(
+        '同姓同名',
+        `「${label}」は既に登録されています${countNote}。`,
+        [
+          { text: 'キャンセル', style: 'cancel' },
+          {
+            text: 'それでも新規作成',
+            onPress: () => commitCreateFriend(nameParts.familyName, nameParts.givenName),
+          },
+          {
+            text: '既存を選択',
+            onPress: () => {
+              if (existing) {
+                selectExistingFriend(existing);
+              }
+            },
+          },
+        ]
+      );
+      return;
+    }
+    commitCreateFriend(nameParts.familyName, nameParts.givenName);
+  }, [commitCreateFriend, createFamilyName, createGivenName, selectExistingFriend]);
 
   const actionButtons = (
     <View style={styles.selectorActionsRow}>
@@ -549,7 +705,7 @@ export function EntrySelectorModal({
             />
 
             {activeTab === 'individual' ? (
-              <View style={styles.selectorFilterRow}>
+              <View style={styles.selectorFilterRow} pointerEvents="box-none">
                 <View style={styles.selectorFilterNameContainer}>
                   <TextInput
                     style={[styles.selectorFilterNameInput, contentInputStyle(content)]}
@@ -572,6 +728,29 @@ export function EntrySelectorModal({
                   options={experienceOptions}
                   onValueChange={onExperienceFilterChange}
                 />
+                <GesturePressable
+                  accessibilityRole="button"
+                  accessibilityLabel="人物を新規登録"
+                  hitSlop={6}
+                  onPress={() => {
+                    setCreateFamilyName('');
+                    setCreateGivenName('');
+                    setCreateVisible(true);
+                  }}
+                  style={({ pressed }) => [
+                    styles.selectorCreateButton,
+                    {
+                      backgroundColor: content.contentCard,
+                      borderColor: content.contentText,
+                    },
+                    pressed ? { opacity: 0.88 } : null,
+                  ]}
+                >
+                  <Text style={[styles.selectorCreatePlus, contentTextStyle(content)]}>＋</Text>
+                  <Text style={[styles.selectorCreateButtonText, contentTextStyle(content)]}>
+                    新規
+                  </Text>
+                </GesturePressable>
               </View>
             ) : (
               <TextInput
@@ -593,6 +772,8 @@ export function EntrySelectorModal({
                     <SelectorOptionCell
                       label={item.name}
                       checked={selectedIndividualIds.has(item.id)}
+                      highlighted={highlightedIds?.has(item.id)}
+                      highlightColor={highlightColor}
                       photoUri={item.photoUri}
                       width={itemWidth}
                       onPress={() => onToggleIndividual(item.id)}
@@ -629,6 +810,66 @@ export function EntrySelectorModal({
 
             {footerContent}
           </Animated.View>
+          {createVisible ? (
+            <View style={styles.createOverlay} pointerEvents="box-none">
+              <Pressable style={styles.createBackdrop} onPress={closeCreateForm} />
+              <KeyboardAvoidingView
+                pointerEvents="box-none"
+                style={styles.createKeyboard}
+                behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+              >
+                <View style={[styles.createCard, contentSurfaceStyle(content)]}>
+                  <Text style={[styles.createTitle, contentTextStyle(content)]}>人物を新規登録</Text>
+                  <Text style={[styles.createHint, contentMutedTextStyle(content)]}>
+                    苗字と名前だけでカードを作ります。あとから編集できます。
+                  </Text>
+                  <Text style={[styles.createFieldLabel, contentMutedTextStyle(content)]}>苗字</Text>
+                  <TextInput
+                    style={[styles.createInput, contentInputStyle(content)]}
+                    value={createFamilyName}
+                    onChangeText={setCreateFamilyName}
+                    placeholder="山田"
+                    placeholderTextColor={content.contentTextSecondary}
+                    autoCapitalize="none"
+                    autoFocus
+                  />
+                  <Text style={[styles.createFieldLabel, contentMutedTextStyle(content)]}>名前</Text>
+                  <TextInput
+                    style={[styles.createInput, contentInputStyle(content)]}
+                    value={createGivenName}
+                    onChangeText={setCreateGivenName}
+                    placeholder="太郎"
+                    placeholderTextColor={content.contentTextSecondary}
+                    autoCapitalize="none"
+                  />
+                  <View style={styles.createActionsRow}>
+                    <Pressable
+                      style={[
+                        styles.createCancelButton,
+                        {
+                          backgroundColor: content.contentPersonTagBg,
+                          borderColor: content.contentBorder,
+                        },
+                      ]}
+                      onPress={closeCreateForm}
+                    >
+                      <Text style={[styles.createCancelButtonText, contentTextStyle(content)]}>
+                        キャンセル
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.createSubmitButton, contentFilledButtonStyle(content)]}
+                      onPress={handleSubmitCreate}
+                    >
+                      <Text style={[styles.createSubmitButtonText, contentFilledButtonTextStyle(content)]}>
+                        作成
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              </KeyboardAvoidingView>
+            </View>
+          ) : null}
         </View>
       </GestureHandlerRootView>
     </Modal>
@@ -721,6 +962,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     marginBottom: 10,
+    zIndex: 2,
+    elevation: 2,
   },
   selectorFilterNameContainer: { flex: 1, minWidth: 0 },
   selectorFilterNameInput: {
@@ -745,6 +988,94 @@ const styles = StyleSheet.create({
   selectorFilterSelectValue: { fontSize: Typography.base, color: '#111827', flex: 1 },
   selectorFilterSelectPlaceholder: { fontSize: Typography.base, color: '#6b7280', flex: 1 },
   selectorFilterSelectChevron: { fontSize: 10, color: '#475569', marginLeft: 4 },
+  selectorCreateButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: 1.5,
+    flexGrow: 0,
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 0,
+  },
+  selectorCreatePlus: {
+    fontSize: 14,
+    fontWeight: '900',
+    lineHeight: 15,
+    includeFontPadding: false,
+  },
+  selectorCreateButtonText: {
+    fontSize: 8,
+    fontWeight: '700',
+    lineHeight: 10,
+    includeFontPadding: false,
+  },
+  createOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 20,
+    elevation: 20,
+    justifyContent: 'center',
+  },
+  createBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+  },
+  createKeyboard: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  createCard: {
+    backgroundColor: Theme.bgSurface,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: 16,
+    zIndex: 1,
+  },
+  createTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  createHint: {
+    fontSize: 13,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  createFieldLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  createInput: {
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: Typography.base,
+    marginBottom: 10,
+  },
+  createActionsRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 4,
+  },
+  createCancelButton: {
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  createCancelButtonText: { fontWeight: '700', fontSize: Typography.base },
+  createSubmitButton: {
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  createSubmitButtonText: { fontWeight: '700', fontSize: Typography.base },
   selectorListArea: {
     flex: 1,
     minHeight: 120,

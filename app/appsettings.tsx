@@ -21,7 +21,7 @@ import {
 } from '../db';
 import { CompletedTaskRetention, Profile } from '../types';
 import { COMPLETED_TASK_RETENTION_OPTIONS } from '@/utils/taskHelpers';
-import { APP_THEME_OPTIONS, isMonochromeAppTheme } from '@/constants/appThemes';
+import { APP_THEME_OPTIONS } from '@/constants/appThemes';
 import { DESIGN_PATTERN_OPTIONS, usesOffsetChrome } from '@/constants/designPatterns';
 import {
   EPISODE_LIST_PHOTO_LAYOUT_OPTIONS,
@@ -53,10 +53,8 @@ function ProfileSelectField({
   options: Option[];
   onValueChange: (value: string) => void;
 }) {
-  const { variant, colors } = useAppTheme();
+  const { colors } = useAppTheme();
   const content = useContentColors();
-  const isMonochrome = isMonochromeAppTheme(variant);
-  const monoSurface = isMonochrome ? content.contentCard : undefined;
   const [visible, setVisible] = useState(false);
   const displayLabel = useMemo(() => {
     if (!value) return label;
@@ -68,10 +66,10 @@ function ProfileSelectField({
       <Pressable
         style={[
           styles.selectButton,
-          isMonochrome && {
+          {
             borderColor: colors.headerBorder,
             borderWidth: 1,
-            ...(monoSurface ? { backgroundColor: monoSurface } : null),
+            backgroundColor: content.contentCard,
           },
         ]}
         onPress={() => setVisible(true)}
@@ -79,12 +77,12 @@ function ProfileSelectField({
         <Text
           style={[
             value ? styles.selectValue : styles.selectPlaceholder,
-            isMonochrome && { color: value ? colors.onScreenText : colors.onScreenTextSecondary },
+            { color: value ? colors.onScreenText : colors.onScreenTextSecondary },
           ]}
         >
           {displayLabel}
         </Text>
-        <Text style={[styles.selectChevron, isMonochrome && { color: colors.onScreenTextSecondary }]}>
+        <Text style={[styles.selectChevron, { color: colors.onScreenTextSecondary }]}>
           ▼
         </Text>
       </Pressable>
@@ -93,14 +91,14 @@ function ProfileSelectField({
           <View
             style={[
               styles.modalCard,
-              isMonochrome && {
+              {
                 borderWidth: 1,
                 borderColor: colors.headerBorder,
-                ...(monoSurface ? { backgroundColor: monoSurface } : null),
+                backgroundColor: content.contentCard,
               },
             ]}
           >
-            <Text style={[styles.modalTitle, isMonochrome && { color: colors.onScreenText }]}>{label}</Text>
+            <Text style={[styles.modalTitle, { color: colors.onScreenText }]}>{label}</Text>
             <ScrollView style={styles.modalOptions}>
               {options.map((option) => (
                 <Pressable
@@ -165,7 +163,6 @@ export default function AppSettingsScreen() {
   const router = useRouter();
   const { variant: appThemeVariant, setVariant: setAppThemeVariant, colors: appThemeColors, patternId, setPatternId } =
     useAppTheme();
-  const isMonochromeTheme = isMonochromeAppTheme(appThemeVariant);
   const {
     variant: uiPreviewVariant,
     setVariant: setUiPreviewVariant,
@@ -180,37 +177,26 @@ export default function AppSettingsScreen() {
     useState<CompletedTaskRetention>('1m');
 
   const themed = useMemo(
-    () =>
-      isMonochromeTheme
-        ? {
-            sectionHeader: { color: appThemeColors.onScreenText },
-            hint: { color: appThemeColors.onScreenTextSecondary },
-            emptyText: { color: appThemeColors.onScreenTextSecondary },
-            rowLabel: { color: appThemeColors.onScreenText },
-            group: {
-              borderWidth: 1,
-              borderColor: appThemeColors.headerBorder,
-              backgroundColor: appThemeColors.contentCard,
-            },
-            separator: {
-              height: 1,
-              backgroundColor: appThemeColors.headerBorder,
-            },
-          }
-        : {
-            sectionHeader: null,
-            hint: null,
-            emptyText: null,
-            rowLabel: null,
-            group: null,
-            separator: null,
-          },
+    () => ({
+      sectionHeader: { color: appThemeColors.onScreenText },
+      hint: { color: appThemeColors.onScreenTextSecondary },
+      emptyText: { color: appThemeColors.onScreenTextSecondary },
+      rowLabel: { color: appThemeColors.onScreenText },
+      group: {
+        borderWidth: 1,
+        borderColor: appThemeColors.headerBorder,
+        backgroundColor: appThemeColors.contentCard,
+      },
+      separator: {
+        height: 1,
+        backgroundColor: appThemeColors.headerBorder,
+      },
+    }),
     [
+      appThemeColors.contentCard,
       appThemeColors.headerBorder,
       appThemeColors.onScreenText,
       appThemeColors.onScreenTextSecondary,
-      appThemeVariant,
-      isMonochromeTheme,
     ]
   );
 
@@ -299,7 +285,7 @@ export default function AppSettingsScreen() {
               <Pressable style={styles.row} onPress={() => setAppThemeVariant(option.value)}>
                 <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
                 {appThemeVariant === option.value ? (
-                  <Text style={styles.selectedMark}>✓</Text>
+                  <Text style={[styles.selectedMark, { color: appThemeColors.onScreenText }]}>✓</Text>
                 ) : null}
               </Pressable>
             </View>
@@ -319,7 +305,9 @@ export default function AppSettingsScreen() {
                   <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
                   <Text style={[styles.patternSummary, themed.hint]}>{option.summary}</Text>
                 </View>
-                {patternId === option.id ? <Text style={styles.selectedMark}>✓</Text> : null}
+                {patternId === option.id ? (
+                  <Text style={[styles.selectedMark, { color: appThemeColors.onScreenText }]}>✓</Text>
+                ) : null}
               </Pressable>
             </View>
           ))}
@@ -336,7 +324,7 @@ export default function AppSettingsScreen() {
               <Pressable style={styles.row} onPress={() => setUiPreviewVariant(option.value)}>
                 <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
                 {uiPreviewVariant === option.value ? (
-                  <Text style={styles.selectedMark}>✓</Text>
+                  <Text style={[styles.selectedMark, { color: appThemeColors.onScreenText }]}>✓</Text>
                 ) : null}
               </Pressable>
             </View>
@@ -361,7 +349,7 @@ export default function AppSettingsScreen() {
                   >
                     <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
                     {kit.episodeListPhotoLayout === option.value ? (
-                      <Text style={styles.selectedMark}>✓</Text>
+                      <Text style={[styles.selectedMark, { color: appThemeColors.onScreenText }]}>✓</Text>
                     ) : null}
                   </Pressable>
                 </View>
@@ -386,7 +374,7 @@ export default function AppSettingsScreen() {
                   完了済み臨時の保持: {option.label}
                 </Text>
                 {completedTaskRetention === option.value ? (
-                  <Text style={styles.selectedMark}>✓</Text>
+                  <Text style={[styles.selectedMark, { color: appThemeColors.onScreenText }]}>✓</Text>
                 ) : null}
               </Pressable>
             </View>
@@ -556,7 +544,6 @@ const styles = StyleSheet.create({
   },
   selectedMark: {
     fontSize: 18,
-    color: Theme.accent,
     fontWeight: '700',
   },
   emptyText: {

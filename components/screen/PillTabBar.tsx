@@ -1,9 +1,13 @@
 import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Theme, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
-import { contentSearchAreaStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
+import {
+  contentFilledButtonTextStyle,
+  contentSearchAreaStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 
 export type PillTabItem<T extends string> = {
@@ -41,8 +45,9 @@ export function PillTabBar<T extends string>({
         <View style={styles.tabInner}>
           {tabs.map((tab) => {
             const isActive = activeTab === tab.key;
-            const activeColor = perTabColors && tab.color ? tab.color : Theme.accent;
-            const inactiveIconBg = perTabColors && tab.color ? tab.color : Theme.tabInactive;
+            const activeColor = perTabColors && tab.color ? tab.color : content.contentText;
+            const inactiveIconBg = content.contentInputBg;
+            const iconColor = isActive ? content.contentCard : content.contentText;
             return (
               <Pressable
                 key={tab.key}
@@ -67,12 +72,14 @@ export function PillTabBar<T extends string>({
                         : { backgroundColor: inactiveIconBg },
                     ]}
                   >
-                    <Ionicons name={tab.icon} size={16} color={Theme.onAccent} />
+                    <Ionicons name={tab.icon} size={16} color={iconColor} />
                   </View>
                   <Text
                     style={[
                       styles.tabPillCaption,
-                      isActive ? styles.tabPillCaptionActive : [styles.tabPillCaptionInactive, contentTextStyle(content)],
+                      isActive
+                        ? [styles.tabPillCaptionActive, contentFilledButtonTextStyle(content)]
+                        : [styles.tabPillCaptionInactive, contentTextStyle(content)],
                     ]}
                     numberOfLines={1}
                     adjustsFontSizeToFit
@@ -96,10 +103,8 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   tabTrack: {
-    backgroundColor: '#F8F8F8',
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: Theme.searchFieldBorder,
     paddingVertical: 1.5,
     paddingHorizontal: 3,
   },
@@ -131,12 +136,8 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     textAlign: 'center',
   },
-  tabPillCaptionInactive: {
-    color: Theme.tabInactive,
-  },
-  tabPillCaptionActive: {
-    color: Theme.tabActiveText,
-  },
+  tabPillCaptionInactive: {},
+  tabPillCaptionActive: {},
   tabPillIconCircle: {
     width: 28,
     height: 28,

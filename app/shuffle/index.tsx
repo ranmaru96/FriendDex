@@ -38,6 +38,8 @@ import { buildParticipantChipDisplays } from '../../utils/episodeHelpers';
 import { buildFriendNameById } from '../../utils/moneyLoanHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -456,7 +458,7 @@ export default function ShuffleScreen() {
                     accessibilityLabel="集団の名前を編集"
                     accessibilityRole="button"
                   >
-                    <Ionicons name="create-outline" size={18} color={Theme.accent} />
+                    <Ionicons name="create-outline" size={18} color={content.contentText} />
                   </Pressable>
                   <Text style={[styles.poolMemberCount, contentMutedTextStyle(content)]}>
                     · {activePool.memberIds.length}人
@@ -535,8 +537,13 @@ export default function ShuffleScreen() {
                     </Text>
                   </View>
 
-                  <Pressable style={styles.shuffleButton} onPress={runRandomShuffle}>
-                    <Text style={styles.shuffleButtonText}>シャッフル</Text>
+                  <Pressable
+                    style={[styles.shuffleButton, contentFilledButtonStyle(content)]}
+                    onPress={runRandomShuffle}
+                  >
+                    <Text style={[styles.shuffleButtonText, contentFilledButtonTextStyle(content)]}>
+                      シャッフル
+                    </Text>
                   </Pressable>
 
                   {shuffleError ? <Text style={styles.formError}>{shuffleError}</Text> : null}
@@ -575,8 +582,13 @@ export default function ShuffleScreen() {
                   <Text style={[styles.orderHint, contentMutedTextStyle(content)]}>
                     全員をランダムな順番に並べ替えます。
                   </Text>
-                  <Pressable style={styles.shuffleButton} onPress={runOrderShuffle}>
-                    <Text style={styles.shuffleButtonText}>シャッフル</Text>
+                  <Pressable
+                    style={[styles.shuffleButton, contentFilledButtonStyle(content)]}
+                    onPress={runOrderShuffle}
+                  >
+                    <Text style={[styles.shuffleButtonText, contentFilledButtonTextStyle(content)]}>
+                      シャッフル
+                    </Text>
                   </Pressable>
 
                   {shuffleError ? <Text style={styles.formError}>{shuffleError}</Text> : null}
@@ -644,6 +656,7 @@ export default function ShuffleScreen() {
         onToggleGroup={toggleSelectorGroup}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        onPersonCreated={() => setFriends(getAllFriendsInDefaultOrder())}
         enableGroupTab={false}
       />
 
@@ -682,7 +695,7 @@ export default function ShuffleScreen() {
                 <Text style={[styles.modalButtonText, contentMutedTextStyle(content)]}>キャンセル</Text>
               </Pressable>
               <Pressable style={styles.modalButton} onPress={handleSaveLabel}>
-                <Text style={[styles.modalButtonText, styles.modalButtonTextPrimary]}>反映</Text>
+                <Text style={[styles.modalButtonText, contentTextStyle(content)]}>反映</Text>
               </Pressable>
             </View>
           </View>
@@ -808,7 +821,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   shuffleButton: {
-    backgroundColor: Theme.accent,
     borderRadius: Radius.md,
     paddingVertical: 12,
     alignItems: 'center',
@@ -816,7 +828,6 @@ const styles = StyleSheet.create({
   shuffleButtonText: {
     fontSize: 15,
     fontWeight: '800',
-    color: Theme.onAccent,
   },
   resultSection: {
     gap: 12,
@@ -883,8 +894,5 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: 14,
     fontWeight: '600',
-  },
-  modalButtonTextPrimary: {
-    color: Theme.accent,
   },
 });

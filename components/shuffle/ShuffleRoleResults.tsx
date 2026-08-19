@@ -1,8 +1,7 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { OffsetCard } from '@/components/ui/OffsetCard';
-import { Theme } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
-import { contentTextStyle } from '@/utils/contentStyleHelpers';
+import { contentMutedTextStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 import { ShuffleResultCards } from './ShuffleResultCards';
 import type { Friend } from '../../types';
 import type { ShuffleRoleAssignment } from '../../utils/shuffleHelpers';
@@ -30,7 +29,9 @@ export function ShuffleRoleResults({
         <OffsetCard key={`${assignment.roleName}-${index}`} brackets contentStyle={styles.roleBlock}>
           <View style={styles.roleHeader}>
             <Text style={[styles.roleTitle, contentTextStyle(content)]}>{assignment.roleName}</Text>
-            <Text style={styles.roleCount}>{assignment.memberIds.length}人</Text>
+            <Text style={[styles.roleCount, contentMutedTextStyle(content)]}>
+              {assignment.memberIds.length}人
+            </Text>
           </View>
           <ShuffleResultCards
             memberIds={assignment.memberIds}
@@ -66,7 +67,6 @@ const styles = StyleSheet.create({
   roleCount: {
     fontSize: 12,
     fontWeight: '700',
-    color: Theme.accent,
     flexShrink: 0,
   },
 });

@@ -231,6 +231,7 @@ const buildAdjacentSlideSnapshot = (
     habitCount?: number;
     sinceYear?: string;
     recentMeetingLabel?: string;
+    englishRecentMeeting?: boolean;
     showRecentMeeting?: boolean;
     profileImageStatus?: ProfileImageStatus;
     showProfileSwitcher?: boolean;
@@ -245,7 +246,9 @@ const buildAdjacentSlideSnapshot = (
     habitCount: options?.habitCount ?? friend.traits.length,
     sayingCount: friend.sayings.length,
     sinceYear: options?.sinceYear ?? getEpisodeSinceYear(friend),
-    recentMeetingLabel: options?.recentMeetingLabel ?? getRecentMeetingLabel(friend),
+    recentMeetingLabel:
+      options?.recentMeetingLabel ??
+      getRecentMeetingLabel(friend, options?.englishRecentMeeting),
     showRecentMeeting: options?.showRecentMeeting ?? true,
     profileCompleteness: computeProfileCompleteness(friend, hasPhoto),
     profileImageStatus,
@@ -265,17 +268,28 @@ const getEpisodeSinceYear = (friend: Friend): string => {
   return oldestDate ? oldestDate.slice(0, 4) : '—';
 };
 
-const getRecentMeetingLabel = (friend: Friend): string => {
+const getRecentMeetingLabel = (friend: Friend, english = false): string => {
   const dates = getSortedEpisodeDates(friend);
   const latestDate = dates[dates.length - 1];
   if (!latestDate) {
-    return '直近 —';
+    return '—';
   }
   const [year, month, day] = latestDate.split('-').map(Number);
-  const currentYear = new Date().getFullYear();
-  return year === currentYear
-    ? `直近 ${month}/${day}`
-    : `直近 ${String(year).slice(-2)}/${month}/${day}`;
+  if (!year || !month || !day) {
+    return '—';
+  }
+  const meeting = new Date(year, month - 1, day);
+  const today = new Date();
+  meeting.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today.getTime() - meeting.getTime()) / 86400000);
+  if (diffDays <= 0) {
+    return english ? 'today' : '今日';
+  }
+  if (english) {
+    return diffDays === 1 ? '1 day ago' : `${diffDays} days ago`;
+  }
+  return `${diffDays}日前`;
 };
 
 type Option = {
@@ -502,30 +516,32 @@ function DetailAdjacentSlidePanel({
               </View>
               <View style={styles.heroIdentityCol}>
                 <View style={styles.heroNameRow}>
-                  <Text style={styles.heroName} numberOfLines={2}>
-                    {friend.name}
-                  </Text>
+                  <View style={styles.heroNameTextCol}>
+                    <Text style={styles.heroName} numberOfLines={2}>
+                      {friend.name}
+                    </Text>
+                    {friend.nickname.trim() || friend.importSource === 'qr_scan' ? (
+                      <View style={styles.heroNicknameRow}>
+                        {friend.nickname.trim() ? (
+                          <Text style={styles.heroNickname}>{friend.nickname}</Text>
+                        ) : null}
+                        {friend.importSource === 'qr_scan' ? (
+                          <Ionicons name="qr-code-outline" size={14} color={c.textMuted} />
+                        ) : null}
+                      </View>
+                    ) : null}
+                  </View>
                   <View style={styles.heroNameActions}>
+                    <View style={styles.heroEditButton}>
+                      <Ionicons name="pencil-outline" size={16} color={c.accent} />
+                    </View>
                     {showRecentMeeting ? (
                       <Text style={styles.heroRecentMeeting} numberOfLines={1}>
                         {recentMeetingLabel}
                       </Text>
                     ) : null}
-                    <View style={styles.heroEditButton}>
-                      <Ionicons name="pencil-outline" size={16} color={c.accent} />
-                    </View>
                   </View>
                 </View>
-                {friend.nickname.trim() || friend.importSource === 'qr_scan' ? (
-                  <View style={styles.heroNicknameRow}>
-                    {friend.nickname.trim() ? (
-                      <Text style={styles.heroNickname}>{friend.nickname}</Text>
-                    ) : null}
-                    {friend.importSource === 'qr_scan' ? (
-                      <Ionicons name="qr-code-outline" size={14} color={c.textMuted} />
-                    ) : null}
-                  </View>
-                ) : null}
                 {showProfileSwitcher ? (
                   <Text style={styles.heroByTag}>
                     {profileByLabel ? `by ${profileByLabel}` : 'プロフィールを切り替え'}
@@ -749,6 +765,7 @@ export default function DetailScreen() {
   const detailListRef = useRef<FlatList<Episode>>(null);
   const detailScrollOffsetRef = useRef(0);
   const [habitNotes, setHabitNotes] = useState<string[]>([]);
+  const [memoNotes, setMemoNotes] = useState<string[]>([]);
   const [isHabitFormVisible, setIsHabitFormVisible] = useState(false);
   const [editingHabitIndex, setEditingHabitIndex] = useState<number | null>(null);
   const [habitText, setHabitText] = useState('');
@@ -959,6 +976,7 @@ export default function DetailScreen() {
     setProfileImageStatus(loaded?.photoUri?.trim() ? 'pending' : 'none');
     const loadedTraits = loaded?.traits ?? [];
     setHabitNotes(loadedTraits);
+    setMemoNotes(loaded?.notes ?? []);
     setAllFriends(getAllFriendsInDefaultOrder());
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
@@ -1170,9 +1188,10 @@ export default function DetailScreen() {
       : null;
 
   const sinceYear = useMemo(() => (friend ? getEpisodeSinceYear(friend) : '—'), [friend]);
+  const recentMeetingEnglish = patternId === 'codex';
   const recentMeetingLabel = useMemo(
-    () => (friend ? getRecentMeetingLabel(friend) : '直近 —'),
-    [friend]
+    () => (friend ? getRecentMeetingLabel(friend, recentMeetingEnglish) : '—'),
+    [friend, recentMeetingEnglish]
   );
 
   const goToAdjacentFriend = useCallback(
@@ -1207,11 +1226,13 @@ export default function DetailScreen() {
         outgoing: buildAdjacentSlideSnapshot(friend, activeTab, {
           habitCount: habitNotes.length,
           sinceYear,
+          englishRecentMeeting: recentMeetingEnglish,
           showRecentMeeting: friend.id !== myselfId,
           profileImageStatus,
           ...outgoingProfileMeta,
         }),
         incoming: buildAdjacentSlideSnapshot(nextFriend, activeTab, {
+          englishRecentMeeting: recentMeetingEnglish,
           showRecentMeeting: nextFriend.id !== myselfId,
           ...incomingProfileMeta,
         }),
@@ -1224,6 +1245,7 @@ export default function DetailScreen() {
       friend,
       friendNameById,
       habitNotes.length,
+      recentMeetingEnglish,
       myselfId,
       profileImageStatus,
       profileTagLabel,
@@ -1402,11 +1424,16 @@ export default function DetailScreen() {
     ]);
   };
 
-  const persistTraits = (nextTraits: string[]) => {
+  const persistFriendArrays = (patch: { traits?: string[]; notes?: string[] }) => {
     if (!friend) {
       return;
     }
-    const normalizedTraits = nextTraits.map((item) => item.trim()).filter((item) => item.length > 0);
+    const normalizedTraits = (patch.traits ?? friend.traits)
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+    const normalizedNotes = (patch.notes ?? friend.notes ?? [])
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
     const success = updateFriend(friend.id, {
       name: friend.name,
       familyName: friend.familyName,
@@ -1425,14 +1452,27 @@ export default function DetailScreen() {
       personalities: friend.personalities,
       experiences: friend.experiences,
       traits: normalizedTraits,
+      notes: normalizedNotes,
       likes: friend.likes,
       dislikes: friend.dislikes,
       episodes: friend.episodes,
       sayings: friend.sayings,
     });
     if (success) {
-      setFriend((prev) => (prev ? { ...prev, traits: normalizedTraits } : prev));
+      setHabitNotes(normalizedTraits);
+      setMemoNotes(normalizedNotes);
+      setFriend((prev) =>
+        prev ? { ...prev, traits: normalizedTraits, notes: normalizedNotes } : prev
+      );
     }
+  };
+
+  const persistTraits = (nextTraits: string[]) => {
+    persistFriendArrays({ traits: nextTraits });
+  };
+
+  const persistNotes = (nextNotes: string[]) => {
+    persistFriendArrays({ notes: nextNotes });
   };
 
   const persistHeroPhoto = (nextPhotoUri: string | null) => {
@@ -1458,6 +1498,7 @@ export default function DetailScreen() {
       personalities: friend.personalities,
       experiences: friend.experiences,
       traits: friend.traits,
+      notes: friend.notes ?? [],
       likes: friend.likes,
       dislikes: friend.dislikes,
       episodes: friend.episodes,
@@ -1489,6 +1530,8 @@ export default function DetailScreen() {
     }
   };
 
+  const activeNoteItems = activeTab === 'メモ' ? memoNotes : habitNotes;
+
   const startCreateHabit = () => {
     setIsHabitFormVisible(true);
     setEditingHabitIndex(null);
@@ -1499,7 +1542,7 @@ export default function DetailScreen() {
   const startEditHabit = (index: number) => {
     setIsHabitFormVisible(true);
     setEditingHabitIndex(index);
-    setHabitText(habitNotes[index] ?? '');
+    setHabitText(activeNoteItems[index] ?? '');
     setHabitFormError('');
   };
 
@@ -1511,14 +1554,19 @@ export default function DetailScreen() {
       );
       return;
     }
-    const next = [...habitNotes];
+    const next = [...activeNoteItems];
     if (editingHabitIndex === null) {
       next.push(text);
     } else {
       next[editingHabitIndex] = text;
     }
-    setHabitNotes(next);
-    persistTraits(next);
+    if (activeTab === 'メモ') {
+      setMemoNotes(next);
+      persistNotes(next);
+    } else {
+      setHabitNotes(next);
+      persistTraits(next);
+    }
     closeHabitForm();
   };
 
@@ -1529,9 +1577,14 @@ export default function DetailScreen() {
         text: '削除',
         style: 'destructive',
         onPress: () => {
-          const next = habitNotes.filter((_, itemIndex) => itemIndex !== index);
-          setHabitNotes(next);
-          persistTraits(next);
+          const next = activeNoteItems.filter((_, itemIndex) => itemIndex !== index);
+          if (activeTab === 'メモ') {
+            setMemoNotes(next);
+            persistNotes(next);
+          } else {
+            setHabitNotes(next);
+            persistTraits(next);
+          }
           if (editingHabitIndex === index) {
             setIsHabitFormVisible(false);
             setEditingHabitIndex(null);
@@ -1544,11 +1597,17 @@ export default function DetailScreen() {
   };
 
   const handleLongPressHabit = (index: number) => {
-    Alert.alert('操作を選択', 'この習性に対する操作を選んでください。', [
-      { text: 'キャンセル', style: 'cancel' },
-      { text: '編集', onPress: () => startEditHabit(index) },
-      { text: '削除', style: 'destructive', onPress: () => handleDeleteHabit(index) },
-    ]);
+    Alert.alert(
+      '操作を選択',
+      activeTab === 'メモ'
+        ? 'このメモに対する操作を選んでください。'
+        : 'この習性に対する操作を選んでください。',
+      [
+        { text: 'キャンセル', style: 'cancel' },
+        { text: '編集', onPress: () => startEditHabit(index) },
+        { text: '削除', style: 'destructive', onPress: () => handleDeleteHabit(index) },
+      ]
+    );
   };
 
   const resetEpisodeForm = () => {
@@ -2173,15 +2232,22 @@ export default function DetailScreen() {
             </Pressable>
             <View style={styles.heroIdentityCol}>
               <View style={styles.heroNameRow}>
-                <Text style={styles.heroName} numberOfLines={2}>
-                  {friend.name}
-                </Text>
-                <View style={styles.heroNameActions}>
-                  {friend.id !== myselfId ? (
-                    <Text style={styles.heroRecentMeeting} numberOfLines={1}>
-                      {recentMeetingLabel}
-                    </Text>
+                <View style={styles.heroNameTextCol}>
+                  <Text style={styles.heroName} numberOfLines={2}>
+                    {friend.name}
+                  </Text>
+                  {(friend.nickname.trim() || friend.importSource === 'qr_scan') ? (
+                    <View style={styles.heroNicknameRow}>
+                      {friend.nickname.trim() ? (
+                        <Text style={styles.heroNickname}>{friend.nickname}</Text>
+                      ) : null}
+                      {friend.importSource === 'qr_scan' ? (
+                        <Ionicons name="qr-code-outline" size={14} color={c.textMuted} />
+                      ) : null}
+                    </View>
                   ) : null}
+                </View>
+                <View style={styles.heroNameActions}>
                   <Pressable
                     style={styles.heroEditButton}
                     onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
@@ -2190,18 +2256,13 @@ export default function DetailScreen() {
                   >
                     <Ionicons name="pencil-outline" size={16} color={c.accent} />
                   </Pressable>
+                  {friend.id !== myselfId ? (
+                    <Text style={styles.heroRecentMeeting} numberOfLines={1}>
+                      {recentMeetingLabel}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
-              {(friend.nickname.trim() || friend.importSource === 'qr_scan') ? (
-                <View style={styles.heroNicknameRow}>
-                  {friend.nickname.trim() ? (
-                    <Text style={styles.heroNickname}>{friend.nickname}</Text>
-                  ) : null}
-                  {friend.importSource === 'qr_scan' ? (
-                    <Ionicons name="qr-code-outline" size={14} color={c.textMuted} />
-                  ) : null}
-                </View>
-              ) : null}
               {selectableProfiles.length > 0 ? (
                 <Pressable onPress={openProfileSwitcher}>
                   <Text style={styles.heroByTag}>
@@ -2296,6 +2357,9 @@ export default function DetailScreen() {
                     key={tab.key}
                     onPress={() => {
                       dismissKeyboardFocus();
+                      if (tab.key !== activeTab) {
+                        closeHabitForm();
+                      }
                       setActiveTab(tab.key);
                     }}
                     style={[
@@ -2545,13 +2609,13 @@ export default function DetailScreen() {
               </View>
             ) : null}
 
-            {habitNotes.length === 0 ? (
+            {activeNoteItems.length === 0 ? (
               <Text style={styles.emptyEpisodeText}>
                 {activeTab === 'メモ' ? NOTE_TAB_COPY.メモ.empty : NOTE_TAB_COPY.習性.empty}
               </Text>
             ) : (
-              habitNotes.map((note, index) => (
-                <OptionalOffsetCard key={`habit-${index}`} enabled={isCodex}>
+              activeNoteItems.map((note, index) => (
+                <OptionalOffsetCard key={`${activeTab}-${index}`} enabled={isCodex}>
                 <Pressable
                   style={[
                     styles.habitCard,

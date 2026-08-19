@@ -876,6 +876,7 @@ export default function RelationshipMapEditScreen() {
         onToggleGroup={toggleSelectorGroup}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        onPersonCreated={() => setFriends(getAllFriendsInDefaultOrder())}
         enableGroupTab={false}
       />
 

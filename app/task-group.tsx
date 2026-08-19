@@ -29,7 +29,6 @@ import {
   updateTaskGroup,
 } from '../db';
 import type { Task, TaskGroup, TaskPace, TaskRecurrenceConfig, TaskRecurrenceUnit } from '../types';
-import { TASK_GROUP_MEMBER_LIMIT } from '../types';
 import {
   WEEKDAY_OPTIONS,
   formatRecurrenceLabel,
@@ -345,13 +344,6 @@ export default function TaskGroupScreen() {
 
   const promptAddTask = () => {
     if (!group) return;
-    if (members.length >= TASK_GROUP_MEMBER_LIMIT) {
-      Alert.alert(
-        'グループ上限',
-        `1つのグループに入れられるタスクは${TASK_GROUP_MEMBER_LIMIT}個までです。`
-      );
-      return;
-    }
     router.push({
       pathname: '/task-edit',
       params: { kind: group.kind, groupId: group.id },

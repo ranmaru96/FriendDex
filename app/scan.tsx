@@ -13,7 +13,7 @@ import {
   useCameraPermissions,
 } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { ScreenShell } from '@/components/screen/ScreenShell';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { parseQrScanPayload, qrPayloadToRouteParams } from '@/utils/qrScanHelpers';
@@ -51,6 +51,13 @@ export default function ScanScreen() {
   const navigateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastFailedDataRef = useRef<string | null>(null);
   const failureCooldownUntilRef = useRef(0);
+
+  useFocusEffect(
+    useCallback(() => {
+      setScanned(false);
+      setScanComplete(false);
+    }, [])
+  );
 
   const navigateToQrImport = useCallback(
     (data: string) => {

@@ -43,3 +43,22 @@ export const resolvePersonNameParts = (input: {
     name: joinPersonName(split.familyName, split.givenName),
   };
 };
+
+/** 苗字・名前の両方が揃い、既存人物と一致する場合のみ返す。 */
+export const findFriendsWithSameName = <
+  T extends { familyName?: string | null; givenName?: string | null; name?: string | null },
+>(
+  friends: T[],
+  familyName: string,
+  givenName: string
+): T[] => {
+  const family = familyName.trim();
+  const given = givenName.trim();
+  if (!family || !given) {
+    return [];
+  }
+  return friends.filter((friend) => {
+    const parts = resolvePersonNameParts(friend);
+    return parts.familyName === family && parts.givenName === given;
+  });
+};

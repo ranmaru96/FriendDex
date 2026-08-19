@@ -6,7 +6,6 @@ import {
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
-import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useContentColors } from '@/utils/useContentColors';
 
 const DEFAULT_SIZE = 36;
@@ -27,12 +26,9 @@ export function AddCircleButton({
   style,
   size = DEFAULT_SIZE,
 }: AddCircleButtonProps) {
-  const appTheme = useAppThemeOptional();
   const content = useContentColors();
-  const isBlack = appTheme?.variant === 'black';
-  const fill = isBlack ? content.contentCard : '#FFFFFF';
-  const border = isBlack ? content.contentText : '#2f2f2f';
-  const ink = border;
+  const fill = content.contentCard;
+  const border = content.contentText;
   const glyphSize = Math.round(size * (22 / 36));
   const borderWidth = size < 32 ? 1.5 : 2;
 
@@ -68,7 +64,7 @@ export function AddCircleButton({
         <Text
           style={[
             styles.glyphText,
-            { color: ink, fontSize: glyphSize },
+            { color: border, fontSize: glyphSize },
           ]}
         >
           ＋

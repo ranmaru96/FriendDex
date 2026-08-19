@@ -121,6 +121,46 @@ export function getNearestTemporaryGroupDueDate(members: Task[]): string | null 
   return nearest;
 }
 
+export type TemporaryDueListItem =
+  | { type: 'group'; bundle: TaskGroupBundle }
+  | { type: 'task'; task: Task };
+
+function compareTemporaryDueKeys(a: string | null | undefined, b: string | null | undefined): number {
+  const aDue = a?.trim() || '';
+  const bDue = b?.trim() || '';
+  if (!aDue && !bDue) return 0;
+  if (!aDue) return 1;
+  if (!bDue) return -1;
+  if (aDue < bDue) return -1;
+  if (aDue > bDue) return 1;
+  return 0;
+}
+
+/** グループと単独を期限で対等に並べる。期限なしは後ろ。 */
+export function mergeTemporaryItemsByDueDate(
+  bundles: TaskGroupBundle[],
+  ungrouped: Task[]
+): TemporaryDueListItem[] {
+  const items: TemporaryDueListItem[] = [
+    ...bundles.map((bundle) => ({ type: 'group' as const, bundle })),
+    ...ungrouped.map((task) => ({ type: 'task' as const, task })),
+  ];
+  items.sort((a, b) => {
+    const aDue =
+      a.type === 'group' ? getNearestTemporaryGroupDueDate(a.bundle.members) : a.task.dueDate;
+    const bDue =
+      b.type === 'group' ? getNearestTemporaryGroupDueDate(b.bundle.members) : b.task.dueDate;
+    const dueCmp = compareTemporaryDueKeys(aDue, bDue);
+    if (dueCmp !== 0) return dueCmp;
+    const aCreated = a.type === 'group' ? a.bundle.group.createdAt : a.task.createdAt;
+    const bCreated = b.type === 'group' ? b.bundle.group.createdAt : b.task.createdAt;
+    if (aCreated < bCreated) return -1;
+    if (aCreated > bCreated) return 1;
+    return 0;
+  });
+  return items;
+}
+
 export function groupToScheduleLike(group: TaskGroup): TaskScheduleLike {
   return {
     pace: group.pace,

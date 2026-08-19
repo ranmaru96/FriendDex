@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Radius, Spacing, Theme } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import {
   contentPersonTagStyle,
   contentTextStyle,
@@ -28,7 +28,7 @@ export function MetaTitleRow({
   const content = useContentColors();
   const displayTitle = title || emptyTitle;
   const titleColor = contentTextStyle(content);
-  const metaAccent = { color: Theme.accent };
+  const metaAccent = contentTextStyle(content);
   const badgeStyle = contentPersonTagStyle(content);
   const dividerColor = { backgroundColor: content.contentTextSecondary };
 

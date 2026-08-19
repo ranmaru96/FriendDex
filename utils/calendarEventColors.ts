@@ -1,4 +1,3 @@
-import { Theme } from '@/constants/theme';
 import { getCommonItemOptionByKindAndLabel } from '@/db';
 import { normalizeEpisodeTag } from './episodeHelpers';
 
@@ -22,7 +21,7 @@ export const EPISODE_TAG_COLOR_PALETTE = [
   '#6B7280', // グレー
 ] as const;
 
-const UNTAGGED_EVENT_COLOR = Theme.accent;
+const UNTAGGED_EVENT_COLOR = '#6B7280';
 
 const hashTagLabel = (tag: string): number => {
   let hash = 0;

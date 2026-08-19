@@ -90,12 +90,12 @@ export function createMoneyLoanFormStyles(
     },
     splitPreview: {
       fontSize: 12,
-      color: Theme.accent,
+      color: c.contentText,
       fontWeight: '600',
     },
     splitPreviewIndented: {
       fontSize: 12,
-      color: Theme.accent,
+      color: c.contentText,
       fontWeight: '600',
       marginLeft: MONEY_LOAN_FORM_LABEL_WIDTH + 8,
     },
@@ -192,7 +192,7 @@ export function createMoneyLoanFormStyles(
       color: c.contentTextSecondary,
     },
     individualDirectionTextSelected: {
-      color: Theme.accent,
+      color: c.contentText,
     },
     formError: {
       fontSize: 12,
@@ -200,13 +200,13 @@ export function createMoneyLoanFormStyles(
     },
     primaryButton: {
       marginTop: 4,
-      backgroundColor: Theme.btnPrimaryBg,
+      backgroundColor: c.contentText,
       borderRadius: Radius.md,
       paddingVertical: 12,
       alignItems: 'center',
     },
     primaryButtonText: {
-      color: Theme.btnPrimaryText,
+      color: c.contentCard,
       fontWeight: '700',
       fontSize: 14,
     },

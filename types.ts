@@ -202,6 +202,7 @@ export type Profile = {
   personalities: string[];
   experiences: string[];
   traits: string[];
+  notes: string[];
   likes: string[];
   dislikes: string[];
   episodes: Episode[];
@@ -236,6 +237,7 @@ export type Friend = {
   personalities: string[];
   experiences: string[];
   traits: string[];
+  notes: string[];
   likes: string[];
   dislikes: string[];
   episodes: Episode[];
@@ -345,9 +347,6 @@ export type TaskInput = {
   remindDaysBefore?: number | null;
   remindTime?: string | null;
 };
-
-/** 1グループに入れられるタスクの上限（定期・臨時とも） */
-export const TASK_GROUP_MEMBER_LIMIT = 10;
 
 export type TaskGroup = {
   id: string;

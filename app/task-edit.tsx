@@ -31,7 +31,6 @@ import {
   deleteTask,
   getAllTaskGroups,
   getEvent,
-  getTasksByGroupId,
   getTaskGroupsByKind,
   getTask,
   getTaskCompletionCount,
@@ -41,7 +40,6 @@ import {
 } from '../db';
 import {
   Event,
-  TASK_GROUP_MEMBER_LIMIT,
   TaskCompletion,
   TaskGroup,
   TaskInput,
@@ -345,17 +343,6 @@ export default function TaskEditScreen() {
         Alert.alert('入力エラー', 'グループの種別がタスクと一致しません');
         return;
       }
-
-    if (resolvedGroupId && (!isEditing || getTask(taskId)?.groupId !== resolvedGroupId)) {
-      const existing = getTasksByGroupId(resolvedGroupId);
-      const count = isEditing
-        ? existing.filter((item) => item.id !== taskId).length
-        : existing.length;
-      if (count >= TASK_GROUP_MEMBER_LIMIT) {
-        Alert.alert('グループ上限', `1つのグループに入れられるタスクは${TASK_GROUP_MEMBER_LIMIT}個までです。`);
-        return;
-      }
-    }
 
     let resolvedEventId: string | null = null;
     if (effectiveKind === 'temporary') {

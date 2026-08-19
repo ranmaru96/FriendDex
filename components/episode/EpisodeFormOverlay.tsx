@@ -21,6 +21,8 @@ import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCapped
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
   contentDateTimePickerProps,
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentPersonTagStyle,
@@ -63,6 +65,7 @@ type EpisodeFormOverlayProps = {
   episodeTagOptions: Option[];
   onClose: () => void;
   onSave: () => void;
+  onPersonCreated?: (friend: Friend) => void;
 };
 
 function SelectInput({
@@ -162,6 +165,7 @@ export function EpisodeFormOverlay({
   episodeTagOptions,
   onClose,
   onSave,
+  onPersonCreated,
 }: EpisodeFormOverlayProps) {
   const kit = useUiKit();
   const content = useContentColors();
@@ -205,8 +209,11 @@ export function EpisodeFormOverlay({
           title={form.editingEpisodeId ? 'エピソードを編集' : 'エピソードを追加'}
           onBack={onClose}
           right={
-            <Pressable style={styles.saveButton} onPress={onSave}>
-              <Text style={styles.saveButtonText}>
+            <Pressable
+              style={[styles.saveButton, contentFilledButtonStyle(content)]}
+              onPress={onSave}
+            >
+              <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>
                 {form.editingEpisodeId ? '更新' : '保存'}
               </Text>
             </Pressable>
@@ -525,8 +532,11 @@ export function EpisodeFormOverlay({
                 <Pressable style={[styles.formCancelButton, fieldCorner]} onPress={onClose}>
                   <Text style={styles.formCancelButtonText}>キャンセル</Text>
                 </Pressable>
-                <Pressable style={[styles.formSaveButton, fieldCorner]} onPress={onSave}>
-                  <Text style={styles.formSaveButtonText}>
+                <Pressable
+                  style={[styles.formSaveButton, fieldCorner, contentFilledButtonStyle(content)]}
+                  onPress={onSave}
+                >
+                  <Text style={[styles.formSaveButtonText, contentFilledButtonTextStyle(content)]}>
                     {form.editingEpisodeId ? '更新' : '保存'}
                   </Text>
                 </Pressable>
@@ -556,6 +566,7 @@ export function EpisodeFormOverlay({
         onToggleGroup={form.toggleSelectorGroup}
         onCancel={form.handleSelectorCancel}
         onConfirm={form.handleSelectorConfirm}
+        onPersonCreated={onPersonCreated}
         enableGroupTab={form.selectorTarget === 'visibility'}
       />
 
@@ -587,10 +598,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.btnPrimaryBg,
   },
   saveButtonText: {
-    color: Theme.btnPrimaryText,
     fontWeight: '700',
     fontSize: 13,
   },

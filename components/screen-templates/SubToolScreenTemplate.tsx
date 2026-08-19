@@ -50,10 +50,13 @@ export function SubToolScreenTemplate({
   const kit = useUiKit();
   const sharedHeaderApi = useSharedHeaderChromeOptional();
   const setSubToolHeader = sharedHeaderApi?.setSubToolHeader;
-  const useSharedTopBar = Boolean(kit.sharedHeaderChrome && useTopBar && setSubToolHeader);
   const bottomNavClearance = useBottomNavScrollClearance();
   const horizontalPadding = useScreenPadding ? kit.subToolScreenPaddingHorizontal : 0;
   const navInShell = bottomNavClearance > 0;
+  /** 下部ナビが無い画面はシェル側ヘッダーが出ないので、ここでトップバーを描く */
+  const useSharedTopBar = Boolean(
+    kit.sharedHeaderChrome && useTopBar && setSubToolHeader && navInShell
+  );
   const bottomPadding = Spacing.lg;
   /** BottomNav がシェル側にあるときは bottom inset を取らない（ナビ上の空白で可視領域が減る） */
   const safeAreaEdges = useSharedTopBar

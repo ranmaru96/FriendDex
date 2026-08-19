@@ -29,6 +29,8 @@ import { buildSettlementTransferDisplays } from '@/utils/settlementTransferHelpe
 import { sortMembersBySelectedId, sortMembersBySelectedIds } from '@/utils/selectionSortHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
+  contentFilledButtonStyle,
+  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
@@ -480,8 +482,11 @@ export default function SettlementRoomDetailScreen() {
               >
                 <Text style={[styles.titleModalCancelText, contentTextStyle(content)]}>キャンセル</Text>
               </Pressable>
-              <Pressable style={styles.titleModalSave} onPress={handleSaveTitle}>
-                <Text style={styles.titleModalSaveText}>保存</Text>
+              <Pressable
+                style={[styles.titleModalSave, contentFilledButtonStyle(content)]}
+                onPress={handleSaveTitle}
+              >
+                <Text style={[styles.titleModalSaveText, contentFilledButtonTextStyle(content)]}>保存</Text>
               </Pressable>
             </View>
           </View>
@@ -556,9 +561,7 @@ const styles = StyleSheet.create({
   titleModalSave: {
     flexShrink: 0,
     borderWidth: 1,
-    borderColor: Theme.btnPrimaryBg,
     borderRadius: Radius.sm,
-    backgroundColor: Theme.btnPrimaryBg,
     paddingHorizontal: 12,
     paddingVertical: 8,
     minHeight: 36,
@@ -566,7 +569,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   titleModalSaveText: {
-    color: Theme.btnPrimaryText,
     fontWeight: '700',
     fontSize: 14,
   },
