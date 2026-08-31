@@ -19,7 +19,7 @@ import {
 } from '@/components/screen-templates';
 import { FormRow } from '@/components/ui/FormRow';
 import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
-import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
+import { NoteBlockEditor } from '@/components/ui/NoteBlockEditor';
 import { DayRollPicker, MonthDayRollPicker, RollScrollLockProvider, useRollScrollLock } from '@/components/ui/RollSelect';
 import { EpisodeEventLinkField } from '@/components/episode/EpisodeEventLinkField';
 import type { EpisodeEventLinkMode } from '@/hooks/useEpisodeForm';
@@ -362,6 +362,7 @@ export default function TaskEditScreen() {
           notifyEnabled: false,
           autoEpisodeCreated: false,
           episodeTag: null,
+          locationTag: null,
         });
         if (!createdEvent) {
           Alert.alert('エラー', '予定の作成に失敗しました');
@@ -1190,7 +1191,7 @@ export default function TaskEditScreen() {
         <FormScreenSection>
           <View style={styles.memoBlock}>
             <Text style={[styles.label, contentTextStyle(content)]}>メモ</Text>
-            <ViewportCappedMultilineTextInput
+            <NoteBlockEditor
               style={[styles.input, contentInputStyle(content)]}
               value={memo}
               onChangeText={setMemo}

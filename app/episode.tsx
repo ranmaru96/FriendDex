@@ -37,6 +37,7 @@ import {
   getEpisodeListPhotoUrisMap,
   getEpisodeParticipantFriendIds,
   getMergedEpisodeTagLabels,
+  getMergedLocationTagLabels,
   getMyself,
   initializeDatabase,
   updateEpisode,
@@ -46,6 +47,7 @@ import {
   buildParticipantChips,
   canManageEpisode,
   compareEpisodesByEventDateTime,
+  friendsExcludingSelf,
   normalizeEpisodeTag,
   resolveEpisodeRecordOwnerId,
 } from '../utils/episodeHelpers';
@@ -53,7 +55,7 @@ import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
 } from '../utils/episodeEventLinking';
-import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
+import { registerSavedEpisodeTag, registerSavedLocationTag } from '../utils/episodeTagMaster';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 
 type EpisodeRow = { episode: Episode; recordOwnerId: string };
@@ -129,6 +131,7 @@ export default function EpisodeScreen() {
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
+  const [locationTagOptions, setLocationTagOptions] = useState<Option[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
   const [photoUrisByEpisodeId, setPhotoUrisByEpisodeId] = useState<Map<string, string[]>>(
     () => new Map()
@@ -172,6 +175,11 @@ export default function EpisodeScreen() {
     [myselfId]
   );
 
+  const selectorFriends = useMemo(
+    () => friendsExcludingSelf(friends, myselfId),
+    [friends, myselfId]
+  );
+
   const episodeForm = useEpisodeForm({
     friends,
     hiddenParticipantIds,
@@ -184,6 +192,7 @@ export default function EpisodeScreen() {
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
+    setLocationTagOptions(getMergedLocationTagLabels().map((v) => ({ label: v, value: v })));
     setMyselfId(getMyself());
     setPhotoUrisByEpisodeId(
       getEpisodeListPhotoUrisMap(collectUniqueEpisodes(nextFriends).map((row) => row.episode.id))
@@ -224,6 +233,9 @@ export default function EpisodeScreen() {
     drafts.forEach((participant) => {
       if (!participant.value.trim()) return;
       if (participant.participantType === 'individual') {
+        if (myselfId && participant.value === myselfId) {
+          return;
+        }
         individuals.add(participant.value);
       } else {
         groups.add(participant.value);
@@ -231,7 +243,7 @@ export default function EpisodeScreen() {
     });
     setFilterSelectedIndividualIds(individuals);
     setFilterSelectedGroupValues(groups);
-  }, []);
+  }, [myselfId]);
 
   const openFilterParticipantSelector = useCallback(() => {
     restoreFilterSelectorFromParticipants(
@@ -254,6 +266,9 @@ export default function EpisodeScreen() {
   const handleFilterSelectorConfirm = useCallback(() => {
     const nextParticipants: EpisodeParticipantDraft[] = [];
     filterSelectedIndividualIds.forEach((friendId) => {
+      if (myselfId && friendId === myselfId) {
+        return;
+      }
       nextParticipants.push({ participantType: 'individual', value: friendId });
     });
     setFilterParticipants(nextParticipants);
@@ -262,16 +277,19 @@ export default function EpisodeScreen() {
     setFilterSelectorNameFilter('');
     setFilterSelectorAffiliationFilter('');
     setFilterSelectorExperienceFilter('');
-  }, [filterSelectedIndividualIds, setFilterParticipants]);
+  }, [filterSelectedIndividualIds, myselfId, setFilterParticipants]);
 
   const toggleFilterSelectorIndividual = useCallback((friendId: string) => {
+    if (myselfId && friendId === myselfId) {
+      return;
+    }
     setFilterSelectedIndividualIds((prev) => {
       const next = new Set(prev);
       if (next.has(friendId)) next.delete(friendId);
       else next.add(friendId);
       return next;
     });
-  }, []);
+  }, [myselfId]);
 
   const toggleFilterSelectorGroup = useCallback((groupValue: string) => {
     setFilterSelectedGroupValues((prev) => {
@@ -285,11 +303,12 @@ export default function EpisodeScreen() {
   const filterParticipantEntries = useMemo((): EpisodeParticipant[] => {
     return filterParticipants
       .filter((participant) => participant.value.trim().length > 0)
+      .filter((participant) => !(myselfId && participant.participantType === 'individual' && participant.value === myselfId))
       .map((participant) => ({
         kind: participant.participantType,
         value: participant.value,
       }));
-  }, [filterParticipants]);
+  }, [filterParticipants, myselfId]);
 
   const filteredEpisodeRows = useMemo(() => {
     const normalizedTitle = filterTitle.trim().toLowerCase();
@@ -318,6 +337,7 @@ export default function EpisodeScreen() {
   const filterParticipantSummary = useMemo(() => {
     const labels = filterParticipants
       .filter((participant) => participant.value.trim().length > 0)
+      .filter((participant) => !(myselfId && participant.participantType === 'individual' && participant.value === myselfId))
       .map((participant) =>
         participant.participantType === 'individual'
           ? friendNameById.get(participant.value) ?? participant.value
@@ -330,7 +350,7 @@ export default function EpisodeScreen() {
       return labels.join('、');
     }
     return `${labels.length}件`;
-  }, [filterParticipants, friendNameById]);
+  }, [filterParticipants, friendNameById, myselfId]);
 
   const openCreateForm = () => {
     if (!myselfId) {
@@ -435,6 +455,7 @@ export default function EpisodeScreen() {
         return;
       }
       registerSavedEpisodeTag(episodeInput.tag);
+      registerSavedLocationTag(episodeInput.locationTag);
       episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
       episodeForm.reset();
       setIsFormVisible(false);
@@ -448,6 +469,7 @@ export default function EpisodeScreen() {
       return;
     }
     registerSavedEpisodeTag(episodeInput.tag);
+    registerSavedLocationTag(episodeInput.locationTag);
     episodeForm.persistPhotos(created.id, false);
     episodeForm.reset();
     setIsFormVisible(false);
@@ -530,6 +552,7 @@ export default function EpisodeScreen() {
                     title={row.episode.title}
                     date={row.episode.date}
                     episodeTag={row.episode.tag}
+                    locationTag={row.episode.locationTag}
                     chips={chips}
                     visibilityMode={canManage ? row.episode.visibilityMode : undefined}
                     posterName={posterName}
@@ -551,6 +574,7 @@ export default function EpisodeScreen() {
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
         episodeTagOptions={episodeTagOptions}
+        locationTagOptions={locationTagOptions}
         onClose={() => {
           episodeForm.reset();
           setIsFormVisible(false);
@@ -569,7 +593,7 @@ export default function EpisodeScreen() {
         onAffiliationFilterChange={setFilterSelectorAffiliationFilter}
         experienceFilter={filterSelectorExperienceFilter}
         onExperienceFilterChange={setFilterSelectorExperienceFilter}
-        friends={friends}
+        friends={selectorFriends}
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
         groupOptions={affiliationOptions}

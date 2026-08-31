@@ -22,7 +22,7 @@ import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
 import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
-import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
+import { NoteBlockEditor } from '@/components/ui/NoteBlockEditor';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
   contentFilledButtonStyle,
@@ -32,6 +32,7 @@ import {
   contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentSwitchColors,
+  contentPersonTagStyle,
   contentTagStyle,
   contentTextStyle,
   contentDateTimePickerProps,
@@ -58,6 +59,7 @@ import {
   getEventParticipants,
   getEpisodeParticipantFriendIds,
   getMergedEpisodeTagLabels,
+  getMergedLocationTagLabels,
   getDefaultProfile,
   getMyself,
   getTasksByEventId,
@@ -85,6 +87,7 @@ import {
 } from '../utils/eventHelpers';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import { formatTaskDueDateLabel } from '@/utils/taskHelpers';
+import { formatNotePreview } from '@/utils/noteBlocks';
 import {
   friendIdsToProfileIds,
   profileIdsToFriendIds,
@@ -108,7 +111,7 @@ import {
   deleteEpisodesLinkedToEvent,
   unlinkEpisodesFromEvent,
 } from '../utils/eventEpisodeBidirectionalSync';
-import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
+import { registerSavedEpisodeTag, registerSavedLocationTag } from '../utils/episodeTagMaster';
 import {
   scheduleGoogleCalendarDelete,
   scheduleGoogleCalendarPush,
@@ -152,6 +155,7 @@ export default function EventScreen() {
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const switchColors = contentSwitchColors(content);
   const fieldCorner = { borderRadius: 0 };
+  const tagChipRadius = kit.formFieldBorderRadius === 0 ? 0 : Radius.full;
   /** 真っ白すぎない薄い塗り（白テーマは #F2F2F2、他は personTag 背景）。枠と＋は同色 */
   const plusButtonFill = {
     borderColor: content.contentTextSecondary,
@@ -203,8 +207,11 @@ export default function EventScreen() {
   );
   const [timingModalVisible, setTimingModalVisible] = useState(false);
   const [episodeTag, setEpisodeTag] = useState('');
+  const [locationTag, setLocationTag] = useState('');
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
+  const [locationTagOptions, setLocationTagOptions] = useState<Option[]>([]);
   const [tagModalVisible, setTagModalVisible] = useState(false);
+  const [locationTagModalVisible, setLocationTagModalVisible] = useState(false);
   const [myselfId, setMyselfId] = useState<string | null>(null);
 
   const selectableFriends = useMemo(
@@ -279,12 +286,14 @@ export default function EventScreen() {
     setAffiliationOptions(getDistinctAffiliations().map((value) => ({ label: value, value })));
     setExperienceOptions(getDistinctExperiences().map((value) => ({ label: value, value })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((value) => ({ label: value, value })));
+    setLocationTagOptions(getMergedLocationTagLabels().map((value) => ({ label: value, value })));
 
     if (!isEditing) {
       const baseDate = initialDate || formatDateKey(new Date());
       setTitle('');
       setMemo('');
       setEpisodeTag('');
+      setLocationTag('');
       setAllDay(false);
       setStartDateKey(baseDate);
       setEndDateKey(baseDate);
@@ -312,6 +321,7 @@ export default function EventScreen() {
     setTitle(event.title);
     setMemo(event.memo ?? '');
     setEpisodeTag(event.episodeTag ?? '');
+    setLocationTag(event.locationTag ?? '');
     setAllDay(event.allDay);
     if (event.allDay) {
       const { startDateKey: allDayStart, endDateKey: allDayEnd } = getAllDayDateKeysFromEvent(event);
@@ -520,6 +530,7 @@ export default function EventScreen() {
     const timingInput = { startDateKey, startTime, allDay };
     const notifyAt = notifyEnabled ? computeNotifyAtFromPreset(notifyTimingPreset, timingInput) : null;
     const normalizedEpisodeTag = episodeTag.trim() || null;
+    const normalizedLocationTag = locationTag.trim() || null;
 
     if (allDay) {
       const normalizedEndDateKey = endDateKey.trim() || startDateKey;
@@ -535,6 +546,7 @@ export default function EventScreen() {
         notifyAt,
         notifyEnabled,
         episodeTag: normalizedEpisodeTag,
+        locationTag: normalizedLocationTag,
       };
     }
 
@@ -557,6 +569,7 @@ export default function EventScreen() {
       notifyAt,
       notifyEnabled,
       episodeTag: normalizedEpisodeTag,
+      locationTag: normalizedLocationTag,
     };
   };
 
@@ -608,6 +621,7 @@ export default function EventScreen() {
           return;
         }
         registerSavedEpisodeTag(input.episodeTag);
+        registerSavedLocationTag(input.locationTag);
         syncEventParticipants(eventId, selectedProfileIds);
         if (!options?.skipClamp) {
           clampLinkedEpisodeDatesToEvent(eventId);
@@ -624,6 +638,7 @@ export default function EventScreen() {
         return;
       }
       registerSavedEpisodeTag(input.episodeTag);
+      registerSavedLocationTag(input.locationTag);
       syncEventParticipants(created.id, selectedProfileIds);
       await applySavedEventNotifications(created.id, null);
       scheduleGoogleCalendarPush(created.id);
@@ -859,26 +874,57 @@ export default function EventScreen() {
             />
           </FormRow>
 
-          <FormRow label="予定タグ" labelWidth={formLabelWidth}>
-            <Pressable
-              style={[styles.pickerButton, fieldCorner, contentInputStyle(content)]}
-              onPress={() => {
-                dismissKeyboardFocus();
-                setTagModalVisible(true);
-              }}
-              accessibilityLabel="予定タグを選択"
-              accessibilityRole="button"
-            >
-              <Text
-                style={
-                  episodeTag
-                    ? [styles.pickerButtonText, contentTextStyle(content)]
-                    : [styles.pickerPlaceholder, contentMutedTextStyle(content)]
-                }
+          <FormRow label="タグ" labelWidth={formLabelWidth} contentLayout="compact">
+            <View style={styles.tagChipRow}>
+              <Pressable
+                style={[
+                  styles.tagChipButton,
+                  contentPersonTagStyle(content),
+                  { borderRadius: tagChipRadius },
+                ]}
+                onPress={() => {
+                  dismissKeyboardFocus();
+                  setTagModalVisible(true);
+                }}
+                accessibilityLabel="予定タグを選択"
+                accessibilityRole="button"
               >
-                {episodeTag || '未設定'}
-              </Text>
-            </Pressable>
+                <Text
+                  style={[
+                    styles.tagChipText,
+                    episodeTag ? contentTextStyle(content) : contentMutedTextStyle(content),
+                  ]}
+                  numberOfLines={1}
+                >
+                  {episodeTag || '予定タグ'}
+                </Text>
+                <Text style={[styles.tagChipChevron, contentMutedTextStyle(content)]}>▼</Text>
+              </Pressable>
+              <Pressable
+                style={[
+                  styles.tagChipButton,
+                  contentPersonTagStyle(content),
+                  { borderRadius: tagChipRadius },
+                ]}
+                onPress={() => {
+                  dismissKeyboardFocus();
+                  setLocationTagModalVisible(true);
+                }}
+                accessibilityLabel="場所タグを選択"
+                accessibilityRole="button"
+              >
+                <Text
+                  style={[
+                    styles.tagChipText,
+                    locationTag ? contentTextStyle(content) : contentMutedTextStyle(content),
+                  ]}
+                  numberOfLines={1}
+                >
+                  {locationTag || '場所タグ'}
+                </Text>
+                <Text style={[styles.tagChipChevron, contentMutedTextStyle(content)]}>▼</Text>
+              </Pressable>
+            </View>
           </FormRow>
 
           <FormRow label="終日" labelWidth={formLabelWidth} contentStyle={styles.switchField}>
@@ -990,7 +1036,7 @@ export default function EventScreen() {
             </View>
           </FormRow>
           <FormRow label="メモ" labelWidth={formLabelWidth} contentStyle={styles.memoField}>
-            <ViewportCappedMultilineTextInput
+            <NoteBlockEditor
               style={[styles.textInput, styles.memoInput, fieldCorner, contentInputStyle(content)]}
               placeholder="メモ（任意）"
               placeholderTextColor={content.contentTextSecondary}
@@ -1070,7 +1116,7 @@ export default function EventScreen() {
                         : task.dueDate
                           ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
                           : '期限なし'}
-                      {task.memo.trim() ? ` · ${task.memo.trim()}` : ''}
+                      {task.memo.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
                     </Text>
                   </Pressable>
                 ))}
@@ -1116,6 +1162,7 @@ export default function EventScreen() {
                       title={episode.title}
                       date={episode.date}
                       episodeTag={episode.tag}
+                      locationTag={episode.locationTag}
                       chips={chips}
                       visibilityMode={episode.visibilityMode}
                       photoUris={episodePhotoUrisById.get(episode.id)}
@@ -1215,6 +1262,19 @@ export default function EventScreen() {
         clearLabel="未設定"
         allowCustomValue
         customInputPlaceholder="新しいタグ名"
+        customActionLabel="このタグを使う"
+      />
+
+      <OptionPickerModal
+        visible={locationTagModalVisible}
+        label="場所タグ"
+        value={locationTag}
+        options={locationTagOptions}
+        onValueChange={setLocationTag}
+        onClose={() => setLocationTagModalVisible(false)}
+        clearLabel="未設定"
+        allowCustomValue
+        customInputPlaceholder="新しい場所名"
         customActionLabel="このタグを使う"
       />
 
@@ -1407,6 +1467,30 @@ const styles = StyleSheet.create({
   dateTimeRow: {
     flexDirection: 'row',
     gap: Spacing.sm,
+  },
+  tagChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  tagChipButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    maxWidth: '100%',
+  },
+  tagChipText: {
+    fontSize: Typography.sm,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  tagChipChevron: {
+    fontSize: 9,
+    marginTop: 1,
   },
   pickerButton: {
     minHeight: 42,

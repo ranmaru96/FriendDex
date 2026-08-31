@@ -47,7 +47,24 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
   }, []);
 
   const setSubToolHeader = useCallback((config: SharedSubToolHeaderConfig | null) => {
-    setSubToolHeaderState(config);
+    setSubToolHeaderState((current) => {
+      if (current === config) {
+        return current;
+      }
+      if (current == null || config == null) {
+        return config;
+      }
+      if (
+        current.title === config.title &&
+        current.titleFramed === config.titleFramed &&
+        current.right === config.right &&
+        current.titleTrailing === config.titleTrailing
+      ) {
+        // onBack は毎render新しい参照になりやすいので、それだけでは更新しない
+        return current;
+      }
+      return config;
+    });
   }, []);
 
   const setSuppressBottomNav = useCallback((hide: boolean) => {

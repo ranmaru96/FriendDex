@@ -12,6 +12,7 @@ import { EventNotificationHandler } from '../components/EventNotificationHandler
 import { ScreenTopBar } from '../components/screen/ScreenTopBar';
 import { SharedHeaderFrame } from '../components/screen/SharedHeaderFrame';
 import { AppThemeProvider, useAppTheme } from '../contexts/AppThemeContext';
+import { NoteFormatAccessoryProvider } from '@/contexts/NoteFormatAccessoryContext';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
 import { SettlementMockProvider } from '../contexts/SettlementMockContext';
 import {
@@ -214,7 +215,9 @@ export default function RootLayout() {
                 <SettlementMockProvider>
                   <EventNotificationHandler />
                   <PastEventConversionScheduler />
-                  <AppShell />
+                  <NoteFormatAccessoryProvider>
+                    <AppShell />
+                  </NoteFormatAccessoryProvider>
                 </SettlementMockProvider>
               </SharedHeaderChromeProvider>
             </UiPreviewProvider>

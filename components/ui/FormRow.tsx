@@ -13,6 +13,8 @@ type FormRowProps = {
   contentStyle?: StyleProp<ViewStyle>;
   /** fill=入力欄いっぱい / compact=内容幅に合わせる / action=右寄せボタン */
   contentLayout?: FormRowContentLayout;
+  /** vertical のときラベルの下に入力を置く（説明欄など） */
+  layout?: 'horizontal' | 'vertical';
   labelWidth?: number;
   labelNumberOfLines?: number;
 };
@@ -24,11 +26,12 @@ export function FormRow({
   labelStyle,
   contentStyle,
   contentLayout = 'fill',
+  layout,
   labelWidth,
   labelNumberOfLines = 1,
 }: FormRowProps) {
   const kit = useUiKit();
-  const isHorizontal = kit.formLayout === 'horizontal';
+  const isHorizontal = (layout ?? kit.formLayout) === 'horizontal';
   const resolvedLabelWidth = labelWidth ?? (isHorizontal ? kit.formLabelWidth : undefined);
 
   return (
@@ -58,7 +61,7 @@ export function FormRow({
       </Text>
       <View
         style={[
-          contentLayout === 'fill' ? styles.contentFill : null,
+          contentLayout === 'fill' ? (isHorizontal ? styles.contentFill : styles.contentFillVertical) : null,
           contentLayout === 'compact' ? styles.contentCompact : null,
           contentLayout === 'action' ? styles.contentAction : null,
           contentStyle,
@@ -93,6 +96,10 @@ const styles = StyleSheet.create({
   contentFill: {
     flex: 1,
     minWidth: 0,
+  },
+  contentFillVertical: {
+    width: '100%',
+    alignSelf: 'stretch',
   },
   contentCompact: {
     flexShrink: 1,

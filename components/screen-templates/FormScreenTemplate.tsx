@@ -1,13 +1,13 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spacing } from '@/constants/theme';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
+import { useNoteFormatAccessoryBottomPad } from '@/contexts/NoteFormatAccessoryContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
-import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
+import { useKeyboardFrame, useSyncKeyboardOverlap } from '@/utils/useKeyboardBottomInset';
 
 type FormScreenTemplateProps = {
   children: ReactNode;
@@ -21,6 +21,8 @@ type FormScreenTemplateProps = {
   /** 中央タイトルの右側 */
   titleTrailing?: ReactNode;
   footer?: ReactNode;
+  /** false のとき ScreenTopBar を出さず、親ヘッダーに乗せる */
+  useTopBar?: boolean;
   extraScrollHeight?: number;
   scrollContentStyle?: StyleProp<ViewStyle>;
   scrollEnabled?: boolean;
@@ -38,6 +40,7 @@ export function FormScreenTemplate({
   titleLeading,
   titleTrailing,
   footer,
+  useTopBar = true,
   extraScrollHeight = 20,
   scrollContentStyle,
   scrollEnabled = true,
@@ -45,54 +48,64 @@ export function FormScreenTemplate({
 }: FormScreenTemplateProps) {
   const kit = useUiKit();
   const headerStyles = useSubScreenHeaderStyles();
-  const insets = useSafeAreaInsets();
-  const keyboardBottomInset = useKeyboardBottomInset();
-  // SafeAreaView already clears the home indicator; only pad the keyboard overlap beyond that.
-  const bodyKeyboardPad = Math.max(0, keyboardBottomInset - insets.bottom);
+  const accessoryPad = useNoteFormatAccessoryBottomPad();
+  const keyboard = useKeyboardFrame();
+  const frameRef = useRef<View>(null);
+  const { overlap: keyboardOverlap, syncOverlap } = useSyncKeyboardOverlap(
+    frameRef,
+    keyboard.screenY,
+    keyboard.height
+  );
+  const bodyKeyboardPad = keyboardOverlap + accessoryPad;
+  const RootView = useTopBar ? SafeAreaView : View;
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
-      {titleAlign === 'left' ? (
-        <View style={headerStyles.bar}>
-          <Text style={headerStyles.titleLeft} numberOfLines={1}>
-            {title ?? ''}
-          </Text>
-          <View style={styles.titleSideRight}>{right ?? null}</View>
+    <RootView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
+      {useTopBar ? (
+        titleAlign === 'left' ? (
+          <View style={headerStyles.bar}>
+            <Text style={headerStyles.titleLeft} numberOfLines={1}>
+              {title ?? ''}
+            </Text>
+            <View style={styles.titleSideRight}>{right ?? null}</View>
+          </View>
+        ) : (
+          <ScreenTopBar
+            title={title}
+            onBack={onBack}
+            left={left}
+            right={right}
+            titleLeading={titleLeading}
+            titleTrailing={titleTrailing}
+          />
+        )
+      ) : null}
+
+      <View ref={frameRef} style={styles.body} collapsable={false} onLayout={syncOverlap}>
+        <View style={[styles.body, { paddingBottom: bodyKeyboardPad }]}>
+          <KeyboardAwareScrollView
+            style={styles.scroll}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingHorizontal: kit.screenPaddingHorizontal, paddingBottom: Spacing.lg },
+              scrollContentStyle,
+            ]}
+            keyboardShouldPersistTaps={keyboardShouldPersistTaps}
+            enableResetScrollToCoords={false}
+            enableAutomaticScroll={false}
+            extraHeight={0}
+            enableOnAndroid={false}
+            contentInset={{ bottom: 0 }}
+            extraScrollHeight={extraScrollHeight}
+            scrollEnabled={scrollEnabled}
+          >
+            {children}
+          </KeyboardAwareScrollView>
+
+          {footer}
         </View>
-      ) : (
-        <ScreenTopBar
-          title={title}
-          onBack={onBack}
-          left={left}
-          right={right}
-          titleLeading={titleLeading}
-          titleTrailing={titleTrailing}
-        />
-      )}
-
-      <View style={[styles.body, { paddingBottom: bodyKeyboardPad }]}>
-        <KeyboardAwareScrollView
-          style={styles.scroll}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingHorizontal: kit.screenPaddingHorizontal },
-            scrollContentStyle,
-          ]}
-          keyboardShouldPersistTaps={keyboardShouldPersistTaps}
-          // Keep scroll offset on dismiss — do not snap back to pre-keyboard coords.
-          enableResetScrollToCoords={false}
-          // Parent already shrinks by keyboard height; avoid a second keyboard spacer.
-          enableOnAndroid={false}
-          contentInset={{ bottom: 0 }}
-          extraScrollHeight={extraScrollHeight}
-          scrollEnabled={scrollEnabled}
-        >
-          {children}
-        </KeyboardAwareScrollView>
-
-        {footer}
       </View>
-    </SafeAreaView>
+    </RootView>
   );
 }
 

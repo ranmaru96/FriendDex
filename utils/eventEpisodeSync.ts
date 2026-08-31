@@ -30,6 +30,7 @@ type EpisodeEventSyncInput = {
   description: string;
   participantEntries: EpisodeParticipant[];
   episodeTag?: string | null;
+  locationTag?: string | null;
 };
 
 const formatEpisodeDateLabel = (dateKey: string): string => {
@@ -218,6 +219,7 @@ export const createEventFromEpisode = (input: EpisodeEventSyncInput): Event | nu
     notifyEnabled: false,
     autoEpisodeCreated: true,
     episodeTag: normalizeEpisodeTag(input.episodeTag),
+    locationTag: normalizeEpisodeTag(input.locationTag),
   });
 
   if (!created) {

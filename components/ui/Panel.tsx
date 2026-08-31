@@ -2,6 +2,8 @@ import type { ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { StyleSheet, View } from 'react-native';
 import { OffsetCard } from '@/components/ui/OffsetCard';
+import { usesOffsetChrome } from '@/constants/designPatterns';
+import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { Spacing } from '@/constants/theme';
 
@@ -19,8 +21,13 @@ type SectionDividerProps = {
   style?: StyleProp<ViewStyle>;
 };
 
+/** 画面の一塊。図鑑／コーデックスは OffsetCard、モノクロームは枠なし。 */
 export function Panel({ children, style }: PanelProps) {
-  return <OffsetCard style={style}>{children}</OffsetCard>;
+  const patternId = useAppThemeOptional()?.patternId;
+  if (usesOffsetChrome(patternId)) {
+    return <OffsetCard style={style}>{children}</OffsetCard>;
+  }
+  return <View style={style}>{children}</View>;
 }
 
 export function PanelSection({ children, style }: PanelSectionProps) {

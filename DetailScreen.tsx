@@ -64,6 +64,7 @@ import {
   getDistinctAffiliations,
   getDistinctExperiences,
   getMergedEpisodeTagLabels,
+  getMergedLocationTagLabels,
   getEpisodeListPhotoUrisMap,
   getEpisodeParticipantFriendIds,
   getFriendById,
@@ -86,6 +87,7 @@ import {
   buildParticipantChips,
   canManageEpisode,
   compareEpisodesByEventDateTime,
+  friendsExcludingSelf,
   formatEpisodeDateForCard,
   getVisibilityModeIconColor,
   getVisibilityModeIconName,
@@ -108,7 +110,7 @@ import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
 } from './utils/episodeEventLinking';
-import { registerSavedEpisodeTag } from './utils/episodeTagMaster';
+import { registerSavedEpisodeTag, registerSavedLocationTag } from './utils/episodeTagMaster';
 
 const DETAIL_SLIDE_MS = 260;
 
@@ -870,6 +872,7 @@ export default function DetailScreen() {
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
+  const [locationTagOptions, setLocationTagOptions] = useState<Option[]>([]);
   const [isSayingFormVisible, setIsSayingFormVisible] = useState(false);
   const [editingSayingId, setEditingSayingId] = useState<string | null>(null);
   const [sayingText, setSayingText] = useState('');
@@ -1011,8 +1014,11 @@ export default function DetailScreen() {
     { validate: isDetailEpisodeFilterState }
   );
   const episodeFilterSelectedIds = useMemo(
-    () => new Set(detailEpisodeFilter.participantIds),
-    [detailEpisodeFilter.participantIds]
+    () =>
+      new Set(
+        detailEpisodeFilter.participantIds.filter((id) => !myselfId || id !== myselfId)
+      ),
+    [detailEpisodeFilter.participantIds, myselfId]
   );
   const episodeTitleFilter = detailEpisodeFilter.title;
 
@@ -1069,6 +1075,7 @@ export default function DetailScreen() {
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
+    setLocationTagOptions(getMergedLocationTagLabels().map((v) => ({ label: v, value: v })));
     setHasAttemptedFriendLoad(true);
   }, [friendId]);
 
@@ -1098,9 +1105,17 @@ export default function DetailScreen() {
     return ids;
   }, [friendId, myselfId]);
 
+  const selectorFriends = useMemo(
+    () => friendsExcludingSelf(allFriends, myselfId),
+    [allFriends, myselfId]
+  );
+
   const implicitParticipantEntries = useMemo(
-    () => (friendId ? [{ kind: 'individual' as const, value: friendId }] : []),
-    [friendId]
+    () =>
+      friendId && friendId !== myselfId
+        ? [{ kind: 'individual' as const, value: friendId }]
+        : [],
+    [friendId, myselfId]
   );
 
   const episodeForm = useEpisodeForm({
@@ -1413,23 +1428,28 @@ export default function DetailScreen() {
   const handleFilterSelectorConfirm = useCallback(() => {
     setDetailEpisodeFilter((prev) => ({
       ...prev,
-      participantIds: Array.from(filterSelectedIndividualIds),
+      participantIds: Array.from(filterSelectedIndividualIds).filter(
+        (id) => !myselfId || id !== myselfId
+      ),
     }));
     setFilterSelectedGroupValues(new Set());
     setFilterSelectorVisible(false);
     setFilterSelectorNameFilter('');
     setFilterSelectorAffiliationFilter('');
     setFilterSelectorExperienceFilter('');
-  }, [filterSelectedIndividualIds, setDetailEpisodeFilter]);
+  }, [filterSelectedIndividualIds, myselfId, setDetailEpisodeFilter]);
 
   const toggleFilterSelectorIndividual = useCallback((friendId: string) => {
+    if (myselfId && friendId === myselfId) {
+      return;
+    }
     setFilterSelectedIndividualIds((prev) => {
       const next = new Set(prev);
       if (next.has(friendId)) next.delete(friendId);
       else next.add(friendId);
       return next;
     });
-  }, []);
+  }, [myselfId]);
 
   const toggleFilterSelectorGroup = useCallback((groupValue: string) => {
     setFilterSelectedGroupValues((prev) => {
@@ -1507,14 +1527,6 @@ export default function DetailScreen() {
           loadFriend();
         },
       },
-    ]);
-  };
-
-  const handleLongPressSaying = (saying: Saying) => {
-    Alert.alert('操作を選択', 'この項目に対する操作を選んでください。', [
-      { text: 'キャンセル', style: 'cancel' },
-      { text: '編集', onPress: () => startEditSaying(saying) },
-      { text: '削除', style: 'destructive', onPress: () => handleDeleteSaying(saying.id) },
     ]);
   };
 
@@ -1700,20 +1712,6 @@ export default function DetailScreen() {
     ]);
   };
 
-  const handleLongPressHabit = (index: number) => {
-    Alert.alert(
-      '操作を選択',
-      activeTab === 'メモ'
-        ? 'このメモに対する操作を選んでください。'
-        : 'この習性に対する操作を選んでください。',
-      [
-        { text: 'キャンセル', style: 'cancel' },
-        { text: '編集', onPress: () => startEditHabit(index) },
-        { text: '削除', style: 'destructive', onPress: () => handleDeleteHabit(index) },
-      ]
-    );
-  };
-
   const renderNoteTabHeader = (
     tabKey: NoteTabCopyKey,
     isOpen: boolean,
@@ -1809,6 +1807,7 @@ export default function DetailScreen() {
             title={episode.title}
             date={episode.date}
             episodeTag={episode.tag}
+            locationTag={episode.locationTag}
             chips={chips}
             visibilityMode={canManage ? episode.visibilityMode : undefined}
             posterName={canManage ? null : posterName}
@@ -2016,6 +2015,7 @@ export default function DetailScreen() {
         return;
       }
       registerSavedEpisodeTag(episodeInput.tag);
+      registerSavedLocationTag(episodeInput.locationTag);
       episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
     } else {
       const created = createEpisode(episodeInput);
@@ -2024,6 +2024,7 @@ export default function DetailScreen() {
         return;
       }
       registerSavedEpisodeTag(episodeInput.tag);
+      registerSavedLocationTag(episodeInput.locationTag);
       episodeForm.persistPhotos(created.id, false);
     }
     episodeForm.reset();
@@ -2738,7 +2739,8 @@ export default function DetailScreen() {
                         }
                       : null,
                   ]}
-                  onLongPress={() => handleLongPressHabit(item.index)}
+                  onPress={() => startEditHabit(item.index)}
+                  onLongPress={() => handleDeleteHabit(item.index)}
                   delayLongPress={300}
                 >
                   <View style={styles.habitCardAccent} />
@@ -2863,7 +2865,8 @@ export default function DetailScreen() {
                         }
                       : null,
                   ]}
-                  onLongPress={() => handleLongPressSaying(saying)}
+                  onPress={() => startEditSaying(saying)}
+                  onLongPress={() => handleDeleteSaying(saying.id)}
                   delayLongPress={300}
                 >
                   <View style={styles.sayingQuoteAccent} />
@@ -2896,6 +2899,7 @@ export default function DetailScreen() {
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
         episodeTagOptions={episodeTagOptions}
+        locationTagOptions={locationTagOptions}
         onClose={() => {
           episodeForm.reset();
           setIsEpisodeFormVisible(false);
@@ -2913,7 +2917,7 @@ export default function DetailScreen() {
         onAffiliationFilterChange={setFilterSelectorAffiliationFilter}
         experienceFilter={filterSelectorExperienceFilter}
         onExperienceFilterChange={setFilterSelectorExperienceFilter}
-        friends={allFriends}
+        friends={selectorFriends}
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
         groupOptions={affiliationOptions}

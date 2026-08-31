@@ -1,12 +1,13 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import type { StyleProp, TextStyle, ViewStyle } from 'react-native';
 import { StyleSheet, Text, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Spacing, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { useNoteFormatAccessoryBottomPad } from '@/contexts/NoteFormatAccessoryContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
-import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
+import { useKeyboardFrame, useSyncKeyboardOverlap } from '@/utils/useKeyboardBottomInset';
 
 const TOP_CONTENT_PADDING = 12;
 
@@ -28,35 +29,46 @@ export function FormOverlayTemplate({
   const kit = useUiKit();
   const appTheme = useAppThemeOptional();
   const insets = useSafeAreaInsets();
-  const keyboardBottomInset = useKeyboardBottomInset();
+  const accessoryPad = useNoteFormatAccessoryBottomPad();
+  const keyboard = useKeyboardFrame();
+  const frameRef = useRef<View>(null);
+  const { overlap: keyboardOverlap, syncOverlap } = useSyncKeyboardOverlap(
+    frameRef,
+    keyboard.screenY,
+    keyboard.height
+  );
   const screenBackground = appTheme?.colors.screenBackground ?? Theme.background;
   const titleColor = appTheme?.colors.onScreenText ?? Theme.textPrimary;
 
   return (
     <View style={[styles.overlay, { backgroundColor: screenBackground }]}>
-      <View style={[styles.body, { paddingBottom: keyboardBottomInset }]}>
-        <KeyboardAwareScrollView
-          style={[
-            styles.scroll,
-            {
-              paddingTop: insets.top + TOP_CONTENT_PADDING,
-              paddingHorizontal: kit.screenPaddingHorizontal,
-            },
-          ]}
-          contentContainerStyle={[
-            styles.scrollContent,
-            { paddingBottom: Math.max(Spacing.lg, insets.bottom + Spacing.md) },
-            scrollContentStyle,
-          ]}
-          keyboardShouldPersistTaps="handled"
-          enableResetScrollToCoords={false}
-          enableOnAndroid={false}
-          contentInset={{ bottom: 0 }}
-          extraScrollHeight={extraScrollHeight}
-        >
-          <Text style={[styles.title, { color: titleColor }, titleStyle]}>{title}</Text>
-          {children}
-        </KeyboardAwareScrollView>
+      <View ref={frameRef} style={styles.body} collapsable={false} onLayout={syncOverlap}>
+        <View style={[styles.body, { paddingBottom: keyboardOverlap + accessoryPad }]}>
+          <KeyboardAwareScrollView
+            style={[
+              styles.scroll,
+              {
+                paddingTop: insets.top + TOP_CONTENT_PADDING,
+                paddingHorizontal: kit.screenPaddingHorizontal,
+              },
+            ]}
+            contentContainerStyle={[
+              styles.scrollContent,
+              { paddingBottom: Math.max(Spacing.lg, insets.bottom + Spacing.md) },
+              scrollContentStyle,
+            ]}
+            keyboardShouldPersistTaps="handled"
+            enableResetScrollToCoords={false}
+            enableAutomaticScroll={false}
+            extraHeight={0}
+            enableOnAndroid={false}
+            contentInset={{ bottom: 0 }}
+            extraScrollHeight={extraScrollHeight}
+          >
+            <Text style={[styles.title, { color: titleColor }, titleStyle]}>{title}</Text>
+            {children}
+          </KeyboardAwareScrollView>
+        </View>
       </View>
     </View>
   );

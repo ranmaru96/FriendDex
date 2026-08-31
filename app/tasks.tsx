@@ -50,6 +50,7 @@ import {
   isRecurringDueOnDate,
   toYmd,
 } from '@/utils/taskHelpers';
+import { formatNotePreview } from '@/utils/noteBlocks';
 import { TaskRecentSevenDayDots, taskCompletionFillColor } from '@/components/task/TaskRecentSevenDayDots';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import {
@@ -524,7 +525,7 @@ function TemporaryTaskRow({
   onDragEnd,
 }: TemporaryTaskRowProps) {
   const isCodex = usesOffsetChrome(useAppThemeOptional()?.patternId);
-  const memoPreview = task.memo.trim();
+  const memoPreview = formatNotePreview(task.memo);
   const dueUrgency = task.dueDate ? getTaskDueUrgency(task.dueDate) : null;
   const borderColor = completed ? TASK_ACCENT.dim : accent ?? content.contentBorder;
   const showingRequiredRed = !completed && accent === TASK_ACCENT.required;

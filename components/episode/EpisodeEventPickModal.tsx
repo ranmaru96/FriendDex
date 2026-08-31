@@ -23,6 +23,7 @@ import {
   searchEventsForEpisodeLink,
   type EventLinkTimeScope,
 } from '@/utils/eventEpisodeSync';
+import { formatNotePreview } from '@/utils/noteBlocks';
 
 type EpisodeEventPickModalProps = {
   visible: boolean;
@@ -157,7 +158,7 @@ export function EpisodeEventPickModal({
                             style={[styles.memoText, contentMutedTextStyle(content)]}
                             numberOfLines={2}
                           >
-                            {hit.event.memo}
+                            {formatNotePreview(hit.event.memo)}
                           </Text>
                         ) : null}
                       </Pressable>

@@ -3,6 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
+import { NoteBlockView } from '@/components/ui/NoteBlockView';
 import {
   completeTemporaryTask,
   deleteTask,
@@ -12,8 +13,9 @@ import {
   getTaskGroup,
   initializeDatabase,
   reopenTemporaryTask,
+  updateTask,
 } from '../db';
-import type { Event, Task, TaskCompletion, TaskGroup } from '../types';
+import type { Event, Task, TaskCompletion, TaskGroup, TaskInput } from '../types';
 import {
   calculateScheduledStreak,
   daysBetweenYmd,
@@ -58,6 +60,24 @@ function formatCompletedAt(iso: string): string {
     return formatStampDate(ymd);
   }
   return iso;
+}
+
+function taskToInput(task: Task, memo: string): TaskInput {
+  return {
+    kind: task.kind,
+    title: task.title,
+    memo,
+    pace: task.pace,
+    recurrenceUnit: task.recurrenceUnit,
+    recurrenceConfig: task.recurrenceConfig,
+    dueDate: task.dueDate,
+    eventId: task.eventId,
+    groupId: task.groupId,
+    trackCompletions: task.trackCompletions,
+    remindEnabled: task.remindEnabled,
+    remindDaysBefore: task.remindDaysBefore,
+    remindTime: task.remindTime,
+  };
 }
 
 export default function TaskDetailScreen() {
@@ -178,6 +198,21 @@ export default function TaskDetailScreen() {
     void syncTaskReminders();
     reload();
   };
+
+  const handleMemoChange = useCallback(
+    (next: string) => {
+      if (!task) {
+        return;
+      }
+      const ok = updateTask(task.id, taskToInput(task, next));
+      if (!ok) {
+        Alert.alert('エラー', 'メモの更新に失敗しました');
+        return;
+      }
+      setTask({ ...task, memo: next });
+    },
+    [task]
+  );
 
   if (!task) {
     return null;
@@ -407,9 +442,13 @@ export default function TaskDetailScreen() {
         ) : null}
 
         <FormScreenSection>
-          <Text style={[styles.detailText, contentMutedTextStyle(content)]}>
-            {task.memo.trim() || 'メモはありません'}
-          </Text>
+          <NoteBlockView
+            value={task.memo}
+            textStyle={[styles.detailText, contentMutedTextStyle(content)]}
+            emptyLabel="メモはありません"
+            emptyStyle={[styles.detailText, contentMutedTextStyle(content)]}
+            onChangeValue={handleMemoChange}
+          />
         </FormScreenSection>
 
         <View style={styles.deleteButtonWrap}>

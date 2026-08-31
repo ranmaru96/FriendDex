@@ -749,7 +749,7 @@ export default function EditScreen() {
                 </Text>
               ) : (
                 <Text style={[styles.basicInfoToggleHint, contentMutedTextStyle(content)]}>
-                  名前・出身・分類など
+                  名前・出身・一言など
                 </Text>
               )}
             </View>
@@ -940,12 +940,12 @@ export default function EditScreen() {
                 />
               </FormRow>
             </View>
-            <FormRow label="分類">
+            <FormRow label="一言で表すと" labelNumberOfLines={2}>
               <TextInput
                 value={form.category}
                 onChangeText={(text) => updateText('category', text)}
                 style={[styles.input, contentInputStyle(content)]}
-                placeholder="分類を登録する"
+                placeholder="この人を一言で"
                 placeholderTextColor={content.contentTextSecondary}
               />
             </FormRow>

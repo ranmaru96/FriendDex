@@ -41,6 +41,7 @@ import {
   getBirthdayFriendsForDateKey,
   type BirthdayFriendDisplay,
 } from '@/utils/birthdayCalendar';
+import { formatNotePreview } from '@/utils/noteBlocks';
 import {
   filterEventsByLocalDate,
   formatDateKey,
@@ -120,6 +121,7 @@ function CalendarEventCardBody({
 }: CalendarEventCardBodyProps) {
   const content = useContentColors();
   const memoLineLimit = getCalendarMemoLineLimit(memoDisplay);
+  const memoPreview = formatNotePreview(event.memo);
   const participantTap = useTapUnlessHorizontalScroll(onOpen);
 
   const episodeCountTag =
@@ -157,7 +159,7 @@ function CalendarEventCardBody({
           />
         </Pressable>
       ) : null}
-      {event.memo ? (
+      {memoPreview ? (
         <Pressable onPress={onOpen}>
           <Text
             style={[
@@ -168,7 +170,7 @@ function CalendarEventCardBody({
             numberOfLines={memoLineLimit}
             ellipsizeMode={memoLineLimit ? 'tail' : undefined}
           >
-            {event.memo}
+            {memoPreview}
           </Text>
         </Pressable>
       ) : null}

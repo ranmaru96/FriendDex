@@ -111,7 +111,10 @@ const buildGoogleEventBody = (event: Event): GoogleCalendarEventBody => {
     descriptionLines.push(`参加者: ${participantNames.join('、')}`);
   }
   if (event.episodeTag) {
-    descriptionLines.push(`タグ: ${event.episodeTag}`);
+    descriptionLines.push(`予定タグ: ${event.episodeTag}`);
+  }
+  if (event.locationTag) {
+    descriptionLines.push(`場所: ${event.locationTag}`);
   }
 
   const body: GoogleCalendarEventBody = {

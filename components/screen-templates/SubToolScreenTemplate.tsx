@@ -70,8 +70,12 @@ export function SubToolScreenTemplate({
   useLayoutEffect(() => {
     if (!useSharedTopBar || !setSubToolHeader) return;
     setSubToolHeader({ title, onBack, right, titleTrailing, titleFramed });
-    return () => setSubToolHeader(null);
   }, [useSharedTopBar, setSubToolHeader, title, onBack, right, titleTrailing, titleFramed]);
+
+  useLayoutEffect(() => {
+    if (!useSharedTopBar || !setSubToolHeader) return;
+    return () => setSubToolHeader(null);
+  }, [useSharedTopBar, setSubToolHeader]);
 
   const body = scrollable ? (
     keyboardAware ? (

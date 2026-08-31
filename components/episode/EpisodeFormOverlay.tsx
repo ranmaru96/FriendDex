@@ -17,7 +17,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
-import { ViewportCappedMultilineTextInput } from '@/components/ui/ViewportCappedMultilineTextInput';
+import { NoteBlockEditor } from '@/components/ui/NoteBlockEditor';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
   contentDateTimePickerProps,
@@ -63,9 +63,12 @@ type EpisodeFormOverlayProps = {
   affiliationOptions: Option[];
   experienceOptions: Option[];
   episodeTagOptions: Option[];
+  locationTagOptions: Option[];
   onClose: () => void;
   onSave: () => void;
   onPersonCreated?: (friend: Friend) => void;
+  /** false のとき画面内トップバーを出さず、親ヘッダーを使う */
+  useTopBar?: boolean;
 };
 
 function SelectInput({
@@ -76,7 +79,9 @@ function SelectInput({
   onChange,
   style,
   includeEmptyOption = true,
+  clearLabel = '未設定',
   allowCustomValue = false,
+  customInputPlaceholder = '新しいタグ名',
   variant,
 }: {
   value: string;
@@ -87,7 +92,9 @@ function SelectInput({
   onChange: (value: string) => void;
   style?: StyleProp<ViewStyle>;
   includeEmptyOption?: boolean;
+  clearLabel?: string;
   allowCustomValue?: boolean;
+  customInputPlaceholder?: string;
   variant?: 'field' | 'chip';
 }) {
   const kit = useUiKit();
@@ -147,9 +154,9 @@ function SelectInput({
         options={options}
         onValueChange={onChange}
         onClose={() => setModalVisible(false)}
-        clearLabel={includeEmptyOption ? placeholder : null}
+        clearLabel={includeEmptyOption ? clearLabel : null}
         allowCustomValue={allowCustomValue}
-        customInputPlaceholder="新しいタグ名"
+        customInputPlaceholder={customInputPlaceholder}
         customActionLabel="このタグを使う"
       />
     </>
@@ -163,9 +170,11 @@ export function EpisodeFormOverlay({
   affiliationOptions,
   experienceOptions,
   episodeTagOptions,
+  locationTagOptions,
   onClose,
   onSave,
   onPersonCreated,
+  useTopBar = true,
 }: EpisodeFormOverlayProps) {
   const kit = useUiKit();
   const content = useContentColors();
@@ -188,9 +197,23 @@ export function EpisodeFormOverlay({
             value: participant.value,
           })),
         form.friendNameById,
-        { friendPhotoById }
+        {
+          friendPhotoById,
+          excludeFriendIds: form.excludeSelfId ? [form.excludeSelfId] : [],
+        }
       ),
-    [form.participants, form.friendNameById, friendPhotoById]
+    [form.participants, form.friendNameById, form.excludeSelfId, friendPhotoById]
+  );
+  const visibleVisibilityEntries = useMemo(
+    () =>
+      form.visibility.filter((entry) => {
+        if (!entry.value.trim()) return false;
+        if (entry.kind === 'individual' && form.excludeSelfId && entry.value === form.excludeSelfId) {
+          return false;
+        }
+        return true;
+      }),
+    [form.excludeSelfId, form.visibility]
   );
 
   useDismissPickerOnKeyboardShow(form.showDatePicker || form.showTimePicker, () => {
@@ -208,15 +231,18 @@ export function EpisodeFormOverlay({
         <FormScreenTemplate
           title={form.editingEpisodeId ? 'エピソードを編集' : 'エピソードを追加'}
           onBack={onClose}
+          useTopBar={useTopBar}
           right={
-            <Pressable
-              style={[styles.saveButton, contentFilledButtonStyle(content)]}
-              onPress={onSave}
-            >
-              <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>
-                {form.editingEpisodeId ? '更新' : '保存'}
-              </Text>
-            </Pressable>
+            useTopBar ? (
+              <Pressable
+                style={[styles.saveButton, contentFilledButtonStyle(content)]}
+                onPress={onSave}
+              >
+                <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>
+                  {form.editingEpisodeId ? '更新' : '保存'}
+                </Text>
+              </Pressable>
+            ) : undefined
           }
           extraScrollHeight={140}
           scrollContentStyle={styles.scrollContent}
@@ -386,14 +412,27 @@ export function EpisodeFormOverlay({
               </FormRow>
 
               <FormRow label="タグ" contentLayout="compact">
-                <SelectInput
-                  value={form.tag}
-                  placeholder="未設定"
-                  modalTitle="予定タグ"
-                  options={episodeTagOptions}
-                  onChange={form.setTag}
-                  allowCustomValue
-                />
+                <View style={styles.tagPickersRow}>
+                  <SelectInput
+                    value={form.tag}
+                    placeholder="予定タグ"
+                    modalTitle="予定タグ"
+                    options={episodeTagOptions}
+                    onChange={form.setTag}
+                    allowCustomValue
+                    variant="chip"
+                  />
+                  <SelectInput
+                    value={form.locationTag}
+                    placeholder="場所タグ"
+                    modalTitle="場所タグ"
+                    options={locationTagOptions}
+                    onChange={form.setLocationTag}
+                    allowCustomValue
+                    customInputPlaceholder="新しい場所名"
+                    variant="chip"
+                  />
+                </View>
               </FormRow>
 
               <FormRow label="公開設定" contentLayout="compact">
@@ -425,10 +464,9 @@ export function EpisodeFormOverlay({
                       style={[styles.selectedEntryTagArea, fieldCorner, contentSurfaceStyle(content)]}
                       onPress={form.openVisibilitySelector}
                     >
-                      {form.visibility.filter((entry) => entry.value.trim().length > 0).length > 0 ? (
+                      {visibleVisibilityEntries.length > 0 ? (
                         <View style={styles.selectedEntryTagWrap}>
-                          {form.visibility
-                            .filter((entry) => entry.value.trim().length > 0)
+                          {visibleVisibilityEntries
                             .map((entry, index) => {
                               const label =
                                 entry.kind === 'individual'
@@ -519,14 +557,17 @@ export function EpisodeFormOverlay({
                 </View>
               </FormRow>
 
-              <ViewportCappedMultilineTextInput
-                style={[styles.episodeDescriptionInput, fieldCorner, contentInputStyle(content)]}
-                placeholder="説明文"
-                placeholderTextColor={content.contentTextSecondary}
-                value={form.description}
-                onChangeText={form.setDescription}
-                minHeight={86}
-              />
+              <FormRow label="説明" layout="vertical">
+                <NoteBlockEditor
+                  style={[styles.episodeDescriptionInput, fieldCorner, contentInputStyle(content)]}
+                  placeholder="入力"
+                  placeholderTextColor={content.contentTextSecondary}
+                  value={form.description}
+                  onChangeText={form.setDescription}
+                  minHeight={86}
+                  uncapped
+                />
+              </FormRow>
               {form.formError ? <Text style={styles.episodeErrorText}>{form.formError}</Text> : null}
               <View style={styles.formActions}>
                 <Pressable style={[styles.formCancelButton, fieldCorner]} onPress={onClose}>
@@ -556,7 +597,7 @@ export function EpisodeFormOverlay({
         onAffiliationFilterChange={form.setSelectorAffiliationFilter}
         experienceFilter={form.selectorExperienceFilter}
         onExperienceFilterChange={form.setSelectorExperienceFilter}
-        friends={friends}
+        friends={form.selectorFriends}
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
         groupOptions={affiliationOptions}
@@ -641,6 +682,12 @@ const styles = StyleSheet.create({
   },
   episodeFormSection: {
     gap: 8,
+  },
+  tagPickersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: Spacing.sm,
   },
   rowAlignStart: {
     alignItems: 'flex-start',
@@ -778,14 +825,10 @@ const styles = StyleSheet.create({
   episodePhotoUpgradeHint: { marginTop: 6, fontSize: 11, color: '#64748b' },
   episodeDescriptionInput: {
     minHeight: 86,
-    borderColor: Theme.inputBorder,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    backgroundColor: Theme.bgSurface,
     textAlignVertical: 'top',
     color: '#0f172a',
     paddingHorizontal: 10,
-    paddingVertical: 10,
+    paddingVertical: 4,
     fontSize: 14,
     marginBottom: 8,
   },

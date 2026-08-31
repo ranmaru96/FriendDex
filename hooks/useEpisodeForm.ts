@@ -18,7 +18,14 @@ import type {
   EpisodeVisibilityMode,
   Friend,
 } from '@/types';
-import { mergeParticipantEntries, normalizeEpisodeTag, normalizeEpisodeTime, toIndividualParticipantEntries } from '@/utils/episodeHelpers';
+import {
+  excludeSelfIndividualEntries,
+  friendsExcludingSelf,
+  mergeParticipantEntries,
+  normalizeEpisodeTag,
+  normalizeEpisodeTime,
+  toIndividualParticipantEntries,
+} from '@/utils/episodeHelpers';
 import { getLinkedEventDateBounds } from '@/utils/eventEpisodeBidirectionalSync';
 import {
   formatDateKey,
@@ -47,6 +54,7 @@ export type EpisodeSavePayload = {
   participantEntries: EpisodeParticipant[];
   visibilityEntries: EpisodeVisibilityEntry[];
   tag?: string | null;
+  locationTag?: string | null;
   /** Explicit link target; null means unlinked. Ignored when createLinkedEvent is true. */
   eventId: string | null;
   /** Create a new calendar event from this episode on save. */
@@ -93,6 +101,7 @@ export function useEpisodeForm({
   const [linkedEventId, setLinkedEventId] = useState<string | null>(null);
   const [eventLinkMode, setEventLinkModeState] = useState<EpisodeEventLinkMode>('create_new');
   const [tag, setTag] = useState('');
+  const [locationTag, setLocationTag] = useState('');
 
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [selectorTarget, setSelectorTarget] = useState<'participant' | 'visibility'>('participant');
@@ -176,18 +185,35 @@ export function useEpisodeForm({
     setLinkedEventId(null);
     setEventLinkModeState('create_new');
     setTag('');
+    setLocationTag('');
     setSelectorVisible(false);
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
     setSelectorExperienceFilter('');
   }, [applyNewPhotoUris]);
 
+  const excludeSelfId = useMemo(() => getMyself(), [friends, hiddenParticipantIds]);
+
+  const selectorFriends = useMemo(() => {
+    const withoutSelf = friendsExcludingSelf(friends, excludeSelfId);
+    if (selectorTarget === 'visibility') {
+      return withoutSelf;
+    }
+    const hidden = hiddenIdSet(hiddenParticipantIds);
+    return withoutSelf.filter((friend) => !hidden.has(friend.id));
+  }, [excludeSelfId, friends, hiddenParticipantIds, selectorTarget]);
+
   const restoreSelectorFromParticipants = useCallback((drafts: EpisodeParticipantDraft[]) => {
     const individuals = new Set<string>();
     const groups = new Set<string>();
+    const hidden = hiddenIdSet(hiddenParticipantIds);
+    const myselfId = getMyself();
     drafts.forEach((participant) => {
       if (!participant.value.trim()) return;
       if (participant.participantType === 'individual') {
+        if (hidden.has(participant.value) || participant.value === myselfId) {
+          return;
+        }
         individuals.add(participant.value);
       } else {
         groups.add(participant.value);
@@ -195,14 +221,18 @@ export function useEpisodeForm({
     });
     setSelectedIndividualIds(individuals);
     setSelectedGroupValues(groups);
-  }, []);
+  }, [hiddenParticipantIds]);
 
   const restoreSelectorFromVisibility = useCallback((entries: EpisodeVisibilityDraft[]) => {
     const individuals = new Set<string>();
     const groups = new Set<string>();
+    const myselfId = getMyself();
     entries.forEach((entry) => {
       if (!entry.value.trim()) return;
       if (entry.kind === 'individual') {
+        if (myselfId && entry.value === myselfId) {
+          return;
+        }
         individuals.add(entry.value);
       } else {
         groups.add(entry.value);
@@ -240,6 +270,8 @@ export function useEpisodeForm({
   }, []);
 
   const handleSelectorConfirm = useCallback(() => {
+    const myselfId = getMyself();
+    const hidden = hiddenIdSet(hiddenParticipantIds);
     if (selectorTarget === 'participant') {
       // Participants are individual IDs only (group-name tags deferred).
       const expandedIds = getEpisodeParticipantFriendIds({
@@ -253,7 +285,7 @@ export function useEpisodeForm({
             value: groupValue,
           })),
         ],
-      });
+      }).filter((friendId) => !hidden.has(friendId) && friendId !== myselfId);
       setParticipants(
         toIndividualParticipantEntries(expandedIds).map((entry) => ({
           participantType: 'individual' as const,
@@ -263,6 +295,9 @@ export function useEpisodeForm({
     } else {
       const nextVisibility: EpisodeVisibilityDraft[] = [];
       selectedIndividualIds.forEach((friendId) => {
+        if (myselfId && friendId === myselfId) {
+          return;
+        }
         nextVisibility.push({ kind: 'individual', value: friendId });
       });
       selectedGroupValues.forEach((groupValue) => {
@@ -274,9 +309,12 @@ export function useEpisodeForm({
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
     setSelectorExperienceFilter('');
-  }, [selectorTarget, selectedIndividualIds, selectedGroupValues]);
+  }, [hiddenParticipantIds, selectorTarget, selectedIndividualIds, selectedGroupValues]);
 
   const toggleSelectorIndividual = useCallback((friendId: string) => {
+    if (friendId === getMyself()) {
+      return;
+    }
     setSelectedIndividualIds((prev) => {
       const next = new Set(prev);
       if (next.has(friendId)) next.delete(friendId);
@@ -298,9 +336,10 @@ export function useEpisodeForm({
     (episode: Episode) => {
       const hidden = hiddenIdSet(hiddenParticipantIds);
       // Expand any legacy group participant tags to individuals for editing.
+      const myselfId = getMyself();
       const expandedFriendIds = getEpisodeParticipantFriendIds({
         participantEntries: episode.participantEntries ?? [],
-      }).filter((friendId) => !hidden.has(friendId));
+      }).filter((friendId) => !hidden.has(friendId) && friendId !== myselfId);
       const participantDrafts: EpisodeParticipantDraft[] = toIndividualParticipantEntries(
         expandedFriendIds
       ).map((entry) => ({
@@ -328,10 +367,13 @@ export function useEpisodeForm({
       setParticipants(participantDrafts);
       setVisibilityMode(episode.visibilityMode);
       setVisibility(
-        (episode.visibilityEntries ?? []).map((entry) => ({
-          kind: entry.kind,
-          value: entry.value,
-        }))
+        excludeSelfIndividualEntries(
+          (episode.visibilityEntries ?? []).map((entry) => ({
+            kind: entry.kind,
+            value: entry.value,
+          })),
+          myselfId
+        )
       );
       setPhotos(getEpisodePhotos(episode.id));
       setNewPhotoUris([]);
@@ -341,6 +383,7 @@ export function useEpisodeForm({
       setShowDatePicker(false);
       setShowTimePicker(false);
       setTag(episode.tag ?? '');
+      setLocationTag(episode.locationTag ?? '');
     },
     [hiddenParticipantIds]
   );
@@ -361,6 +404,7 @@ export function useEpisodeForm({
       setDate(keys[0] ?? today);
       setTime(event.allDay ? '' : formatTimeFromDate(new Date(event.startAt)));
       setTag(event.episodeTag ?? '');
+      setLocationTag(event.locationTag ?? '');
       setDescription('');
       const myselfId = getMyself();
       const hidden = hiddenIdSet(hiddenParticipantIds);
@@ -394,27 +438,34 @@ export function useEpisodeForm({
       return null;
     }
 
-    const participantEntries = toIndividualParticipantEntries(
-      getEpisodeParticipantFriendIds({
-        participantEntries: mergeParticipantEntries(
-          implicitParticipantEntries,
-          participants
-            .filter((participant) => participant.value.trim().length > 0)
-            .map((participant) => ({
-              kind: participant.participantType,
-              value: participant.value,
-            }))
-        ),
-      })
+    const myselfId = getMyself();
+    const participantEntries = excludeSelfIndividualEntries(
+      toIndividualParticipantEntries(
+        getEpisodeParticipantFriendIds({
+          participantEntries: mergeParticipantEntries(
+            implicitParticipantEntries,
+            participants
+              .filter((participant) => participant.value.trim().length > 0)
+              .map((participant) => ({
+                kind: participant.participantType,
+                value: participant.value,
+              }))
+          ),
+        })
+      ),
+      myselfId
     );
     const visibilityEntries: EpisodeVisibilityEntry[] =
       visibilityMode === 'limited'
-        ? visibility
-            .filter((entry) => entry.value.trim().length > 0)
-            .map((entry) => ({
-              kind: entry.kind,
-              value: entry.value.trim(),
-            }))
+        ? excludeSelfIndividualEntries(
+            visibility
+              .filter((entry) => entry.value.trim().length > 0)
+              .map((entry) => ({
+                kind: entry.kind,
+                value: entry.value.trim(),
+              })),
+            myselfId
+          )
         : [];
 
     setFormError('');
@@ -434,6 +485,7 @@ export function useEpisodeForm({
       participantEntries,
       visibilityEntries,
       tag: normalizeEpisodeTag(tag),
+      locationTag: normalizeEpisodeTag(locationTag),
       eventId: resolvedEventId,
       createLinkedEvent,
     };
@@ -445,6 +497,7 @@ export function useEpisodeForm({
     linkedEventId,
     participants,
     tag,
+    locationTag,
     time,
     title,
     visibility,
@@ -481,6 +534,12 @@ export function useEpisodeForm({
         return prev;
       }
       return event.episodeTag ?? '';
+    });
+    setLocationTag((prev) => {
+      if (prev.trim()) {
+        return prev;
+      }
+      return event.locationTag ?? '';
     });
   }, []);
 
@@ -554,6 +613,8 @@ export function useEpisodeForm({
     prefillFromEvent,
     tag,
     setTag,
+    locationTag,
+    setLocationTag,
     allowedEventDateRange,
     episodeDateMinimumDate,
     episodeDateMaximumDate,
@@ -581,6 +642,8 @@ export function useEpisodeForm({
     newPhotoUris,
     isPhotoLimitReached,
     friendNameById,
+    selectorFriends,
+    excludeSelfId,
     selectorVisible,
     selectorTarget,
     selectorTab,

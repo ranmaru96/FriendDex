@@ -71,6 +71,8 @@ export type Episode = {
   pendingReviewDismissed?: boolean;
   /** エピソード分類タグ（予定とは独立。初期値のみ予定からコピー可） */
   tag?: string | null;
+  /** 場所タグ（予定とは独立。初期値のみ予定からコピー可） */
+  locationTag?: string | null;
 };
 
 export type Event = {
@@ -86,6 +88,8 @@ export type Event = {
   autoEpisodeCreated: boolean;
   /** 予定用の分類タグ（エピソードとは独立。カレンダー色などに使用） */
   episodeTag: string | null;
+  /** 場所タグ（エピソードとは独立。カレンダー色には使わない） */
+  locationTag: string | null;
   /** Google カレンダー（FriendDex 専用）上のイベント ID。未同期時は null */
   googleEventId: string | null;
   createdAt: string;
@@ -273,14 +277,15 @@ export type CommonItemKind =
   | 'like'
   | 'dislike'
   | 'visibility_group'
-  | 'episode_tag';
+  | 'episode_tag'
+  | 'location_tag';
 
 export type CommonItemOption = {
   id: string;
   kind: CommonItemKind;
   label: string;
   members: string[];
-  /** 予定タグ用。カレンダー帯色（#RRGGBB）。他 kind は null */
+  /** 予定タグ用。カレンダー帯色（#RRGGBB）。場所タグなど他 kind は null */
   color: string | null;
   createdAt: string;
   updatedAt: string;

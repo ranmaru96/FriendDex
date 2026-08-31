@@ -88,6 +88,29 @@ export function canManageEpisode(
   return episode.authorFriendId.trim() === myselfId;
 }
 
+/** 予定・エピソードの対象者は「一緒にいた他者」。本人の個人エントリは含めない。 */
+export function excludeSelfIndividualEntries<T extends { kind: string; value: string }>(
+  entries: T[],
+  myselfId: string | null | undefined
+): T[] {
+  const id = myselfId?.trim() ?? '';
+  if (!id) {
+    return entries;
+  }
+  return entries.filter((entry) => !(entry.kind === 'individual' && entry.value.trim() === id));
+}
+
+export function friendsExcludingSelf<T extends { id: string }>(
+  friends: T[],
+  myselfId: string | null | undefined
+): T[] {
+  const id = myselfId?.trim() ?? '';
+  if (!id) {
+    return friends;
+  }
+  return friends.filter((friend) => friend.id !== id);
+}
+
 export function mergeParticipantEntries(...lists: EpisodeParticipant[][]): EpisodeParticipant[] {
   const seen = new Set<string>();
   const merged: EpisodeParticipant[] = [];
