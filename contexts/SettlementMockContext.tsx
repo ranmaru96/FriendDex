@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -35,6 +36,7 @@ type SettlementMockContextValue = {
   getRoom: (roomId: string) => MockSettlementRoom | undefined;
   isTransferCompleted: (key: string) => boolean;
   toggleTransferCompleted: (key: string) => void;
+  loadIfNeeded: () => void;
 };
 
 const SettlementMockContext = createContext<SettlementMockContextValue | null>(null);
@@ -51,13 +53,16 @@ function buildInitialInvite(): MockSettlementInvite {
 }
 
 export function SettlementMockProvider({ children }: { children: ReactNode }) {
-  const [rooms, setRooms] = useState<MockSettlementRoom[]>(() => settlementStore.loadRooms());
+  const loadedRef = useRef(false);
+  const [rooms, setRooms] = useState<MockSettlementRoom[]>([]);
   const [invites, setInvites] = useState<MockSettlementInvite[]>([buildInitialInvite()]);
-  const [completedTransferKeys, setCompletedTransferKeys] = useState<Set<string>>(() =>
-    settlementStore.loadCompletedTransferKeys()
-  );
+  const [completedTransferKeys, setCompletedTransferKeys] = useState<Set<string>>(() => new Set());
 
-  useEffect(() => {
+  const loadIfNeeded = useCallback(() => {
+    if (loadedRef.current) {
+      return;
+    }
+    loadedRef.current = true;
     setRooms(settlementStore.loadRooms());
     setCompletedTransferKeys(settlementStore.loadCompletedTransferKeys());
   }, []);
@@ -265,6 +270,7 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       getRoom,
       isTransferCompleted,
       toggleTransferCompleted,
+      loadIfNeeded,
     }),
     [
       rooms,
@@ -277,6 +283,7 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       getRoom,
       isTransferCompleted,
       toggleTransferCompleted,
+      loadIfNeeded,
     ]
   );
 
@@ -290,5 +297,8 @@ export function useSettlementMock(): SettlementMockContextValue {
   if (!ctx) {
     throw new Error('useSettlementMock must be used within SettlementMockProvider');
   }
+  useEffect(() => {
+    ctx.loadIfNeeded();
+  }, [ctx]);
   return ctx;
 }

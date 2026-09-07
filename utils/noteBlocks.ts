@@ -53,8 +53,8 @@ export const mergeAdjacentParagraphs = (blocks: NoteBlock[]): NoteBlock[] => {
   return out.length ? out : [createNoteBlock()];
 };
 
-export const parseNoteBlocks = (value: string): NoteBlock[] => {
-  const normalized = value.replace(/\r\n/g, '\n');
+export const parseNoteBlocks = (value: string | null | undefined): NoteBlock[] => {
+  const normalized = (typeof value === 'string' ? value : '').replace(/\r\n/g, '\n');
   if (normalized === '') {
     return [createNoteBlock()];
   }
@@ -92,7 +92,7 @@ export const explodeParagraphIfListMarkers = (text: string): NoteBlock[] | null 
   return mergeAdjacentParagraphs(parsed);
 };
 
-export const toggleNoteBlockChecked = (value: string, index: number): string | null => {
+export const toggleNoteBlockChecked = (value: string | null | undefined, index: number): string | null => {
   const blocks = parseNoteBlocks(value);
   const block = blocks[index];
   if (!block || block.kind !== 'check') {
@@ -102,7 +102,7 @@ export const toggleNoteBlockChecked = (value: string, index: number): string | n
   return serializeNoteBlocks(blocks);
 };
 
-export const formatNotePreview = (value: string): string => {
+export const formatNotePreview = (value: string | null | undefined): string => {
   const parts = parseNoteBlocks(value)
     .map((block) => {
       const text = block.text.replace(/\n/g, ' ').trim();
@@ -115,4 +115,5 @@ export const formatNotePreview = (value: string): string => {
   return parts.join('  ');
 };
 
-export const noteBlocksHaveContent = (value: string): boolean => formatNotePreview(value).length > 0;
+export const noteBlocksHaveContent = (value: string | null | undefined): boolean =>
+  formatNotePreview(value).length > 0;

@@ -1334,6 +1334,13 @@ export default function DetailScreen() {
   const goToAdjacentFriendRef = useRef(goToAdjacentFriend);
   goToAdjacentFriendRef.current = goToAdjacentFriend;
 
+  const handleSharedHeaderPrev = useCallback(() => {
+    goToAdjacentFriendRef.current(homeAdjacentFriendIdsRef.current.prevId, 'prev');
+  }, []);
+  const handleSharedHeaderNext = useCallback(() => {
+    goToAdjacentFriendRef.current(homeAdjacentFriendIdsRef.current.nextId, 'next');
+  }, []);
+
   useLayoutEffect(() => {
     if (!useSharedHeaderChrome || !setSharedDetailHeader) {
       return;
@@ -1342,24 +1349,31 @@ export default function DetailScreen() {
       onBack: navigateHome,
       prevEnabled: Boolean(homeAdjacentFriendIds.prevId),
       nextEnabled: Boolean(homeAdjacentFriendIds.nextId),
-      onPrev: () => goToAdjacentFriend(homeAdjacentFriendIds.prevId, 'prev'),
-      onNext: () => goToAdjacentFriend(homeAdjacentFriendIds.nextId, 'next'),
+      onPrev: handleSharedHeaderPrev,
+      onNext: handleSharedHeaderNext,
       activeIconColor: appTheme.topBarText,
       mutedIconColor: appTheme.topBarTextMuted,
     });
-    return () => {
-      setSharedDetailHeader(null);
-    };
   }, [
     useSharedHeaderChrome,
     setSharedDetailHeader,
     navigateHome,
     homeAdjacentFriendIds.prevId,
     homeAdjacentFriendIds.nextId,
-    goToAdjacentFriend,
+    handleSharedHeaderPrev,
+    handleSharedHeaderNext,
     appTheme.topBarText,
     appTheme.topBarTextMuted,
   ]);
+
+  useLayoutEffect(() => {
+    if (!useSharedHeaderChrome || !setSharedDetailHeader) {
+      return;
+    }
+    return () => {
+      setSharedDetailHeader(null);
+    };
+  }, [useSharedHeaderChrome, setSharedDetailHeader]);
 
   const handleBodySwipeAdjacent = useCallback((direction: AdjacentDirection) => {
     const { prevId, nextId } = homeAdjacentFriendIdsRef.current;

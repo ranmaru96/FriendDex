@@ -25,17 +25,51 @@ export type SharedSubToolHeaderConfig = {
   titleFramed?: boolean;
 };
 
-type SharedHeaderChromeContextValue = {
-  detailHeader: SharedDetailHeaderConfig | null;
+export type SharedHeaderChromeActions = {
   setDetailHeader: (config: SharedDetailHeaderConfig | null) => void;
-  subToolHeader: SharedSubToolHeaderConfig | null;
   setSubToolHeader: (config: SharedSubToolHeaderConfig | null) => void;
-  /** 入力フォーム表示中など、パスに関係なくボトムナビを隠す */
-  suppressBottomNav: boolean;
   setSuppressBottomNav: (hide: boolean) => void;
 };
 
-const SharedHeaderChromeContext = createContext<SharedHeaderChromeContextValue | null>(null);
+type SharedHeaderChromeContextValue = SharedHeaderChromeActions & {
+  detailHeader: SharedDetailHeaderConfig | null;
+  subToolHeader: SharedSubToolHeaderConfig | null;
+  suppressBottomNav: boolean;
+};
+
+/** Setters only — header state updates must not re-render screens. */
+const SharedHeaderActionsContext = createContext<SharedHeaderChromeActions | null>(null);
+const DetailHeaderStateContext = createContext<SharedDetailHeaderConfig | null>(null);
+const SubToolHeaderStateContext = createContext<SharedSubToolHeaderConfig | null>(null);
+const SuppressBottomNavContext = createContext(false);
+
+function sameDetailHeader(
+  current: SharedDetailHeaderConfig,
+  next: SharedDetailHeaderConfig
+): boolean {
+  return (
+    current.prevEnabled === next.prevEnabled &&
+    current.nextEnabled === next.nextEnabled &&
+    current.activeIconColor === next.activeIconColor &&
+    current.mutedIconColor === next.mutedIconColor &&
+    current.onBack === next.onBack &&
+    current.onPrev === next.onPrev &&
+    current.onNext === next.onNext
+  );
+}
+
+function sameSubToolHeader(
+  current: SharedSubToolHeaderConfig,
+  next: SharedSubToolHeaderConfig
+): boolean {
+  return (
+    current.title === next.title &&
+    current.titleFramed === next.titleFramed &&
+    current.right === next.right &&
+    current.titleTrailing === next.titleTrailing &&
+    current.onBack === next.onBack
+  );
+}
 
 export function SharedHeaderChromeProvider({ children }: { children: ReactNode }) {
   const [detailHeader, setDetailHeaderState] = useState<SharedDetailHeaderConfig | null>(null);
@@ -43,7 +77,15 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
   const [suppressBottomNav, setSuppressBottomNavState] = useState(false);
 
   const setDetailHeader = useCallback((config: SharedDetailHeaderConfig | null) => {
-    setDetailHeaderState(config);
+    setDetailHeaderState((current) => {
+      if (current === config) {
+        return current;
+      }
+      if (current == null || config == null) {
+        return config;
+      }
+      return sameDetailHeader(current, config) ? current : config;
+    });
   }, []);
 
   const setSubToolHeader = useCallback((config: SharedSubToolHeaderConfig | null) => {
@@ -54,55 +96,67 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
       if (current == null || config == null) {
         return config;
       }
-      if (
-        current.title === config.title &&
-        current.titleFramed === config.titleFramed &&
-        current.right === config.right &&
-        current.titleTrailing === config.titleTrailing
-      ) {
-        // onBack は毎render新しい参照になりやすいので、それだけでは更新しない
-        return current;
-      }
-      return config;
+      return sameSubToolHeader(current, config) ? current : config;
     });
   }, []);
 
   const setSuppressBottomNav = useCallback((hide: boolean) => {
-    setSuppressBottomNavState(hide);
+    setSuppressBottomNavState((current) => (current === hide ? current : hide));
   }, []);
 
-  const value = useMemo(
+  const actions = useMemo(
     () => ({
-      detailHeader,
       setDetailHeader,
-      subToolHeader,
       setSubToolHeader,
-      suppressBottomNav,
       setSuppressBottomNav,
     }),
-    [
-      detailHeader,
-      setDetailHeader,
-      subToolHeader,
-      setSubToolHeader,
-      suppressBottomNav,
-      setSuppressBottomNav,
-    ]
+    [setDetailHeader, setSubToolHeader, setSuppressBottomNav]
   );
 
   return (
-    <SharedHeaderChromeContext.Provider value={value}>{children}</SharedHeaderChromeContext.Provider>
+    <SharedHeaderActionsContext.Provider value={actions}>
+      <SuppressBottomNavContext.Provider value={suppressBottomNav}>
+        <DetailHeaderStateContext.Provider value={detailHeader}>
+          <SubToolHeaderStateContext.Provider value={subToolHeader}>
+            {children}
+          </SubToolHeaderStateContext.Provider>
+        </DetailHeaderStateContext.Provider>
+      </SuppressBottomNavContext.Provider>
+    </SharedHeaderActionsContext.Provider>
   );
 }
 
 export function useSharedHeaderChrome(): SharedHeaderChromeContextValue {
-  const ctx = useContext(SharedHeaderChromeContext);
-  if (!ctx) {
+  const actions = useContext(SharedHeaderActionsContext);
+  const detailHeader = useContext(DetailHeaderStateContext);
+  const subToolHeader = useContext(SubToolHeaderStateContext);
+  const suppressBottomNav = useContext(SuppressBottomNavContext);
+  if (!actions) {
     throw new Error('useSharedHeaderChrome must be used within SharedHeaderChromeProvider');
   }
-  return ctx;
+  return {
+    ...actions,
+    detailHeader,
+    subToolHeader,
+    suppressBottomNav,
+  };
 }
 
-export function useSharedHeaderChromeOptional(): SharedHeaderChromeContextValue | null {
-  return useContext(SharedHeaderChromeContext);
+/** Setters only. Safe for screens — does not subscribe to header contents. */
+export function useSharedHeaderChromeOptional(): SharedHeaderChromeActions | null {
+  return useContext(SharedHeaderActionsContext);
+}
+
+export function useSharedHeaderVisuals(): {
+  detailHeader: SharedDetailHeaderConfig | null;
+  subToolHeader: SharedSubToolHeaderConfig | null;
+} {
+  return {
+    detailHeader: useContext(DetailHeaderStateContext),
+    subToolHeader: useContext(SubToolHeaderStateContext),
+  };
+}
+
+export function useSuppressBottomNav(): boolean {
+  return useContext(SuppressBottomNavContext);
 }

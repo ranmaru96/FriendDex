@@ -1,10 +1,11 @@
 import { useEffect, useRef } from 'react';
-import { AppState, type AppStateStatus } from 'react-native';
+import { AppState, InteractionManager, type AppStateStatus } from 'react-native';
 import { initializeDatabase } from '../db';
 import { syncTaskReminders } from '@/utils/taskNotifications';
 
 const INTERVAL_MS = 60_000;
 
+/** 起動時にマウントしない。通知同期はタスク保存時と Tasks タブ focus で行う。 */
 export function useTaskReminderSchedule(): void {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -35,13 +36,16 @@ export function useTaskReminderSchedule(): void {
       clearScheduledInterval();
     };
 
-    runSync();
-    if (AppState.currentState === 'active') {
-      startScheduledInterval();
-    }
+    const afterFirstPaint = InteractionManager.runAfterInteractions(() => {
+      runSync();
+      if (AppState.currentState === 'active') {
+        startScheduledInterval();
+      }
+    });
 
     const subscription = AppState.addEventListener('change', handleAppStateChange);
     return () => {
+      afterFirstPaint.cancel();
       subscription.remove();
       clearScheduledInterval();
     };

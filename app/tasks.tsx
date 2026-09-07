@@ -744,6 +744,7 @@ export default function TasksScreen() {
   useFocusEffect(
     useCallback(() => {
       reload();
+      void syncTaskReminders();
     }, [reload])
   );
 

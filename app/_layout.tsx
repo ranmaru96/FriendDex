@@ -4,9 +4,7 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { isGoogleCalendarNativeAvailable } from '@/lib/googleNativeAvailability';
 import AppHeader from '../AppHeader';
-import { runAutoBackup } from '../backup';
 import BottomNav from '../components/BottomNav';
 import { EventNotificationHandler } from '../components/EventNotificationHandler';
 import { ScreenTopBar } from '../components/screen/ScreenTopBar';
@@ -17,11 +15,11 @@ import { DetailDesignProvider } from '../contexts/DetailDesignContext';
 import { SettlementMockProvider } from '../contexts/SettlementMockContext';
 import {
   SharedHeaderChromeProvider,
-  useSharedHeaderChrome,
+  useSharedHeaderVisuals,
+  useSuppressBottomNav,
 } from '../contexts/SharedHeaderChromeContext';
 import { UiPreviewProvider, useUiKit } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
-import { useTaskReminderSchedule } from '../hooks/useTaskReminderSchedule';
 import {
   getActiveTab,
   shouldHideBottomNav,
@@ -31,14 +29,6 @@ import { resolveStackAnimation } from '../utils/tabTransition';
 import { getMyselfSetupPhase, initializeDatabase } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
 import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
-
-if (isGoogleCalendarNativeAvailable()) {
-  try {
-    require('expo-web-browser').maybeCompleteAuthSession();
-  } catch {
-    // いまのネイティブバイナリに ExpoWebBrowser が無いときは無視する。
-  }
-}
 
 const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'index',
@@ -50,7 +40,6 @@ const BOTTOM_TAB_ROUTE_NAMES = new Set([
 
 function PastEventConversionScheduler() {
   usePastEventConversionSchedule();
-  useTaskReminderSchedule();
   return null;
 }
 
@@ -60,7 +49,7 @@ function AppShellHeader() {
   const hideBottomNav = shouldHideBottomNav(pathname);
   const kit = useUiKit();
   const { colors } = useAppTheme();
-  const { detailHeader, subToolHeader } = useSharedHeaderChrome();
+  const { detailHeader, subToolHeader } = useSharedHeaderVisuals();
   const isDetailRoute = pathname.includes('/detail');
   const useSharedChrome = kit.sharedHeaderChrome;
   const showDetailChrome = isDetailRoute && detailHeader != null;
@@ -155,7 +144,7 @@ function AppShellHeader() {
 function AppShell() {
   const pathname = usePathname();
   const router = useRouter();
-  const { suppressBottomNav } = useSharedHeaderChrome();
+  const suppressBottomNav = useSuppressBottomNav();
   const { colors } = useAppTheme();
   const [setupPhase, setSetupPhase] = useState(() => {
     initializeDatabase();
@@ -202,7 +191,6 @@ export default function RootLayout() {
   useEffect(() => {
     initializeDatabase();
     convertPastEventsToAutoEpisodes();
-    void runAutoBackup();
   }, []);
 
   return (

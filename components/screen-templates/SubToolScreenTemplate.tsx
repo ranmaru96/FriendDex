@@ -1,4 +1,4 @@
-import { useLayoutEffect, type ReactNode } from 'react';
+import { useCallback, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -57,6 +57,12 @@ export function SubToolScreenTemplate({
   const useSharedTopBar = Boolean(
     kit.sharedHeaderChrome && useTopBar && setSubToolHeader && navInShell
   );
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
+  const stableOnBack = useCallback(() => {
+    onBackRef.current?.();
+  }, []);
+  const headerOnBack = onBack ? stableOnBack : undefined;
   const bottomPadding = Spacing.lg;
   /** BottomNav がシェル側にあるときは bottom inset を取らない（ナビ上の空白で可視領域が減る） */
   const safeAreaEdges = useSharedTopBar
@@ -69,8 +75,8 @@ export function SubToolScreenTemplate({
 
   useLayoutEffect(() => {
     if (!useSharedTopBar || !setSubToolHeader) return;
-    setSubToolHeader({ title, onBack, right, titleTrailing, titleFramed });
-  }, [useSharedTopBar, setSubToolHeader, title, onBack, right, titleTrailing, titleFramed]);
+    setSubToolHeader({ title, onBack: headerOnBack, right, titleTrailing, titleFramed });
+  }, [useSharedTopBar, setSubToolHeader, title, headerOnBack, right, titleTrailing, titleFramed]);
 
   useLayoutEffect(() => {
     if (!useSharedTopBar || !setSubToolHeader) return;

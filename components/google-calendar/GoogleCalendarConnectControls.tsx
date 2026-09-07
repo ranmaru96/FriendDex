@@ -102,6 +102,17 @@ function GoogleCalendarConnectControlsInner({
     reloadSnapshot();
   }, [reloadSnapshot]);
 
+  useEffect(() => {
+    if (!isGoogleCalendarNativeAvailable()) {
+      return;
+    }
+    try {
+      require('expo-web-browser').maybeCompleteAuthSession();
+    } catch {
+      // ネイティブに ExpoWebBrowser が無いときは無視する
+    }
+  }, []);
+
   const finishConnect = useCallback(async () => {
     setBusy(true);
     try {

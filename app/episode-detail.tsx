@@ -228,18 +228,21 @@ export default function EpisodeDetailScreen() {
     router.back();
   }, [router]);
 
+  const loadFromEpisode = episodeForm.loadFromEpisode;
+  const resetEpisodeForm = episodeForm.reset;
+
   const handleEdit = useCallback(() => {
     if (!episode) {
       return;
     }
-    episodeForm.loadFromEpisode(episode);
+    loadFromEpisode(episode);
     setIsEditVisible(true);
-  }, [episode, episodeForm]);
+  }, [episode, loadFromEpisode]);
 
   const handleCloseEdit = useCallback(() => {
-    episodeForm.reset();
+    resetEpisodeForm();
     setIsEditVisible(false);
-  }, [episodeForm]);
+  }, [resetEpisodeForm]);
 
   const handleSaveEdit = useCallback(() => {
     if (!myselfId) {

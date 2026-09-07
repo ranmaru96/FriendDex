@@ -1116,7 +1116,7 @@ export default function EventScreen() {
                         : task.dueDate
                           ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
                           : '期限なし'}
-                      {task.memo.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
+                      {task.memo?.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
                     </Text>
                   </Pressable>
                 ))}
