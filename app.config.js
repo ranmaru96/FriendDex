@@ -121,7 +121,6 @@ export default {
       [
         "@sentry/react-native",
         {
-          url: "https://us.sentry.io/",
           organization: "iwamotoranmaru",
           project: "frienddex",
         },
