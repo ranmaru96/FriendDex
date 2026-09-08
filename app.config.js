@@ -125,6 +125,7 @@ export default {
           project: "frienddex",
         },
       ],
+      "./plugins/withStripSentryPropertiesUrl",
     ],
     extra: {
       router: {},
