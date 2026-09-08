@@ -201,7 +201,7 @@ export default function RootLayout() {
             <UiPreviewProvider>
               <SharedHeaderChromeProvider>
                 <SettlementMockProvider>
-                  {/* 診断用: <EventNotificationHandler /> */}
+                  <EventNotificationHandler />
                   <PastEventConversionScheduler />
                   <NoteFormatAccessoryProvider>
                     <AppShell />
