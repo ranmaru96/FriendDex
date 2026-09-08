@@ -121,9 +121,9 @@ export default {
       [
         "@sentry/react-native",
         {
-          url: "https://sentry.io/",
-          organization: process.env.SENTRY_ORG,
-          project: process.env.SENTRY_PROJECT,
+          url: "https://us.sentry.io/",
+          organization: "iwamotoranmaru",
+          project: "frienddex",
         },
       ],
     ],
