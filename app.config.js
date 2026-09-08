@@ -117,7 +117,15 @@ export default {
         }
       ],
       "expo-web-browser",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "@sentry/react-native",
+        {
+          url: "https://sentry.io/",
+          organization: process.env.SENTRY_ORG,
+          project: process.env.SENTRY_PROJECT,
+        },
+      ],
     ],
     extra: {
       router: {},

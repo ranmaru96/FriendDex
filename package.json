@@ -1,7 +1,7 @@
 {
   "name": "frienddex",
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "main": "index.js",
   "scripts": {
     "start": "expo start",
     "start:dev": "cross-env APP_VARIANT=development expo start --dev-client",
@@ -13,6 +13,7 @@
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
+    "@sentry/react-native": "^8.25.0",
     "@shopify/react-native-skia": "2.2.12",
     "@supabase/supabase-js": "^2.112.3",
     "babel-preset-expo": "~54.0.10",

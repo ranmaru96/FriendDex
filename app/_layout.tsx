@@ -1,4 +1,6 @@
+import '../sentry';
 import { Stack, usePathname, useRouter } from 'expo-router';
+import * as Sentry from '@sentry/react-native';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -187,7 +189,7 @@ function AppShell() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   useEffect(() => {
     initializeDatabase();
     convertPastEventsToAutoEpisodes();
@@ -215,6 +217,8 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+export default Sentry.wrap(RootLayout);
 
 const styles = StyleSheet.create({
   root: {
