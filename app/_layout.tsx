@@ -149,8 +149,19 @@ function AppShell() {
   const suppressBottomNav = useSuppressBottomNav();
   const { colors } = useAppTheme();
   const [setupPhase, setSetupPhase] = useState(() => {
-    initializeDatabase();
-    return getMyselfSetupPhase();
+    try {
+      initializeDatabase();
+      return getMyselfSetupPhase();
+    } catch (error) {
+      Sentry.captureException(error, {
+        extra: {
+          errorString: String(error),
+          errorMessage: error instanceof Error ? error.message : 'no message',
+          errorName: error instanceof Error ? error.name : 'unknown',
+        },
+      });
+      throw error;
+    }
   });
   const needsSetup = setupPhase !== 'ready';
   const onSetupRoute = pathname.includes('setup-myself');

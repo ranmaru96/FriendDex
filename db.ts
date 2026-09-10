@@ -652,7 +652,13 @@ const defaultProfileRowToFriend = (row: ProfileRow): Friend => {
   };
 };
 
+let didInitializeDatabase = false;
+
 export const initializeDatabase = (): void => {
+  if (didInitializeDatabase) {
+    return;
+  }
+  didInitializeDatabase = true;
   db.execSync(`
     CREATE TABLE IF NOT EXISTS ${SETTINGS_TABLE} (
       key TEXT PRIMARY KEY NOT NULL,
