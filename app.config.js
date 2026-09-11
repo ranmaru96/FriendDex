@@ -46,7 +46,7 @@ export default {
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
-    newArchEnabled: false,
+    newArchEnabled: true,
     scheme: appSchemes.length === 1 ? appSchemes[0] : appSchemes,
     splash: {
       image: "./assets/splash-icon.png",
