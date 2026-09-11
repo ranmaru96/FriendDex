@@ -116,8 +116,6 @@ export default {
           color: "#4E9A87"
         }
       ],
-      "expo-web-browser",
-      "expo-secure-store",
       [
         "@sentry/react-native",
         {

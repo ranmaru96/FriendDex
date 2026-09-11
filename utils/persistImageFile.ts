@@ -8,12 +8,57 @@ import {
 
 /** 永続化した画像の保存先（documentDirectory 配下）。 */
 const PHOTOS_DIRECTORY = `${documentDirectory}photos/`;
+const PHOTOS_DIR_MARKER = '/photos/';
+/** persistImageFile が付ける名前。これ以外はアプリ管理外とみなす。 */
+const PERSISTED_PHOTO_FILENAME = /^photo_\d+_\d+\.jpe?g$/i;
 
 const ensurePhotosDirectory = async (): Promise<void> => {
   const info = await getInfoAsync(PHOTOS_DIRECTORY);
   if (!info.exists) {
     await makeDirectoryAsync(PHOTOS_DIRECTORY, { intermediates: true });
   }
+};
+
+/** `.../photos/<filename>` からファイル名だけ取り出す。アプリ管理外なら null。 */
+export const extractPersistedPhotoFilename = (uri: string | null | undefined): string | null => {
+  const normalized = uri?.trim() ?? '';
+  if (!normalized) {
+    return null;
+  }
+  const markerIndex = normalized.lastIndexOf(PHOTOS_DIR_MARKER);
+  if (markerIndex < 0) {
+    return null;
+  }
+  const rawName = normalized.slice(markerIndex + PHOTOS_DIR_MARKER.length).split(/[?#]/)[0] ?? '';
+  let filename = rawName;
+  try {
+    filename = decodeURIComponent(rawName);
+  } catch {
+    filename = rawName;
+  }
+  if (!filename || filename.includes('/') || filename.includes('\\')) {
+    return null;
+  }
+  if (!PERSISTED_PHOTO_FILENAME.test(filename)) {
+    return null;
+  }
+  return filename;
+};
+
+/**
+ * コンテナ UUID が変わった古い絶対パスを、今の documentDirectory 配下へ付け替える。
+ * `/photos/` を含まない URI はそのまま返す。
+ */
+export const resolvePersistedImageUri = (uri: string | null | undefined): string | null => {
+  const normalized = uri?.trim() ?? '';
+  if (!normalized) {
+    return null;
+  }
+  const filename = extractPersistedPhotoFilename(normalized);
+  if (!filename || !documentDirectory) {
+    return normalized;
+  }
+  return `${documentDirectory}photos/${filename}`;
 };
 
 /**
@@ -23,8 +68,11 @@ const ensurePhotosDirectory = async (): Promise<void> => {
  */
 export const persistImageFile = async (tempUri: string): Promise<string> => {
   const source = tempUri.trim();
-  if (!source || isPersistedImageUri(source)) {
+  if (!source) {
     return source;
+  }
+  if (isPersistedImageUri(source)) {
+    return resolvePersistedImageUri(source) ?? source;
   }
   try {
     await ensurePhotosDirectory();
@@ -38,11 +86,9 @@ export const persistImageFile = async (tempUri: string): Promise<string> => {
   }
 };
 
-/** photos ディレクトリ配下（＝アプリが管理している実体）か。 */
-export const isPersistedImageUri = (uri: string | null | undefined): boolean => {
-  const normalized = uri?.trim() ?? '';
-  return normalized.startsWith(PHOTOS_DIRECTORY);
-};
+/** photos ディレクトリ配下（＝アプリが管理している実体）か。コンテナ UUID が古くても true。 */
+export const isPersistedImageUri = (uri: string | null | undefined): boolean =>
+  extractPersistedPhotoFilename(uri) != null;
 
 /**
  * 永続化済み画像を削除する。アプリ管理外の URI は無視する。
@@ -52,8 +98,12 @@ export const deletePersistedImage = async (uri: string | null | undefined): Prom
   if (!isPersistedImageUri(uri)) {
     return;
   }
+  const resolved = resolvePersistedImageUri(uri);
+  if (!resolved) {
+    return;
+  }
   try {
-    await deleteAsync(uri as string, { idempotent: true });
+    await deleteAsync(resolved, { idempotent: true });
   } catch (error) {
     console.warn('Failed to delete persisted image file.', error);
   }

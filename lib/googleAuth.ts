@@ -1,5 +1,4 @@
 import Constants from 'expo-constants';
-import { requireOptionalNativeModule } from 'expo-modules-core';
 import { Platform } from 'react-native';
 import { GOOGLE_CALENDAR_SCOPE } from '@/constants/googleCalendar';
 import { deleteAppSetting, getAppSetting, initializeDatabase, setAppSetting } from '@/db';
@@ -83,49 +82,17 @@ export const getGoogleNativeRedirectUri = (): string | undefined => {
 
 export const GOOGLE_CALENDAR_AUTH_SCOPES = [GOOGLE_CALENDAR_SCOPE] as const;
 
-const loadSecureStore = (): typeof import('expo-secure-store') | null => {
-  if (!requireOptionalNativeModule('ExpoSecureStore')) {
-    return null;
-  }
-  return require('expo-secure-store') as typeof import('expo-secure-store');
-};
-
-const loadAuthSession = (): typeof import('expo-auth-session') | null => {
-  if (!requireOptionalNativeModule('ExpoWebBrowser')) {
-    return null;
-  }
-  return require('expo-auth-session') as typeof import('expo-auth-session');
-};
-
 const readStoredJson = async (key: string): Promise<string | null> => {
-  const secureStore = loadSecureStore();
-  if (secureStore) {
-    const fromSecure = await secureStore.getItemAsync(key);
-    if (fromSecure) {
-      return fromSecure;
-    }
-  }
   initializeDatabase();
   return getAppSetting(key);
 };
 
 const writeStoredJson = async (key: string, value: string): Promise<void> => {
-  const secureStore = loadSecureStore();
-  if (secureStore) {
-    await secureStore.setItemAsync(key, value);
-    initializeDatabase();
-    deleteAppSetting(key);
-    return;
-  }
   initializeDatabase();
   setAppSetting(key, value);
 };
 
 const deleteStoredJson = async (key: string): Promise<void> => {
-  const secureStore = loadSecureStore();
-  if (secureStore) {
-    await secureStore.deleteItemAsync(key);
-  }
   initializeDatabase();
   deleteAppSetting(key);
 };
@@ -190,18 +157,32 @@ const refreshGoogleTokens = async (
     return null;
   }
   try {
-    const AuthSession = loadAuthSession();
-    if (!AuthSession) {
+    const body = new URLSearchParams({
+      client_id: clientId,
+      grant_type: 'refresh_token',
+      refresh_token: current.refreshToken,
+    });
+    const response = await fetch(GOOGLE_AUTH_DISCOVERY.tokenEndpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: body.toString(),
+    });
+    if (!response.ok) {
       return null;
     }
-    const refreshed = await AuthSession.refreshAsync(
-      {
-        clientId,
-        refreshToken: current.refreshToken,
-      },
-      GOOGLE_AUTH_DISCOVERY
-    );
-    const next = tokensFromAuthSession(refreshed);
+    const json = (await response.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+    if (typeof json.access_token !== 'string' || !json.access_token.trim()) {
+      return null;
+    }
+    const next = tokensFromAuthSession({
+      accessToken: json.access_token,
+      refreshToken: json.refresh_token,
+      expiresIn: json.expires_in,
+    });
     await saveGoogleTokens(next, current);
     return (await loadGoogleTokens()) ?? next;
   } catch {

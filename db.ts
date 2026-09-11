@@ -57,7 +57,7 @@ import {
   WishlistItemInput,
   WishlistKind,
 } from './types';
-import { deletePersistedImages } from './utils/persistImageFile';
+import { deletePersistedImages, resolvePersistedImageUri } from './utils/persistImageFile';
 import {
   compareEpisodesByEventDateTime,
   excludeSelfIndividualEntries,
@@ -510,7 +510,7 @@ const rowToProfile = (row: ProfileRow): Profile => {
     weight: row.weight,
     category: row.category,
     description: row.description,
-    photoUri: row.photoUri,
+    photoUri: resolvePersistedImageUri(row.photoUri),
     affiliations: fromJson(row.affiliations),
     personalities: fromJson(row.personalities),
     experiences: fromJson(row.experiences),
@@ -546,7 +546,7 @@ const rowToCommonItemOption = (row: CommonItemOptionRow): CommonItemOption => ({
 const rowToEpisodePhoto = (row: EpisodePhotoRow): EpisodePhoto => ({
   id: row.id,
   episodeId: row.episode_id,
-  photoUri: row.photo_uri,
+  photoUri: resolvePersistedImageUri(row.photo_uri) ?? row.photo_uri,
   sortOrder: row.sort_order,
   createdAt: row.created_at,
 });
@@ -636,7 +636,7 @@ const defaultProfileRowToFriend = (row: ProfileRow): Friend => {
     weight: row.weight,
     category: row.category,
     description: row.description,
-    photoUri: row.photoUri,
+    photoUri: resolvePersistedImageUri(row.photoUri),
     affiliations: fromJson(row.affiliations),
     personalities: fromJson(row.personalities),
     experiences: fromJson(row.experiences),
@@ -650,6 +650,51 @@ const defaultProfileRowToFriend = (row: ProfileRow): Friend => {
     scannedUserId: row.scannedUserId ?? '',
     scannedAt: row.scannedAt ?? '',
   };
+};
+
+const rewriteStalePersistedPhotoUris = (): void => {
+  const timestamp = nowIso();
+  const profileRows = db.getAllSync<{ id: string; photoUri: string | null }>(
+    `SELECT id, photoUri FROM ${PROFILES_TABLE};`
+  );
+  for (const row of profileRows) {
+    try {
+      const current = row.photoUri?.trim() ?? '';
+      if (!current) {
+        continue;
+      }
+      const resolved = resolvePersistedImageUri(current);
+      if (!resolved || resolved === current) {
+        continue;
+      }
+      db.runSync(`UPDATE ${PROFILES_TABLE} SET photoUri = ?, updatedAt = ? WHERE id = ?;`, [
+        resolved,
+        timestamp,
+        row.id,
+      ]);
+    } catch (error) {
+      console.warn('Failed to rewrite profile photo URI.', row.id, error);
+    }
+  }
+
+  const episodePhotoRows = db.getAllSync<{ id: number; photo_uri: string }>(
+    `SELECT id, photo_uri FROM ${EPISODE_PHOTOS_TABLE};`
+  );
+  for (const row of episodePhotoRows) {
+    try {
+      const current = row.photo_uri?.trim() ?? '';
+      if (!current) {
+        continue;
+      }
+      const resolved = resolvePersistedImageUri(current);
+      if (!resolved || resolved === current) {
+        continue;
+      }
+      db.runSync(`UPDATE ${EPISODE_PHOTOS_TABLE} SET photo_uri = ? WHERE id = ?;`, [resolved, row.id]);
+    } catch (error) {
+      console.warn('Failed to rewrite episode photo URI.', row.id, error);
+    }
+  }
 };
 
 let didInitializeDatabase = false;
@@ -1305,6 +1350,11 @@ const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COM
   backfillPersonNameParts();
 
   purgeExpiredCompletedTemporaryTasks();
+  try {
+    rewriteStalePersistedPhotoUris();
+  } catch (error) {
+    console.warn('Failed to rewrite persisted photo URIs.', error);
+  }
 };
 
 const upsertDefaultProfileFromFriend = (friendId: string, input: FriendInput, timestamp: string): void => {
@@ -2626,7 +2676,7 @@ export const insertEpisodePhoto = (
   sortOrder: number
 ): EpisodePhoto | null => {
   const normalizedEpisodeId = episodeId.trim();
-  const normalizedUri = photoUri.trim();
+  const normalizedUri = resolvePersistedImageUri(photoUri.trim()) ?? photoUri.trim();
   if (!normalizedEpisodeId || !normalizedUri) {
     return null;
   }
@@ -2686,7 +2736,7 @@ export const getEpisodeListPhotoUrisMap = (
   for (const row of rows) {
     const list = map.get(row.episode_id) ?? [];
     if (list.length < limit) {
-      list.push(row.photo_uri);
+      list.push(resolvePersistedImageUri(row.photo_uri) ?? row.photo_uri);
       map.set(row.episode_id, list);
     }
   }

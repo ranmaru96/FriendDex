@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,28 +10,10 @@ import {
 import { FRIENDEX_GOOGLE_CALENDAR_SUMMARY } from '@/constants/googleCalendar';
 import { Theme } from '@/constants/theme';
 import {
-  GOOGLE_CALENDAR_AUTH_SCOPES,
-  getGoogleClientIds,
-  getGoogleNativeRedirectUri,
-  saveGoogleTokens,
-  tokensFromAuthSession,
-} from '@/lib/googleAuth';
-import { isGoogleCalendarNativeAvailable } from '@/lib/googleNativeAvailability';
-import {
-  completeGoogleCalendarConnect,
   disconnectGoogleCalendar,
   getGoogleCalendarConnectionSnapshot,
   pushAllLocalEventsToGoogleCalendar,
 } from '@/utils/googleCalendarSync';
-
-let Google: typeof import('expo-auth-session/providers/google') | null = null;
-try {
-  if (isGoogleCalendarNativeAvailable()) {
-    Google = require('expo-auth-session/providers/google') as typeof import('expo-auth-session/providers/google');
-  }
-} catch {
-  Google = null;
-}
 
 export type GoogleCalendarSettingsThemed = {
   sectionHeader: object | null;
@@ -61,9 +43,6 @@ export function GoogleCalendarConnectControls({
 }: {
   themed: GoogleCalendarSettingsThemed;
 }) {
-  if (!Google) {
-    return null;
-  }
   return <GoogleCalendarConnectControlsInner themed={themed} />;
 }
 
@@ -74,25 +53,6 @@ function GoogleCalendarConnectControlsInner({
 }) {
   const [busy, setBusy] = useState(false);
   const [snapshot, setSnapshot] = useState(getGoogleCalendarConnectionSnapshot);
-  const handledResponseKey = useRef<string | null>(null);
-
-  const clientIds = useMemo(() => getGoogleClientIds(), []);
-  const nativeRedirectUri = useMemo(() => getGoogleNativeRedirectUri(), []);
-
-  const [request, response, promptAsync] = Google!.useAuthRequest(
-    {
-      iosClientId: clientIds.iosClientId,
-      androidClientId: clientIds.androidClientId,
-      webClientId: clientIds.webClientId,
-      clientId: clientIds.iosClientId ?? clientIds.androidClientId ?? clientIds.webClientId,
-      scopes: [...GOOGLE_CALENDAR_AUTH_SCOPES],
-      extraParams: {
-        access_type: 'offline',
-        prompt: 'consent select_account',
-      },
-    },
-    nativeRedirectUri ? { native: nativeRedirectUri } : undefined
-  );
 
   const reloadSnapshot = useCallback(() => {
     setSnapshot(getGoogleCalendarConnectionSnapshot());
@@ -102,82 +62,14 @@ function GoogleCalendarConnectControlsInner({
     reloadSnapshot();
   }, [reloadSnapshot]);
 
-  useEffect(() => {
-    if (!isGoogleCalendarNativeAvailable()) {
-      return;
-    }
-    try {
-      require('expo-web-browser').maybeCompleteAuthSession();
-    } catch {
-      // ネイティブに ExpoWebBrowser が無いときは無視する
-    }
-  }, []);
-
-  const finishConnect = useCallback(async () => {
-    setBusy(true);
-    try {
-      const { email, result } = await completeGoogleCalendarConnect();
-      reloadSnapshot();
-      const failedNote =
-        result.failed > 0 ? `\n送信に失敗した予定: ${result.failed}件` : '';
-      Alert.alert(
-        '接続しました',
-        `${FRIENDEX_GOOGLE_CALENDAR_SUMMARY} カレンダーへ既存の予定を送りました（${result.pushed}件）${failedNote}${
-          email ? `\nアカウント: ${email}` : ''
-        }`
-      );
-    } catch (error) {
-      Alert.alert(
-        '接続エラー',
-        error instanceof Error ? error.message : 'Google カレンダーへの接続に失敗しました。'
-      );
-    } finally {
-      setBusy(false);
-      reloadSnapshot();
-    }
-  }, [reloadSnapshot]);
-
-  useEffect(() => {
-    if (!response) {
-      return;
-    }
-    const responseKey =
-      response.type === 'success'
-        ? `success:${response.authentication?.accessToken ?? ''}`
-        : `${response.type}`;
-    if (handledResponseKey.current === responseKey) {
-      return;
-    }
-    handledResponseKey.current = responseKey;
-
-    if (response.type !== 'success' || !response.authentication?.accessToken) {
-      if (response.type === 'error') {
-        Alert.alert('接続エラー', response.error?.message ?? 'Google ログインに失敗しました。');
-      }
-      return;
-    }
-
-    void (async () => {
-      await saveGoogleTokens(tokensFromAuthSession(response.authentication!));
-      await finishConnect();
-    })();
-  }, [finishConnect, response]);
-
   const connected = Boolean(snapshot.calendarId);
   const lastSyncLabel = formatSyncAt(snapshot.lastSyncAt);
 
-  const handleConnect = async () => {
-    if (!request || busy) {
-      return;
-    }
-    try {
-      await promptAsync();
-    } catch (error) {
-      Alert.alert(
-        '接続エラー',
-        error instanceof Error ? error.message : 'Google ログインを開始できませんでした。'
-      );
-    }
+  const handleConnect = () => {
+    Alert.alert(
+      '接続できません',
+      'このビルドでは Google ログイン用のモジュールを外しています。'
+    );
   };
 
   const handleDisconnect = () => {
@@ -255,7 +147,7 @@ function GoogleCalendarConnectControlsInner({
           </Pressable>
         </>
       ) : (
-        <Pressable style={styles.row} onPress={() => void handleConnect()} disabled={!request || busy}>
+        <Pressable style={styles.row} onPress={handleConnect} disabled={busy}>
           <Text style={[styles.rowLabel, themed.rowLabel]}>Google アカウントを接続</Text>
           {busy ? <ActivityIndicator /> : <Text style={[styles.rowChevron, themed.hint]}>›</Text>}
         </Pressable>
