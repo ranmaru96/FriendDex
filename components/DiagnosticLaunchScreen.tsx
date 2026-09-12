@@ -10,10 +10,15 @@ import {
   diagnosticOpenDatabase,
   diagnosticRunInitializeDatabase,
 } from '@/db';
+import { diagnosticRegisterNotificationHandler } from '@/utils/diagnosticNotifications';
 
 type LogLine = {
   at: string;
   text: string;
+};
+
+type DiagnosticLaunchScreenProps = {
+  onEnterApp: () => void;
 };
 
 const nowLabel = (): string => {
@@ -31,7 +36,7 @@ const logStep = (message: string): void => {
   });
 };
 
-export function DiagnosticLaunchScreen() {
+export function DiagnosticLaunchScreen({ onEnterApp }: DiagnosticLaunchScreenProps) {
   const [lines, setLines] = useState<LogLine[]>([
     { at: nowLabel(), text: '起動完了。SQLite はまだ開いていない。' },
   ]);
@@ -86,7 +91,7 @@ export function DiagnosticLaunchScreen() {
     <SafeAreaView style={styles.root}>
       <Text style={styles.title}>診断（ビルド26）</Text>
       <Text style={styles.lead}>
-        上から順に1つずつ押す。4はボタンでは開かず、2秒後に開いて読む。データは削除しない。
+        上から順に1つずつ押す。4はボタンでは開かず、2秒後に開いて読む。8で通常ホームに入る。データは削除しない。
       </Text>
 
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
@@ -161,6 +166,31 @@ export function DiagnosticLaunchScreen() {
           }
         >
           <Text style={styles.buttonText}>6. 写真 FileSystem を有効化</Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.button}
+          onPress={() =>
+            runStep('7. 通知handler', () => {
+              diagnosticRegisterNotificationHandler();
+              return 'setNotificationHandler 完了';
+            })
+          }
+        >
+          <Text style={styles.buttonText}>7. 通知 handler を登録</Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.button}
+          onPress={() =>
+            runStep('8. ホームを出す', () => {
+              diagnosticOpenDatabase(DB_NAME);
+              onEnterApp();
+              return 'AppShell をマウント';
+            })
+          }
+        >
+          <Text style={styles.buttonText}>8. 通常ホームを出す</Text>
         </Pressable>
 
         {lines.map((line, index) => (

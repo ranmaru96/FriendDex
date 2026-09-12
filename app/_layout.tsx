@@ -201,20 +201,44 @@ function AppShell() {
   );
 }
 
+function DiagnosticFullApp() {
+  const { EventNotificationHandler } =
+    require('../components/EventNotificationHandler') as typeof import('../components/EventNotificationHandler');
+  return (
+    <AppThemeProvider>
+      <DetailDesignProvider>
+        <UiPreviewProvider>
+          <SharedHeaderChromeProvider>
+            <SettlementMockProvider>
+              <EventNotificationHandler />
+              <PastEventConversionScheduler />
+              <NoteFormatAccessoryProvider>
+                <AppShell />
+              </NoteFormatAccessoryProvider>
+            </SettlementMockProvider>
+          </SharedHeaderChromeProvider>
+        </UiPreviewProvider>
+      </DetailDesignProvider>
+    </AppThemeProvider>
+  );
+}
+
 function RootLayout() {
+  const [showApp, setShowApp] = useState(() => !DIAGNOSTIC_LAUNCH_PANEL);
+
   useEffect(() => {
-    if (DIAGNOSTIC_LAUNCH_PANEL) {
+    if (!showApp) {
       return;
     }
     initializeDatabase();
     convertPastEventsToAutoEpisodes();
-  }, []);
+  }, [showApp]);
 
-  if (DIAGNOSTIC_LAUNCH_PANEL) {
+  if (!showApp) {
     return (
       <GestureHandlerRootView style={styles.root}>
         <SafeAreaProvider>
-          <DiagnosticLaunchScreen />
+          <DiagnosticLaunchScreen onEnterApp={() => setShowApp(true)} />
         </SafeAreaProvider>
       </GestureHandlerRootView>
     );
@@ -223,21 +247,7 @@ function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        <AppThemeProvider>
-          <DetailDesignProvider>
-            <UiPreviewProvider>
-              <SharedHeaderChromeProvider>
-                <SettlementMockProvider>
-                  {/* 診断用: <EventNotificationHandler /> */}
-                  <PastEventConversionScheduler />
-                  <NoteFormatAccessoryProvider>
-                    <AppShell />
-                  </NoteFormatAccessoryProvider>
-                </SettlementMockProvider>
-              </SharedHeaderChromeProvider>
-            </UiPreviewProvider>
-          </DetailDesignProvider>
-        </AppThemeProvider>
+        <DiagnosticFullApp />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
