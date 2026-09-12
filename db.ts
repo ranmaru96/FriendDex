@@ -1,12 +1,6 @@
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  DIAGNOSTIC_SKIP_SQLITE_OPEN,
-  diagnosticAllowDatabaseInit,
-  diagnosticAllowFilesystem,
-  isDiagnosticDatabaseInitSkipped,
-} from '@/constants/diagnosticLaunch';
-import {
   CommonItemKind,
   CommonItemOption,
   Episode,
@@ -259,18 +253,16 @@ const createStubDb = (): SqliteHandle => ({
   getFirstSync: () => null,
 });
 
-let db: SqliteHandle = DIAGNOSTIC_SKIP_SQLITE_OPEN
-  ? createStubDb()
-  : (require('expo-sqlite').openDatabaseSync(DB_NAME) as SqliteHandle);
+let db: SqliteHandle = createStubDb();
+let didOpenDatabase = false;
 
-/** 診断用: 指定ファイルを開く。SELECT はしない。 */
-export const diagnosticOpenDatabase = (filename: string): void => {
-  db = require('expo-sqlite').openDatabaseSync(filename) as SqliteHandle;
-};
-
-/** 診断用: 既存スキーマ前提で default 友達件数だけ数える。 */
-export const diagnosticCountDefaultFriends = (): number => {
-  return getAllFriends().length;
+/** iOS 26 Release は import 時の openDatabaseSync で abort する。最初の画面のあとで開く。 */
+export const ensureDatabaseOpened = (): void => {
+  if (didOpenDatabase) {
+    return;
+  }
+  db = require('expo-sqlite').openDatabaseSync(DB_NAME) as SqliteHandle;
+  didOpenDatabase = true;
 };
 
 const toJson = (value: string[]) => JSON.stringify(value ?? []);
@@ -731,9 +723,7 @@ const rewriteStalePersistedPhotoUris = (): void => {
 let didInitializeDatabase = false;
 
 export const initializeDatabase = (): void => {
-  if (isDiagnosticDatabaseInitSkipped()) {
-    return;
-  }
+  ensureDatabaseOpened();
   if (didInitializeDatabase) {
     return;
   }
@@ -1389,19 +1379,6 @@ const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COM
   } catch (error) {
     console.warn('Failed to rewrite persisted photo URIs.', error);
   }
-};
-
-/** 診断用: 初期化 SQL / 移行を実行する。既存 DB を開いたあとに呼ぶ。 */
-export const diagnosticRunInitializeDatabase = (): void => {
-  diagnosticAllowDatabaseInit();
-  didInitializeDatabase = false;
-  initializeDatabase();
-};
-
-/** 診断用: 写真 FileSystem を有効にして URI 付け替えを実行する。 */
-export const diagnosticEnableFilesystemAndRewritePhotos = (): void => {
-  diagnosticAllowFilesystem();
-  rewriteStalePersistedPhotoUris();
 };
 
 const upsertDefaultProfileFromFriend = (friendId: string, input: FriendInput, timestamp: string): void => {

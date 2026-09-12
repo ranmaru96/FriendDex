@@ -15,16 +15,23 @@ export type EventNotificationData = {
   friendId?: string;
 };
 
-// 診断用: 起動時の通知セットアップを一時的に無効化
-// Notifications.setNotificationHandler({
-//   handleNotification: async () => ({
-//     shouldShowAlert: true,
-//     shouldPlaySound: true,
-//     shouldSetBadge: false,
-//     shouldShowBanner: true,
-//     shouldShowList: true,
-//   }),
-// });
+let didRegisterNotificationHandler = false;
+
+const registerNotificationHandler = (): void => {
+  if (didRegisterNotificationHandler) {
+    return;
+  }
+  didRegisterNotificationHandler = true;
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+      shouldShowBanner: true,
+      shouldShowList: true,
+    }),
+  });
+};
 
 const ensureAndroidChannel = async (): Promise<void> => {
   if (Platform.OS !== 'android') {
@@ -37,6 +44,7 @@ const ensureAndroidChannel = async (): Promise<void> => {
 };
 
 export const ensureNotificationInfrastructure = async (): Promise<void> => {
+  registerNotificationHandler();
   await ensureAndroidChannel();
 };
 

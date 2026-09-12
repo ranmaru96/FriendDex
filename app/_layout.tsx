@@ -2,7 +2,7 @@ import '../sentry';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { InteractionManager, Pressable, StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -27,11 +27,9 @@ import {
   shouldHideHeader,
 } from '../utils/bottomNavVisibility';
 import { resolveStackAnimation } from '../utils/tabTransition';
-import { getMyselfSetupPhase, initializeDatabase } from '../db';
+import { getMyselfSetupPhase, initializeDatabase, ensureDatabaseOpened } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
 import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
-import { DIAGNOSTIC_LAUNCH_PANEL } from '@/constants/diagnosticLaunch';
-import { DiagnosticLaunchScreen } from '@/components/DiagnosticLaunchScreen';
 
 const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'index',
@@ -201,7 +199,7 @@ function AppShell() {
   );
 }
 
-function DiagnosticFullApp() {
+function AppProviders() {
   const { EventNotificationHandler } =
     require('../components/EventNotificationHandler') as typeof import('../components/EventNotificationHandler');
   return (
@@ -224,21 +222,39 @@ function DiagnosticFullApp() {
 }
 
 function RootLayout() {
-  const [showApp, setShowApp] = useState(() => !DIAGNOSTIC_LAUNCH_PANEL);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!showApp) {
-      return;
-    }
-    initializeDatabase();
-    convertPastEventsToAutoEpisodes();
-  }, [showApp]);
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(() => {
+      requestAnimationFrame(() => {
+        if (cancelled) {
+          return;
+        }
+        try {
+          ensureDatabaseOpened();
+          initializeDatabase();
+          convertPastEventsToAutoEpisodes();
+          setReady(true);
+        } catch (error) {
+          Sentry.captureException(error, {
+            extra: { phase: 'deferred-sqlite-open' },
+          });
+          throw error;
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+      task.cancel();
+    };
+  }, []);
 
-  if (!showApp) {
+  if (!ready) {
     return (
       <GestureHandlerRootView style={styles.root}>
         <SafeAreaProvider>
-          <DiagnosticLaunchScreen onEnterApp={() => setShowApp(true)} />
+          <View style={[styles.root, styles.launchSplash]} />
         </SafeAreaProvider>
       </GestureHandlerRootView>
     );
@@ -247,7 +263,7 @@ function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <SafeAreaProvider>
-        <DiagnosticFullApp />
+        <AppProviders />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -258,6 +274,9 @@ export default Sentry.wrap(RootLayout);
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+  },
+  launchSplash: {
+    backgroundColor: '#ffffff',
   },
   shell: {
     flex: 1,
