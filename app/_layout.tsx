@@ -8,7 +8,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AppHeader from '../AppHeader';
 import BottomNav from '../components/BottomNav';
-import { EventNotificationHandler } from '../components/EventNotificationHandler';
 import { ScreenTopBar } from '../components/screen/ScreenTopBar';
 import { SharedHeaderFrame } from '../components/screen/SharedHeaderFrame';
 import { AppThemeProvider, useAppTheme } from '../contexts/AppThemeContext';
@@ -214,7 +213,7 @@ function RootLayout() {
             <UiPreviewProvider>
               <SharedHeaderChromeProvider>
                 <SettlementMockProvider>
-                  <EventNotificationHandler />
+                  {/* 診断用: <EventNotificationHandler /> */}
                   <PastEventConversionScheduler />
                   <NoteFormatAccessoryProvider>
                     <AppShell />
