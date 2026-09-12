@@ -1,6 +1,9 @@
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
-import { DIAGNOSTIC_SKIP_SQLITE } from '@/constants/diagnosticLaunch';
+import {
+  DIAGNOSTIC_SKIP_DATABASE_INIT,
+  DIAGNOSTIC_SKIP_SQLITE_OPEN,
+} from '@/constants/diagnosticLaunch';
 import {
   CommonItemKind,
   CommonItemOption,
@@ -241,7 +244,7 @@ const MYSELF_KEY = 'myself_friend_id';
 const MYSELF_CONFIRMED_KEY = 'myself_confirmed';
 
 const db = (
-  DIAGNOSTIC_SKIP_SQLITE
+  DIAGNOSTIC_SKIP_SQLITE_OPEN
     ? {
         execSync: () => undefined,
         runSync: () => ({ changes: 0, lastInsertRowId: 0 }),
@@ -714,7 +717,7 @@ const rewriteStalePersistedPhotoUris = (): void => {
 let didInitializeDatabase = false;
 
 export const initializeDatabase = (): void => {
-  if (DIAGNOSTIC_SKIP_SQLITE) {
+  if (DIAGNOSTIC_SKIP_DATABASE_INIT) {
     return;
   }
   if (didInitializeDatabase) {
@@ -1840,9 +1843,6 @@ export const isMyselfLocked = (): boolean => {
 export type MyselfSetupPhase = 'register' | 'pick' | 'confirm' | 'ready';
 
 export const getMyselfSetupPhase = (): MyselfSetupPhase => {
-  if (DIAGNOSTIC_SKIP_SQLITE) {
-    return 'ready';
-  }
   const myselfId = getResolvedMyselfId();
   const friendCount = getAllFriends().length;
   if (!myselfId) {
