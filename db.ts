@@ -213,7 +213,7 @@ type ShufflePoolRow = {
 
 const LEGACY_MONEY_LOAN_SESSION_ID = 'frienddex-legacy-money-loan-session';
 
-const DB_NAME = 'frienddex.db';
+export const DB_NAME = 'frienddex.db';
 const FRIENDS_TABLE = 'friends';
 const SETTINGS_TABLE = 'app_settings';
 const PROFILES_TABLE = 'friend_profiles';
@@ -243,20 +243,32 @@ const WISHLIST_ITEMS_TABLE = 'wishlist_items';
 const MYSELF_KEY = 'myself_friend_id';
 const MYSELF_CONFIRMED_KEY = 'myself_confirmed';
 
-const db = (
-  DIAGNOSTIC_SKIP_SQLITE_OPEN
-    ? {
-        execSync: () => undefined,
-        runSync: () => ({ changes: 0, lastInsertRowId: 0 }),
-        getAllSync: () => [],
-        getFirstSync: () => null,
-      }
-    : require('expo-sqlite').openDatabaseSync(DB_NAME)
-) as {
+type SqliteHandle = {
   execSync: (sql: string) => void;
   runSync: (sql: string, params?: unknown[]) => { changes: number; lastInsertRowId: number };
   getAllSync: <T>(sql: string, params?: unknown[]) => T[];
   getFirstSync: <T>(sql: string, params?: unknown[]) => T | null;
+};
+
+const createStubDb = (): SqliteHandle => ({
+  execSync: () => undefined,
+  runSync: () => ({ changes: 0, lastInsertRowId: 0 }),
+  getAllSync: () => [],
+  getFirstSync: () => null,
+});
+
+let db: SqliteHandle = DIAGNOSTIC_SKIP_SQLITE_OPEN
+  ? createStubDb()
+  : (require('expo-sqlite').openDatabaseSync(DB_NAME) as SqliteHandle);
+
+/** 診断用: 指定ファイルを開く。SELECT はしない。 */
+export const diagnosticOpenDatabase = (filename: string): void => {
+  db = require('expo-sqlite').openDatabaseSync(filename) as SqliteHandle;
+};
+
+/** 診断用: 既存スキーマ前提で default 友達件数だけ数える。 */
+export const diagnosticCountDefaultFriends = (): number => {
+  return getAllFriends().length;
 };
 
 const toJson = (value: string[]) => JSON.stringify(value ?? []);

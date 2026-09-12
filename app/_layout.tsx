@@ -30,6 +30,8 @@ import { resolveStackAnimation } from '../utils/tabTransition';
 import { getMyselfSetupPhase, initializeDatabase } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
 import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
+import { DIAGNOSTIC_LAUNCH_PANEL } from '@/constants/diagnosticLaunch';
+import { DiagnosticLaunchScreen } from '@/components/DiagnosticLaunchScreen';
 
 const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'index',
@@ -201,9 +203,22 @@ function AppShell() {
 
 function RootLayout() {
   useEffect(() => {
+    if (DIAGNOSTIC_LAUNCH_PANEL) {
+      return;
+    }
     initializeDatabase();
     convertPastEventsToAutoEpisodes();
   }, []);
+
+  if (DIAGNOSTIC_LAUNCH_PANEL) {
+    return (
+      <GestureHandlerRootView style={styles.root}>
+        <SafeAreaProvider>
+          <DiagnosticLaunchScreen />
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    );
+  }
 
   return (
     <GestureHandlerRootView style={styles.root}>
