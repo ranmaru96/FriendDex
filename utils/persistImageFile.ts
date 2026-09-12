@@ -1,21 +1,26 @@
-import {
-  copyAsync,
-  deleteAsync,
-  documentDirectory,
-  getInfoAsync,
-  makeDirectoryAsync,
-} from 'expo-file-system/legacy';
+import { DIAGNOSTIC_SKIP_SQLITE } from '@/constants/diagnosticLaunch';
 
-/** 永続化した画像の保存先（documentDirectory 配下）。 */
-const PHOTOS_DIRECTORY = `${documentDirectory}photos/`;
 const PHOTOS_DIR_MARKER = '/photos/';
 /** persistImageFile が付ける名前。これ以外はアプリ管理外とみなす。 */
 const PERSISTED_PHOTO_FILENAME = /^photo_\d+_\d+\.jpe?g$/i;
 
+const getFileSystem = () => require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
+
+const getDocumentDirectory = (): string | null => {
+  if (DIAGNOSTIC_SKIP_SQLITE) {
+    return null;
+  }
+  return getFileSystem().documentDirectory ?? null;
+};
+
+const getPhotosDirectory = (): string => `${getDocumentDirectory() ?? ''}photos/`;
+
 const ensurePhotosDirectory = async (): Promise<void> => {
-  const info = await getInfoAsync(PHOTOS_DIRECTORY);
+  const fileSystem = getFileSystem();
+  const photosDirectory = getPhotosDirectory();
+  const info = await fileSystem.getInfoAsync(photosDirectory);
   if (!info.exists) {
-    await makeDirectoryAsync(PHOTOS_DIRECTORY, { intermediates: true });
+    await fileSystem.makeDirectoryAsync(photosDirectory, { intermediates: true });
   }
 };
 
@@ -55,6 +60,7 @@ export const resolvePersistedImageUri = (uri: string | null | undefined): string
     return null;
   }
   const filename = extractPersistedPhotoFilename(normalized);
+  const documentDirectory = getDocumentDirectory();
   if (!filename || !documentDirectory) {
     return normalized;
   }
@@ -71,14 +77,17 @@ export const persistImageFile = async (tempUri: string): Promise<string> => {
   if (!source) {
     return source;
   }
+  if (DIAGNOSTIC_SKIP_SQLITE) {
+    return source;
+  }
   if (isPersistedImageUri(source)) {
     return resolvePersistedImageUri(source) ?? source;
   }
   try {
     await ensurePhotosDirectory();
     const filename = `photo_${Date.now()}_${Math.floor(Math.random() * 100000)}.jpg`;
-    const destUri = `${PHOTOS_DIRECTORY}${filename}`;
-    await copyAsync({ from: source, to: destUri });
+    const destUri = `${getPhotosDirectory()}${filename}`;
+    await getFileSystem().copyAsync({ from: source, to: destUri });
     return destUri;
   } catch (error) {
     console.warn('Failed to persist image file.', error);
@@ -95,7 +104,7 @@ export const isPersistedImageUri = (uri: string | null | undefined): boolean =>
  * 呼び出し側の処理を止めないよう、失敗しても例外は投げない。
  */
 export const deletePersistedImage = async (uri: string | null | undefined): Promise<void> => {
-  if (!isPersistedImageUri(uri)) {
+  if (DIAGNOSTIC_SKIP_SQLITE || !isPersistedImageUri(uri)) {
     return;
   }
   const resolved = resolvePersistedImageUri(uri);
@@ -103,7 +112,7 @@ export const deletePersistedImage = async (uri: string | null | undefined): Prom
     return;
   }
   try {
-    await deleteAsync(resolved, { idempotent: true });
+    await getFileSystem().deleteAsync(resolved, { idempotent: true });
   } catch (error) {
     console.warn('Failed to delete persisted image file.', error);
   }

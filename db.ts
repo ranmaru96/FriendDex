@@ -1,6 +1,6 @@
 import 'react-native-get-random-values';
-import * as SQLite from 'expo-sqlite';
 import { v4 as uuidv4 } from 'uuid';
+import { DIAGNOSTIC_SKIP_SQLITE } from '@/constants/diagnosticLaunch';
 import {
   CommonItemKind,
   CommonItemOption,
@@ -240,7 +240,21 @@ const WISHLIST_ITEMS_TABLE = 'wishlist_items';
 const MYSELF_KEY = 'myself_friend_id';
 const MYSELF_CONFIRMED_KEY = 'myself_confirmed';
 
-const db = SQLite.openDatabaseSync(DB_NAME);
+const db = (
+  DIAGNOSTIC_SKIP_SQLITE
+    ? {
+        execSync: () => undefined,
+        runSync: () => ({ changes: 0, lastInsertRowId: 0 }),
+        getAllSync: () => [],
+        getFirstSync: () => null,
+      }
+    : require('expo-sqlite').openDatabaseSync(DB_NAME)
+) as {
+  execSync: (sql: string) => void;
+  runSync: (sql: string, params?: unknown[]) => { changes: number; lastInsertRowId: number };
+  getAllSync: <T>(sql: string, params?: unknown[]) => T[];
+  getFirstSync: <T>(sql: string, params?: unknown[]) => T | null;
+};
 
 const toJson = (value: string[]) => JSON.stringify(value ?? []);
 const toEpisodeJson = (value: Episode[]) => JSON.stringify(value ?? []);
@@ -700,6 +714,9 @@ const rewriteStalePersistedPhotoUris = (): void => {
 let didInitializeDatabase = false;
 
 export const initializeDatabase = (): void => {
+  if (DIAGNOSTIC_SKIP_SQLITE) {
+    return;
+  }
   if (didInitializeDatabase) {
     return;
   }
@@ -1823,6 +1840,9 @@ export const isMyselfLocked = (): boolean => {
 export type MyselfSetupPhase = 'register' | 'pick' | 'confirm' | 'ready';
 
 export const getMyselfSetupPhase = (): MyselfSetupPhase => {
+  if (DIAGNOSTIC_SKIP_SQLITE) {
+    return 'ready';
+  }
   const myselfId = getResolvedMyselfId();
   const friendCount = getAllFriends().length;
   if (!myselfId) {

@@ -1,10 +1,4 @@
 import * as DocumentPicker from 'expo-document-picker';
-import {
-  cacheDirectory,
-  documentDirectory,
-  readAsStringAsync,
-  writeAsStringAsync,
-} from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { Alert } from 'react-native';
 import { createBackupPayload, importBackupPayload, initializeDatabase } from './db';
@@ -20,6 +14,8 @@ import {
 } from './types';
 
 const AUTO_BACKUP_FILENAME = 'frienddex_auto_backup.json';
+
+const getFileSystem = () => require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
 
 const isBackupRow = (value: unknown): value is Record<string, string | number | null> => {
   if (!value || typeof value !== 'object') {
@@ -97,7 +93,7 @@ const writeJsonFile = async (directory: string | null, filename: string, content
     throw new Error('ファイル保存先を取得できませんでした。');
   }
   const fileUri = `${directory}${filename}`;
-  await writeAsStringAsync(fileUri, contents, { encoding: 'utf8' });
+  await getFileSystem().writeAsStringAsync(fileUri, contents, { encoding: 'utf8' });
   return fileUri;
 };
 
@@ -105,7 +101,7 @@ export const runAutoBackup = async (): Promise<void> => {
   try {
     initializeDatabase();
     const payload = createBackupPayload();
-    await writeJsonFile(documentDirectory, AUTO_BACKUP_FILENAME, serializeBackup(payload));
+    await writeJsonFile(getFileSystem().documentDirectory, AUTO_BACKUP_FILENAME, serializeBackup(payload));
   } catch {
     // 起動時の自動バックアップ失敗はアプリ利用を妨げない
   }
@@ -115,7 +111,7 @@ export const exportBackupAndShare = async (): Promise<void> => {
   initializeDatabase();
   const payload = createBackupPayload();
   const contents = serializeBackup(payload);
-  const fileUri = await writeJsonFile(cacheDirectory, formatExportFilename(), contents);
+  const fileUri = await writeJsonFile(getFileSystem().cacheDirectory, formatExportFilename(), contents);
 
   const canShare = await Sharing.isAvailableAsync();
   if (!canShare) {
@@ -139,7 +135,7 @@ export const importBackupFromPicker = async (): Promise<void> => {
     return;
   }
 
-  const contents = await readAsStringAsync(result.assets[0].uri, { encoding: 'utf8' });
+  const contents = await getFileSystem().readAsStringAsync(result.assets[0].uri, { encoding: 'utf8' });
   let parsed: unknown;
   try {
     parsed = JSON.parse(contents);
