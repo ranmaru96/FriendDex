@@ -1,8 +1,10 @@
 import 'react-native-get-random-values';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  DIAGNOSTIC_SKIP_DATABASE_INIT,
   DIAGNOSTIC_SKIP_SQLITE_OPEN,
+  diagnosticAllowDatabaseInit,
+  diagnosticAllowFilesystem,
+  isDiagnosticDatabaseInitSkipped,
 } from '@/constants/diagnosticLaunch';
 import {
   CommonItemKind,
@@ -729,7 +731,7 @@ const rewriteStalePersistedPhotoUris = (): void => {
 let didInitializeDatabase = false;
 
 export const initializeDatabase = (): void => {
-  if (DIAGNOSTIC_SKIP_DATABASE_INIT) {
+  if (isDiagnosticDatabaseInitSkipped()) {
     return;
   }
   if (didInitializeDatabase) {
@@ -1387,6 +1389,19 @@ const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COM
   } catch (error) {
     console.warn('Failed to rewrite persisted photo URIs.', error);
   }
+};
+
+/** 診断用: 初期化 SQL / 移行を実行する。既存 DB を開いたあとに呼ぶ。 */
+export const diagnosticRunInitializeDatabase = (): void => {
+  diagnosticAllowDatabaseInit();
+  didInitializeDatabase = false;
+  initializeDatabase();
+};
+
+/** 診断用: 写真 FileSystem を有効にして URI 付け替えを実行する。 */
+export const diagnosticEnableFilesystemAndRewritePhotos = (): void => {
+  diagnosticAllowFilesystem();
+  rewriteStalePersistedPhotoUris();
 };
 
 const upsertDefaultProfileFromFriend = (friendId: string, input: FriendInput, timestamp: string): void => {

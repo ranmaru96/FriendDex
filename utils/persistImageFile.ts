@@ -1,4 +1,4 @@
-import { DIAGNOSTIC_SKIP_FILESYSTEM } from '@/constants/diagnosticLaunch';
+import { isDiagnosticFilesystemSkipped } from '@/constants/diagnosticLaunch';
 
 const PHOTOS_DIR_MARKER = '/photos/';
 /** persistImageFile が付ける名前。これ以外はアプリ管理外とみなす。 */
@@ -7,7 +7,7 @@ const PERSISTED_PHOTO_FILENAME = /^photo_\d+_\d+\.jpe?g$/i;
 const getFileSystem = () => require('expo-file-system/legacy') as typeof import('expo-file-system/legacy');
 
 const getDocumentDirectory = (): string | null => {
-  if (DIAGNOSTIC_SKIP_FILESYSTEM) {
+  if (isDiagnosticFilesystemSkipped()) {
     return null;
   }
   return getFileSystem().documentDirectory ?? null;
@@ -77,7 +77,7 @@ export const persistImageFile = async (tempUri: string): Promise<string> => {
   if (!source) {
     return source;
   }
-  if (DIAGNOSTIC_SKIP_FILESYSTEM) {
+  if (isDiagnosticFilesystemSkipped()) {
     return source;
   }
   if (isPersistedImageUri(source)) {
@@ -104,7 +104,7 @@ export const isPersistedImageUri = (uri: string | null | undefined): boolean =>
  * 呼び出し側の処理を止めないよう、失敗しても例外は投げない。
  */
 export const deletePersistedImage = async (uri: string | null | undefined): Promise<void> => {
-  if (DIAGNOSTIC_SKIP_FILESYSTEM || !isPersistedImageUri(uri)) {
+  if (isDiagnosticFilesystemSkipped() || !isPersistedImageUri(uri)) {
     return;
   }
   const resolved = resolvePersistedImageUri(uri);
