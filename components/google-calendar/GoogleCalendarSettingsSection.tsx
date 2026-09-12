@@ -68,7 +68,7 @@ export function GoogleCalendarSettingsSection({ themed }: { themed: ThemedStyles
           ? `アプリの予定を Google の「${FRIENDEX_GOOGLE_CALENDAR_SUMMARY}」専用カレンダーへ送る機能です。このビルドでは接続用モジュールを外しているため、今は使えません。`
           : configured
             ? `アプリの予定を Google の「${FRIENDEX_GOOGLE_CALENDAR_SUMMARY}」専用カレンダーへ送ります。接続後に作成・更新・削除した予定も自動で反映します。`
-            : `使うには Google Cloud で Calendar API を有効化し、このアプリ用の OAuth クライアント ID（iOS / Android）を発行してください。\nEXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID と EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID を設定したあと、開発ビルドを作り直してください。`}
+            : `使うには Google Cloud で Calendar API を有効化し、このアプリ用の OAuth クライアント ID（iOS / Android）を発行してください。\nEAS の production に EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID と EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID を入れてからビルドしてください。`}
       </Text>
     </>
   );
