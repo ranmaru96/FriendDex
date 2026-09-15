@@ -33,7 +33,11 @@ import {
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
-import { DATE_PICKER_MAX_FAR, DATE_PICKER_MIN } from '@/utils/datePickerBounds';
+import {
+  DATE_PICKER_MAX_FAR,
+  DATE_PICKER_MIN,
+  openRangeDatePickerBounds,
+} from '@/utils/datePickerBounds';
 import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
@@ -355,6 +359,7 @@ export function EpisodeFormOverlay({
                         locale="ja-JP"
                         style={styles.datePickerSelf}
                         {...dateTimePickerProps}
+                        {...openRangeDatePickerBounds()}
                         onChange={(_event: DateTimePickerEvent, selected?: Date) => {
                           if (Platform.OS !== 'ios') form.setShowTimePicker(false);
                           if (selected) form.setTime(formatTimeFromDate(selected));

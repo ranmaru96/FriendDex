@@ -1,0 +1,25 @@
+---
+description: New Architecture / Reanimated など依存のアーキテクチャ要件は公式記述を根拠に判断する。推測で提案しない。
+globs: package.json,package-lock.json,app.config.js,eas.json,ios/Podfile*
+alwaysApply: false
+---
+
+# 依存関係とアーキテクチャ要件
+
+メジャーライブラリのアーキテクチャ要件（New Arch 必須化など）を提案するときは、公式ドキュメントか `podspec` / `package.json` の記述を根拠として示す。推測で「たぶん動く」と言わない。
+
+## Reanimated 4.1.x 以降
+
+Reanimated 4.1.x 以降は New Architecture 必須。`newArchEnabled: false` にするとネイティブ生成・`pod install` 段階で失敗する（`reanimated_utils.rb` の `assert_new_architecture_enabled`）。
+
+```text
+❌ BAD: New Arch を切って Reanimated 4.1 のまま試す
+✅ GOOD: app.config.js の newArchEnabled と Reanimated の制約を突き合わせてから提案する
+```
+
+Old Architecture を試すなら Reanimated を v3 系に下げる必要がある。影響範囲が大きい変更なので、提案する前に必ず一言警告すること。
+
+```text
+❌ BAD: Reanimated を v3 に下げれば Old Arch で動く、とすぐ提案する
+✅ GOOD: 「v3 へのダウングレードは影響範囲が大きい」と先に警告し、公式制約を示してから判断を求める
+```

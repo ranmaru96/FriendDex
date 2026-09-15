@@ -37,6 +37,12 @@ import type { Friend, ShufflePool } from '../../types';
 import { buildParticipantChipDisplays } from '../../utils/episodeHelpers';
 import { buildFriendNameById } from '../../utils/moneyLoanHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { useShuffleSession } from '@/hooks/useShuffleSession';
+import {
+  resetShuffleResultsForMemberChange,
+  type ShuffleMode,
+  type ShufflePoolDraft,
+} from '@/utils/shuffleSession';
 import {
   contentFilledButtonStyle,
   contentFilledButtonTextStyle,
@@ -57,14 +63,6 @@ import {
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 
 type Option = { label: string; value: string };
-type ShuffleMode = 'random' | 'order' | 'role' | 'team';
-
-type ShufflePoolDraft = {
-  memberIds: string[];
-  label: string;
-  labelIsCustom: boolean;
-};
-
 
 const SHUFFLE_MODE_LABELS: Record<ShuffleMode, string> = {
   random: 'ランダム選択',

@@ -103,9 +103,7 @@ const DRAG_SCROLL_PX = 12;
 
 type TaskAccent = (typeof TASK_ACCENT)[keyof typeof TASK_ACCENT];
 
-/** 要対応（赤）枠は他アクセントの倍の太さ */
-const accentBorderWidth = (accent: TaskAccent | undefined, showingRed: boolean): number => {
-  if (showingRed) return 3;
+const accentBorderWidth = (accent: TaskAccent | undefined): number => {
   if (accent) return 1.5;
   return 1;
 };
@@ -392,7 +390,7 @@ function RecurringTaskRow({
         catalog && !nested ? styles.catalogRow : null,
         nested ? styles.catalogNestedRow : useOffset ? null : contentSurfaceStyle(content),
         {
-          borderWidth: nested || useOffset ? 0 : catalog || dimmed ? 1 : accentBorderWidth(accent, showingRequiredRed),
+          borderWidth: nested || useOffset ? 0 : catalog || dimmed ? 1 : accentBorderWidth(accent),
           borderRadius: nested || useOffset ? 0 : 10,
           borderColor: catalog ? content.contentBorder : borderColor,
         },
@@ -563,7 +561,7 @@ function TemporaryTaskRow({
         catalog && !nested ? styles.catalogRow : null,
         nested ? styles.catalogNestedRow : useOffset ? null : contentSurfaceStyle(content),
         {
-          borderWidth: nested || useOffset ? 0 : catalog || completed ? 1 : accentBorderWidth(accent, showingRequiredRed),
+          borderWidth: nested || useOffset ? 0 : catalog || completed ? 1 : accentBorderWidth(accent),
           borderRadius: nested || useOffset ? 0 : 10,
           borderColor: catalog ? content.contentBorder : borderColor,
         },
@@ -1441,7 +1439,7 @@ export default function TasksScreen() {
           styles.catalogGroupCard,
           contentSurfaceStyle(content),
           {
-            borderWidth: muted ? 1 : accentBorderWidth(accent, showingRequiredRed),
+            borderWidth: muted ? 1 : accentBorderWidth(accent),
             borderColor,
           },
           muted ? styles.dimmedBlock : null,
@@ -1617,7 +1615,7 @@ export default function TasksScreen() {
           styles.catalogGroupCard,
           contentSurfaceStyle(content),
           {
-            borderWidth: completed ? 1 : accentBorderWidth(accent, showingRequiredRed),
+            borderWidth: completed ? 1 : accentBorderWidth(accent),
             borderColor,
           },
           completed ? styles.dimmedBlock : null,

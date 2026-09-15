@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
@@ -19,11 +19,14 @@ import {
   assignRolesToMembers,
   createEmptyRoleDraft,
   memberIdsToParticipantEntries,
-  sanitizeRoleDraftsForPool,
   type ShuffleRoleAssignment,
   type ShuffleRoleDraft,
 } from '../../utils/shuffleHelpers';
 import { ShuffleRoleResults } from './ShuffleRoleResults';
+
+type RoleDraftUpdater =
+  | ShuffleRoleDraft[]
+  | ((current: ShuffleRoleDraft[]) => ShuffleRoleDraft[]);
 
 type ShuffleRolePanelProps = {
   activePool: ShufflePool | null;
@@ -32,6 +35,10 @@ type ShuffleRolePanelProps = {
   friendsById: Map<string, Friend>;
   myselfId?: string | null;
   onShuffleComplete: () => void;
+  roleDrafts: ShuffleRoleDraft[];
+  onRoleDraftsChange: (next: RoleDraftUpdater) => void;
+  assignments: ShuffleRoleAssignment[] | null;
+  onAssignmentsChange: (next: ShuffleRoleAssignment[] | null) => void;
 };
 
 export function ShuffleRolePanel({
@@ -41,24 +48,15 @@ export function ShuffleRolePanel({
   friendsById,
   myselfId = null,
   onShuffleComplete,
+  roleDrafts,
+  onRoleDraftsChange,
+  assignments,
+  onAssignmentsChange,
 }: ShuffleRolePanelProps) {
   const content = useContentColors();
-  const [roleDrafts, setRoleDrafts] = useState<ShuffleRoleDraft[]>([createEmptyRoleDraft(1)]);
-  const [assignments, setAssignments] = useState<ShuffleRoleAssignment[] | null>(null);
   const [error, setError] = useState('');
 
   const memberCount = activePool?.memberIds.length ?? 0;
-
-  useEffect(() => {
-    if (!activePool) {
-      setAssignments(null);
-      setError('');
-      return;
-    }
-    setRoleDrafts((current) => sanitizeRoleDraftsForPool(current, activePool.memberIds));
-    setAssignments(null);
-    setError('');
-  }, [activePool?.id, memberCount]);
 
   const poolMemberChips = useMemo(() => {
     if (!activePool) {
@@ -72,29 +70,29 @@ export function ShuffleRolePanel({
   }, [activePool, friendNameById, friendPhotoById]);
 
   const updateRole = useCallback((roleId: string, patch: Partial<ShuffleRoleDraft>) => {
-    setRoleDrafts((current) =>
+    onRoleDraftsChange((current) =>
       current.map((role) => (role.id === roleId ? { ...role, ...patch } : role))
     );
     setError('');
-  }, []);
+  }, [onRoleDraftsChange]);
 
   const addRole = useCallback(() => {
-    setRoleDrafts((current) => [...current, createEmptyRoleDraft(current.length + 1)]);
+    onRoleDraftsChange((current) => [...current, createEmptyRoleDraft(current.length + 1)]);
     setError('');
-  }, []);
+  }, [onRoleDraftsChange]);
 
   const removeRole = useCallback((roleId: string) => {
-    setRoleDrafts((current) => {
+    onRoleDraftsChange((current) => {
       if (current.length <= 1) {
         return [createEmptyRoleDraft(1)];
       }
       return current.filter((role) => role.id !== roleId);
     });
     setError('');
-  }, []);
+  }, [onRoleDraftsChange]);
 
   const toggleExcludedMember = useCallback((roleId: string, memberId: string) => {
-    setRoleDrafts((current) =>
+    onRoleDraftsChange((current) =>
       current.map((role) => {
         if (role.id !== roleId) {
           return role;
@@ -109,23 +107,23 @@ export function ShuffleRolePanel({
       })
     );
     setError('');
-  }, []);
+  }, [onRoleDraftsChange]);
 
   const decrementRoleCount = useCallback((roleId: string) => {
-    setRoleDrafts((current) =>
+    onRoleDraftsChange((current) =>
       current.map((role) =>
         role.id === roleId ? { ...role, count: Math.max(1, role.count - 1) } : role
       )
     );
     setError('');
-  }, []);
+  }, [onRoleDraftsChange]);
 
   const incrementRoleCount = useCallback(
     (roleId: string) => {
       if (!activePool) {
         return;
       }
-      setRoleDrafts((current) =>
+      onRoleDraftsChange((current) =>
         current.map((role) =>
           role.id === roleId
             ? { ...role, count: Math.min(activePool.memberIds.length, role.count + 1) }
@@ -134,7 +132,7 @@ export function ShuffleRolePanel({
       );
       setError('');
     },
-    [activePool]
+    [activePool, onRoleDraftsChange]
   );
 
   const runRoleShuffle = useCallback(() => {
@@ -157,10 +155,10 @@ export function ShuffleRolePanel({
       return;
     }
 
-    setAssignments(result.assignments);
+    onAssignmentsChange(result.assignments);
     setError('');
     onShuffleComplete();
-  }, [activePool, onShuffleComplete, roleDrafts]);
+  }, [activePool, onAssignmentsChange, onShuffleComplete, roleDrafts]);
 
   if (!activePool) {
     return (

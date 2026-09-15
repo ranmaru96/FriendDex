@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
@@ -17,16 +17,20 @@ import { ParticipantChip } from '@/components/participant/ParticipantChip';
 import type { Friend, ShufflePool } from '../../types';
 import { buildParticipantChipDisplays } from '../../utils/episodeHelpers';
 import {
-  createDefaultRankTiers,
   createRankTierId,
   memberIdsToParticipantEntries,
-  sanitizeTeamSettingsForPool,
   splitMembersIntoTeams,
   suggestNextRankLabel,
   type ShuffleRankTier,
   type ShuffleTeamAssignment,
 } from '../../utils/shuffleHelpers';
 import { ShuffleTeamResults } from './ShuffleTeamResults';
+
+type TeamCountUpdater = number | ((current: number) => number);
+type RankTiersUpdater = ShuffleRankTier[] | ((current: ShuffleRankTier[]) => ShuffleRankTier[]);
+type MemberRankUpdater =
+  | Record<string, string>
+  | ((current: Record<string, string>) => Record<string, string>);
 
 type ShuffleTeamPanelProps = {
   activePool: ShufflePool | null;
@@ -35,6 +39,16 @@ type ShuffleTeamPanelProps = {
   friendsById: Map<string, Friend>;
   myselfId?: string | null;
   onShuffleComplete: () => void;
+  teamCount: number;
+  onTeamCountChange: (next: TeamCountUpdater) => void;
+  useRanks: boolean;
+  onUseRanksChange: (next: boolean) => void;
+  rankTiers: ShuffleRankTier[];
+  onRankTiersChange: (next: RankTiersUpdater) => void;
+  memberRankById: Record<string, string>;
+  onMemberRankByIdChange: (next: MemberRankUpdater) => void;
+  teams: ShuffleTeamAssignment[] | null;
+  onTeamsChange: (next: ShuffleTeamAssignment[] | null) => void;
 };
 
 export function ShuffleTeamPanel({
@@ -44,36 +58,22 @@ export function ShuffleTeamPanel({
   friendsById,
   myselfId = null,
   onShuffleComplete,
+  teamCount,
+  onTeamCountChange,
+  useRanks,
+  onUseRanksChange,
+  rankTiers,
+  onRankTiersChange,
+  memberRankById,
+  onMemberRankByIdChange,
+  teams,
+  onTeamsChange,
 }: ShuffleTeamPanelProps) {
   const content = useContentColors();
   const switchColors = contentSwitchColors(content);
-  const [teamCount, setTeamCount] = useState(2);
-  const [useRanks, setUseRanks] = useState(false);
-  const [rankTiers, setRankTiers] = useState<ShuffleRankTier[]>(createDefaultRankTiers);
-  const [memberRankById, setMemberRankById] = useState<Record<string, string>>({});
-  const [teams, setTeams] = useState<ShuffleTeamAssignment[] | null>(null);
   const [error, setError] = useState('');
 
   const memberCount = activePool?.memberIds.length ?? 0;
-
-  useEffect(() => {
-    if (!activePool) {
-      setTeams(null);
-      setError('');
-      return;
-    }
-    const sanitized = sanitizeTeamSettingsForPool(
-      teamCount,
-      memberRankById,
-      rankTiers,
-      activePool.memberIds
-    );
-    setTeamCount(sanitized.teamCount);
-    setMemberRankById(sanitized.memberRankById);
-    setRankTiers(sanitized.rankTiers);
-    setTeams(null);
-    setError('');
-  }, [activePool?.id, memberCount]);
 
   const poolMemberChips = useMemo(() => {
     if (!activePool) {
@@ -87,41 +87,41 @@ export function ShuffleTeamPanel({
   }, [activePool, friendNameById, friendPhotoById]);
 
   const decrementTeamCount = useCallback(() => {
-    setTeamCount((current) => Math.max(2, current - 1));
+    onTeamCountChange((current) => Math.max(2, current - 1));
     setError('');
-  }, []);
+  }, [onTeamCountChange]);
 
   const incrementTeamCount = useCallback(() => {
     if (!activePool) {
       return;
     }
-    setTeamCount((current) => Math.min(activePool.memberIds.length, current + 1));
+    onTeamCountChange((current) => Math.min(activePool.memberIds.length, current + 1));
     setError('');
-  }, [activePool]);
+  }, [activePool, onTeamCountChange]);
 
   const updateRankLabel = useCallback((tierId: string, label: string) => {
-    setRankTiers((current) =>
+    onRankTiersChange((current) =>
       current.map((tier) => (tier.id === tierId ? { ...tier, label } : tier))
     );
     setError('');
-  }, []);
+  }, [onRankTiersChange]);
 
   const addRankTier = useCallback(() => {
-    setRankTiers((current) => [
+    onRankTiersChange((current) => [
       ...current,
       { id: createRankTierId(), label: suggestNextRankLabel(current) },
     ]);
     setError('');
-  }, []);
+  }, [onRankTiersChange]);
 
   const removeRankTier = useCallback((tierId: string) => {
-    setRankTiers((current) => {
+    onRankTiersChange((current) => {
       if (current.length <= 1) {
         return current;
       }
       return current.filter((tier) => tier.id !== tierId);
     });
-    setMemberRankById((current) => {
+    onMemberRankByIdChange((current) => {
       const next: Record<string, string> = {};
       Object.entries(current).forEach(([memberId, assignedTierId]) => {
         if (assignedTierId !== tierId) {
@@ -131,10 +131,10 @@ export function ShuffleTeamPanel({
       return next;
     });
     setError('');
-  }, []);
+  }, [onMemberRankByIdChange, onRankTiersChange]);
 
   const assignMemberRank = useCallback((memberId: string, tierId: string | null) => {
-    setMemberRankById((current) => {
+    onMemberRankByIdChange((current) => {
       const next = { ...current };
       if (!tierId) {
         delete next[memberId];
@@ -144,7 +144,7 @@ export function ShuffleTeamPanel({
       return next;
     });
     setError('');
-  }, []);
+  }, [onMemberRankByIdChange]);
 
   const runTeamShuffle = useCallback(() => {
     if (!activePool) {
@@ -163,10 +163,18 @@ export function ShuffleTeamPanel({
       return;
     }
 
-    setTeams(result.teams);
+    onTeamsChange(result.teams);
     setError('');
     onShuffleComplete();
-  }, [activePool, memberRankById, onShuffleComplete, rankTiers, teamCount, useRanks]);
+  }, [
+    activePool,
+    memberRankById,
+    onShuffleComplete,
+    onTeamsChange,
+    rankTiers,
+    teamCount,
+    useRanks,
+  ]);
 
   if (!activePool) {
     return (
@@ -224,7 +232,7 @@ export function ShuffleTeamPanel({
         <Switch
           value={useRanks}
           onValueChange={(value) => {
-            setUseRanks(value);
+            onUseRanksChange(value);
             setError('');
           }}
           trackColor={switchColors.trackColor}

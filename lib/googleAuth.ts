@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import { requireOptionalNativeModule } from 'expo-modules-core';
 import { Platform } from 'react-native';
 import { GOOGLE_CALENDAR_SCOPE } from '@/constants/googleCalendar';
 import { deleteAppSetting, getAppSetting, initializeDatabase, setAppSetting } from '@/db';
@@ -82,17 +83,42 @@ export const getGoogleNativeRedirectUri = (): string | undefined => {
 
 export const GOOGLE_CALENDAR_AUTH_SCOPES = [GOOGLE_CALENDAR_SCOPE] as const;
 
+const loadSecureStore = (): typeof import('expo-secure-store') | null => {
+  if (!requireOptionalNativeModule('ExpoSecureStore')) {
+    return null;
+  }
+  return require('expo-secure-store') as typeof import('expo-secure-store');
+};
+
 const readStoredJson = async (key: string): Promise<string | null> => {
+  const secureStore = loadSecureStore();
+  if (secureStore) {
+    const fromSecure = await secureStore.getItemAsync(key);
+    if (fromSecure) {
+      return fromSecure;
+    }
+  }
   initializeDatabase();
   return getAppSetting(key);
 };
 
 const writeStoredJson = async (key: string, value: string): Promise<void> => {
+  const secureStore = loadSecureStore();
+  if (secureStore) {
+    await secureStore.setItemAsync(key, value);
+    initializeDatabase();
+    deleteAppSetting(key);
+    return;
+  }
   initializeDatabase();
   setAppSetting(key, value);
 };
 
 const deleteStoredJson = async (key: string): Promise<void> => {
+  const secureStore = loadSecureStore();
+  if (secureStore) {
+    await secureStore.deleteItemAsync(key);
+  }
   initializeDatabase();
   deleteAppSetting(key);
 };

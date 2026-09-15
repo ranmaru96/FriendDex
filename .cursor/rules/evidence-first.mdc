@@ -1,0 +1,28 @@
+---
+description: FriendDex固有の仕様は実ファイルで確認する。一般のExpo/RN知識をこのリポジトリに当てて断定・変更しない。
+alwaysApply: true
+---
+
+# Evidence First
+
+FriendDex 固有の仕様・設定・挙動は、このリポジトリのコードや設定を確認してから判断する。
+小さな見た目の修正まで、毎回 Git や lockfile を洗う必要はない。
+
+## 当てはめない
+
+Expo / React Native / EAS / iOS / Android / ライブラリの一般論を、このプロジェクトでもそのまま成立すると仮定しない。バージョンと設定は `package.json`、`app.config.js`、`eas.json` を見る。
+
+```text
+❌ BAD: Expo では普通こうなので app.config.js を変える
+✅ GOOD: このリポジトリの app.config.js と package.json を見てから変えるか判断する
+```
+
+## 区別する
+
+- 確認できた事実
+- 推測 / 仮説
+- 提案 / 判断
+
+根拠が足りないときは断定せず「要確認」とする。重要な判断では、見たファイルやログを示す。
+「調査のみ」のときは実装・ファイル変更・Git 操作をしない。
+不確かな仕様を前提に、設定やコードを大量に変えない。

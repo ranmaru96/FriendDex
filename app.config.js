@@ -117,6 +117,7 @@ export default {
         }
       ],
       "expo-web-browser",
+      "expo-secure-store",
       [
         "@sentry/react-native",
         {

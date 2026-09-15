@@ -1,0 +1,36 @@
+---
+description: 本番EASを浪費しない。日常確認は npm run start:dev。ビルド提案時は消費有無とプロファイルを明示する。
+alwaysApply: true
+---
+
+# EAS Build 予算
+
+浪費していけないのは主に **production**（TestFlight / ストア）の `eas build` である。
+「試しに1回ビルドして確認しよう」を安易に提案しない。
+
+## 検証の優先順
+
+1. **日常確認は Dev Client**
+   `npm run start:dev` で足りるなら EAS は回さない。このリポジトリは npm を使う（Yarn ではない）。
+2. **依存制約を先に確認する**
+   New Arch やライブラリ変更は、このリポジトリの `package.json` / `app.config.js` と公式・podspec を突き合わせる。
+3. **ローカルに `ios/` は無い前提**
+   `ios/` `android/` は gitignore されている。`pod install` を第一手段にしない。ネイティブ検証が必要なら EAS のログと公式制約を先に見る。
+4. **ビルド必須の条件は狭い**
+   JS だけでは再現できない場合に限る（実機ネイティブ、TestFlight 固有など）。
+
+development ビルドは Dev Client の作り直し用。production より優先して回さない。preview は原則使わない。
+
+```text
+❌ BAD: New Architecture を切って production の eas build を1回回せば分かる
+✅ GOOD: app.config.js と Reanimated の制約を突き合わせ、start:dev で足りるか判断する。
+         足りないときだけ、development か production かと消費有無を明示する
+```
+
+## 提案時の明示
+
+- 「これはビルド消費なしで検証可能」（例: `npm run start:dev`）
+- 「これは development ビルド1回」
+- 「これは production ビルド1回（TestFlight / ストア）」
+
+production を提案するのは、上記を満たしたあとでのみ。
