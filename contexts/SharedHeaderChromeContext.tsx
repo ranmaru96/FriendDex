@@ -27,8 +27,14 @@ export type SharedSubToolHeaderConfig = {
 
 export type SharedHeaderChromeActions = {
   setDetailHeader: (config: SharedDetailHeaderConfig | null) => void;
-  setSubToolHeader: (config: SharedSubToolHeaderConfig | null) => void;
+  upsertSubToolHeader: (id: string, config: SharedSubToolHeaderConfig) => void;
+  removeSubToolHeader: (id: string) => void;
   setSuppressBottomNav: (hide: boolean) => void;
+};
+
+type SubToolHeaderStackEntry = {
+  id: string;
+  config: SharedSubToolHeaderConfig;
 };
 
 type SharedHeaderChromeContextValue = SharedHeaderChromeActions & {
@@ -71,10 +77,17 @@ function sameSubToolHeader(
   );
 }
 
+function topSubToolHeader(
+  stack: SubToolHeaderStackEntry[]
+): SharedSubToolHeaderConfig | null {
+  return stack.length > 0 ? stack[stack.length - 1].config : null;
+}
+
 export function SharedHeaderChromeProvider({ children }: { children: ReactNode }) {
   const [detailHeader, setDetailHeaderState] = useState<SharedDetailHeaderConfig | null>(null);
-  const [subToolHeader, setSubToolHeaderState] = useState<SharedSubToolHeaderConfig | null>(null);
+  const [subToolHeaderStack, setSubToolHeaderStack] = useState<SubToolHeaderStackEntry[]>([]);
   const [suppressBottomNav, setSuppressBottomNavState] = useState(false);
+  const subToolHeader = topSubToolHeader(subToolHeaderStack);
 
   const setDetailHeader = useCallback((config: SharedDetailHeaderConfig | null) => {
     setDetailHeaderState((current) => {
@@ -88,15 +101,27 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
     });
   }, []);
 
-  const setSubToolHeader = useCallback((config: SharedSubToolHeaderConfig | null) => {
-    setSubToolHeaderState((current) => {
-      if (current === config) {
+  const upsertSubToolHeader = useCallback((id: string, config: SharedSubToolHeaderConfig) => {
+    setSubToolHeaderStack((current) => {
+      const index = current.findIndex((entry) => entry.id === id);
+      if (index >= 0) {
+        if (sameSubToolHeader(current[index].config, config)) {
+          return current;
+        }
+        const next = current.slice();
+        next[index] = { id, config };
+        return next;
+      }
+      return [...current, { id, config }];
+    });
+  }, []);
+
+  const removeSubToolHeader = useCallback((id: string) => {
+    setSubToolHeaderStack((current) => {
+      if (!current.some((entry) => entry.id === id)) {
         return current;
       }
-      if (current == null || config == null) {
-        return config;
-      }
-      return sameSubToolHeader(current, config) ? current : config;
+      return current.filter((entry) => entry.id !== id);
     });
   }, []);
 
@@ -107,10 +132,11 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
   const actions = useMemo(
     () => ({
       setDetailHeader,
-      setSubToolHeader,
+      upsertSubToolHeader,
+      removeSubToolHeader,
       setSuppressBottomNav,
     }),
-    [setDetailHeader, setSubToolHeader, setSuppressBottomNav]
+    [setDetailHeader, upsertSubToolHeader, removeSubToolHeader, setSuppressBottomNav]
   );
 
   return (

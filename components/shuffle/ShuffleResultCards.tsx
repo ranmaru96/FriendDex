@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import { useRouter } from 'expo-router';
 import { FRIEND_HOME_CARD_GAP, FriendHomeCard } from '@/components/friend/FriendHomeCard';
+import { PersonGlanceModal } from '@/components/friend/PersonGlanceModal';
 import type { Friend } from '../../types';
 
 type ShuffleResultCardsProps = {
@@ -15,8 +15,8 @@ export function ShuffleResultCards({
   friendsById,
   myselfId = null,
 }: ShuffleResultCardsProps) {
-  const router = useRouter();
   const [gridWidth, setGridWidth] = useState(0);
+  const [glanceFriend, setGlanceFriend] = useState<Friend | null>(null);
 
   const friends = useMemo(
     () =>
@@ -38,27 +38,34 @@ export function ShuffleResultCards({
   }
 
   return (
-    <View
-      style={styles.grid}
-      onLayout={(event) => {
-        const nextWidth = event.nativeEvent.layout.width;
-        if (nextWidth > 0 && nextWidth !== gridWidth) {
-          setGridWidth(nextWidth);
-        }
-      }}
-    >
-      {cardWidth > 0
-        ? friends.map((friend) => (
-            <FriendHomeCard
-              key={friend.id}
-              friend={friend}
-              width={cardWidth}
-              isMyself={myselfId === friend.id}
-              onPress={() => router.push({ pathname: '/detail', params: { id: friend.id } })}
-            />
-          ))
-        : null}
-    </View>
+    <>
+      <View
+        style={styles.grid}
+        onLayout={(event) => {
+          const nextWidth = event.nativeEvent.layout.width;
+          if (nextWidth > 0 && nextWidth !== gridWidth) {
+            setGridWidth(nextWidth);
+          }
+        }}
+      >
+        {cardWidth > 0
+          ? friends.map((friend) => (
+              <FriendHomeCard
+                key={friend.id}
+                friend={friend}
+                width={cardWidth}
+                isMyself={myselfId === friend.id}
+                onPress={() => setGlanceFriend(friend)}
+              />
+            ))
+          : null}
+      </View>
+      <PersonGlanceModal
+        visible={glanceFriend != null}
+        friend={glanceFriend}
+        onClose={() => setGlanceFriend(null)}
+      />
+    </>
   );
 }
 

@@ -22,6 +22,7 @@ import {
   type ShuffleRoleAssignment,
   type ShuffleRoleDraft,
 } from '../../utils/shuffleHelpers';
+import { ShuffleModeInfoButton } from './ShuffleModeInfoButton';
 import { ShuffleRoleResults } from './ShuffleRoleResults';
 
 type RoleDraftUpdater =
@@ -163,18 +164,21 @@ export function ShuffleRolePanel({
   if (!activePool) {
     return (
       <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-        <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
-          集団を選ぶと、ここから役割分担できます。
-        </Text>
+        <View style={styles.emptyHintRow}>
+          <Text style={[styles.emptyHint, styles.emptyHintInRow, contentMutedTextStyle(content)]}>
+            集団を選ぶと、ここから役割分担できます。
+          </Text>
+          <ShuffleModeInfoButton mode="role" />
+        </View>
       </View>
     );
   }
 
   return (
     <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-      <Text style={[styles.hintText, contentMutedTextStyle(content)]}>
-        役を追加し、人数と「この役にしない人」を設定してからシャッフルします。
-      </Text>
+      <View style={styles.modeInfoRow}>
+        <ShuffleModeInfoButton mode="role" />
+      </View>
 
       {roleDrafts.map((role, index) => {
         const excludedSet = new Set(role.excludedMemberIds);
@@ -302,13 +306,25 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     gap: 12,
   },
+  emptyHintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
   emptyHint: {
     fontSize: 13,
     lineHeight: 18,
   },
-  hintText: {
-    fontSize: 12,
-    lineHeight: 17,
+  emptyHintInRow: {
+    flex: 1,
+    paddingTop: 8,
+  },
+  modeInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: -6,
+    marginBottom: -10,
   },
   roleCard: {
     borderWidth: 1,

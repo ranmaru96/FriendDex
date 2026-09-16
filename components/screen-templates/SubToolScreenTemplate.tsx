@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useCallback, useId, useLayoutEffect, useRef, type ReactNode } from 'react';
 import type { StyleProp, ViewStyle } from 'react-native';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -49,13 +49,19 @@ export function SubToolScreenTemplate({
 }: SubToolScreenTemplateProps) {
   const kit = useUiKit();
   const sharedHeaderApi = useSharedHeaderChromeOptional();
-  const setSubToolHeader = sharedHeaderApi?.setSubToolHeader;
+  const upsertSubToolHeader = sharedHeaderApi?.upsertSubToolHeader;
+  const removeSubToolHeader = sharedHeaderApi?.removeSubToolHeader;
+  const headerOwnerId = useId();
   const bottomNavClearance = useBottomNavScrollClearance();
   const horizontalPadding = useScreenPadding ? kit.subToolScreenPaddingHorizontal : 0;
   const navInShell = bottomNavClearance > 0;
   /** 下部ナビが無い画面はシェル側ヘッダーが出ないので、ここでトップバーを描く */
   const useSharedTopBar = Boolean(
-    kit.sharedHeaderChrome && useTopBar && setSubToolHeader && navInShell
+    kit.sharedHeaderChrome &&
+      useTopBar &&
+      upsertSubToolHeader &&
+      removeSubToolHeader &&
+      navInShell
   );
   const onBackRef = useRef(onBack);
   onBackRef.current = onBack;
@@ -74,14 +80,29 @@ export function SubToolScreenTemplate({
       : (['top', 'left', 'right', 'bottom'] as const);
 
   useLayoutEffect(() => {
-    if (!useSharedTopBar || !setSubToolHeader) return;
-    setSubToolHeader({ title, onBack: headerOnBack, right, titleTrailing, titleFramed });
-  }, [useSharedTopBar, setSubToolHeader, title, headerOnBack, right, titleTrailing, titleFramed]);
+    if (!useSharedTopBar || !upsertSubToolHeader) return;
+    upsertSubToolHeader(headerOwnerId, {
+      title,
+      onBack: headerOnBack,
+      right,
+      titleTrailing,
+      titleFramed,
+    });
+  }, [
+    useSharedTopBar,
+    upsertSubToolHeader,
+    headerOwnerId,
+    title,
+    headerOnBack,
+    right,
+    titleTrailing,
+    titleFramed,
+  ]);
 
   useLayoutEffect(() => {
-    if (!useSharedTopBar || !setSubToolHeader) return;
-    return () => setSubToolHeader(null);
-  }, [useSharedTopBar, setSubToolHeader]);
+    if (!useSharedTopBar || !removeSubToolHeader) return;
+    return () => removeSubToolHeader(headerOwnerId);
+  }, [useSharedTopBar, removeSubToolHeader, headerOwnerId]);
 
   const body = scrollable ? (
     keyboardAware ? (

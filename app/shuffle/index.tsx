@@ -16,6 +16,7 @@ import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { ShuffleLibraryPickerModal } from '@/components/shuffle/ShuffleLibraryPickerModal';
+import { ShuffleModeInfoButton } from '@/components/shuffle/ShuffleModeInfoButton';
 import { ShuffleOrderResults } from '@/components/shuffle/ShuffleOrderResults';
 import { ShuffleResultCards } from '@/components/shuffle/ShuffleResultCards';
 import { ShuffleRolePanel } from '@/components/shuffle/ShuffleRolePanel';
@@ -118,9 +119,23 @@ export default function ShuffleScreen() {
   const router = useRouter();
   const { colors: appTheme } = useAppTheme();
   const content = useContentColors();
+  const [session, setSession] = useShuffleSession();
+  const {
+    poolDraft,
+    shuffleMode,
+    pickCount,
+    resultMemberIds,
+    orderResultMemberIds,
+    roleDrafts,
+    roleAssignments,
+    teamCount,
+    useRanks,
+    rankTiers,
+    memberRankById,
+    teams,
+  } = session;
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pools, setPools] = useState<ShufflePool[]>([]);
-  const [poolDraft, setPoolDraft] = useState<ShufflePoolDraft | null>(null);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [selectorVisible, setSelectorVisible] = useState(false);
@@ -135,10 +150,6 @@ export default function ShuffleScreen() {
   const [labelDraft, setLabelDraft] = useState('');
   const [labelError, setLabelError] = useState('');
   const [formError, setFormError] = useState('');
-  const [shuffleMode, setShuffleMode] = useState<ShuffleMode>('random');
-  const [pickCount, setPickCount] = useState(1);
-  const [resultMemberIds, setResultMemberIds] = useState<string[] | null>(null);
-  const [orderResultMemberIds, setOrderResultMemberIds] = useState<string[] | null>(null);
   const [shuffleError, setShuffleError] = useState('');
   const [myselfId, setMyselfId] = useState<string | null>(null);
   const poolDraftRef = useRef<ShufflePoolDraft | null>(null);
@@ -157,20 +168,16 @@ export default function ShuffleScreen() {
         : '',
     [poolDraft?.memberIds]
   );
+  const previousMemberSetKeyRef = useRef(draftMemberSetKey);
 
   useEffect(() => {
-    if (!activePool) {
-      setPickCount(1);
-      setResultMemberIds(null);
-      setOrderResultMemberIds(null);
-      setShuffleError('');
+    if (previousMemberSetKeyRef.current === draftMemberSetKey) {
       return;
     }
-    setPickCount((current) => Math.min(Math.max(1, current), activePool.memberIds.length));
-    setResultMemberIds(null);
-    setOrderResultMemberIds(null);
+    previousMemberSetKeyRef.current = draftMemberSetKey;
+    setSession((current) => resetShuffleResultsForMemberChange(current));
     setShuffleError('');
-  }, [activePool, draftMemberSetKey]);
+  }, [draftMemberSetKey, setSession]);
 
   useEffect(() => {
     setShuffleError('');
@@ -281,12 +288,20 @@ export default function ShuffleScreen() {
     }
 
     setFormError('');
-    setPoolDraft((previous) => buildDraftFromMemberIds(memberIds, previous, friendNameById));
+    setSession((previous) => {
+      const nextDraft = buildDraftFromMemberIds(memberIds, previous.poolDraft, friendNameById);
+      const next = { ...previous, poolDraft: nextDraft };
+      const previousKey = previous.poolDraft
+        ? buildShuffleMemberSetKey(previous.poolDraft.memberIds)
+        : '';
+      const nextKey = buildShuffleMemberSetKey(nextDraft.memberIds);
+      return previousKey === nextKey ? next : resetShuffleResultsForMemberChange(next);
+    });
     setSelectorVisible(false);
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
     setSelectorExperienceFilter('');
-  }, [friendNameById, selectedGroupValues, selectedIndividualIds]);
+  }, [friendNameById, selectedGroupValues, selectedIndividualIds, setSession]);
 
   const toggleSelectorIndividual = useCallback((friendId: string) => {
     setSelectedIndividualIds((prev) => {
@@ -307,14 +322,22 @@ export default function ShuffleScreen() {
   }, []);
 
   const handleImportPool = useCallback((pool: ShufflePool) => {
-    setPoolDraft({
-      memberIds: [...pool.memberIds],
-      label: pool.label,
-      labelIsCustom: pool.labelIsCustom,
+    setSession((previous) => {
+      const nextDraft = {
+        memberIds: [...pool.memberIds],
+        label: pool.label,
+        labelIsCustom: pool.labelIsCustom,
+      };
+      const next = { ...previous, poolDraft: nextDraft };
+      const previousKey = previous.poolDraft
+        ? buildShuffleMemberSetKey(previous.poolDraft.memberIds)
+        : '';
+      const nextKey = buildShuffleMemberSetKey(nextDraft.memberIds);
+      return previousKey === nextKey ? next : resetShuffleResultsForMemberChange(next);
     });
     setFormError('');
     setLibraryModalVisible(false);
-  }, []);
+  }, [setSession]);
 
   const handleDeletePool = useCallback(
     (pool: ShufflePool) => {
@@ -352,21 +375,27 @@ export default function ShuffleScreen() {
       setLabelError('名前を入力してください。');
       return;
     }
-    setPoolDraft((previous) =>
-      previous
+    setSession((previous) =>
+      previous.poolDraft
         ? {
             ...previous,
-            label: trimmed,
-            labelIsCustom: true,
+            poolDraft: {
+              ...previous.poolDraft,
+              label: trimmed,
+              labelIsCustom: true,
+            },
           }
-        : null
+        : previous
     );
     setLabelEditVisible(false);
     setLabelError('');
   };
 
   const decrementPickCount = () => {
-    setPickCount((current) => Math.max(1, current - 1));
+    setSession((previous) => ({
+      ...previous,
+      pickCount: Math.max(1, previous.pickCount - 1),
+    }));
     setShuffleError('');
   };
 
@@ -374,7 +403,10 @@ export default function ShuffleScreen() {
     if (!activePool) {
       return;
     }
-    setPickCount((current) => Math.min(activePool.memberIds.length, current + 1));
+    setSession((previous) => ({
+      ...previous,
+      pickCount: Math.min(activePool.memberIds.length, previous.pickCount + 1),
+    }));
     setShuffleError('');
   };
 
@@ -394,9 +426,9 @@ export default function ShuffleScreen() {
       return;
     }
     persistDraftToLibrary();
-    setResultMemberIds(picked);
+    setSession((previous) => ({ ...previous, resultMemberIds: picked }));
     setShuffleError('');
-  }, [activePool, persistDraftToLibrary, pickCount]);
+  }, [activePool, persistDraftToLibrary, pickCount, setSession]);
 
   const runOrderShuffle = useCallback(() => {
     if (!activePool) {
@@ -409,9 +441,9 @@ export default function ShuffleScreen() {
       return;
     }
     persistDraftToLibrary();
-    setOrderResultMemberIds(ordered);
+    setSession((previous) => ({ ...previous, orderResultMemberIds: ordered }));
     setShuffleError('');
-  }, [activePool, persistDraftToLibrary]);
+  }, [activePool, persistDraftToLibrary, setSession]);
 
   const handleRoleShuffleComplete = useCallback(() => {
     if (!activePool) {
@@ -436,7 +468,7 @@ export default function ShuffleScreen() {
           <PillTabBar
             tabs={SHUFFLE_TABS}
             activeTab={shuffleMode}
-            onTabChange={setShuffleMode}
+            onTabChange={(mode) => setSession((previous) => ({ ...previous, shuffleMode: mode }))}
             perTabColors
           />
         }
@@ -498,41 +530,47 @@ export default function ShuffleScreen() {
           {shuffleMode === 'random' ? (
             <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
               {!activePool ? (
-                <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
-                  メンバーを選ぶと、ここからランダム抽選できます。
-                </Text>
+                <View style={styles.emptyHintRow}>
+                  <Text style={[styles.emptyHint, styles.emptyHintInRow, contentMutedTextStyle(content)]}>
+                    メンバーを選ぶと、ここからランダム抽選できます。
+                  </Text>
+                  <ShuffleModeInfoButton mode="random" />
+                </View>
               ) : (
                 <>
                   <View style={styles.pickCountRow}>
-                    <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>選ぶ人数</Text>
-                    <View style={styles.stepper}>
-                      <Pressable
-                        style={[
-                          styles.stepperButton,
-                          contentTagStyle(content),
-                          pickCount <= 1 && styles.stepperButtonDisabled,
-                        ]}
-                        onPress={decrementPickCount}
-                        disabled={pickCount <= 1}
-                      >
-                        <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
-                      </Pressable>
-                      <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{pickCount}</Text>
-                      <Pressable
-                        style={[
-                          styles.stepperButton,
-                          contentTagStyle(content),
-                          pickCount >= activeMemberCount && styles.stepperButtonDisabled,
-                        ]}
-                        onPress={incrementPickCount}
-                        disabled={pickCount >= activeMemberCount}
-                      >
-                        <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
-                      </Pressable>
+                    <View style={styles.pickCountControls}>
+                      <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>選ぶ人数</Text>
+                      <View style={styles.stepper}>
+                        <Pressable
+                          style={[
+                            styles.stepperButton,
+                            contentTagStyle(content),
+                            pickCount <= 1 && styles.stepperButtonDisabled,
+                          ]}
+                          onPress={decrementPickCount}
+                          disabled={pickCount <= 1}
+                        >
+                          <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
+                        </Pressable>
+                        <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{pickCount}</Text>
+                        <Pressable
+                          style={[
+                            styles.stepperButton,
+                            contentTagStyle(content),
+                            pickCount >= activeMemberCount && styles.stepperButtonDisabled,
+                          ]}
+                          onPress={incrementPickCount}
+                          disabled={pickCount >= activeMemberCount}
+                        >
+                          <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
+                        </Pressable>
+                      </View>
+                      <Text style={[styles.pickCountMeta, contentMutedTextStyle(content)]}>
+                        ／ {activeMemberCount}人
+                      </Text>
                     </View>
-                    <Text style={[styles.pickCountMeta, contentMutedTextStyle(content)]}>
-                      ／ {activeMemberCount}人
-                    </Text>
+                    <ShuffleModeInfoButton mode="random" />
                   </View>
 
                   <Pressable
@@ -572,14 +610,17 @@ export default function ShuffleScreen() {
           ) : shuffleMode === 'order' ? (
             <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
               {!activePool ? (
-                <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
-                  メンバーを選ぶと、ここから並び替えできます。
-                </Text>
+                <View style={styles.emptyHintRow}>
+                  <Text style={[styles.emptyHint, styles.emptyHintInRow, contentMutedTextStyle(content)]}>
+                    メンバーを選ぶと、ここから並び替えできます。
+                  </Text>
+                  <ShuffleModeInfoButton mode="order" />
+                </View>
               ) : (
                 <>
-                  <Text style={[styles.orderHint, contentMutedTextStyle(content)]}>
-                    全員をランダムな順番に並べ替えます。
-                  </Text>
+                  <View style={styles.modeInfoRow}>
+                    <ShuffleModeInfoButton mode="order" />
+                  </View>
                   <Pressable
                     style={[styles.shuffleButton, contentFilledButtonStyle(content)]}
                     onPress={runOrderShuffle}
@@ -598,6 +639,7 @@ export default function ShuffleScreen() {
                         memberIds={orderResultMemberIds}
                         friendNameById={friendNameById}
                         friendPhotoById={friendPhotoById}
+                        friendsById={friendsById}
                       />
                       <Pressable
                         style={[styles.reshuffleButton, contentSelectedOptionStyle(content)]}
@@ -620,6 +662,17 @@ export default function ShuffleScreen() {
               friendsById={friendsById}
               myselfId={myselfId}
               onShuffleComplete={handleRoleShuffleComplete}
+              roleDrafts={roleDrafts}
+              onRoleDraftsChange={(next) =>
+                setSession((previous) => ({
+                  ...previous,
+                  roleDrafts: typeof next === 'function' ? next(previous.roleDrafts) : next,
+                }))
+              }
+              assignments={roleAssignments}
+              onAssignmentsChange={(next) =>
+                setSession((previous) => ({ ...previous, roleAssignments: next }))
+              }
             />
           ) : (
             <ShuffleTeamPanel
@@ -629,6 +682,31 @@ export default function ShuffleScreen() {
               friendsById={friendsById}
               myselfId={myselfId}
               onShuffleComplete={handleTeamShuffleComplete}
+              teamCount={teamCount}
+              onTeamCountChange={(next) =>
+                setSession((previous) => ({
+                  ...previous,
+                  teamCount: typeof next === 'function' ? next(previous.teamCount) : next,
+                }))
+              }
+              useRanks={useRanks}
+              onUseRanksChange={(next) => setSession((previous) => ({ ...previous, useRanks: next }))}
+              rankTiers={rankTiers}
+              onRankTiersChange={(next) =>
+                setSession((previous) => ({
+                  ...previous,
+                  rankTiers: typeof next === 'function' ? next(previous.rankTiers) : next,
+                }))
+              }
+              memberRankById={memberRankById}
+              onMemberRankByIdChange={(next) =>
+                setSession((previous) => ({
+                  ...previous,
+                  memberRankById: typeof next === 'function' ? next(previous.memberRankById) : next,
+                }))
+              }
+              teams={teams}
+              onTeamsChange={(next) => setSession((previous) => ({ ...previous, teams: next }))}
             />
           )}
         </View>
@@ -760,9 +838,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  emptyHintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
   emptyHint: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  emptyHintInRow: {
+    flex: 1,
+    paddingTop: 8,
   },
   shuffleSection: {
     gap: 10,
@@ -773,15 +860,25 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     gap: 12,
   },
-  orderHint: {
-    fontSize: 13,
-    lineHeight: 18,
+  modeInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: -6,
+    marginBottom: -10,
   },
   pickCountRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+  },
+  pickCountControls: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
     flexWrap: 'wrap',
+    minWidth: 0,
   },
   pickCountLabel: {
     fontSize: 14,

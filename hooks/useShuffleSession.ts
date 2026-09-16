@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   flushShuffleSession,
   loadShuffleSession,
@@ -8,8 +8,6 @@ import {
 
 export function useShuffleSession() {
   const [session, setSessionState] = useState<ShuffleSessionState>(loadShuffleSession);
-  const sessionRef = useRef(session);
-  sessionRef.current = session;
 
   useEffect(() => {
     persistShuffleSession(session);
@@ -17,14 +15,17 @@ export function useShuffleSession() {
 
   useEffect(() => {
     return () => {
-      persistShuffleSession(sessionRef.current);
       flushShuffleSession();
     };
   }, []);
 
   const setSession = useCallback(
     (next: ShuffleSessionState | ((prev: ShuffleSessionState) => ShuffleSessionState)) => {
-      setSessionState((prev) => (typeof next === 'function' ? next(prev) : next));
+      setSessionState((prev) => {
+        const resolved = typeof next === 'function' ? next(prev) : next;
+        persistShuffleSession(resolved);
+        return resolved;
+      });
     },
     []
   );

@@ -24,6 +24,7 @@ import {
   type ShuffleRankTier,
   type ShuffleTeamAssignment,
 } from '../../utils/shuffleHelpers';
+import { ShuffleModeInfoButton } from './ShuffleModeInfoButton';
 import { ShuffleTeamResults } from './ShuffleTeamResults';
 
 type TeamCountUpdater = number | ((current: number) => number);
@@ -179,47 +180,49 @@ export function ShuffleTeamPanel({
   if (!activePool) {
     return (
       <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-        <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
-          集団を選ぶと、ここからチーム分けできます。
-        </Text>
+        <View style={styles.emptyHintRow}>
+          <Text style={[styles.emptyHint, styles.emptyHintInRow, contentMutedTextStyle(content)]}>
+            集団を選ぶと、ここからチーム分けできます。
+          </Text>
+          <ShuffleModeInfoButton mode="team" />
+        </View>
       </View>
     );
   }
 
   return (
     <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-      <Text style={[styles.hintText, contentMutedTextStyle(content)]}>
-        チーム数を指定してシャッフルします。ランクを使うと、各チームにランクが均等に配分されます。
-      </Text>
-
       <View style={styles.pickCountRow}>
-        <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>チーム数</Text>
-        <View style={styles.stepper}>
-          <Pressable
-            style={[
-              styles.stepperButton,
-              contentTagStyle(content),
-              teamCount <= 2 && styles.stepperButtonDisabled,
-            ]}
-            onPress={decrementTeamCount}
-            disabled={teamCount <= 2}
-          >
-            <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
-          </Pressable>
-          <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{teamCount}</Text>
-          <Pressable
-            style={[
-              styles.stepperButton,
-              contentTagStyle(content),
-              teamCount >= memberCount && styles.stepperButtonDisabled,
-            ]}
-            onPress={incrementTeamCount}
-            disabled={teamCount >= memberCount}
-          >
-            <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
-          </Pressable>
+        <View style={styles.pickCountControls}>
+          <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>チーム数</Text>
+          <View style={styles.stepper}>
+            <Pressable
+              style={[
+                styles.stepperButton,
+                contentTagStyle(content),
+                teamCount <= 2 && styles.stepperButtonDisabled,
+              ]}
+              onPress={decrementTeamCount}
+              disabled={teamCount <= 2}
+            >
+              <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
+            </Pressable>
+            <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{teamCount}</Text>
+            <Pressable
+              style={[
+                styles.stepperButton,
+                contentTagStyle(content),
+                teamCount >= memberCount && styles.stepperButtonDisabled,
+              ]}
+              onPress={incrementTeamCount}
+              disabled={teamCount >= memberCount}
+            >
+              <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
+            </Pressable>
+          </View>
+          <Text style={[styles.pickCountMeta, contentMutedTextStyle(content)]}>／ 最大{memberCount}</Text>
         </View>
-        <Text style={[styles.pickCountMeta, contentMutedTextStyle(content)]}>／ 最大{memberCount}</Text>
+        <ShuffleModeInfoButton mode="team" />
       </View>
 
       <View style={[styles.rankToggleRow, contentTagStyle(content)]}>
@@ -384,19 +387,31 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     gap: 12,
   },
+  emptyHintRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
   emptyHint: {
     fontSize: 13,
     lineHeight: 18,
   },
-  hintText: {
-    fontSize: 12,
-    lineHeight: 17,
+  emptyHintInRow: {
+    flex: 1,
+    paddingTop: 8,
   },
   pickCountRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
+  },
+  pickCountControls: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 10,
     flexWrap: 'wrap',
+    minWidth: 0,
   },
   pickCountLabel: {
     fontSize: 14,

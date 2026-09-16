@@ -286,7 +286,7 @@ export default function SettlementRoomDetailScreen() {
 
   if (!room || !engine) {
     return (
-      <SubToolScreenTemplate title="グループ" onBack={() => router.back()}>
+      <SubToolScreenTemplate title="グループ" titleFramed={false} onBack={() => router.back()}>
         <Text style={styles.missingText}>グループが見つかりませんでした。</Text>
       </SubToolScreenTemplate>
     );
@@ -298,6 +298,7 @@ export default function SettlementRoomDetailScreen() {
     <>
       <SubToolScreenTemplate
         title={room.title}
+        titleFramed={false}
         onBack={() => router.back()}
         titleTrailing={
           <Pressable

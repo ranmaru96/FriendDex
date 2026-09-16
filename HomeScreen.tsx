@@ -201,7 +201,7 @@ export default function HomeScreen() {
             <CircleIconButton
               icon="pricetag-outline"
               onPress={() => router.push('/commonitems')}
-              accessibilityLabel="共通項目"
+              accessibilityLabel="登録済み項目"
             />
           </View>
           <View

@@ -511,7 +511,7 @@ export default function CommonItemsScreen() {
           onPress={() => setInfoVisible(true)}
           hitSlop={8}
           accessibilityRole="button"
-          accessibilityLabel="共通項目についての説明"
+          accessibilityLabel="登録済み項目についての説明"
         >
           <Ionicons
             name="information-circle-outline"
@@ -528,7 +528,7 @@ export default function CommonItemsScreen() {
     <>
       <TabScreenTemplate
         contentContainerStyle={styles.body}
-        header={<ScreenTopBar title="共通項目" onBack={() => router.back()} />}
+        header={<ScreenTopBar title="登録済み項目" onBack={() => router.back()} />}
         safeAreaEdges={['top', 'right', 'bottom', 'left']}
       >
         <View style={[detailStyles.tabSection, styles.tabSectionFill, styles.tabSectionNoFrame]}>
@@ -562,7 +562,7 @@ export default function CommonItemsScreen() {
           />
           {isCodex ? (
           <OffsetCard style={{ alignSelf: 'stretch' }} contentStyle={{ padding: 18, gap: 12 }}>
-            <Text style={[styles.infoTitle, contentTextStyle(content)]}>共通項目について</Text>
+            <Text style={[styles.infoTitle, contentTextStyle(content)]}>登録済み項目について</Text>
             <Text style={[styles.infoBody, contentMutedTextStyle(content)]}>
               {[
                 '・人物プロフィールで使う所属・経験などの候補をまとめて管理します。',
@@ -579,7 +579,7 @@ export default function CommonItemsScreen() {
           </OffsetCard>
           ) : (
           <View style={[styles.infoCard, contentSurfaceStyle(content)]}>
-            <Text style={[styles.infoTitle, contentTextStyle(content)]}>共通項目について</Text>
+            <Text style={[styles.infoTitle, contentTextStyle(content)]}>登録済み項目について</Text>
             <Text style={[styles.infoBody, contentMutedTextStyle(content)]}>
               {[
                 '・人物プロフィールで使う所属・経験などの候補をまとめて管理します。',
