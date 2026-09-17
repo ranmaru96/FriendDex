@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Theme, Radius, Spacing } from '@/constants/theme';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
+import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { screenTopBarIconButtonStyle } from '@/components/screen/ScreenTopBar';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { SettlementTransferRow } from '@/components/settlement';
@@ -68,7 +69,6 @@ function mockRoomToEngine(
 }
 
 export default function SettlementRoomDetailScreen() {
-  const router = useRouter();
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
   const { getRoom, addExpense, updateRoomTitle, isTransferCompleted, toggleTransferCompleted } =
     useSettlementMock();
@@ -286,7 +286,7 @@ export default function SettlementRoomDetailScreen() {
 
   if (!room || !engine) {
     return (
-      <SubToolScreenTemplate title="グループ" titleFramed={false} onBack={() => router.back()}>
+      <SubToolScreenTemplate title="グループ" titleFramed={false} onBack={popCurrentTabScreen}>
         <Text style={styles.missingText}>グループが見つかりませんでした。</Text>
       </SubToolScreenTemplate>
     );
@@ -299,7 +299,7 @@ export default function SettlementRoomDetailScreen() {
       <SubToolScreenTemplate
         title={room.title}
         titleFramed={false}
-        onBack={() => router.back()}
+        onBack={popCurrentTabScreen}
         titleTrailing={
           <Pressable
             style={screenTopBarIconButtonStyle}

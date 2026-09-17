@@ -8,6 +8,7 @@ import {
   contentDateTimePickerProps,
   contentInputStyle,
   contentMutedTextStyle,
+  contentSwitchProps,
   contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
@@ -81,8 +82,7 @@ export function TaskRemindFields({
                 onTimeChange(clampRemindTimeToNow(time || DEFAULT_REMIND_TIME));
               }
             }}
-            trackColor={{ false: content.contentBorder, true: content.contentText }}
-            thumbColor="#ffffff"
+            {...contentSwitchProps(content, enabled)}
           />
         </View>
       </FormRow>

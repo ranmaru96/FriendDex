@@ -1,30 +1,30 @@
-import { useCallback, useMemo, useState } from 'react';
-import { Pressable, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Radius, Spacing } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
 import {
-  contentFilledButtonStyle,
-  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
   contentSelectedOptionStyle,
   contentSurfaceStyle,
-  contentSwitchColors,
+  contentSwitchProps,
   contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
-import { ParticipantChip } from '@/components/participant/ParticipantChip';
 import type { Friend, ShufflePool } from '../../types';
-import { buildParticipantChipDisplays } from '../../utils/episodeHelpers';
 import {
   createRankTierId,
-  memberIdsToParticipantEntries,
   splitMembersIntoTeams,
   suggestNextRankLabel,
   type ShuffleRankTier,
   type ShuffleTeamAssignment,
 } from '../../utils/shuffleHelpers';
-import { ShuffleModeInfoButton } from './ShuffleModeInfoButton';
+import { friendsFromMemberIds, ShufflePoolMemberPicker } from './ShufflePoolMemberPicker';
+import { ShufflePanelHeader } from './ShufflePanelHeader';
+import { ShuffleResultTitle } from './ShuffleResultTitle';
+import { ShuffleColumnsCycleButton } from './ShuffleColumnsCycleButton';
+import { ShuffleSwitch } from './ShuffleSwitch';
 import { ShuffleTeamResults } from './ShuffleTeamResults';
 
 type TeamCountUpdater = number | ((current: number) => number);
@@ -50,12 +50,13 @@ type ShuffleTeamPanelProps = {
   onMemberRankByIdChange: (next: MemberRankUpdater) => void;
   teams: ShuffleTeamAssignment[] | null;
   onTeamsChange: (next: ShuffleTeamAssignment[] | null) => void;
+  resultColumns: number;
+  onResultColumnsChange: (next: number) => void;
+  runLabel?: string | null;
 };
 
 export function ShuffleTeamPanel({
   activePool,
-  friendNameById,
-  friendPhotoById,
   friendsById,
   myselfId = null,
   onShuffleComplete,
@@ -69,23 +70,14 @@ export function ShuffleTeamPanel({
   onMemberRankByIdChange,
   teams,
   onTeamsChange,
+  resultColumns,
+  onResultColumnsChange,
+  runLabel,
 }: ShuffleTeamPanelProps) {
   const content = useContentColors();
-  const switchColors = contentSwitchColors(content);
   const [error, setError] = useState('');
 
   const memberCount = activePool?.memberIds.length ?? 0;
-
-  const poolMemberChips = useMemo(() => {
-    if (!activePool) {
-      return [];
-    }
-    return buildParticipantChipDisplays(
-      memberIdsToParticipantEntries(activePool.memberIds),
-      friendNameById,
-      { friendPhotoById }
-    );
-  }, [activePool, friendNameById, friendPhotoById]);
 
   const decrementTeamCount = useCallback(() => {
     onTeamCountChange((current) => Math.max(2, current - 1));
@@ -134,14 +126,19 @@ export function ShuffleTeamPanel({
     setError('');
   }, [onMemberRankByIdChange, onRankTiersChange]);
 
-  const assignMemberRank = useCallback((memberId: string, tierId: string | null) => {
+  const setMembersForRole = useCallback((tierId: string, memberIds: string[]) => {
     onMemberRankByIdChange((current) => {
-      const next = { ...current };
-      if (!tierId) {
-        delete next[memberId];
-      } else {
-        next[memberId] = tierId;
-      }
+      const next: Record<string, string> = {};
+      Object.entries(current).forEach(([memberId, assignedTierId]) => {
+        if (assignedTierId !== tierId) {
+          next[memberId] = assignedTierId;
+        }
+      });
+      memberIds.forEach((memberId) => {
+        if (!next[memberId]) {
+          next[memberId] = tierId;
+        }
+      });
       return next;
     });
     setError('');
@@ -180,200 +177,148 @@ export function ShuffleTeamPanel({
   if (!activePool) {
     return (
       <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-        <View style={styles.emptyHintRow}>
-          <Text style={[styles.emptyHint, styles.emptyHintInRow, contentMutedTextStyle(content)]}>
+        <ShufflePanelHeader mode="team">
+          <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
             集団を選ぶと、ここからチーム分けできます。
           </Text>
-          <ShuffleModeInfoButton mode="team" />
-        </View>
+        </ShufflePanelHeader>
       </View>
     );
   }
 
   return (
     <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-      <View style={styles.pickCountRow}>
-        <View style={styles.pickCountControls}>
-          <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>チーム数</Text>
-          <View style={styles.stepper}>
-            <Pressable
-              style={[
-                styles.stepperButton,
-                contentTagStyle(content),
-                teamCount <= 2 && styles.stepperButtonDisabled,
-              ]}
-              onPress={decrementTeamCount}
-              disabled={teamCount <= 2}
-            >
-              <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
-            </Pressable>
-            <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{teamCount}</Text>
-            <Pressable
-              style={[
-                styles.stepperButton,
-                contentTagStyle(content),
-                teamCount >= memberCount && styles.stepperButtonDisabled,
-              ]}
-              onPress={incrementTeamCount}
-              disabled={teamCount >= memberCount}
-            >
-              <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
-            </Pressable>
-          </View>
-          <Text style={[styles.pickCountMeta, contentMutedTextStyle(content)]}>／ 最大{memberCount}</Text>
+      <ShufflePanelHeader
+        mode="team"
+        onShuffle={runTeamShuffle}
+      >
+        <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>チーム数</Text>
+        <View style={styles.stepper}>
+          <Pressable
+            style={[
+              styles.stepperButton,
+              contentTagStyle(content),
+              teamCount <= 2 && styles.stepperButtonDisabled,
+            ]}
+            onPress={decrementTeamCount}
+            disabled={teamCount <= 2}
+          >
+            <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
+          </Pressable>
+          <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{teamCount}</Text>
+          <Pressable
+            style={[
+              styles.stepperButton,
+              contentTagStyle(content),
+              teamCount >= memberCount && styles.stepperButtonDisabled,
+            ]}
+            onPress={incrementTeamCount}
+            disabled={teamCount >= memberCount}
+          >
+            <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
+          </Pressable>
         </View>
-        <ShuffleModeInfoButton mode="team" />
-      </View>
+      </ShufflePanelHeader>
 
       <View style={[styles.rankToggleRow, contentTagStyle(content)]}>
-        <View style={styles.rankToggleTextWrap}>
-          <Text style={[styles.rankToggleLabel, contentTextStyle(content)]}>ランクでバランスを取る</Text>
-          <Text style={[styles.rankToggleHint, contentMutedTextStyle(content)]}>
-            各ランクの人数をチーム間で均等に配分
-          </Text>
-        </View>
-        <Switch
+        <Text style={[styles.rankToggleLabel, contentTextStyle(content)]}>チームのバランスをとる</Text>
+        <ShuffleSwitch
           value={useRanks}
           onValueChange={(value) => {
             onUseRanksChange(value);
             setError('');
           }}
-          trackColor={switchColors.trackColor}
-          thumbColor={useRanks ? switchColors.thumbColorOn : switchColors.thumbColorOff}
+          {...contentSwitchProps(content, useRanks)}
+          accessibilityLabel="チームのバランスをとる"
         />
       </View>
 
       {useRanks ? (
         <View style={[styles.rankSection, contentTagStyle(content)]}>
           <View style={styles.rankSectionHeader}>
-            <Text style={[styles.rankSectionTitle, contentTextStyle(content)]}>ランク設定</Text>
+            <Text style={[styles.rankSectionTitle, contentTextStyle(content)]}>役割設定</Text>
             <Pressable
               style={[styles.addRankButton, contentSelectedOptionStyle(content)]}
               onPress={addRankTier}
             >
-              <Text style={[styles.addRankButtonText, contentTextStyle(content)]}>＋ ランク追加</Text>
+              <Text style={[styles.addRankButtonText, contentTextStyle(content)]}>＋ 役割追加</Text>
             </Pressable>
           </View>
 
-          {rankTiers.map((tier, index) => (
-            <View key={tier.id} style={styles.rankTierRow}>
-              <Text style={[styles.rankTierIndex, contentMutedTextStyle(content)]}>{index + 1}</Text>
-              <TextInput
-                style={[styles.rankTierInput, contentInputStyle(content)]}
-                value={tier.label}
-                onChangeText={(label) => updateRankLabel(tier.id, label)}
-                placeholder={`ランク${index + 1}`}
-                placeholderTextColor={content.contentTextSecondary}
-              />
-              <Pressable
-                onPress={() => removeRankTier(tier.id)}
-                disabled={rankTiers.length <= 1}
-                hitSlop={8}
-              >
-                <Text
-                  style={[
-                    styles.removeRankText,
-                    rankTiers.length <= 1 && styles.removeRankTextDisabled,
-                  ]}
-                >
-                  削除
-                </Text>
-              </Pressable>
-            </View>
-          ))}
-
-          <Text style={[styles.memberRankTitle, contentTextStyle(content)]}>メンバーのランク</Text>
-          <View style={styles.memberRankList}>
-            {poolMemberChips.map((chip) => {
-              const memberId = chip.friendId;
-              if (!memberId) {
-                return null;
-              }
+          {rankTiers.map((tier, index) => {
+            const membersInRole = Object.entries(memberRankById)
+              .filter(([, assignedTierId]) => assignedTierId === tier.id)
+              .map(([memberId]) => memberId);
+            const eligibleIds = (activePool?.memberIds ?? []).filter((memberId) => {
               const assignedTierId = memberRankById[memberId];
-              return (
-                <View
-                  key={chip.id}
-                  style={[styles.memberRankRow, { borderTopColor: content.contentDivider }]}
-                >
-                  <View style={styles.memberChipWrap}>
-                    <ParticipantChip chip={chip} compact />
-                  </View>
-                  <View style={styles.rankPillRow}>
+              return !assignedTierId || assignedTierId === tier.id;
+            });
+            return (
+              <View
+                key={tier.id}
+                style={[
+                  styles.roleBlock,
+                  index > 0 ? { borderTopColor: content.contentDivider } : styles.roleBlockFirst,
+                ]}
+              >
+                <ShufflePoolMemberPicker
+                  buttonLabel="対象者選択"
+                  eligibleFriends={friendsFromMemberIds(eligibleIds, friendsById)}
+                  selectedMemberIds={membersInRole}
+                  onChange={(memberIds) => setMembersForRole(tier.id, memberIds)}
+                  inlineLeading={
+                    <>
+                      <Text style={[styles.rankTierIndex, contentMutedTextStyle(content)]}>
+                        {index + 1}
+                      </Text>
+                      <TextInput
+                        style={[styles.rankTierInput, contentInputStyle(content)]}
+                        value={tier.label}
+                        onChangeText={(label) => updateRankLabel(tier.id, label)}
+                        placeholder={`役割${index + 1}`}
+                        placeholderTextColor={content.contentTextSecondary}
+                      />
+                    </>
+                  }
+                  inlineTrailing={
                     <Pressable
                       style={[
-                        styles.rankPill,
+                        styles.removeRankButton,
                         contentTagStyle(content),
-                        !assignedTierId ? contentSelectedOptionStyle(content) : null,
+                        rankTiers.length <= 1 ? styles.removeRankButtonDisabled : null,
                       ]}
-                      onPress={() => assignMemberRank(memberId, null)}
+                      onPress={() => removeRankTier(tier.id)}
+                      disabled={rankTiers.length <= 1}
+                      accessibilityRole="button"
+                      accessibilityLabel="役割を削除"
                     >
-                      <Text
-                        style={[
-                          styles.rankPillText,
-                          contentTextStyle(content),
-                        ]}
-                      >
-                        なし
-                      </Text>
+                      <Ionicons name="trash-outline" size={18} color={content.contentText} />
                     </Pressable>
-                    {rankTiers.map((tier) => {
-                      const selected = assignedTierId === tier.id;
-                      return (
-                        <Pressable
-                          key={`${memberId}-${tier.id}`}
-                          style={[
-                            styles.rankPill,
-                            contentTagStyle(content),
-                            selected ? contentSelectedOptionStyle(content) : null,
-                          ]}
-                          onPress={() => assignMemberRank(memberId, tier.id)}
-                        >
-                          <Text
-                            style={[
-                              styles.rankPillText,
-                              contentTextStyle(content),
-                            ]}
-                          >
-                            {tier.label.trim() || '?'}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                </View>
-              );
-            })}
-          </View>
+                  }
+                />
+              </View>
+            );
+          })}
         </View>
       ) : null}
-
-      <Pressable
-        style={[styles.shuffleButton, contentFilledButtonStyle(content)]}
-        onPress={runTeamShuffle}
-      >
-        <Text style={[styles.shuffleButtonText, contentFilledButtonTextStyle(content)]}>
-          シャッフル
-        </Text>
-      </Pressable>
 
       {error ? <Text style={styles.formError}>{error}</Text> : null}
 
       {teams && teams.length > 0 ? (
         <View style={[styles.resultSection, { borderTopColor: content.contentDivider }]}>
-          <Text style={[styles.resultTitle, contentTextStyle(content)]}>チーム分け結果</Text>
+          <ShuffleResultTitle
+            title="チーム分け結果"
+            runLabel={runLabel}
+            trailing={
+              <ShuffleColumnsCycleButton value={resultColumns} onChange={onResultColumnsChange} />
+            }
+          />
           <ShuffleTeamResults
             teams={teams}
             friendsById={friendsById}
             myselfId={myselfId}
+            columns={resultColumns}
           />
-          <Pressable
-            style={[styles.reshuffleButton, contentSelectedOptionStyle(content)]}
-            onPress={runTeamShuffle}
-          >
-            <Text style={[styles.reshuffleButtonText, contentTextStyle(content)]}>
-              もう一度シャッフル
-            </Text>
-          </Pressable>
         </View>
       ) : null}
     </View>
@@ -387,31 +332,10 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     gap: 12,
   },
-  emptyHintRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
   emptyHint: {
+    flex: 1,
     fontSize: 13,
     lineHeight: 18,
-  },
-  emptyHintInRow: {
-    flex: 1,
-    paddingTop: 8,
-  },
-  pickCountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pickCountControls: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-    minWidth: 0,
   },
   pickCountLabel: {
     fontSize: 14,
@@ -444,10 +368,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
   },
-  pickCountMeta: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
   rankToggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -457,17 +377,10 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     padding: 10,
   },
-  rankToggleTextWrap: {
-    flex: 1,
-    gap: 2,
-  },
   rankToggleLabel: {
+    flex: 1,
     fontSize: 13,
     fontWeight: '700',
-  },
-  rankToggleHint: {
-    fontSize: 11,
-    lineHeight: 15,
   },
   rankSection: {
     gap: 10,
@@ -495,19 +408,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  rankTierRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  roleBlock: {
     gap: 8,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+  },
+  roleBlockFirst: {
+    paddingTop: 0,
+    borderTopWidth: 0,
   },
   rankTierIndex: {
     width: 18,
     fontSize: 12,
     fontWeight: '700',
     textAlign: 'center',
+    flexShrink: 0,
   },
   rankTierInput: {
-    flex: 1,
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 72,
+    maxWidth: 120,
     borderWidth: 1,
     borderRadius: Radius.md,
     paddingHorizontal: 10,
@@ -515,53 +436,17 @@ const styles = StyleSheet.create({
     fontSize: 13,
     minHeight: 36,
   },
-  removeRankText: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: '#b91c1c',
-  },
-  removeRankTextDisabled: {
-    opacity: 0.35,
-  },
-  memberRankTitle: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  memberRankList: {
-    gap: 10,
-  },
-  memberRankRow: {
-    gap: 8,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    paddingTop: 10,
-  },
-  memberChipWrap: {
-    alignSelf: 'flex-start',
-  },
-  rankPillRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  rankPill: {
+  removeRankButton: {
+    width: 36,
+    height: 36,
     borderWidth: 1,
     borderRadius: Radius.sm,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
-  },
-  rankPillText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  shuffleButton: {
-    borderRadius: Radius.md,
-    paddingVertical: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
-  shuffleButtonText: {
-    fontSize: 15,
-    fontWeight: '800',
+  removeRankButtonDisabled: {
+    opacity: 0.35,
   },
   formError: {
     fontSize: 12,
@@ -571,21 +456,5 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  resultTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  reshuffleButton: {
-    alignSelf: 'center',
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  reshuffleButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
   },
 });

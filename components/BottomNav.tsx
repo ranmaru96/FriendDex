@@ -1,11 +1,13 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router, usePathname } from 'expo-router';
+import { usePathname } from 'expo-router';
 import { ComponentProps } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import type { BottomNavTabKey } from '@/utils/bottomNavVisibility';
+import { switchBottomTab } from '@/utils/tabNavigation';
+import { isTabRootPath } from '@/utils/tabStacks';
 import { setNextTabAnimation } from '@/utils/tabTransition';
 
 type BottomNavProps = {
@@ -16,21 +18,13 @@ const TABS: {
   key: BottomNavTabKey;
   label: string;
   icon: ComponentProps<typeof Ionicons>['name'];
-  route: '/' | '/calendar' | '/episode' | '/tools' | '/tasks';
 }[] = [
-  { key: 'home', label: '一覧', icon: 'people-outline', route: '/' },
-  { key: 'calendar', label: 'カレンダー', icon: 'calendar-outline', route: '/calendar' },
-  { key: 'episode', label: 'エピソード', icon: 'book-outline', route: '/episode' },
-  { key: 'tasks', label: 'タスク', icon: 'checkbox-outline', route: '/tasks' },
-  { key: 'tools', label: 'ツール', icon: 'construct-outline', route: '/tools' },
+  { key: 'home', label: '一覧', icon: 'people-outline' },
+  { key: 'calendar', label: 'カレンダー', icon: 'calendar-outline' },
+  { key: 'episode', label: 'エピソード', icon: 'book-outline' },
+  { key: 'tasks', label: 'タスク', icon: 'checkbox-outline' },
+  { key: 'tools', label: 'ツール', icon: 'construct-outline' },
 ];
-
-function isOnTabRoute(pathname: string, tab: (typeof TABS)[number]): boolean {
-  if (tab.key === 'home') {
-    return pathname === '/' || pathname === '/index';
-  }
-  return pathname === tab.route;
-}
 
 export default function BottomNav({ active }: BottomNavProps) {
   const pathname = usePathname();
@@ -43,13 +37,13 @@ export default function BottomNav({ active }: BottomNavProps) {
   const tabBarActiveText = appTheme?.colors.tabBarActiveText ?? '#ffffff';
 
   const handleTabPress = (tab: (typeof TABS)[number]) => {
-    if (isOnTabRoute(pathname, tab)) {
+    if (isTabRootPath(pathname, tab.key)) {
       return;
     }
     const fromIndex = active == null ? -1 : TABS.findIndex((item) => item.key === active);
     const toIndex = TABS.findIndex((item) => item.key === tab.key);
     setNextTabAnimation(toIndex > fromIndex ? 'slide_from_right' : 'slide_from_left');
-    router.replace(tab.route);
+    switchBottomTab(tab.key, pathname);
   };
 
   return (

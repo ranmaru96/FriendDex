@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   ScrollView,
@@ -19,6 +20,8 @@ import { ParticipantChipList } from '@/components/participant/ParticipantChipLis
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { Radius } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { useAuthSession } from '@/contexts/AuthSessionContext';
+import { claimAndFetchIdentityProfile } from '@/lib/identityProfileSync';
 import {
   contentFilledButtonStyle,
   contentFilledButtonTextStyle,
@@ -103,7 +106,27 @@ export default function QrImportScreen() {
     residence?: string;
     mbti?: string;
   }>();
-  const payload = useMemo(() => routeParamsToQrPayload(params), [params]);
+  const { ready: authReady } = useAuthSession();
+  const qrPayload = useMemo(
+    () => routeParamsToQrPayload(params),
+    [
+      params.scannedUserId,
+      params.publicFields,
+      params.name,
+      params.familyName,
+      params.givenName,
+      params.hasSplitName,
+      params.nickname,
+      params.birthday,
+      params.height,
+      params.weight,
+      params.origin,
+      params.residence,
+      params.mbti,
+    ]
+  );
+  const [payload, setPayload] = useState<QrScanPayload | null>(qrPayload);
+  const [hydrateReady, setHydrateReady] = useState(!qrPayload);
 
   const [mode, setMode] = useState<ImportMode>('new');
   const [step, setStep] = useState<ImportStep>('choose-mode');
@@ -193,7 +216,41 @@ export default function QrImportScreen() {
   }, [selectedOverwriteFriend]);
 
   useEffect(() => {
-    if (!payload || initialized) return;
+    let cancelled = false;
+    if (!qrPayload) {
+      setPayload(null);
+      setHydrateReady(true);
+      return;
+    }
+    if (!authReady) {
+      setPayload(qrPayload);
+      setHydrateReady(false);
+      return;
+    }
+    setPayload(qrPayload);
+    setHydrateReady(false);
+    void claimAndFetchIdentityProfile(qrPayload.userId)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        if (result.payload) {
+          setPayload(result.payload);
+        }
+        setHydrateReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setHydrateReady(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, qrPayload]);
+
+  useEffect(() => {
+    if (!payload || !hydrateReady || initialized) return;
     if (nameMatchCandidates.length > 0) {
       setStep('confirm-match');
       setMatchCandidateId(nameMatchCandidates[0]?.id ?? null);
@@ -206,15 +263,18 @@ export default function QrImportScreen() {
       setMode('new');
     }
     setInitialized(true);
-  }, [initialized, linkedFriend, nameMatchCandidates, payload]);
+  }, [hydrateReady, initialized, linkedFriend, nameMatchCandidates, payload]);
 
   useEffect(() => {
+    if (!hydrateReady) {
+      return;
+    }
     if (!payload) {
       Alert.alert('エラー', 'QRコードの内容を読み取れませんでした', [
         { text: 'OK', onPress: () => router.back() },
       ]);
     }
-  }, [payload, router]);
+  }, [hydrateReady, payload, router]);
 
   const reloadFriends = useCallback(() => {
     initializeDatabase();
@@ -341,6 +401,22 @@ export default function QrImportScreen() {
     selected
       ? { color: patternColors.chipOnInk }
       : contentTextStyle(content);
+
+  if (!hydrateReady) {
+    return (
+      <SubToolScreenTemplate
+        title="QR読み取り結果"
+        titleFramed={false}
+        onBack={() => router.back()}
+        scrollable={false}
+        contentStyle={styles.container}
+      >
+        <View style={styles.loading}>
+          <ActivityIndicator color={content.contentText} />
+        </View>
+      </SubToolScreenTemplate>
+    );
+  }
 
   if (!payload || !previewFriend) {
     return null;
@@ -601,6 +677,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     paddingBottom: 16,
+  },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardStage: {
     alignItems: 'center',

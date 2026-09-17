@@ -40,7 +40,7 @@ export function ShuffleLibraryPickerModal({
     <Modal transparent animationType="fade" visible={visible} onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <View style={[styles.card, contentSurfaceStyle(content)]}>
-          <Text style={[styles.title, contentTextStyle(content)]}>ライブラリから引用</Text>
+          <Text style={[styles.title, contentTextStyle(content)]}>履歴から引用</Text>
           <Text style={[styles.description, contentMutedTextStyle(content)]}>
             保存済みの集団を選ぶと、メンバー欄に読み込まれます。
           </Text>

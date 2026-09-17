@@ -8,17 +8,24 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Spacing } from '@/constants/theme';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
+import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { ShuffleLibraryPickerModal } from '@/components/shuffle/ShuffleLibraryPickerModal';
+import { ShuffleExcludeToggle } from '@/components/shuffle/ShuffleExcludePicker';
+import { friendsFromMemberIds, ShufflePoolMemberPicker } from '@/components/shuffle/ShufflePoolMemberPicker';
+import { ShufflePanelHeader } from '@/components/shuffle/ShufflePanelHeader';
 import { ShuffleModeInfoButton } from '@/components/shuffle/ShuffleModeInfoButton';
+import { ShuffleOrderLayoutButton } from '@/components/shuffle/ShuffleOrderLayoutButton';
 import { ShuffleOrderResults } from '@/components/shuffle/ShuffleOrderResults';
+import { ShuffleColumnsCycleButton } from '@/components/shuffle/ShuffleColumnsCycleButton';
 import { ShuffleResultCards } from '@/components/shuffle/ShuffleResultCards';
+import { ShuffleResultTitle } from '@/components/shuffle/ShuffleResultTitle';
 import { ShuffleRolePanel } from '@/components/shuffle/ShuffleRolePanel';
 import { ShuffleTeamPanel } from '@/components/shuffle/ShuffleTeamPanel';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
@@ -40,16 +47,17 @@ import { buildFriendNameById } from '../../utils/moneyLoanHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import { useShuffleSession } from '@/hooks/useShuffleSession';
 import {
+  advanceShuffleRun,
+  clampShuffleResultColumns,
+  getShuffleRunLabel,
   resetShuffleResultsForMemberChange,
   type ShuffleMode,
+  type ShuffleOrderLayout,
   type ShufflePoolDraft,
 } from '@/utils/shuffleSession';
 import {
-  contentFilledButtonStyle,
-  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
-  contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentTagStyle,
   contentTextStyle,
@@ -73,10 +81,10 @@ const SHUFFLE_MODE_LABELS: Record<ShuffleMode, string> = {
 };
 
 const SHUFFLE_TABS: PillTabItem<ShuffleMode>[] = [
-  { key: 'random', caption: SHUFFLE_MODE_LABELS.random, icon: 'shuffle-outline', color: '#8b5fd4' },
-  { key: 'order', caption: SHUFFLE_MODE_LABELS.order, icon: 'list-outline', color: '#4a7fd4' },
-  { key: 'role', caption: SHUFFLE_MODE_LABELS.role, icon: 'ribbon-outline', color: '#e07a2a' },
-  { key: 'team', caption: SHUFFLE_MODE_LABELS.team, icon: 'people-outline', color: '#3a9d5a' },
+  { key: 'random', caption: SHUFFLE_MODE_LABELS.random, icon: 'shuffle-outline' },
+  { key: 'order', caption: SHUFFLE_MODE_LABELS.order, icon: 'list-outline' },
+  { key: 'role', caption: SHUFFLE_MODE_LABELS.role, icon: 'ribbon-outline' },
+  { key: 'team', caption: SHUFFLE_MODE_LABELS.team, icon: 'people-outline' },
 ];
 
 function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
@@ -86,7 +94,7 @@ function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
 function buildDraftFromMemberIds(
   memberIds: string[],
   previous: ShufflePoolDraft | null,
-  friendNameById: Map<string, string>
+  existingLabels: readonly string[]
 ): ShufflePoolDraft {
   const memberSetChanged =
     previous !== null &&
@@ -95,8 +103,8 @@ function buildDraftFromMemberIds(
   return {
     memberIds,
     label: labelIsCustom
-      ? (previous?.label.trim() || buildDefaultShufflePoolLabel(memberIds, friendNameById))
-      : buildDefaultShufflePoolLabel(memberIds, friendNameById),
+      ? (previous?.label.trim() || buildDefaultShufflePoolLabel(existingLabels))
+      : buildDefaultShufflePoolLabel(existingLabels),
     labelIsCustom,
   };
 }
@@ -116,7 +124,6 @@ function draftToActivePool(draft: ShufflePoolDraft | null): ShufflePool | null {
 }
 
 export default function ShuffleScreen() {
-  const router = useRouter();
   const { colors: appTheme } = useAppTheme();
   const content = useContentColors();
   const [session, setSession] = useShuffleSession();
@@ -124,8 +131,11 @@ export default function ShuffleScreen() {
     poolDraft,
     shuffleMode,
     pickCount,
+    resultColumns,
     resultMemberIds,
     orderResultMemberIds,
+    orderLayout = 'wrap',
+    orderExcludedMemberIds = [],
     roleDrafts,
     roleAssignments,
     teamCount,
@@ -134,6 +144,10 @@ export default function ShuffleScreen() {
     memberRankById,
     teams,
   } = session;
+  const randomRunLabel = getShuffleRunLabel(session, 'random');
+  const orderRunLabel = getShuffleRunLabel(session, 'order');
+  const roleRunLabel = getShuffleRunLabel(session, 'role');
+  const teamRunLabel = getShuffleRunLabel(session, 'team');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [pools, setPools] = useState<ShufflePool[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
@@ -151,6 +165,7 @@ export default function ShuffleScreen() {
   const [labelError, setLabelError] = useState('');
   const [formError, setFormError] = useState('');
   const [shuffleError, setShuffleError] = useState('');
+  const [orderExcludeOpen, setOrderExcludeOpen] = useState<boolean | undefined>(undefined);
   const [myselfId, setMyselfId] = useState<string | null>(null);
   const poolDraftRef = useRef<ShufflePoolDraft | null>(null);
   poolDraftRef.current = poolDraft;
@@ -282,14 +297,30 @@ export default function ShuffleScreen() {
       }));
     const memberIds = getEpisodeParticipantFriendIds({ participantEntries });
     if (memberIds.length === 0) {
-      setFormError('参加者を1人以上選んでください。');
+      setFormError('');
+      setSession((previous) => {
+        if (!previous.poolDraft) {
+          return previous;
+        }
+        return resetShuffleResultsForMemberChange({
+          ...previous,
+          poolDraft: null,
+        });
+      });
       setSelectorVisible(false);
+      setSelectorNameFilter('');
+      setSelectorAffiliationFilter('');
+      setSelectorExperienceFilter('');
       return;
     }
 
     setFormError('');
     setSession((previous) => {
-      const nextDraft = buildDraftFromMemberIds(memberIds, previous.poolDraft, friendNameById);
+      const nextDraft = buildDraftFromMemberIds(
+        memberIds,
+        previous.poolDraft,
+        pools.map((pool) => pool.label)
+      );
       const next = { ...previous, poolDraft: nextDraft };
       const previousKey = previous.poolDraft
         ? buildShuffleMemberSetKey(previous.poolDraft.memberIds)
@@ -301,7 +332,7 @@ export default function ShuffleScreen() {
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
     setSelectorExperienceFilter('');
-  }, [friendNameById, selectedGroupValues, selectedIndividualIds, setSession]);
+  }, [pools, selectedGroupValues, selectedIndividualIds, setSession]);
 
   const toggleSelectorIndividual = useCallback((friendId: string) => {
     setSelectedIndividualIds((prev) => {
@@ -319,6 +350,11 @@ export default function ShuffleScreen() {
       else next.add(groupValue);
       return next;
     });
+  }, []);
+
+  const handleSelectorReset = useCallback(() => {
+    setSelectedIndividualIds(new Set());
+    setSelectedGroupValues(new Set());
   }, []);
 
   const handleImportPool = useCallback((pool: ShufflePool) => {
@@ -341,7 +377,7 @@ export default function ShuffleScreen() {
 
   const handleDeletePool = useCallback(
     (pool: ShufflePool) => {
-      Alert.alert('削除確認', `「${pool.label}」をライブラリから削除しますか？`, [
+      Alert.alert('削除確認', `「${pool.label}」を履歴から削除しますか？`, [
         { text: 'キャンセル', style: 'cancel' },
         {
           text: '削除',
@@ -410,6 +446,13 @@ export default function ShuffleScreen() {
     setShuffleError('');
   };
 
+  const handleResultColumnsChange = useCallback((next: number) => {
+    setSession((previous) => ({
+      ...previous,
+      resultColumns: clampShuffleResultColumns(next),
+    }));
+  }, [setSession]);
+
   const runRandomShuffle = useCallback(() => {
     if (!activePool) {
       setShuffleError('メンバーを選んでからシャッフルしてください。');
@@ -426,24 +469,49 @@ export default function ShuffleScreen() {
       return;
     }
     persistDraftToLibrary();
-    setSession((previous) => ({ ...previous, resultMemberIds: picked }));
+    setSession((previous) =>
+      advanceShuffleRun({ ...previous, resultMemberIds: picked }, 'random')
+    );
     setShuffleError('');
   }, [activePool, persistDraftToLibrary, pickCount, setSession]);
+
+  const orderExcludeEnabled = orderExcludeOpen ?? orderExcludedMemberIds.length > 0;
+
+  const handleOrderExcludeMembersChange = useCallback((memberIds: string[]) => {
+    setSession((previous) => ({ ...previous, orderExcludedMemberIds: memberIds }));
+    setShuffleError('');
+  }, [setSession]);
+
+  const handleOrderExcludeOpenChange = useCallback((open: boolean) => {
+    setOrderExcludeOpen(open);
+    if (!open) {
+      setSession((previous) => ({ ...previous, orderExcludedMemberIds: [] }));
+    }
+    setShuffleError('');
+  }, [setSession]);
 
   const runOrderShuffle = useCallback(() => {
     if (!activePool) {
       setShuffleError('メンバーを選んでからシャッフルしてください。');
       return;
     }
-    const ordered = shuffleAllMemberIds(activePool.memberIds);
+    const excluded = new Set(orderExcludedMemberIds);
+    const eligibleIds = activePool.memberIds.filter((memberId) => !excluded.has(memberId));
+    if (eligibleIds.length === 0) {
+      setShuffleError('対象者がいません。対象外を減らしてください。');
+      return;
+    }
+    const ordered = shuffleAllMemberIds(eligibleIds);
     if (ordered.length === 0) {
       setShuffleError('シャッフルに失敗しました。');
       return;
     }
     persistDraftToLibrary();
-    setSession((previous) => ({ ...previous, orderResultMemberIds: ordered }));
+    setSession((previous) =>
+      advanceShuffleRun({ ...previous, orderResultMemberIds: ordered }, 'order')
+    );
     setShuffleError('');
-  }, [activePool, persistDraftToLibrary, setSession]);
+  }, [activePool, orderExcludedMemberIds, persistDraftToLibrary, setSession]);
 
   const handleRoleShuffleComplete = useCallback(() => {
     if (!activePool) {
@@ -463,196 +531,215 @@ export default function ShuffleScreen() {
     <>
       <SubToolScreenTemplate
         title="人物カードシャッフル"
-        onBack={() => router.back()}
-        header={
-          <PillTabBar
-            tabs={SHUFFLE_TABS}
-            activeTab={shuffleMode}
-            onTabChange={(mode) => setSession((previous) => ({ ...previous, shuffleMode: mode }))}
-            perTabColors
-          />
+        onBack={popCurrentTabScreen}
+        titleTrailing={
+          <ShuffleModeInfoButton compact accessibilityLabel="シャッフルの説明" />
         }
         scrollContentStyle={styles.scrollContent}
       >
         <View style={[styles.sectionCard, contentSurfaceStyle(content)]}>
-          {activePool ? (
-            <>
-              <View style={styles.poolHeaderRow}>
-                <View style={styles.poolHeaderMain}>
+          <View style={styles.poolHeaderRow}>
+            <View style={styles.poolHeaderMain}>
+              {activePool ? (
+                <>
                   <Text style={[styles.poolLabel, contentTextStyle(content)]} numberOfLines={1}>
                     {activePool.label}
                   </Text>
                   <Pressable
                     onPress={openLabelEdit}
                     hitSlop={8}
-                    accessibilityLabel="集団の名前を編集"
+                    accessibilityLabel="グループ名を編集"
                     accessibilityRole="button"
                   >
-                    <Ionicons name="create-outline" size={18} color={content.contentText} />
+                    <Ionicons name="create-outline" size={16} color={content.contentText} />
                   </Pressable>
                   <Text style={[styles.poolMemberCount, contentMutedTextStyle(content)]}>
                     · {activePool.memberIds.length}人
                   </Text>
-                </View>
-              </View>
-              <ParticipantChipList chips={activeMemberChips} compact layout="scroll" />
-            </>
-          ) : (
-            <>
-              <Text style={[styles.sectionTitle, { color: appTheme.onScreenText }]}>メンバー</Text>
-              <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
-                参加者を選ぶか、ライブラリから引用してください。シャッフル実行時にライブラリへ保存されます。
-              </Text>
-            </>
-          )}
-
-          <View style={styles.memberActionsRow}>
-            <Pressable
-              style={[styles.memberActionButton, contentTagStyle(content)]}
-              onPress={openParticipantSelector}
-            >
-              <Ionicons name="people-outline" size={18} color={content.contentText} />
-              <Text style={[styles.memberActionButtonText, contentTextStyle(content)]}>参加者</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.memberActionButton, contentTagStyle(content)]}
-              onPress={openLibraryModal}
-            >
-              <Ionicons name="albums-outline" size={18} color={content.contentText} />
-              <Text style={[styles.memberActionButtonText, contentTextStyle(content)]}>ライブラリ</Text>
-            </Pressable>
+                </>
+              ) : (
+                <Text style={[styles.sectionTitle, { color: appTheme.onScreenText }]} numberOfLines={1}>
+                  グループ
+                </Text>
+              )}
+            </View>
+            <View style={styles.memberActionsRow}>
+              <Pressable
+                style={[styles.memberActionButton, contentTagStyle(content)]}
+                onPress={openParticipantSelector}
+              >
+                <Ionicons name="people-outline" size={15} color={content.contentText} />
+                <Text
+                  style={[styles.memberActionButtonText, contentTextStyle(content)]}
+                  numberOfLines={1}
+                >
+                  参加者
+                </Text>
+              </Pressable>
+              <Pressable
+                style={[styles.memberActionButton, contentTagStyle(content)]}
+                onPress={openLibraryModal}
+                accessibilityRole="button"
+                accessibilityLabel="履歴"
+              >
+                <Ionicons name="albums-outline" size={15} color={content.contentText} />
+                <Text
+                  style={[styles.memberActionButtonText, contentTextStyle(content)]}
+                  numberOfLines={1}
+                >
+                  履歴
+                </Text>
+              </Pressable>
+            </View>
           </View>
+
+          {activePool ? (
+            <ParticipantChipList chips={activeMemberChips} compact layout="scroll" />
+          ) : (
+            <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
+              参加者を選ぶか、履歴から引用してください。シャッフル実行時に履歴へ保存されます。
+            </Text>
+          )}
 
           {formError ? <Text style={styles.formError}>{formError}</Text> : null}
         </View>
 
+        <PillTabBar
+          tabs={SHUFFLE_TABS}
+          activeTab={shuffleMode}
+          onTabChange={(mode) => setSession((previous) => ({ ...previous, shuffleMode: mode }))}
+          padded={false}
+        />
+
         <View style={styles.shuffleSection}>
           {shuffleMode === 'random' ? (
             <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-              {!activePool ? (
-                <View style={styles.emptyHintRow}>
-                  <Text style={[styles.emptyHint, styles.emptyHintInRow, contentMutedTextStyle(content)]}>
+              <ShufflePanelHeader
+                mode="random"
+                onShuffle={activePool ? runRandomShuffle : undefined}
+              >
+                {activePool ? (
+                  <>
+                    <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>選ぶ人数</Text>
+                    <View style={styles.stepper}>
+                      <Pressable
+                        style={[
+                          styles.stepperButton,
+                          contentTagStyle(content),
+                          pickCount <= 1 && styles.stepperButtonDisabled,
+                        ]}
+                        onPress={decrementPickCount}
+                        disabled={pickCount <= 1}
+                      >
+                        <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
+                      </Pressable>
+                      <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{pickCount}</Text>
+                      <Pressable
+                        style={[
+                          styles.stepperButton,
+                          contentTagStyle(content),
+                          pickCount >= activeMemberCount && styles.stepperButtonDisabled,
+                        ]}
+                        onPress={incrementPickCount}
+                        disabled={pickCount >= activeMemberCount}
+                      >
+                        <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <Text style={[styles.emptyHintInHeader, contentMutedTextStyle(content)]}>
                     メンバーを選ぶと、ここからランダム抽選できます。
                   </Text>
-                  <ShuffleModeInfoButton mode="random" />
-                </View>
-              ) : (
+                )}
+              </ShufflePanelHeader>
+
+              {activePool ? (
                 <>
-                  <View style={styles.pickCountRow}>
-                    <View style={styles.pickCountControls}>
-                      <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>選ぶ人数</Text>
-                      <View style={styles.stepper}>
-                        <Pressable
-                          style={[
-                            styles.stepperButton,
-                            contentTagStyle(content),
-                            pickCount <= 1 && styles.stepperButtonDisabled,
-                          ]}
-                          onPress={decrementPickCount}
-                          disabled={pickCount <= 1}
-                        >
-                          <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
-                        </Pressable>
-                        <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{pickCount}</Text>
-                        <Pressable
-                          style={[
-                            styles.stepperButton,
-                            contentTagStyle(content),
-                            pickCount >= activeMemberCount && styles.stepperButtonDisabled,
-                          ]}
-                          onPress={incrementPickCount}
-                          disabled={pickCount >= activeMemberCount}
-                        >
-                          <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
-                        </Pressable>
-                      </View>
-                      <Text style={[styles.pickCountMeta, contentMutedTextStyle(content)]}>
-                        ／ {activeMemberCount}人
-                      </Text>
-                    </View>
-                    <ShuffleModeInfoButton mode="random" />
-                  </View>
-
-                  <Pressable
-                    style={[styles.shuffleButton, contentFilledButtonStyle(content)]}
-                    onPress={runRandomShuffle}
-                  >
-                    <Text style={[styles.shuffleButtonText, contentFilledButtonTextStyle(content)]}>
-                      シャッフル
-                    </Text>
-                  </Pressable>
-
                   {shuffleError ? <Text style={styles.formError}>{shuffleError}</Text> : null}
 
                   {resultMemberIds && resultMemberIds.length > 0 ? (
                     <View style={[styles.resultSection, { borderTopColor: content.contentDivider }]}>
-                      <Text style={[styles.resultTitle, contentTextStyle(content)]}>
-                        {resultMemberIds.length === 1 ? '選ばれた人' : `選ばれた${resultMemberIds.length}人`}
-                      </Text>
+                      <ShuffleResultTitle
+                        title={
+                          resultMemberIds.length === 1
+                            ? '選ばれた人'
+                            : `選ばれた${resultMemberIds.length}人`
+                        }
+                        runLabel={randomRunLabel}
+                        trailing={
+                          <ShuffleColumnsCycleButton
+                            value={resultColumns}
+                            onChange={handleResultColumnsChange}
+                          />
+                        }
+                      />
                       <ShuffleResultCards
                         memberIds={resultMemberIds}
                         friendsById={friendsById}
                         myselfId={myselfId}
+                        columns={resultColumns}
                       />
-                      <Pressable
-                        style={[styles.reshuffleButton, contentSelectedOptionStyle(content)]}
-                        onPress={runRandomShuffle}
-                      >
-                        <Text style={[styles.reshuffleButtonText, contentTextStyle(content)]}>
-                          もう一度シャッフル
-                        </Text>
-                      </Pressable>
                     </View>
                   ) : null}
                 </>
-              )}
+              ) : null}
             </View>
           ) : shuffleMode === 'order' ? (
             <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-              {!activePool ? (
-                <View style={styles.emptyHintRow}>
-                  <Text style={[styles.emptyHint, styles.emptyHintInRow, contentMutedTextStyle(content)]}>
+              <ShufflePanelHeader
+                mode="order"
+                onShuffle={activePool ? runOrderShuffle : undefined}
+                accessory={
+                  activePool ? (
+                    <ShuffleOrderLayoutButton
+                      layout={orderLayout}
+                      onChange={(next: ShuffleOrderLayout) =>
+                        setSession((previous) => ({ ...previous, orderLayout: next }))
+                      }
+                    />
+                  ) : null
+                }
+              >
+                {activePool ? (
+                  <ShuffleExcludeToggle
+                    open={orderExcludeEnabled}
+                    onOpenChange={handleOrderExcludeOpenChange}
+                  />
+                ) : (
+                  <Text style={[styles.emptyHintInHeader, contentMutedTextStyle(content)]}>
                     メンバーを選ぶと、ここから並び替えできます。
                   </Text>
-                  <ShuffleModeInfoButton mode="order" />
-                </View>
-              ) : (
+                )}
+              </ShufflePanelHeader>
+
+              {activePool ? (
                 <>
-                  <View style={styles.modeInfoRow}>
-                    <ShuffleModeInfoButton mode="order" />
-                  </View>
-                  <Pressable
-                    style={[styles.shuffleButton, contentFilledButtonStyle(content)]}
-                    onPress={runOrderShuffle}
-                  >
-                    <Text style={[styles.shuffleButtonText, contentFilledButtonTextStyle(content)]}>
-                      シャッフル
-                    </Text>
-                  </Pressable>
+                  {orderExcludeEnabled ? (
+                    <ShufflePoolMemberPicker
+                      buttonLabel="対象者選択"
+                      eligibleFriends={friendsFromMemberIds(activePool.memberIds, friendsById)}
+                      selectedMemberIds={orderExcludedMemberIds}
+                      onChange={handleOrderExcludeMembersChange}
+                    />
+                  ) : null}
 
                   {shuffleError ? <Text style={styles.formError}>{shuffleError}</Text> : null}
 
                   {orderResultMemberIds && orderResultMemberIds.length > 0 ? (
                     <View style={[styles.resultSection, { borderTopColor: content.contentDivider }]}>
-                      <Text style={[styles.resultTitle, contentTextStyle(content)]}>並び順</Text>
+                      <ShuffleResultTitle title="並び順" runLabel={orderRunLabel} />
                       <ShuffleOrderResults
                         memberIds={orderResultMemberIds}
                         friendNameById={friendNameById}
                         friendPhotoById={friendPhotoById}
                         friendsById={friendsById}
+                        layout={orderLayout}
                       />
-                      <Pressable
-                        style={[styles.reshuffleButton, contentSelectedOptionStyle(content)]}
-                        onPress={runOrderShuffle}
-                      >
-                        <Text style={[styles.reshuffleButtonText, contentTextStyle(content)]}>
-                          もう一度シャッフル
-                        </Text>
-                      </Pressable>
                     </View>
                   ) : null}
                 </>
-              )}
+              ) : null}
             </View>
           ) : shuffleMode === 'role' ? (
             <ShuffleRolePanel
@@ -671,8 +758,13 @@ export default function ShuffleScreen() {
               }
               assignments={roleAssignments}
               onAssignmentsChange={(next) =>
-                setSession((previous) => ({ ...previous, roleAssignments: next }))
+                setSession((previous) =>
+                  advanceShuffleRun({ ...previous, roleAssignments: next }, 'role')
+                )
               }
+              resultColumns={resultColumns}
+              onResultColumnsChange={handleResultColumnsChange}
+              runLabel={roleRunLabel}
             />
           ) : (
             <ShuffleTeamPanel
@@ -706,7 +798,12 @@ export default function ShuffleScreen() {
                 }))
               }
               teams={teams}
-              onTeamsChange={(next) => setSession((previous) => ({ ...previous, teams: next }))}
+              onTeamsChange={(next) =>
+                setSession((previous) => advanceShuffleRun({ ...previous, teams: next }, 'team'))
+              }
+              resultColumns={resultColumns}
+              onResultColumnsChange={handleResultColumnsChange}
+              runLabel={teamRunLabel}
             />
           )}
         </View>
@@ -732,6 +829,7 @@ export default function ShuffleScreen() {
         onToggleGroup={toggleSelectorGroup}
         onCancel={handleSelectorCancel}
         onConfirm={handleSelectorConfirm}
+        onResetSelection={handleSelectorReset}
         onPersonCreated={() => setFriends(getAllFriendsInDefaultOrder())}
         enableGroupTab={false}
       />
@@ -753,9 +851,9 @@ export default function ShuffleScreen() {
       >
         <View style={styles.modalBackdrop}>
           <View style={[styles.modalCard, contentSurfaceStyle(content)]}>
-            <Text style={[styles.modalTitle, contentTextStyle(content)]}>集団の名前</Text>
+            <Text style={[styles.modalTitle, contentTextStyle(content)]}>グループ名</Text>
             <Text style={[styles.modalHint, contentMutedTextStyle(content)]}>
-              名前の変更は、シャッフル実行時にライブラリへ保存されます。
+              名前の変更は、シャッフル実行時に履歴へ保存されます。
             </Text>
             <TextInput
               style={[styles.textInput, contentInputStyle(content)]}
@@ -796,33 +894,42 @@ const styles = StyleSheet.create({
   poolHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     gap: 8,
   },
   poolHeaderMain: {
-    flex: 1,
+    flexGrow: 3,
+    flexShrink: 1,
+    flexBasis: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
     minWidth: 0,
   },
   memberActionsRow: {
+    flexGrow: 2,
+    flexShrink: 1,
+    flexBasis: 0,
     flexDirection: 'row',
-    gap: 8,
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 6,
+    minWidth: 0,
   },
   memberActionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 3,
     borderWidth: 1,
     borderRadius: Radius.sm,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    minHeight: 32,
   },
   memberActionButtonText: {
-    fontSize: 13,
+    flexShrink: 1,
+    fontSize: 11,
     fontWeight: '700',
   },
   sectionTitle: {
@@ -831,25 +938,23 @@ const styles = StyleSheet.create({
   },
   poolLabel: {
     flexShrink: 1,
+    minWidth: 0,
     fontSize: 16,
     fontWeight: '800',
   },
   poolMemberCount: {
+    flexShrink: 0,
     fontSize: 13,
     fontWeight: '600',
-  },
-  emptyHintRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
   },
   emptyHint: {
     fontSize: 13,
     lineHeight: 18,
   },
-  emptyHintInRow: {
+  emptyHintInHeader: {
     flex: 1,
-    paddingTop: 8,
+    fontSize: 13,
+    lineHeight: 18,
   },
   shuffleSection: {
     gap: 10,
@@ -859,26 +964,6 @@ const styles = StyleSheet.create({
     borderRadius: Radius.md,
     padding: Spacing.md,
     gap: 12,
-  },
-  modeInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: -6,
-    marginBottom: -10,
-  },
-  pickCountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  pickCountControls: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flexWrap: 'wrap',
-    minWidth: 0,
   },
   pickCountLabel: {
     fontSize: 14,
@@ -911,39 +996,10 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
   },
-  pickCountMeta: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  shuffleButton: {
-    borderRadius: Radius.md,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  shuffleButtonText: {
-    fontSize: 15,
-    fontWeight: '800',
-  },
   resultSection: {
     gap: 12,
     paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  resultTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  reshuffleButton: {
-    alignSelf: 'center',
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  reshuffleButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
   },
   formError: {
     fontSize: 12,

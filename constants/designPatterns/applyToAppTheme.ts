@@ -3,8 +3,10 @@ import { codexDesignPattern } from './codex';
 import { toneIdFromAppTheme } from './types';
 import type { DesignPatternColors, DesignPatternId } from './types';
 import type { AppThemeColors, AppThemeVariant } from '@/constants/appThemes/types';
+import { isLightHexColor, withAlpha } from '@/utils/colorHelpers';
 
 function overlayPattern(base: AppThemeColors, c: DesignPatternColors): AppThemeColors {
+  const inkIsLight = isLightHexColor(c.cardInk);
   return {
     ...base,
     screenBackground: c.screen,
@@ -37,6 +39,10 @@ function overlayPattern(base: AppThemeColors, c: DesignPatternColors): AppThemeC
     contentCalendarInMonth: c.card,
     contentCalendarOutMonth: c.screen,
     contentDivider: c.headerBorder,
+    contentSwitchTrackOff: withAlpha(c.cardInk, inkIsLight ? 0.42 : 0.38),
+    contentSwitchThumbOff: inkIsLight ? '#E6E6E6' : '#FFFFFF',
+    contentSwitchTrackOn: c.cardInk,
+    contentSwitchThumbOn: inkIsLight ? c.card : '#FFFFFF',
   };
 }
 

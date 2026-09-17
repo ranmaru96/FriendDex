@@ -2,6 +2,9 @@ import { getAppSetting, initializeDatabase, setAppSetting } from '@/db';
 import {
   createDefaultRankTiers,
   createEmptyRoleDraft,
+  normalizeShuffleMemberIds,
+  resolveRoleName,
+  sanitizeExcludedMemberIds,
   sanitizeRoleDraftsForPool,
   sanitizeTeamSettingsForPool,
   type ShuffleRankTier,
@@ -20,12 +23,49 @@ export type ShufflePoolDraft = {
   labelIsCustom: boolean;
 };
 
+export const SHUFFLE_RESULT_COLUMNS_MIN = 3;
+export const SHUFFLE_RESULT_COLUMNS_MAX = 6;
+export const SHUFFLE_RESULT_COLUMNS_DEFAULT = 3;
+
+export function clampShuffleResultColumns(value: number): number {
+  if (!Number.isFinite(value)) {
+    return SHUFFLE_RESULT_COLUMNS_DEFAULT;
+  }
+  return Math.min(
+    SHUFFLE_RESULT_COLUMNS_MAX,
+    Math.max(SHUFFLE_RESULT_COLUMNS_MIN, Math.round(value))
+  );
+}
+
+export function nextShuffleResultColumns(value: number): number {
+  const current = clampShuffleResultColumns(value);
+  return current >= SHUFFLE_RESULT_COLUMNS_MAX
+    ? SHUFFLE_RESULT_COLUMNS_MIN
+    : current + 1;
+}
+
+export type ShuffleOrderLayout = 'wrap' | 'split';
+
+export function parseShuffleOrderLayout(value: unknown): ShuffleOrderLayout {
+  return value === 'split' ? 'split' : 'wrap';
+}
+
+export type ShuffleRunRecord = {
+  key: string;
+  count: number;
+};
+
+export type ShuffleRunByMode = Record<ShuffleMode, ShuffleRunRecord>;
+
 export type ShuffleSessionState = {
   poolDraft: ShufflePoolDraft | null;
   shuffleMode: ShuffleMode;
   pickCount: number;
+  resultColumns: number;
   resultMemberIds: string[] | null;
   orderResultMemberIds: string[] | null;
+  orderLayout: ShuffleOrderLayout;
+  orderExcludedMemberIds: string[];
   roleDrafts: ShuffleRoleDraft[];
   roleAssignments: ShuffleRoleAssignment[] | null;
   teamCount: number;
@@ -33,6 +73,7 @@ export type ShuffleSessionState = {
   rankTiers: ShuffleRankTier[];
   memberRankById: Record<string, string>;
   teams: ShuffleTeamAssignment[] | null;
+  runByMode: ShuffleRunByMode;
 };
 
 const SHUFFLE_MODES: readonly ShuffleMode[] = ['random', 'order', 'role', 'team'];
@@ -124,13 +165,118 @@ function parseStringRecord(value: unknown): Record<string, string> {
   return next;
 }
 
+export function createEmptyShuffleRunByMode(): ShuffleRunByMode {
+  return {
+    random: { key: '', count: 0 },
+    order: { key: '', count: 0 },
+    role: { key: '', count: 0 },
+    team: { key: '', count: 0 },
+  };
+}
+
+function parseRunRecord(value: unknown): ShuffleRunRecord {
+  if (!isRecord(value)) {
+    return { key: '', count: 0 };
+  }
+  const key = typeof value.key === 'string' ? value.key : '';
+  const count =
+    typeof value.count === 'number' && Number.isFinite(value.count) && value.count > 0
+      ? Math.floor(value.count)
+      : 0;
+  return { key, count };
+}
+
+function parseRunByMode(value: unknown): ShuffleRunByMode {
+  const empty = createEmptyShuffleRunByMode();
+  if (!isRecord(value)) {
+    return empty;
+  }
+  return {
+    random: parseRunRecord(value.random),
+    order: parseRunRecord(value.order),
+    role: parseRunRecord(value.role),
+    team: parseRunRecord(value.team),
+  };
+}
+
+function membersFingerprint(memberIds: readonly string[] | undefined): string {
+  return normalizeShuffleMemberIds([...(memberIds ?? [])]).join(',');
+}
+
+export function buildShuffleConditionKey(
+  session: ShuffleSessionState,
+  mode: ShuffleMode
+): string {
+  const members = membersFingerprint(session.poolDraft?.memberIds);
+  switch (mode) {
+    case 'random':
+      return `random|${members}|${session.pickCount}`;
+    case 'order':
+      return `order|${members}|${membersFingerprint(session.orderExcludedMemberIds)}`;
+    case 'role':
+      return `role|${members}|${session.roleDrafts
+        .map(
+          (role, index) =>
+            `${resolveRoleName(role.name, index + 1)}\t${role.count}\t${membersFingerprint(role.excludedMemberIds)}`
+        )
+        .join('|')}`;
+    case 'team': {
+      if (!session.useRanks) {
+        return `team|${members}|${session.teamCount}|0`;
+      }
+      const tiers = session.rankTiers.map((tier) => `${tier.id}:${tier.label}`).join(',');
+      const assignments = Object.entries(session.memberRankById)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([memberId, tierId]) => `${memberId}:${tierId}`)
+        .join(',');
+      return `team|${members}|${session.teamCount}|1|${tiers}|${assignments}`;
+    }
+    default:
+      return members;
+  }
+}
+
+export function formatShuffleRunLabel(count: number): string | null {
+  if (!Number.isFinite(count) || count < 1) {
+    return null;
+  }
+  return `#${String(Math.floor(count)).padStart(3, '0')}`;
+}
+
+export function getShuffleRunLabel(
+  session: ShuffleSessionState,
+  mode: ShuffleMode
+): string | null {
+  return formatShuffleRunLabel(session.runByMode?.[mode]?.count ?? 0);
+}
+
+export function advanceShuffleRun(
+  session: ShuffleSessionState,
+  mode: ShuffleMode
+): ShuffleSessionState {
+  const key = buildShuffleConditionKey(session, mode);
+  const previous = session.runByMode?.[mode] ?? { key: '', count: 0 };
+  const count = previous.key === key && previous.count > 0 ? previous.count + 1 : 1;
+  return {
+    ...session,
+    runByMode: {
+      ...createEmptyShuffleRunByMode(),
+      ...session.runByMode,
+      [mode]: { key, count },
+    },
+  };
+}
+
 export function createDefaultShuffleSession(): ShuffleSessionState {
   return {
     poolDraft: null,
     shuffleMode: 'random',
     pickCount: 1,
+    resultColumns: SHUFFLE_RESULT_COLUMNS_DEFAULT,
     resultMemberIds: null,
     orderResultMemberIds: null,
+    orderLayout: 'wrap',
+    orderExcludedMemberIds: [],
     roleDrafts: [createEmptyRoleDraft(1)],
     roleAssignments: null,
     teamCount: 2,
@@ -138,6 +284,7 @@ export function createDefaultShuffleSession(): ShuffleSessionState {
     rankTiers: createDefaultRankTiers(),
     memberRankById: {},
     teams: null,
+    runByMode: createEmptyShuffleRunByMode(),
   };
 }
 
@@ -147,10 +294,14 @@ export function coerceShuffleSession(raw: ShuffleSessionState): ShuffleSessionSt
       ...raw,
       poolDraft: null,
       pickCount: 1,
+      resultColumns: clampShuffleResultColumns(raw.resultColumns),
       resultMemberIds: null,
       orderResultMemberIds: null,
+      orderLayout: parseShuffleOrderLayout(raw.orderLayout),
+      orderExcludedMemberIds: [],
       roleAssignments: null,
       teams: null,
+      runByMode: createEmptyShuffleRunByMode(),
     };
   }
 
@@ -169,7 +320,14 @@ export function coerceShuffleSession(raw: ShuffleSessionState): ShuffleSessionSt
   return {
     ...raw,
     pickCount: Math.min(Math.max(1, raw.pickCount), memberIds.length),
+    resultColumns: clampShuffleResultColumns(raw.resultColumns),
+    orderLayout: parseShuffleOrderLayout(raw.orderLayout),
+    orderExcludedMemberIds: sanitizeExcludedMemberIds(
+      raw.orderExcludedMemberIds ?? [],
+      memberIds
+    ),
     roleDrafts,
+    runByMode: raw.runByMode ?? createEmptyShuffleRunByMode(),
     ...team,
   };
 }
@@ -184,6 +342,7 @@ export function resetShuffleResultsForMemberChange(
     orderResultMemberIds: null,
     roleAssignments: null,
     teams: null,
+    runByMode: createEmptyShuffleRunByMode(),
   };
 }
 
@@ -198,6 +357,9 @@ function parseShuffleSession(value: unknown): ShuffleSessionState | null {
   const pickCount = typeof value.pickCount === 'number' && Number.isFinite(value.pickCount)
     ? Math.max(1, Math.floor(value.pickCount))
     : 1;
+  const resultColumns = clampShuffleResultColumns(
+    typeof value.resultColumns === 'number' ? value.resultColumns : SHUFFLE_RESULT_COLUMNS_DEFAULT
+  );
   const teamCount = typeof value.teamCount === 'number' && Number.isFinite(value.teamCount)
     ? Math.max(2, Math.floor(value.teamCount))
     : 2;
@@ -220,10 +382,15 @@ function parseShuffleSession(value: unknown): ShuffleSessionState | null {
     poolDraft: parsePoolDraft(value.poolDraft),
     shuffleMode,
     pickCount,
+    resultColumns,
     resultMemberIds: isStringArray(value.resultMemberIds) ? value.resultMemberIds : null,
     orderResultMemberIds: isStringArray(value.orderResultMemberIds)
       ? value.orderResultMemberIds
       : null,
+    orderLayout: parseShuffleOrderLayout(value.orderLayout),
+    orderExcludedMemberIds: isStringArray(value.orderExcludedMemberIds)
+      ? value.orderExcludedMemberIds
+      : [],
     roleDrafts: roleDrafts.length > 0 ? roleDrafts : [createEmptyRoleDraft(1)],
     roleAssignments: roleAssignments && roleAssignments.length > 0 ? roleAssignments : null,
     teamCount,
@@ -231,6 +398,7 @@ function parseShuffleSession(value: unknown): ShuffleSessionState | null {
     rankTiers: rankTiers.length > 0 ? rankTiers : createDefaultRankTiers(),
     memberRankById: parseStringRecord(value.memberRankById),
     teams: teams && teams.length > 0 ? teams : null,
+    runByMode: parseRunByMode(value.runByMode),
   });
 }
 

@@ -19,6 +19,7 @@ import {
   useSharedHeaderVisuals,
   useSuppressBottomNav,
 } from '../contexts/SharedHeaderChromeContext';
+import { AuthSessionProvider } from '@/contexts/AuthSessionContext';
 import { UiPreviewProvider, useUiKit } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
 import {
@@ -26,7 +27,9 @@ import {
   shouldHideBottomNav,
   shouldHideHeader,
 } from '../utils/bottomNavVisibility';
-import { resolveStackAnimation } from '../utils/tabTransition';
+import { peekNextReplaceAsPop, resolveStackAnimation } from '../utils/tabTransition';
+import { useTabStackBackHandler } from '@/hooks/useTabStackBackHandler';
+import { useTabStackSync } from '@/hooks/useTabStackSync';
 import { getMyselfSetupPhase, initializeDatabase, ensureDatabaseOpened } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
 import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
@@ -167,6 +170,8 @@ function AppShell() {
   const hideBottomNav =
     shouldHideBottomNav(pathname) || suppressBottomNav || needsSetup || onSetupRoute;
   const activeTab = getActiveTab(pathname);
+  useTabStackSync();
+  useTabStackBackHandler(!hideBottomNav && !needsSetup && !onSetupRoute);
 
   useEffect(() => {
     initializeDatabase();
@@ -190,7 +195,9 @@ function AppShell() {
             headerShown: false,
             animation: resolveStackAnimation(route.name, BOTTOM_TAB_ROUTE_NAMES),
             /** replace でも push と同じ方向で入る（pop だと向きが反転する） */
-            animationTypeForReplace: 'push',
+            animationTypeForReplace: peekNextReplaceAsPop() ? 'pop' : 'push',
+            /** 下部ナビ付き画面はタブ階層で戻る。スワイプで Stack の戻るとタブが混ざるのを防ぐ */
+            gestureEnabled: shouldHideBottomNav(`/${route.name}`),
           })}
         />
       </View>
@@ -206,15 +213,17 @@ function AppProviders() {
     <AppThemeProvider>
       <DetailDesignProvider>
         <UiPreviewProvider>
-          <SharedHeaderChromeProvider>
-            <SettlementMockProvider>
-              <EventNotificationHandler />
-              <PastEventConversionScheduler />
-              <NoteFormatAccessoryProvider>
-                <AppShell />
-              </NoteFormatAccessoryProvider>
-            </SettlementMockProvider>
-          </SharedHeaderChromeProvider>
+          <AuthSessionProvider>
+            <SharedHeaderChromeProvider>
+              <SettlementMockProvider>
+                <EventNotificationHandler />
+                <PastEventConversionScheduler />
+                <NoteFormatAccessoryProvider>
+                  <AppShell />
+                </NoteFormatAccessoryProvider>
+              </SettlementMockProvider>
+            </SharedHeaderChromeProvider>
+          </AuthSessionProvider>
         </UiPreviewProvider>
       </DetailDesignProvider>
     </AppThemeProvider>

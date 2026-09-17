@@ -263,6 +263,10 @@ export type EntrySelectorModalProps = {
   initialExpanded?: boolean;
   /** 苗字・名前一致など、候補として目立たせる人物 */
   highlightedIds?: Set<string>;
+  /** false のとき人物の新規登録ボタンを出さない。初期値 true */
+  allowCreate?: boolean;
+  /** 選択中の対象者を全部外す（モーダルは閉じない） */
+  onResetSelection?: () => void;
 };
 
 export function EntrySelectorModal({
@@ -291,6 +295,8 @@ export function EntrySelectorModal({
   enableGroupTab = false,
   initialExpanded = false,
   highlightedIds,
+  allowCreate = true,
+  onResetSelection,
 }: EntrySelectorModalProps) {
   const content = useContentColors();
   const highlightColor = '#f59e0b';
@@ -648,7 +654,21 @@ export function EntrySelectorModal({
             {headerContent}
 
             <View style={styles.selectorHeaderRow}>
-              <Text style={[styles.selectorHeaderTitle, contentTextStyle(content)]}>対象者</Text>
+              <View style={styles.selectorHeaderLeading}>
+                <Text style={[styles.selectorHeaderTitle, contentTextStyle(content)]}>対象者</Text>
+                {onResetSelection ? (
+                  <Pressable
+                    onPress={onResetSelection}
+                    hitSlop={8}
+                    accessibilityRole="button"
+                    accessibilityLabel="選択をリセット"
+                  >
+                    <Text style={[styles.selectorResetText, contentMutedTextStyle(content)]}>
+                      リセット
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </View>
               {actionButtons}
             </View>
 
@@ -728,29 +748,31 @@ export function EntrySelectorModal({
                   options={experienceOptions}
                   onValueChange={onExperienceFilterChange}
                 />
-                <GesturePressable
-                  accessibilityRole="button"
-                  accessibilityLabel="人物を新規登録"
-                  hitSlop={6}
-                  onPress={() => {
-                    setCreateFamilyName('');
-                    setCreateGivenName('');
-                    setCreateVisible(true);
-                  }}
-                  style={({ pressed }) => [
-                    styles.selectorCreateButton,
-                    {
-                      backgroundColor: content.contentCard,
-                      borderColor: content.contentText,
-                    },
-                    pressed ? { opacity: 0.88 } : null,
-                  ]}
-                >
-                  <Text style={[styles.selectorCreatePlus, contentTextStyle(content)]}>＋</Text>
-                  <Text style={[styles.selectorCreateButtonText, contentTextStyle(content)]}>
-                    新規
-                  </Text>
-                </GesturePressable>
+                {allowCreate ? (
+                  <GesturePressable
+                    accessibilityRole="button"
+                    accessibilityLabel="人物を新規登録"
+                    hitSlop={6}
+                    onPress={() => {
+                      setCreateFamilyName('');
+                      setCreateGivenName('');
+                      setCreateVisible(true);
+                    }}
+                    style={({ pressed }) => [
+                      styles.selectorCreateButton,
+                      {
+                        backgroundColor: content.contentCard,
+                        borderColor: content.contentText,
+                      },
+                      pressed ? { opacity: 0.88 } : null,
+                    ]}
+                  >
+                    <Text style={[styles.selectorCreatePlus, contentTextStyle(content)]}>＋</Text>
+                    <Text style={[styles.selectorCreateButtonText, contentTextStyle(content)]}>
+                      新規
+                    </Text>
+                  </GesturePressable>
+                ) : null}
               </View>
             ) : (
               <TextInput
@@ -810,7 +832,7 @@ export function EntrySelectorModal({
 
             {footerContent}
           </Animated.View>
-          {createVisible ? (
+          {createVisible && allowCreate ? (
             <View style={styles.createOverlay} pointerEvents="box-none">
               <Pressable style={styles.createBackdrop} onPress={closeCreateForm} />
               <KeyboardAvoidingView
@@ -930,11 +952,22 @@ const styles = StyleSheet.create({
     gap: 10,
     marginBottom: 10,
   },
+  selectorHeaderLeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flexShrink: 1,
+    minWidth: 0,
+    paddingLeft: 8,
+  },
   selectorHeaderTitle: {
     fontSize: 16,
     fontWeight: '700',
     flexShrink: 0,
-    paddingLeft: 8,
+  },
+  selectorResetText: {
+    fontSize: 13,
+    fontWeight: '700',
   },
   selectedChipsBlock: {
     marginBottom: 0,

@@ -11,7 +11,8 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
+import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
@@ -56,7 +57,6 @@ const CATALOG_FILTERS: { key: FilterKey; label: string }[] = [
 ];
 
 export default function YourAnswerScreen() {
-  const router = useRouter();
   const kit = useUiKit();
   const { variant, patternId } = useAppTheme();
   const { pattern, tone } = useMemo(
@@ -387,7 +387,7 @@ export default function YourAnswerScreen() {
     <>
       <SubToolScreenTemplate
         title="あなたの～は？"
-        onBack={() => router.back()}
+        onBack={popCurrentTabScreen}
         header={header}
         scrollContentStyle={styles.scrollContent}
       >

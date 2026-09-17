@@ -1,8 +1,18 @@
-import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type TextStyle, type ViewStyle } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type LayoutChangeEvent,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
 import { Radius, Spacing, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { ToolTitlePlaque } from '@/components/screen/ToolTitlePlaque';
+
+const TITLE_ADORNMENT_GAP = 8;
 
 type ScreenTopBarProps = {
   title?: string;
@@ -50,8 +60,13 @@ export function ScreenTopBar({
         <Text style={[styles.backText, { color: topBarText }, backTextStyle]}>{backLabel}</Text>
       </Pressable>
     ) : null);
-  const hasTitleAdornment = titleLeading != null || titleTrailing != null;
   const trimmedTitle = title?.trim() ?? '';
+  const [titleWidth, setTitleWidth] = useState(0);
+  const handleTitleLayout = (event: LayoutChangeEvent) => {
+    const nextWidth = event.nativeEvent.layout.width;
+    setTitleWidth((current) => (current === nextWidth ? current : nextWidth));
+  };
+  const adornmentOffset = titleWidth > 0 ? titleWidth / 2 + TITLE_ADORNMENT_GAP : 0;
 
   return (
     <View
@@ -67,22 +82,46 @@ export function ScreenTopBar({
     >
       <View style={styles.sideLeft}>{leftContent}</View>
       <View style={styles.titleSlot}>
-        {hasTitleAdornment ? <View style={styles.titleSide}>{titleLeading ?? null}</View> : null}
         <View style={styles.titleCenter}>
+          {titleLeading != null ? (
+            <View
+              pointerEvents="box-none"
+              style={[
+                styles.titleAdornment,
+                styles.titleAdornmentLeading,
+                { marginRight: adornmentOffset, opacity: titleWidth > 0 ? 1 : 0 },
+              ]}
+            >
+              {titleLeading}
+            </View>
+          ) : null}
           {trimmedTitle ? (
-            titleFramed ? (
-              <ToolTitlePlaque title={trimmedTitle} titleStyle={titleStyle} />
-            ) : (
-              <Text
-                style={[styles.plainTitle, { color: topBarText }, titleStyle]}
-                numberOfLines={2}
-              >
-                {trimmedTitle}
-              </Text>
-            )
+            <View style={styles.titleMeasure} onLayout={handleTitleLayout}>
+              {titleFramed ? (
+                <ToolTitlePlaque title={trimmedTitle} titleStyle={titleStyle} />
+              ) : (
+                <Text
+                  style={[styles.plainTitle, { color: topBarText }, titleStyle]}
+                  numberOfLines={2}
+                >
+                  {trimmedTitle}
+                </Text>
+              )}
+            </View>
+          ) : null}
+          {titleTrailing != null ? (
+            <View
+              pointerEvents="box-none"
+              style={[
+                styles.titleAdornment,
+                styles.titleAdornmentTrailing,
+                { marginLeft: adornmentOffset, opacity: titleWidth > 0 ? 1 : 0 },
+              ]}
+            >
+              {titleTrailing}
+            </View>
           ) : null}
         </View>
-        {hasTitleAdornment ? <View style={styles.titleSide}>{titleTrailing ?? null}</View> : null}
       </View>
       <View style={styles.sideRight}>{right ?? null}</View>
     </View>
@@ -93,6 +132,7 @@ const styles = StyleSheet.create({
   bar: {
     flexDirection: 'row',
     alignItems: 'center',
+    overflow: 'visible',
     paddingHorizontal: Spacing.md,
     paddingVertical: 0,
     gap: Spacing.sm,
@@ -119,17 +159,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     minWidth: 0,
+    overflow: 'visible',
   },
   titleCenter: {
     flex: 1,
     minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'visible',
   },
-  titleSide: {
-    width: 28,
-    alignItems: 'center',
+  titleMeasure: {
+    maxWidth: '100%',
+  },
+  titleAdornment: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    zIndex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+  titleAdornmentLeading: {
+    right: '50%',
+  },
+  titleAdornmentTrailing: {
+    left: '50%',
   },
   backText: {
     fontSize: 15,

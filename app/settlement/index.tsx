@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { Theme, Radius, Spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
+import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
@@ -392,7 +393,7 @@ export default function SettlementScreen() {
     <>
       <SubToolScreenTemplate
         title="お金貸し借り管理"
-        onBack={() => router.back()}
+        onBack={popCurrentTabScreen}
         header={
           <PillTabBar tabs={settlementTabs} activeTab={activeTab} onTabChange={setActiveTab} perTabColors />
         }

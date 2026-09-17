@@ -32,5 +32,9 @@ export function pickContentColors(colors: AppThemeColors): AppThemeContentColorF
     contentCalendarInMonth: colors.contentCalendarInMonth,
     contentCalendarOutMonth: colors.contentCalendarOutMonth,
     contentDivider: colors.contentDivider,
+    contentSwitchTrackOff: colors.contentSwitchTrackOff,
+    contentSwitchThumbOff: colors.contentSwitchThumbOff,
+    contentSwitchTrackOn: colors.contentSwitchTrackOn,
+    contentSwitchThumbOn: colors.contentSwitchThumbOn,
   };
 }

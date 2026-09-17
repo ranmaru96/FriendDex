@@ -3,26 +3,24 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Radius, Spacing } from '@/constants/theme';
 import { useContentColors } from '@/utils/useContentColors';
 import {
-  contentFilledButtonStyle,
-  contentFilledButtonTextStyle,
   contentInputStyle,
   contentMutedTextStyle,
-  contentSelectedOptionStyle,
   contentSurfaceStyle,
   contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
-import { ParticipantChip } from '@/components/participant/ParticipantChip';
 import type { Friend, ShufflePool } from '../../types';
-import { buildParticipantChipDisplays } from '../../utils/episodeHelpers';
+import { ShuffleExcludeToggle } from './ShuffleExcludePicker';
+import { friendsFromMemberIds, ShufflePoolMemberPicker } from './ShufflePoolMemberPicker';
 import {
   assignRolesToMembers,
   createEmptyRoleDraft,
-  memberIdsToParticipantEntries,
   type ShuffleRoleAssignment,
   type ShuffleRoleDraft,
 } from '../../utils/shuffleHelpers';
-import { ShuffleModeInfoButton } from './ShuffleModeInfoButton';
+import { ShufflePanelHeader } from './ShufflePanelHeader';
+import { ShuffleResultTitle } from './ShuffleResultTitle';
+import { ShuffleColumnsCycleButton } from './ShuffleColumnsCycleButton';
 import { ShuffleRoleResults } from './ShuffleRoleResults';
 
 type RoleDraftUpdater =
@@ -40,12 +38,13 @@ type ShuffleRolePanelProps = {
   onRoleDraftsChange: (next: RoleDraftUpdater) => void;
   assignments: ShuffleRoleAssignment[] | null;
   onAssignmentsChange: (next: ShuffleRoleAssignment[] | null) => void;
+  resultColumns: number;
+  onResultColumnsChange: (next: number) => void;
+  runLabel?: string | null;
 };
 
 export function ShuffleRolePanel({
   activePool,
-  friendNameById,
-  friendPhotoById,
   friendsById,
   myselfId = null,
   onShuffleComplete,
@@ -53,22 +52,21 @@ export function ShuffleRolePanel({
   onRoleDraftsChange,
   assignments,
   onAssignmentsChange,
+  resultColumns,
+  onResultColumnsChange,
+  runLabel,
 }: ShuffleRolePanelProps) {
   const content = useContentColors();
   const [error, setError] = useState('');
+  const [excludeOpenByRoleId, setExcludeOpenByRoleId] = useState<Record<string, boolean>>({});
 
   const memberCount = activePool?.memberIds.length ?? 0;
+  const roleCount = Math.max(roleDrafts.length, 1);
 
-  const poolMemberChips = useMemo(() => {
-    if (!activePool) {
-      return [];
-    }
-    return buildParticipantChipDisplays(
-      memberIdsToParticipantEntries(activePool.memberIds),
-      friendNameById,
-      { friendPhotoById }
-    );
-  }, [activePool, friendNameById, friendPhotoById]);
+  const poolEligibleFriends = useMemo(
+    () => (activePool ? friendsFromMemberIds(activePool.memberIds, friendsById) : []),
+    [activePool, friendsById]
+  );
 
   const updateRole = useCallback((roleId: string, patch: Partial<ShuffleRoleDraft>) => {
     onRoleDraftsChange((current) =>
@@ -77,64 +75,40 @@ export function ShuffleRolePanel({
     setError('');
   }, [onRoleDraftsChange]);
 
-  const addRole = useCallback(() => {
-    onRoleDraftsChange((current) => [...current, createEmptyRoleDraft(current.length + 1)]);
-    setError('');
-  }, [onRoleDraftsChange]);
-
-  const removeRole = useCallback((roleId: string) => {
+  const decrementRoleSlotCount = useCallback(() => {
     onRoleDraftsChange((current) => {
       if (current.length <= 1) {
-        return [createEmptyRoleDraft(1)];
+        return current.length === 0 ? [createEmptyRoleDraft()] : current;
       }
-      return current.filter((role) => role.id !== roleId);
+      return current.slice(0, current.length - 1);
     });
     setError('');
   }, [onRoleDraftsChange]);
 
-  const toggleExcludedMember = useCallback((roleId: string, memberId: string) => {
-    onRoleDraftsChange((current) =>
-      current.map((role) => {
-        if (role.id !== roleId) {
-          return role;
-        }
-        const excluded = new Set(role.excludedMemberIds);
-        if (excluded.has(memberId)) {
-          excluded.delete(memberId);
-        } else {
-          excluded.add(memberId);
-        }
-        return { ...role, excludedMemberIds: Array.from(excluded) };
-      })
-    );
-    setError('');
-  }, [onRoleDraftsChange]);
-
-  const decrementRoleCount = useCallback((roleId: string) => {
-    onRoleDraftsChange((current) =>
-      current.map((role) =>
-        role.id === roleId ? { ...role, count: Math.max(1, role.count - 1) } : role
-      )
-    );
-    setError('');
-  }, [onRoleDraftsChange]);
-
-  const incrementRoleCount = useCallback(
-    (roleId: string) => {
-      if (!activePool) {
-        return;
+  const incrementRoleSlotCount = useCallback(() => {
+    if (!activePool) {
+      return;
+    }
+    onRoleDraftsChange((current) => {
+      if (current.length >= activePool.memberIds.length) {
+        return current.length === 0 ? [createEmptyRoleDraft()] : current;
       }
-      onRoleDraftsChange((current) =>
-        current.map((role) =>
-          role.id === roleId
-            ? { ...role, count: Math.min(activePool.memberIds.length, role.count + 1) }
-            : role
-        )
-      );
-      setError('');
-    },
-    [activePool, onRoleDraftsChange]
-  );
+      return [...current, createEmptyRoleDraft()];
+    });
+    setError('');
+  }, [activePool, onRoleDraftsChange]);
+
+  const setExcludedMembers = useCallback((roleId: string, memberIds: string[]) => {
+    updateRole(roleId, { excludedMemberIds: memberIds });
+  }, [updateRole]);
+
+  const setExcludeOpen = useCallback((roleId: string, open: boolean) => {
+    setExcludeOpenByRoleId((current) => ({ ...current, [roleId]: open }));
+    if (!open) {
+      updateRole(roleId, { excludedMemberIds: [] });
+    }
+    setError('');
+  }, [updateRole]);
 
   const runRoleShuffle = useCallback(() => {
     if (!activePool) {
@@ -161,138 +135,105 @@ export function ShuffleRolePanel({
     onShuffleComplete();
   }, [activePool, onAssignmentsChange, onShuffleComplete, roleDrafts]);
 
-  if (!activePool) {
-    return (
-      <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-        <View style={styles.emptyHintRow}>
-          <Text style={[styles.emptyHint, styles.emptyHintInRow, contentMutedTextStyle(content)]}>
-            集団を選ぶと、ここから役割分担できます。
-          </Text>
-          <ShuffleModeInfoButton mode="role" />
-        </View>
-      </View>
-    );
-  }
-
   return (
     <View style={[styles.shuffleCard, contentSurfaceStyle(content)]}>
-      <View style={styles.modeInfoRow}>
-        <ShuffleModeInfoButton mode="role" />
-      </View>
-
-      {roleDrafts.map((role, index) => {
-        const excludedSet = new Set(role.excludedMemberIds);
-        return (
-          <View key={role.id} style={[styles.roleCard, contentTagStyle(content)]}>
-            <View style={styles.roleCardHeader}>
-              <Text style={[styles.roleCardTitle, contentTextStyle(content)]}>役 {index + 1}</Text>
-              <Pressable onPress={() => removeRole(role.id)} hitSlop={8}>
-                <Text style={styles.removeRoleText}>削除</Text>
+      <ShufflePanelHeader
+        mode="role"
+        onShuffle={activePool ? runRoleShuffle : undefined}
+      >
+        {activePool ? (
+          <>
+            <Text style={[styles.pickCountLabel, contentTextStyle(content)]}>役割数</Text>
+            <View style={styles.stepper}>
+              <Pressable
+                style={[
+                  styles.stepperButton,
+                  contentTagStyle(content),
+                  roleCount <= 1 && styles.stepperButtonDisabled,
+                ]}
+                onPress={decrementRoleSlotCount}
+                disabled={roleCount <= 1}
+              >
+                <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
+              </Pressable>
+              <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{roleCount}</Text>
+              <Pressable
+                style={[
+                  styles.stepperButton,
+                  contentTagStyle(content),
+                  roleCount >= memberCount && styles.stepperButtonDisabled,
+                ]}
+                onPress={incrementRoleSlotCount}
+                disabled={roleCount >= memberCount}
+              >
+                <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
               </Pressable>
             </View>
+          </>
+        ) : (
+          <Text style={[styles.emptyHint, contentMutedTextStyle(content)]}>
+            集団を選ぶと、ここから役割分担できます。
+          </Text>
+        )}
+      </ShufflePanelHeader>
 
-            <View style={styles.roleNameCountRow}>
-              <TextInput
-                style={[styles.roleNameInput, contentInputStyle(content)]}
-                value={role.name}
-                onChangeText={(name) => updateRole(role.id, { name })}
-                placeholder="役名（例: 運転手）"
-                placeholderTextColor={content.contentTextSecondary}
-              />
-              <View style={styles.stepper}>
-                <Pressable
-                  style={[
-                    styles.stepperButton,
-                    contentTagStyle(content),
-                    role.count <= 1 && styles.stepperButtonDisabled,
-                  ]}
-                  onPress={() => decrementRoleCount(role.id)}
-                  disabled={role.count <= 1}
-                >
-                  <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>−</Text>
-                </Pressable>
-                <Text style={[styles.pickCountValue, contentTextStyle(content)]}>{role.count}</Text>
-                <Pressable
-                  style={[
-                    styles.stepperButton,
-                    contentTagStyle(content),
-                    role.count >= memberCount && styles.stepperButtonDisabled,
-                  ]}
-                  onPress={() => incrementRoleCount(role.id)}
-                  disabled={role.count >= memberCount}
-                >
-                  <Text style={[styles.stepperButtonText, contentTextStyle(content)]}>＋</Text>
-                </Pressable>
+      {activePool
+        ? roleDrafts.map((role) => {
+            const excludeOpen = excludeOpenByRoleId[role.id] ?? role.excludedMemberIds.length > 0;
+            return (
+              <View key={role.id} style={[styles.roleCard, contentTagStyle(content)]}>
+                {excludeOpen ? (
+                  <ShufflePoolMemberPicker
+                    buttonLabel="対象者選択"
+                    eligibleFriends={poolEligibleFriends}
+                    selectedMemberIds={role.excludedMemberIds}
+                    onChange={(memberIds) => setExcludedMembers(role.id, memberIds)}
+                    inlineLeading={
+                      <TextInput
+                        style={[styles.roleNameInput, styles.roleNameInputShort, contentInputStyle(content)]}
+                        value={role.name}
+                        onChangeText={(name) => updateRole(role.id, { name })}
+                        placeholder="役名（例: 運転手）"
+                        placeholderTextColor={content.contentTextSecondary}
+                      />
+                    }
+                  />
+                ) : (
+                  <TextInput
+                    style={[styles.roleNameInput, contentInputStyle(content)]}
+                    value={role.name}
+                    onChangeText={(name) => updateRole(role.id, { name })}
+                    placeholder="役名（例: 運転手）"
+                    placeholderTextColor={content.contentTextSecondary}
+                  />
+                )}
+
+                <ShuffleExcludeToggle
+                  open={excludeOpen}
+                  onOpenChange={(open) => setExcludeOpen(role.id, open)}
+                />
               </View>
-            </View>
-
-            <View style={styles.excludeSection}>
-              <Text style={[styles.excludeLabel, contentTextStyle(content)]}>この役にしない人</Text>
-              <Text style={[styles.excludeHint, contentMutedTextStyle(content)]}>タップで選択・解除</Text>
-              <View style={styles.excludeChipWrap}>
-                {poolMemberChips.map((chip) => {
-                  const memberId = chip.friendId;
-                  if (!memberId) {
-                    return null;
-                  }
-                  const excluded = excludedSet.has(memberId);
-                  return (
-                    <View
-                      key={`${role.id}-${chip.id}`}
-                      style={[
-                        styles.excludeChipItem,
-                        excluded
-                          ? {
-                              borderColor: '#f87171',
-                              backgroundColor: 'rgba(248, 113, 113, 0.18)',
-                            }
-                          : null,
-                      ]}
-                    >
-                      <ParticipantChip chip={chip} compact onPress={() => toggleExcludedMember(role.id, memberId)} />
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
-          </View>
-        );
-      })}
-
-      <Pressable
-        style={[styles.addRoleButton, contentSelectedOptionStyle(content)]}
-        onPress={addRole}
-      >
-        <Text style={[styles.addRoleButtonText, contentTextStyle(content)]}>＋ 役を追加</Text>
-      </Pressable>
-
-      <Pressable
-        style={[styles.shuffleButton, contentFilledButtonStyle(content)]}
-        onPress={runRoleShuffle}
-      >
-        <Text style={[styles.shuffleButtonText, contentFilledButtonTextStyle(content)]}>
-          シャッフル
-        </Text>
-      </Pressable>
+            );
+          })
+        : null}
 
       {error ? <Text style={styles.formError}>{error}</Text> : null}
 
       {assignments && assignments.length > 0 ? (
         <View style={[styles.resultSection, { borderTopColor: content.contentDivider }]}>
-          <Text style={[styles.resultTitle, contentTextStyle(content)]}>振り分け結果</Text>
+          <ShuffleResultTitle
+            title="振り分け結果"
+            runLabel={runLabel}
+            trailing={
+              <ShuffleColumnsCycleButton value={resultColumns} onChange={onResultColumnsChange} />
+            }
+          />
           <ShuffleRoleResults
             assignments={assignments}
             friendsById={friendsById}
             myselfId={myselfId}
+            columns={resultColumns}
           />
-          <Pressable
-            style={[styles.reshuffleButton, contentSelectedOptionStyle(content)]}
-            onPress={runRoleShuffle}
-          >
-            <Text style={[styles.reshuffleButtonText, contentTextStyle(content)]}>
-              もう一度シャッフル
-            </Text>
-          </Pressable>
         </View>
       ) : null}
     </View>
@@ -306,70 +247,23 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     gap: 12,
   },
-  emptyHintRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
   emptyHint: {
+    flex: 1,
     fontSize: 13,
     lineHeight: 18,
   },
-  emptyHintInRow: {
-    flex: 1,
-    paddingTop: 8,
-  },
-  modeInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    marginTop: -6,
-    marginBottom: -10,
-  },
-  roleCard: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    padding: 10,
-    gap: 8,
-  },
-  roleCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  roleCardTitle: {
+  pickCountLabel: {
     fontSize: 14,
-    fontWeight: '800',
-  },
-  removeRoleText: {
-    fontSize: 12,
     fontWeight: '700',
-    color: '#b91c1c',
-  },
-  roleNameCountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  roleNameInput: {
-    flex: 1,
-    minWidth: 0,
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    fontSize: 13,
-    minHeight: 34,
   },
   stepper: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    flexShrink: 0,
+    gap: 8,
   },
   stepperButton: {
-    width: 28,
-    height: 28,
+    width: 36,
+    height: 36,
     borderRadius: Radius.sm,
     borderWidth: 1,
     alignItems: 'center',
@@ -379,55 +273,37 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
   stepperButtonText: {
-    fontSize: 16,
+    fontSize: 20,
     fontWeight: '700',
-    lineHeight: 18,
+    lineHeight: 22,
   },
   pickCountValue: {
-    minWidth: 20,
+    minWidth: 28,
     textAlign: 'center',
-    fontSize: 15,
+    fontSize: 20,
     fontWeight: '800',
   },
-  excludeSection: {
-    gap: 4,
-  },
-  excludeLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  excludeHint: {
-    fontSize: 11,
-  },
-  excludeChipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  excludeChipItem: {
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  addRoleButton: {
-    alignSelf: 'flex-start',
+  roleCard: {
     borderWidth: 1,
     borderRadius: Radius.md,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    padding: 10,
+    gap: 8,
   },
-  addRoleButtonText: {
+  roleNameInput: {
+    alignSelf: 'stretch',
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
     fontSize: 13,
-    fontWeight: '700',
+    minHeight: 34,
   },
-  shuffleButton: {
-    borderRadius: Radius.md,
-    paddingVertical: 12,
-    alignItems: 'center',
-  },
-  shuffleButtonText: {
-    fontSize: 15,
-    fontWeight: '800',
+  roleNameInputShort: {
+    alignSelf: 'auto',
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 72,
+    maxWidth: 120,
   },
   formError: {
     fontSize: 12,
@@ -437,21 +313,5 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 4,
     borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  resultTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    textAlign: 'center',
-  },
-  reshuffleButton: {
-    alignSelf: 'center',
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-  },
-  reshuffleButtonText: {
-    fontSize: 13,
-    fontWeight: '700',
   },
 });

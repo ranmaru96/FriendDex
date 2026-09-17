@@ -23,6 +23,8 @@ type PillTabBarProps<T extends string> = {
   activeTab: T;
   onTabChange: (tab: T) => void;
   perTabColors?: boolean;
+  /** false のとき左右余白なし（画面パディング内に置くとき） */
+  padded?: boolean;
 };
 
 export function PillTabBar<T extends string>({
@@ -30,6 +32,7 @@ export function PillTabBar<T extends string>({
   activeTab,
   onTabChange,
   perTabColors = false,
+  padded = true,
 }: PillTabBarProps<T>) {
   const kit = useUiKit();
   const content = useContentColors();
@@ -38,7 +41,13 @@ export function PillTabBar<T extends string>({
     <View
       style={[
         styles.tabSection,
-        { paddingHorizontal: kit.subToolScreenPaddingHorizontal, backgroundColor: kit.screenBackground },
+        padded
+          ? {
+              paddingHorizontal: kit.subToolScreenPaddingHorizontal,
+              paddingTop: Spacing.md,
+            }
+          : { paddingTop: Spacing.sm, paddingBottom: 0 },
+        { backgroundColor: kit.screenBackground },
       ]}
     >
       <View style={[styles.tabTrack, contentSearchAreaStyle(content)]}>
@@ -72,14 +81,24 @@ export function PillTabBar<T extends string>({
                         : { backgroundColor: inactiveIconBg },
                     ]}
                   >
-                    <Ionicons name={tab.icon} size={16} color={iconColor} />
+                    <View style={styles.tabPillIconGlyph}>
+                      <Ionicons name={tab.icon} size={20} color={iconColor} />
+                      {isActive ? (
+                        <Ionicons
+                          name={tab.icon}
+                          size={20}
+                          color={iconColor}
+                          style={styles.tabPillIconHeavy}
+                        />
+                      ) : null}
+                    </View>
                   </View>
                   <Text
                     style={[
                       styles.tabPillCaption,
                       isActive
-                        ? [styles.tabPillCaptionActive, contentFilledButtonTextStyle(content)]
-                        : [styles.tabPillCaptionInactive, contentTextStyle(content)],
+                        ? [contentFilledButtonTextStyle(content), styles.tabPillCaptionActive]
+                        : [contentTextStyle(content), styles.tabPillCaptionInactive],
                     ]}
                     numberOfLines={1}
                     adjustsFontSizeToFit
@@ -99,7 +118,6 @@ export function PillTabBar<T extends string>({
 
 const styles = StyleSheet.create({
   tabSection: {
-    paddingTop: Spacing.md,
     paddingBottom: Spacing.sm,
   },
   tabTrack: {
@@ -130,18 +148,29 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   tabPillCaption: {
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.2,
     maxWidth: '100%',
     textAlign: 'center',
   },
   tabPillCaptionInactive: {},
-  tabPillCaptionActive: {},
+  tabPillCaptionActive: {
+    fontWeight: '700',
+  },
+  tabPillIconGlyph: {
+    width: 20,
+    height: 20,
+  },
+  tabPillIconHeavy: {
+    position: 'absolute',
+    left: 0.5,
+    top: 0,
+  },
   tabPillIconCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },

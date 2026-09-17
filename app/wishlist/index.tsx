@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect } from 'expo-router';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
+import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { WishlistIndexTable } from '@/components/wishlist/WishlistIndexTable';
 import { WishlistItemFormModal } from '@/components/wishlist/WishlistItemFormModal';
 import { WishlistPlaceCard } from '@/components/wishlist/WishlistPlaceCard';
@@ -52,7 +53,6 @@ const EAT_BROWSE_TABS: { key: EatBrowse; label: string }[] = [
 ];
 
 export default function WishlistScreen() {
-  const router = useRouter();
   const kit = useUiKit();
   const content = useContentColors();
   const { variant, patternId } = useAppTheme();
@@ -204,7 +204,7 @@ export default function WishlistScreen() {
       setQuery('');
       return;
     }
-    router.back();
+    popCurrentTabScreen();
   };
 
   const screenTitle =

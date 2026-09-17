@@ -23,6 +23,21 @@ export function getNextTabAnimation(): TabTransitionAnimation {
   return nextTabAnimation;
 }
 
+let nextReplaceAsPop = false;
+
+/** タブ内の階層を1つ戻す replace は pop 方向にする */
+export function setNextReplaceAsPop(): void {
+  nextReplaceAsPop = true;
+}
+
+export function peekNextReplaceAsPop(): boolean {
+  return nextReplaceAsPop;
+}
+
+export function clearNextReplaceAsPop(): void {
+  nextReplaceAsPop = false;
+}
+
 /**
  * Resolve animation for a Stack route.
  * - index + one-shot override: Detail→Home の横スライドなど

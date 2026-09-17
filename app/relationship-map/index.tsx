@@ -13,6 +13,7 @@ import { OffsetCard } from '@/components/ui/OffsetCard';
 import { Radius, Spacing } from '@/constants/theme';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
+import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import {
   createRelationshipMap,
   deleteRelationshipMap,
@@ -112,7 +113,7 @@ export default function RelationshipMapListScreen() {
     <>
       <SubToolScreenTemplate
         title="相関図"
-        onBack={() => router.back()}
+        onBack={popCurrentTabScreen}
         right={headerRight}
         scrollContentStyle={styles.scrollContent}
       >

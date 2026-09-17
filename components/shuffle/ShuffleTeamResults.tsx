@@ -13,12 +13,14 @@ type ShuffleTeamResultsProps = {
   teams: ShuffleTeamAssignment[];
   friendsById: Map<string, Friend>;
   myselfId?: string | null;
+  columns?: number;
 };
 
 export function ShuffleTeamResults({
   teams,
   friendsById,
   myselfId = null,
+  columns,
 }: ShuffleTeamResultsProps) {
   const content = useContentColors();
 
@@ -41,6 +43,7 @@ export function ShuffleTeamResults({
               memberIds={team.memberIds}
               friendsById={friendsById}
               myselfId={myselfId}
+              columns={columns}
             />
           ) : (
             <Text style={[styles.emptyTeamText, contentMutedTextStyle(content)]}>メンバーなし</Text>

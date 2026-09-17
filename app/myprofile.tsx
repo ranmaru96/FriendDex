@@ -22,11 +22,12 @@ import {
   contentInputStyle,
   contentMutedTextStyle,
   contentSurfaceStyle,
-  contentSwitchColors,
+  contentSwitchProps,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import { getAllProfiles, getMyself, initializeDatabase, updateProfile } from '../db';
+import { upsertMyselfIdentityProfile } from '@/lib/identityProfileSync';
 import { MBTIType, Profile } from '../types';
 import { isPersonNameValid, resolvePersonNameParts } from '@/utils/personName';
 
@@ -111,7 +112,6 @@ export default function MyProfileScreen() {
   const router = useRouter();
   const { colors: appTheme, patternId } = useAppTheme();
   const content = useContentColors();
-  const switchColors = contentSwitchColors(content);
   const headerStyles = useSubScreenHeaderStyles();
   const [profileId, setProfileId] = useState('');
   const [form, setForm] = useState<MyProfileForm>(emptyForm);
@@ -163,7 +163,7 @@ export default function MyProfileScreen() {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!profileId) {
       return;
     }
@@ -193,8 +193,19 @@ export default function MyProfileScreen() {
       return;
     }
 
-    Alert.alert('保存しました', 'プロフィールを更新しました。');
     loadMyProfile();
+    const sync = await upsertMyselfIdentityProfile();
+    if (sync.errorMessage) {
+      Alert.alert(
+        '端末には保存しました',
+        `サーバーへの反映に失敗しました。\n${sync.errorMessage}`
+      );
+      return;
+    }
+    Alert.alert(
+      '保存しました',
+      sync.skipped ? 'プロフィールを更新しました。' : 'プロフィールを更新し、サーバーへ送りました。'
+    );
   };
 
   const handleShowQr = () => {
@@ -256,8 +267,7 @@ export default function MyProfileScreen() {
             <Switch
               value={publicFieldSet.has('name')}
               onValueChange={(enabled) => togglePublicField('name', enabled)}
-              trackColor={switchColors.trackColor}
-              thumbColor={publicFieldSet.has('name') ? switchColors.thumbColorOn : switchColors.thumbColorOff}
+              {...contentSwitchProps(content, publicFieldSet.has('name'))}
               accessibilityLabel="名前を公開"
             />
           </View>
@@ -301,10 +311,7 @@ export default function MyProfileScreen() {
                 <Switch
                   value={publicFieldSet.has(field.key)}
                   onValueChange={(enabled) => togglePublicField(field.key, enabled)}
-                  trackColor={switchColors.trackColor}
-                  thumbColor={
-                    publicFieldSet.has(field.key) ? switchColors.thumbColorOn : switchColors.thumbColorOff
-                  }
+                  {...contentSwitchProps(content, publicFieldSet.has(field.key))}
                 />
               </View>
             </View>
@@ -319,8 +326,7 @@ export default function MyProfileScreen() {
             <Switch
               value={publicFieldSet.has('name')}
               onValueChange={(enabled) => togglePublicField('name', enabled)}
-              trackColor={switchColors.trackColor}
-              thumbColor={publicFieldSet.has('name') ? switchColors.thumbColorOn : switchColors.thumbColorOff}
+              {...contentSwitchProps(content, publicFieldSet.has('name'))}
               accessibilityLabel="名前を公開"
             />
           </View>
@@ -364,10 +370,7 @@ export default function MyProfileScreen() {
                 <Switch
                   value={publicFieldSet.has(field.key)}
                   onValueChange={(enabled) => togglePublicField(field.key, enabled)}
-                  trackColor={switchColors.trackColor}
-                  thumbColor={
-                    publicFieldSet.has(field.key) ? switchColors.thumbColorOn : switchColors.thumbColorOff
-                  }
+                  {...contentSwitchProps(content, publicFieldSet.has(field.key))}
                 />
               </View>
             </View>

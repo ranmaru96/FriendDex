@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
@@ -225,8 +226,8 @@ export default function EpisodeDetailScreen() {
   );
 
   const handleBack = useCallback(() => {
-    router.back();
-  }, [router]);
+    popCurrentTabScreen();
+  }, []);
 
   const loadFromEpisode = episodeForm.loadFromEpisode;
   const resetEpisodeForm = episodeForm.reset;
@@ -350,7 +351,7 @@ export default function EpisodeDetailScreen() {
             Alert.alert('エラー', 'エピソードの削除に失敗しました。');
             return;
           }
-          router.back();
+          popCurrentTabScreen();
         },
       },
     ]);

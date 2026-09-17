@@ -128,8 +128,8 @@ export function ToolTitlePlaque({ title, titleStyle }: ToolTitlePlaqueProps) {
           borderWidth: chrome.borderWidth,
           borderRadius: chrome.borderRadius,
           borderColor: chrome.borderColor,
-          paddingHorizontal: longTitle ? 8 : 16,
-          alignSelf: longTitle ? 'stretch' : 'center',
+          paddingHorizontal: longTitle ? 10 : 16,
+          alignSelf: 'center',
         },
       ]}
     >
@@ -166,10 +166,9 @@ export function ToolTitlePlaque({ title, titleStyle }: ToolTitlePlaqueProps) {
           styles.title,
           longTitle ? styles.longTitle : null,
           { color: textColor, letterSpacing },
-          longTitle ? { width: '100%' as const } : null,
           titleStyle,
         ]}
-        numberOfLines={2}
+        numberOfLines={1}
         adjustsFontSizeToFit
         minimumFontScale={0.78}
       >

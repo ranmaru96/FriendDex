@@ -39,6 +39,7 @@ import {
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import { GoogleCalendarSettingsSection } from '@/components/google-calendar/GoogleCalendarSettingsSection';
+import { AccountSettingsSection } from '@/components/auth/AccountSettingsSection';
 
 type Option = { label: string; value: string };
 
@@ -277,6 +278,8 @@ export default function AppSettingsScreen() {
           <Text style={[styles.hint, themed.hint]}>本人は確認済みのため変更できません。プロフィールの内容は「自分のプロフィール」から編集できます。</Text>
         ) : null}
 
+        <AccountSettingsSection themed={themed} />
+
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>アプリ全体テーマ</Text>
         <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
           {APP_THEME_OPTIONS.map((option, index) => (
@@ -468,7 +471,14 @@ export default function AppSettingsScreen() {
           <View style={styles.roadmapBlock}>
             <Text style={[styles.roadmapTitle, themed.rowLabel]}>ウィジェット機能追加</Text>
             <Text style={[styles.roadmapBody, themed.hint]}>
-              ・ver001以降の構想。ホーム画面ウィジェット対応。
+              ・ver001以降の構想。ホーム画面に今日の予定とタスクを出す。{'\n'}
+              ・サーバー化のあと、予定・タスクの形が落ち着いてから着手する。{'\n'}
+              ・最初は iOS の Medium 1種。表示とタップでアプリを開くまで。Android と見た目磨きは後追い。{'\n'}
+              ・中身は「今日の予定」＋「今日のタスク／期限切れ」。誕生日・祝日は初期は出さない。{'\n'}
+              ・SDK 54のまま。本体のSQLiteはウィジェットから直接開かず、アプリが書いたJSONを読む。{'\n'}
+              ・更新は保存時・アプリ復帰時・日付変更。タップは通知と同じくカレンダー（日付）とタスク一覧。{'\n'}
+              ・Googleカレンダーは同期済みのローカル予定だけ。ウィジェットからAPIは呼ばない。{'\n'}
+              ・3つのアプリID（本番／Dev／Preview）それぞれにウィジェットが付く。EASのdevelopmentビルドが必要。
             </Text>
           </View>
           <View style={[styles.separator, themed.separator]} />

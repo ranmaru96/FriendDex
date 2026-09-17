@@ -8,11 +8,12 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { CircleIconButton } from '@/components/CircleIconButton';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
+import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import {
   RelationshipMapArrowFormModal,
   RelationshipMapArrows,
@@ -92,7 +93,6 @@ type GroupFormState =
     };
 
 export default function RelationshipMapEditScreen() {
-  const router = useRouter();
   const content = useContentColors();
   const { mapId } = useLocalSearchParams<{ mapId: string }>();
   const { height: windowHeight } = useWindowDimensions();
@@ -187,14 +187,14 @@ export default function RelationshipMapEditScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!normalizedMapId) {
-        Alert.alert('エラー', '相関図が見つかりません', [{ text: 'OK', onPress: () => router.back() }]);
+        Alert.alert('エラー', '相関図が見つかりません', [{ text: 'OK', onPress: () => popCurrentTabScreen() }]);
         return;
       }
       initializeDatabase();
       if (!getRelationshipMap(normalizedMapId)) {
-        Alert.alert('エラー', '相関図が見つかりません', [{ text: 'OK', onPress: () => router.back() }]);
+        Alert.alert('エラー', '相関図が見つかりません', [{ text: 'OK', onPress: () => popCurrentTabScreen() }]);
       }
-    }, [normalizedMapId, router])
+    }, [normalizedMapId])
   );
 
   const openSelector = useCallback(() => {
@@ -746,7 +746,7 @@ export default function RelationshipMapEditScreen() {
     return (
       <SubToolScreenTemplate
         title="相関図"
-        onBack={() => router.back()}
+        onBack={popCurrentTabScreen}
         scrollable={false}
         useScreenPadding
       >
@@ -768,7 +768,7 @@ export default function RelationshipMapEditScreen() {
             exitGroupSelectMode();
             return;
           }
-          router.back();
+          popCurrentTabScreen();
         }}
         right={headerRight}
         header={

@@ -247,6 +247,10 @@ export const moneyLoanFormStyles = createMoneyLoanFormStyles(
     contentCalendarInMonth: '#f1f5f9',
     contentCalendarOutMonth: Theme.card,
     contentDivider: Theme.border,
+    contentSwitchTrackOff: '#B8BEC8',
+    contentSwitchThumbOff: '#FFFFFF',
+    contentSwitchTrackOn: Theme.textPrimary,
+    contentSwitchThumbOn: '#FFFFFF',
   },
   Theme.topBarText
 );

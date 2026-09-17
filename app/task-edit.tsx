@@ -76,6 +76,7 @@ import {
   contentMutedTextStyle,
   contentSelectedOptionStyle,
   contentSurfaceStyle,
+  contentSwitchProps,
   contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
@@ -755,8 +756,7 @@ export default function TaskEditScreen() {
                   <Switch
                     value={trackCompletions}
                     onValueChange={setTrackCompletions}
-                    trackColor={{ false: content.contentBorder, true: content.contentText }}
-                    thumbColor="#ffffff"
+                    {...contentSwitchProps(content, trackCompletions)}
                   />
                 </View>
               </FormRow>

@@ -31,7 +31,7 @@ import {
   contentMutedTextStyle,
   contentSelectedOptionStyle,
   contentSurfaceStyle,
-  contentSwitchColors,
+  contentSwitchProps,
   contentPersonTagStyle,
   contentTagStyle,
   contentTextStyle,
@@ -153,7 +153,6 @@ export default function EventScreen() {
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
-  const switchColors = contentSwitchColors(content);
   const fieldCorner = { borderRadius: 0 };
   const tagChipRadius = kit.formFieldBorderRadius === 0 ? 0 : Radius.full;
   /** 真っ白すぎない薄い塗り（白テーマは #F2F2F2、他は personTag 背景）。枠と＋は同色 */
@@ -931,8 +930,7 @@ export default function EventScreen() {
             <Switch
               value={allDay}
               onValueChange={setAllDay}
-              trackColor={switchColors.trackColor}
-              thumbColor={allDay ? switchColors.thumbColorOn : switchColors.thumbColorOff}
+              {...contentSwitchProps(content, allDay)}
             />
           </FormRow>
 
@@ -1052,8 +1050,7 @@ export default function EventScreen() {
             <Switch
               value={notifyEnabled}
               onValueChange={setNotifyEnabled}
-              trackColor={switchColors.trackColor}
-              thumbColor={notifyEnabled ? switchColors.thumbColorOn : switchColors.thumbColorOff}
+              {...contentSwitchProps(content, notifyEnabled)}
             />
           </FormRow>
           {notifyEnabled ? (

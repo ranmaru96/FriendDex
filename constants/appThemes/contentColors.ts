@@ -17,6 +17,11 @@ export type AppThemeContentColorFields = {
   contentCalendarInMonth: string;
   contentCalendarOutMonth: string;
   contentDivider: string;
+  /** Switch オフ時のトラック。contentBorder より濃く、カード面と差をつける */
+  contentSwitchTrackOff: string;
+  contentSwitchThumbOff: string;
+  contentSwitchTrackOn: string;
+  contentSwitchThumbOn: string;
 };
 
 /** デフォルト用（現行 Theme と同等） */
@@ -36,6 +41,10 @@ export const lightContentColors: AppThemeContentColorFields = {
   contentCalendarInMonth: '#f1f5f9',
   contentCalendarOutMonth: Theme.card,
   contentDivider: Theme.border,
+  contentSwitchTrackOff: '#B8BEC8',
+  contentSwitchThumbOff: '#FFFFFF',
+  contentSwitchTrackOn: Theme.textPrimary,
+  contentSwitchThumbOn: '#FFFFFF',
 };
 
 /**
@@ -58,6 +67,10 @@ export const whiteContentColors: AppThemeContentColorFields = {
   contentCalendarInMonth: '#FFFFFF',
   contentCalendarOutMonth: '#EBEBEB',
   contentDivider: 'rgba(0, 0, 0, 0.14)',
+  contentSwitchTrackOff: '#A8A8A8',
+  contentSwitchThumbOff: '#FFFFFF',
+  contentSwitchTrackOn: '#111111',
+  contentSwitchThumbOn: '#FFFFFF',
 };
 
 /** ブラック用（ホワイト形状を保った色反転） */
@@ -77,4 +90,8 @@ export const darkContentColors: AppThemeContentColorFields = {
   contentCalendarInMonth: '#141414',
   contentCalendarOutMonth: '#1c1c1c',
   contentDivider: 'rgba(255, 255, 255, 0.14)',
+  contentSwitchTrackOff: '#6E6E6E',
+  contentSwitchThumbOff: '#E6E6E6',
+  contentSwitchTrackOn: '#F2F2F2',
+  contentSwitchThumbOn: '#1c1c1c',
 };

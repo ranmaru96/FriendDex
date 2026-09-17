@@ -10,12 +10,14 @@ type ShuffleRoleResultsProps = {
   assignments: ShuffleRoleAssignment[];
   friendsById: Map<string, Friend>;
   myselfId?: string | null;
+  columns?: number;
 };
 
 export function ShuffleRoleResults({
   assignments,
   friendsById,
   myselfId = null,
+  columns,
 }: ShuffleRoleResultsProps) {
   const content = useContentColors();
 
@@ -37,6 +39,7 @@ export function ShuffleRoleResults({
             memberIds={assignment.memberIds}
             friendsById={friendsById}
             myselfId={myselfId}
+            columns={columns}
           />
         </OffsetCard>
       ))}

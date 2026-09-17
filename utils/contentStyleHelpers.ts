@@ -1,6 +1,7 @@
-import type { TextStyle, ViewStyle } from 'react-native';
+import type { SwitchProps, TextStyle, ViewStyle } from 'react-native';
 import type { AppThemeContentColorFields } from '@/constants/appThemes/contentColors';
 import type { AppThemeVariant } from '@/constants/appThemes/types';
+import { isLightHexColor, withAlpha } from '@/utils/colorHelpers';
 
 /** カード／パネルの面 */
 export function contentSurfaceStyle(c: AppThemeContentColorFields): ViewStyle {
@@ -74,16 +75,35 @@ export function contentSelectedOptionStyle(c: AppThemeContentColorFields): ViewS
   };
 }
 
-/** Switch のトラック／つまみ（true 時はアクセントではなくコンテンツ面で） */
+/** Switch のトラック／つまみ（アクセント緑は使わず、オフ時もカード面と差がつく色） */
 export function contentSwitchColors(c: AppThemeContentColorFields): {
   trackColor: { false: string; true: string };
   thumbColorOn: string;
   thumbColorOff: string;
+  iosBackgroundColor: string;
 } {
+  const inkIsLight = isLightHexColor(c.contentText);
+  const trackOff = c.contentSwitchTrackOff ?? withAlpha(c.contentText, inkIsLight ? 0.42 : 0.38);
+  const trackOn = c.contentSwitchTrackOn ?? c.contentText;
+  const thumbOff = c.contentSwitchThumbOff ?? (inkIsLight ? '#E6E6E6' : '#FFFFFF');
+  const thumbOn = c.contentSwitchThumbOn ?? (inkIsLight ? c.contentCard : '#FFFFFF');
   return {
-    trackColor: { false: c.contentBorder, true: c.contentPersonTagBg },
-    thumbColorOn: c.contentText,
-    thumbColorOff: c.contentCard,
+    trackColor: { false: trackOff, true: trackOn },
+    thumbColorOn: thumbOn,
+    thumbColorOff: thumbOff,
+    iosBackgroundColor: trackOff,
+  };
+}
+
+export function contentSwitchProps(
+  c: AppThemeContentColorFields,
+  value: boolean
+): Pick<SwitchProps, 'trackColor' | 'thumbColor' | 'ios_backgroundColor'> {
+  const colors = contentSwitchColors(c);
+  return {
+    trackColor: colors.trackColor,
+    thumbColor: value ? colors.thumbColorOn : colors.thumbColorOff,
+    ios_backgroundColor: colors.iosBackgroundColor,
   };
 }
 

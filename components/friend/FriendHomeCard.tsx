@@ -10,10 +10,17 @@ import type { Friend } from '../../types';
 
 /** Stable 既定値（シャッフル等・UiKit 未参照の箇所用） */
 export const FRIEND_HOME_CARD_GAP = 10;
+export const FRIEND_HOME_CARD_NAME_FONT_SIZE = 13;
+const FRIEND_HOME_CARD_NAME_LETTER_SPACING = 0.5;
+const FRIEND_HOME_CARD_OUTER_PADDING_BOTTOM = 4;
+const FRIEND_HOME_CARD_BADGE_FONT_SIZE = 11;
+const FRIEND_HOME_CARD_PLACEHOLDER_FONT_SIZE = 12;
 
 type FriendHomeCardProps = {
   friend: Friend;
   width?: number;
+  /** 未指定時は図鑑ホームと同じ 13 */
+  nameFontSize?: number;
   isMyself?: boolean;
   /** 一覧で誕生月絞り込み中など、右上に月日を出す（本人マークと同型） */
   birthdayBadgeText?: string | null;
@@ -38,6 +45,7 @@ export function formatFriendBirthdayBadge(birthday: string | null | undefined): 
 export function FriendHomeCard({
   friend,
   width,
+  nameFontSize,
   isMyself = false,
   birthdayBadgeText = null,
   onPress,
@@ -51,6 +59,8 @@ export function FriendHomeCard({
   const [imageError, setImageError] = useState(false);
   const cardBorderWidth = shape.cardBorderWidth;
   const photoRadius = shape.cardBorderRadius;
+  const resolvedNameFontSize = nameFontSize ?? FRIEND_HOME_CARD_NAME_FONT_SIZE;
+  const nameScale = resolvedNameFontSize / FRIEND_HOME_CARD_NAME_FONT_SIZE;
   const normalizedBirthdayBadge = birthdayBadgeText?.trim() ? birthdayBadgeText.trim() : null;
   const birthdayBadgeStyle = {
     backgroundColor: withAlpha(content.contentCard, 0.95),
@@ -64,14 +74,56 @@ export function FriendHomeCard({
   const inner = (
     <>
       {isMyself ? (
-        <View style={[styles.myselfBadge, myselfBadgeStyle]} pointerEvents="none">
-          <Text style={[styles.cornerBadgeText, badgeTextStyle]}>me</Text>
+        <View
+          style={[
+            styles.myselfBadge,
+            myselfBadgeStyle,
+            {
+              top: 6 * nameScale,
+              left: 6 * nameScale,
+              paddingHorizontal: 4 * nameScale,
+              paddingVertical: 2 * nameScale,
+              borderRadius: 6 * nameScale,
+            },
+          ]}
+          pointerEvents="none"
+        >
+          <Text
+            style={[
+              styles.cornerBadgeText,
+              badgeTextStyle,
+              { fontSize: FRIEND_HOME_CARD_BADGE_FONT_SIZE * nameScale },
+            ]}
+          >
+            me
+          </Text>
         </View>
       ) : null}
       {normalizedBirthdayBadge != null ? (
-        <View style={styles.birthdayBadgeStack} pointerEvents="none">
-          <View style={[styles.cornerBadge, birthdayBadgeStyle]}>
-            <Text style={[styles.cornerBadgeText, badgeTextStyle]}>{normalizedBirthdayBadge}</Text>
+        <View
+          style={[styles.birthdayBadgeStack, { top: 6 * nameScale, right: 6 * nameScale }]}
+          pointerEvents="none"
+        >
+          <View
+            style={[
+              styles.cornerBadge,
+              birthdayBadgeStyle,
+              {
+                paddingHorizontal: 8 * nameScale,
+                paddingVertical: 3 * nameScale,
+                borderRadius: 6 * nameScale,
+              },
+            ]}
+          >
+            <Text
+              style={[
+                styles.cornerBadgeText,
+                badgeTextStyle,
+                { fontSize: FRIEND_HOME_CARD_BADGE_FONT_SIZE * nameScale },
+              ]}
+            >
+              {normalizedBirthdayBadge}
+            </Text>
           </View>
         </View>
       ) : null}
@@ -112,7 +164,15 @@ export function FriendHomeCard({
                 { backgroundColor: content.contentPhotoPlaceholder },
               ]}
             >
-              <Text style={[styles.cardPhotoPlaceholderText, { color: content.contentPhotoPlaceholderText }]}>
+              <Text
+                style={[
+                  styles.cardPhotoPlaceholderText,
+                  {
+                    color: content.contentPhotoPlaceholderText,
+                    fontSize: FRIEND_HOME_CARD_PLACEHOLDER_FONT_SIZE * nameScale,
+                  },
+                ]}
+              >
                 No Image
               </Text>
             </View>
@@ -122,10 +182,25 @@ export function FriendHomeCard({
       <View
         style={[
           styles.cardTextBlock,
-          { paddingVertical: kit.friendHomeCardNamePaddingVertical },
+          {
+            paddingVertical: kit.friendHomeCardNamePaddingVertical * nameScale,
+            paddingHorizontal: 4 * nameScale,
+          },
         ]}
       >
-        <Text style={[styles.cardMainName, { color: content.contentCardName }]}>{friend.name}</Text>
+        <Text
+          style={[
+            styles.cardMainName,
+            {
+              color: content.contentCardName,
+              fontSize: resolvedNameFontSize,
+              letterSpacing: FRIEND_HOME_CARD_NAME_LETTER_SPACING * nameScale,
+            },
+          ]}
+          numberOfLines={nameFontSize != null ? 1 : undefined}
+        >
+          {friend.name}
+        </Text>
       </View>
     </>
   );
@@ -141,7 +216,10 @@ export function FriendHomeCard({
           : null,
         style,
       ]}
-      contentStyle={styles.cardOuter}
+      contentStyle={[
+        styles.cardOuter,
+        { paddingBottom: FRIEND_HOME_CARD_OUTER_PADDING_BOTTOM * nameScale },
+      ]}
     >
       {onPress || onLongPress ? (
         <Pressable onPress={onPress} onLongPress={onLongPress} delayLongPress={delayLongPress}>

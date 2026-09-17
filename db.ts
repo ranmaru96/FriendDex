@@ -2128,6 +2128,29 @@ export const ensureProfileUserId = (profileId: string): string | null => {
   return userId;
 };
 
+/** ログイン後に、本人カードの userId を Supabase Auth の id で上書きする */
+export const setMyselfProfileAuthUserId = (authUserId: string): boolean => {
+  const trimmed = authUserId.trim();
+  if (!trimmed) {
+    return false;
+  }
+  const myselfId = getResolvedMyselfId();
+  if (!myselfId) {
+    return false;
+  }
+  const profile = getDefaultProfile(myselfId);
+  if (!profile) {
+    return false;
+  }
+  const timestamp = nowIso();
+  const result = db.runSync(`UPDATE ${PROFILES_TABLE} SET userId = ?, updatedAt = ? WHERE id = ?;`, [
+    trimmed,
+    timestamp,
+    profile.id,
+  ]);
+  return result.changes > 0;
+};
+
 export const updateProfile = (profileId: string, input: ProfileSelfUpdateInput): boolean => {
   const row = db.getFirstSync<ProfileRow>(`SELECT * FROM ${PROFILES_TABLE} WHERE id = ?;`, [profileId]);
   if (!row) {
@@ -4325,8 +4348,6 @@ export const upsertShufflePoolByMembers = (memberIds: string[]): ShufflePool | n
   }
   const memberSetKey = buildShuffleMemberSetKey(normalizedMemberIds);
   const timestamp = nowIso();
-  const nameById = new Map(getAllFriends().map((friend) => [friend.id, friend.name]));
-
   const existing = db.getFirstSync<ShufflePoolRow>(
     `SELECT * FROM ${SHUFFLE_POOLS_TABLE} WHERE member_set_key = ?;`,
     [memberSetKey]
@@ -4336,9 +4357,10 @@ export const upsertShufflePoolByMembers = (memberIds: string[]): ShufflePool | n
     return { ...rowToShufflePool(existing), lastUsedAt: timestamp };
   }
 
+  const existingLabels = getShufflePools().map((pool) => pool.label);
   const pool: ShufflePool = {
     id: uuidv4(),
-    label: buildDefaultShufflePoolLabel(normalizedMemberIds, nameById),
+    label: buildDefaultShufflePoolLabel(existingLabels),
     labelIsCustom: false,
     memberIds: normalizedMemberIds,
     createdAt: timestamp,
@@ -4407,10 +4429,12 @@ export const updateShufflePoolMembers = (poolId: string, memberIds: string[]): S
     return null;
   }
 
-  const nameById = new Map(getAllFriends().map((friend) => [friend.id, friend.name]));
+  const existingLabels = getShufflePools()
+    .filter((pool) => pool.id !== normalizedId)
+    .map((pool) => pool.label);
   const label = existing.label_is_custom === 1
     ? existing.label
-    : buildDefaultShufflePoolLabel(normalizedMemberIds, nameById);
+    : buildDefaultShufflePoolLabel(existingLabels);
   const timestamp = nowIso();
 
   db.runSync(

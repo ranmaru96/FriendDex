@@ -16,20 +16,17 @@ export function buildShuffleMemberSetKey(memberIds: string[]): string {
   return normalizeShuffleMemberIds(memberIds).join('\u0000');
 }
 
-export function buildDefaultShufflePoolLabel(
-  memberIds: string[],
-  friendNameById: Map<string, string>
-): string {
-  const names = normalizeShuffleMemberIds(memberIds).map(
-    (memberId) => friendNameById.get(memberId) ?? memberId
+export const DEFAULT_SHUFFLE_GROUP_LABEL_PREFIX = 'グループ';
+
+export function buildDefaultShufflePoolLabel(existingLabels: readonly string[] = []): string {
+  const used = new Set(
+    existingLabels.map((label) => label.trim()).filter((label) => label.length > 0)
   );
-  if (names.length === 0) {
-    return '集団';
+  let index = 1;
+  while (used.has(`${DEFAULT_SHUFFLE_GROUP_LABEL_PREFIX}${index}`)) {
+    index += 1;
   }
-  if (names.length <= 2) {
-    return names.join('、');
-  }
-  return `${names[0]}、${names[1]}、他${names.length - 2}人`;
+  return `${DEFAULT_SHUFFLE_GROUP_LABEL_PREFIX}${index}`;
 }
 
 export function memberIdsToParticipantEntries(memberIds: string[]) {
@@ -95,28 +92,36 @@ export function resolveRoleName(name: string, roleIndex: number): string {
   return trimmed.length > 0 ? trimmed : defaultRoleName(roleIndex);
 }
 
-export function createEmptyRoleDraft(roleIndex = 1): ShuffleRoleDraft {
+export function createEmptyRoleDraft(_roleIndex = 1): ShuffleRoleDraft {
   return {
     id: createRoleDraftId(),
-    name: defaultRoleName(roleIndex),
+    name: '',
     count: 1,
     excludedMemberIds: [],
   };
+}
+
+export function sanitizeExcludedMemberIds(
+  excludedMemberIds: string[] | null | undefined,
+  poolMemberIds: string[]
+): string[] {
+  const poolSet = new Set(normalizeShuffleMemberIds(poolMemberIds));
+  return normalizeShuffleMemberIds(excludedMemberIds ?? []).filter((memberId) => poolSet.has(memberId));
 }
 
 export function sanitizeRoleDraftsForPool(
   roles: ShuffleRoleDraft[],
   memberIds: string[]
 ): ShuffleRoleDraft[] {
-  const poolSet = new Set(normalizeShuffleMemberIds(memberIds));
-  const maxCount = Math.max(poolSet.size, 1);
-  return roles.map((role) => ({
-    ...role,
-    count: Math.min(Math.max(1, role.count), maxCount),
-    excludedMemberIds: normalizeShuffleMemberIds(role.excludedMemberIds).filter((memberId) =>
-      poolSet.has(memberId)
-    ),
-  }));
+  return roles.map((role, index) => {
+    const trimmedName = role.name.trim();
+    return {
+      ...role,
+      name: trimmedName === defaultRoleName(index + 1) ? '' : role.name,
+      count: 1,
+      excludedMemberIds: sanitizeExcludedMemberIds(role.excludedMemberIds, memberIds),
+    };
+  });
 }
 
 export function assignRolesToMembers(
@@ -185,18 +190,11 @@ export function createRankTierId(): string {
 }
 
 export function createDefaultRankTiers(): ShuffleRankTier[] {
-  return ['A', 'B', 'C', 'D'].map((label) => ({
-    id: createRankTierId(),
-    label,
-  }));
+  return [{ id: createRankTierId(), label: '役割1' }];
 }
 
 export function suggestNextRankLabel(tiers: ShuffleRankTier[]): string {
-  const index = tiers.length;
-  if (index < 26) {
-    return String.fromCharCode(65 + index);
-  }
-  return `R${index + 1}`;
+  return `役割${tiers.length + 1}`;
 }
 
 export function sanitizeTeamSettingsForPool(

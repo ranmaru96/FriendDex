@@ -36,7 +36,7 @@ import { DetailTabAddButton } from '@/components/detail/DetailTabAddButton';
 import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
-import { setNextStackAnimation } from '@/utils/tabTransition';
+import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { useDetailDesign } from './contexts/DetailDesignContext';
@@ -1033,9 +1033,8 @@ export default function DetailScreen() {
   );
 
   const navigateHome = useCallback(() => {
-    setNextStackAnimation('slide_from_right');
-    router.replace('/');
-  }, [router]);
+    popCurrentTabScreen();
+  }, []);
 
   const loadFriend = useCallback((idOverride?: string) => {
     initializeDatabase();
