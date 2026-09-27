@@ -1,9 +1,10 @@
 import { Theme } from '@/constants/theme';
 import type { Friend } from '../types';
+import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
 
 export const computeProfileCompleteness = (friend: Friend, hasPhoto: boolean): number => {
   const completenessFields = [
-    hasPhoto ? friend.photoUri : null,
+    hasPhoto ? resolveFriendDisplayPhotoUri(friend) : null,
     friend.mbti?.trim() || null,
     friend.birthday?.trim() || null,
     friend.origin?.trim() || null,

@@ -19,6 +19,8 @@ type ParticipantChipProps = {
   chipStyle?: 'default' | 'fitted';
   onPress?: () => void;
   onRemove?: () => void;
+  /** 候補用。塗りを付けず、文字を薄くする */
+  suggestion?: boolean;
 };
 
 function FittedChipAvatar({
@@ -42,6 +44,7 @@ export function ParticipantChip({
   chipStyle = 'default',
   onPress,
   onRemove,
+  suggestion = false,
 }: ParticipantChipProps) {
   const content = useContentColors();
   const { width: screenWidth } = useWindowDimensions();
@@ -70,6 +73,7 @@ export function ParticipantChip({
         (isGroup || !hasPhoto) && styles.chipTextOnly,
         isGroup && styles.chipGroupBorder,
         chipBackgroundColor ? { backgroundColor: chipBackgroundColor } : null,
+        suggestion ? { backgroundColor: 'transparent', borderColor: content.contentDivider } : null,
         fittedRadius != null ? { borderRadius: fittedRadius } : null,
       ]}
     >
@@ -100,7 +104,7 @@ export function ParticipantChip({
           )
         ) : null}
         <Text
-          style={[styles.name, compact && styles.nameCompact, contentTagTextStyle(content)]}
+          style={[styles.name, compact && styles.nameCompact, suggestion ? { color: content.contentTextSecondary } : contentTagTextStyle(content)]}
           numberOfLines={1}
           accessibilityLabel={displayLabel !== chip.label ? chip.label : undefined}
         >

@@ -19,13 +19,15 @@ import {
   useSharedHeaderVisuals,
   useSuppressBottomNav,
 } from '../contexts/SharedHeaderChromeContext';
-import { AuthSessionProvider } from '@/contexts/AuthSessionContext';
+import { AuthSessionProvider, useAuthSession } from '@/contexts/AuthSessionContext';
+import { NetworkReachabilityProvider } from '@/contexts/NetworkReachabilityContext';
 import { UiPreviewProvider, useUiKit } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
 import {
   getActiveTab,
   shouldHideBottomNav,
   shouldHideHeader,
+  shouldKeepSharedHeaderFrame,
 } from '../utils/bottomNavVisibility';
 import { peekNextReplaceAsPop, resolveStackAnimation } from '../utils/tabTransition';
 import { useTabStackBackHandler } from '@/hooks/useTabStackBackHandler';
@@ -50,15 +52,14 @@ function PastEventConversionScheduler() {
 function AppShellHeader() {
   const pathname = usePathname();
   const hideHeader = shouldHideHeader(pathname);
-  const hideBottomNav = shouldHideBottomNav(pathname);
   const kit = useUiKit();
   const { colors } = useAppTheme();
   const { detailHeader, subToolHeader } = useSharedHeaderVisuals();
   const isDetailRoute = pathname.includes('/detail');
   const useSharedChrome = kit.sharedHeaderChrome;
   const showDetailChrome = isDetailRoute && detailHeader != null;
-  /** 下部タブ付きサブツールはヘッダー枠の高さを維持して上下ジャンプを防ぐ */
-  const showSubToolChrome = hideHeader && !hideBottomNav;
+  /** 下部タブ付きサブツール／マイページはヘッダー枠の高さを維持して上下ジャンプを防ぐ */
+  const showSubToolChrome = shouldKeepSharedHeaderFrame(pathname);
 
   if (useSharedChrome && (isDetailRoute || !hideHeader || showSubToolChrome)) {
     const useSubToolBar = showSubToolChrome && !isDetailRoute;
@@ -150,6 +151,7 @@ function AppShell() {
   const router = useRouter();
   const suppressBottomNav = useSuppressBottomNav();
   const { colors } = useAppTheme();
+  const { configured, session, ready: authReady } = useAuthSession();
   const [setupPhase, setSetupPhase] = useState(() => {
     try {
       initializeDatabase();
@@ -167,28 +169,72 @@ function AppShell() {
   });
   const needsSetup = setupPhase !== 'ready';
   const onSetupRoute = pathname.includes('setup-myself');
+  const onLoginRoute = pathname.includes('login');
+  const loggedOut = configured && !session;
   const hideBottomNav =
-    shouldHideBottomNav(pathname) || suppressBottomNav || needsSetup || onSetupRoute;
+    shouldHideBottomNav(pathname) ||
+    suppressBottomNav ||
+    needsSetup ||
+    onSetupRoute ||
+    onLoginRoute ||
+    loggedOut;
   const activeTab = getActiveTab(pathname);
   useTabStackSync();
-  useTabStackBackHandler(!hideBottomNav && !needsSetup && !onSetupRoute);
+  useTabStackBackHandler(!hideBottomNav && !needsSetup && !onSetupRoute && !onLoginRoute);
 
   useEffect(() => {
-    initializeDatabase();
-    setSetupPhase(getMyselfSetupPhase());
-  }, [pathname]);
-
-  useEffect(() => {
-    if (needsSetup && !onSetupRoute) {
-      router.replace('/setup-myself');
-    } else if (!needsSetup && onSetupRoute) {
-      router.replace('/');
+    if (!authReady) {
+      return;
     }
-  }, [needsSetup, onSetupRoute, router]);
+    initializeDatabase();
+    const phase = getMyselfSetupPhase();
+    setSetupPhase(phase);
+    const setupNeeded = phase !== 'ready';
+    const loggedOut = configured && !session;
+    const onSetup = pathname.includes('setup-myself');
+    const onLogin = pathname.includes('login');
+
+    if (loggedOut) {
+      if (!onLogin) {
+        router.replace('/login');
+      }
+      return;
+    }
+
+    if (!setupNeeded) {
+      if (onLogin || onSetup) {
+        router.replace('/');
+      }
+      return;
+    }
+
+    if (phase === 'register') {
+      if (!configured) {
+        if (!onSetup) {
+          router.replace('/setup-myself');
+        }
+        return;
+      }
+      if (!session) {
+        if (!onLogin) {
+          router.replace('/login');
+        }
+        return;
+      }
+      if (!onLogin && !onSetup) {
+        router.replace('/login');
+      }
+      return;
+    }
+
+    if (!onSetup) {
+      router.replace('/setup-myself');
+    }
+  }, [authReady, configured, pathname, router, session]);
 
   return (
     <View style={[styles.shell, { backgroundColor: colors.screenBackground }]}>
-      {needsSetup ? null : <AppShellHeader />}
+      {loggedOut || needsSetup ? null : <AppShellHeader />}
       <View style={styles.content}>
         <Stack
           screenOptions={({ route }) => ({
@@ -200,6 +246,14 @@ function AppShell() {
             gestureEnabled: shouldHideBottomNav(`/${route.name}`),
           })}
         />
+        {(!authReady ||
+          (loggedOut && !onLoginRoute) ||
+          (needsSetup && !onLoginRoute && !onSetupRoute)) ? (
+          <View
+            pointerEvents="auto"
+            style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.screenBackground }]}
+          />
+        ) : null}
       </View>
       {!hideBottomNav && <BottomNav active={activeTab} />}
     </View>
@@ -214,15 +268,17 @@ function AppProviders() {
       <DetailDesignProvider>
         <UiPreviewProvider>
           <AuthSessionProvider>
-            <SharedHeaderChromeProvider>
-              <SettlementMockProvider>
-                <EventNotificationHandler />
-                <PastEventConversionScheduler />
-                <NoteFormatAccessoryProvider>
-                  <AppShell />
-                </NoteFormatAccessoryProvider>
-              </SettlementMockProvider>
-            </SharedHeaderChromeProvider>
+            <NetworkReachabilityProvider>
+              <SharedHeaderChromeProvider>
+                <SettlementMockProvider>
+                  <EventNotificationHandler />
+                  <PastEventConversionScheduler />
+                  <NoteFormatAccessoryProvider>
+                    <AppShell />
+                  </NoteFormatAccessoryProvider>
+                </SettlementMockProvider>
+              </SharedHeaderChromeProvider>
+            </NetworkReachabilityProvider>
           </AuthSessionProvider>
         </UiPreviewProvider>
       </DetailDesignProvider>

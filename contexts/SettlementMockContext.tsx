@@ -11,6 +11,13 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 import { getAllFriends, getMyself, initializeDatabase } from '@/db';
 import { settlementStore } from '@/repositories/local/settlementStore';
+import {
+  commitSharedSettlementExpense,
+  commitSharedSettlementRoom,
+  pushSharedSettlementCompletion,
+  SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE,
+} from '@/lib/sharedSettlementSync';
+import { asAuthUserId, getFriendLinkedAuthUserId } from '@/utils/linkedAuthUser';
 import type {
   CreateMockSettlementExpenseInput,
   CreateMockSettlementRoomInput,
@@ -19,44 +26,40 @@ import type {
   MockSettlementMember,
   MockSettlementRoom,
 } from '@/types/settlementMock';
-import {
-  getMockFollowRelation,
-  willAutoSyncLedger,
-} from '@/utils/settlementMockHelpers';
 import { buildFriendNameById } from '@/utils/moneyLoanHelpers';
+import { parseSettlementRoomIdFromTransferKey } from '@/utils/settlementTransferHelpers';
 
 type SettlementMockContextValue = {
   rooms: MockSettlementRoom[];
   invites: MockSettlementInvite[];
-  createRoom: (input: CreateMockSettlementRoomInput) => MockSettlementRoom | null;
-  updateRoomTitle: (roomId: string, title: string) => boolean;
+  createRoom: (
+    input: CreateMockSettlementRoomInput
+  ) => Promise<{ room: MockSettlementRoom | null; errorMessage: string | null }>;
+  updateRoomTitle: (
+    roomId: string,
+    title: string
+  ) => Promise<{ ok: boolean; errorMessage: string | null }>;
   acceptInvite: (inviteId: string) => boolean;
   declineInvite: (inviteId: string) => boolean;
-  addExpense: (input: CreateMockSettlementExpenseInput) => MockSettlementExpense | null;
+  addExpense: (
+    input: CreateMockSettlementExpenseInput
+  ) => Promise<{ expense: MockSettlementExpense | null; errorMessage: string | null }>;
   getRoom: (roomId: string) => MockSettlementRoom | undefined;
   isTransferCompleted: (key: string) => boolean;
-  toggleTransferCompleted: (key: string) => void;
+  toggleTransferCompleted: (key: string) => Promise<{ errorMessage: string | null }>;
   loadIfNeeded: () => void;
+  reloadFromStore: () => void;
 };
 
 const SettlementMockContext = createContext<SettlementMockContextValue | null>(null);
 
-function buildInitialInvite(): MockSettlementInvite {
-  return {
-    id: uuidv4(),
-    roomId: 'demo-room-pending',
-    roomTitle: '春キャンプ（デモ招待）',
-    fromFriendId: 'demo-friend',
-    fromDisplayName: 'デモユーザー',
-    createdAt: new Date().toISOString(),
-  };
-}
-
 export function SettlementMockProvider({ children }: { children: ReactNode }) {
-  const loadedRef = useRef(false);
-  const [rooms, setRooms] = useState<MockSettlementRoom[]>([]);
-  const [invites, setInvites] = useState<MockSettlementInvite[]>([buildInitialInvite()]);
-  const [completedTransferKeys, setCompletedTransferKeys] = useState<Set<string>>(() => new Set());
+  const loadedRef = useRef(true);
+  const [rooms, setRooms] = useState<MockSettlementRoom[]>(() => settlementStore.loadRooms());
+  const [invites, setInvites] = useState<MockSettlementInvite[]>([]);
+  const [completedTransferKeys, setCompletedTransferKeys] = useState<Set<string>>(
+    () => settlementStore.loadCompletedTransferKeys()
+  );
 
   const loadIfNeeded = useCallback(() => {
     if (loadedRef.current) {
@@ -67,15 +70,22 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
     setCompletedTransferKeys(settlementStore.loadCompletedTransferKeys());
   }, []);
 
-  const createRoom = useCallback((input: CreateMockSettlementRoomInput): MockSettlementRoom | null => {
+  const reloadFromStore = useCallback(() => {
+    loadedRef.current = true;
+    setRooms(settlementStore.loadRooms());
+    setCompletedTransferKeys(settlementStore.loadCompletedTransferKeys());
+  }, []);
+
+  const createRoom = useCallback(async (
+    input: CreateMockSettlementRoomInput
+  ): Promise<{ room: MockSettlementRoom | null; errorMessage: string | null }> => {
     initializeDatabase();
     const friends = getAllFriends();
     const myselfId = getMyself();
     const friendNameById = buildFriendNameById(friends);
-    const orderedIds = friends.map((friend) => friend.id);
     const title = input.title.trim();
     if (!title || input.memberFriendIds.length === 0) {
-      return null;
+      return { room: null, errorMessage: 'タイトルとメンバーを入力してください。' };
     }
 
     const ownerMember: MockSettlementMember = {
@@ -90,18 +100,17 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       if (myselfId && friendId === myselfId) {
         return;
       }
-      const relation = getMockFollowRelation(friendId, orderedIds, myselfId);
       const displayName = friendNameById.get(friendId) ?? friendId;
       members.push({
         id: uuidv4(),
         friendId,
         displayName,
-        ledgerSynced: willAutoSyncLedger(relation),
+        ledgerSynced: Boolean(asAuthUserId(getFriendLinkedAuthUserId(friendId))),
       });
     });
 
     if (members.length <= 1) {
-      return null;
+      return { room: null, errorMessage: 'タイトルとメンバーを入力してください。' };
     }
 
     const room: MockSettlementRoom = {
@@ -112,25 +121,50 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString(),
     };
 
-    settlementStore.saveRoom(room);
+    const published = await commitSharedSettlementRoom(room, { requireLinkedPeer: true });
+    if (published.errorMessage) {
+      return { room: null, errorMessage: published.errorMessage };
+    }
+    if (published.skipped) {
+      return { room: null, errorMessage: SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE };
+    }
+
+    settlementStore.saveRoom(room, { skipSharedPush: true });
     setRooms((prev) => [room, ...prev]);
-    return room;
+    return { room, errorMessage: null };
   }, []);
 
-  const updateRoomTitle = useCallback((roomId: string, title: string): boolean => {
+  const updateRoomTitle = useCallback(async (
+    roomId: string,
+    title: string
+  ): Promise<{ ok: boolean; errorMessage: string | null }> => {
     const normalizedTitle = title.trim();
     if (!roomId.trim() || !normalizedTitle) {
-      return false;
+      return { ok: false, errorMessage: 'グループ名を入力してください。' };
     }
-    const ok = settlementStore.updateRoomTitle(roomId, normalizedTitle);
+    const current = rooms.find((room) => room.id === roomId);
+    if (!current) {
+      return { ok: false, errorMessage: 'グループが見つかりません。' };
+    }
+    const published = await commitSharedSettlementRoom(
+      { ...current, title: normalizedTitle },
+      { requireLinkedPeer: true }
+    );
+    if (published.errorMessage) {
+      return { ok: false, errorMessage: published.errorMessage };
+    }
+    if (published.skipped) {
+      return { ok: false, errorMessage: SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE };
+    }
+    const ok = settlementStore.updateRoomTitle(roomId, normalizedTitle, { skipSharedPush: true });
     if (!ok) {
-      return false;
+      return { ok: false, errorMessage: 'グループ名の更新に失敗しました。' };
     }
     setRooms((prev) =>
       prev.map((room) => (room.id === roomId ? { ...room, title: normalizedTitle } : room))
     );
-    return true;
-  }, []);
+    return { ok: true, errorMessage: null };
+  }, [rooms]);
 
   const acceptInvite = useCallback((inviteId: string): boolean => {
     const invite = invites.find((item) => item.id === inviteId);
@@ -200,12 +234,14 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const addExpense = useCallback(
-    (input: CreateMockSettlementExpenseInput): MockSettlementExpense | null => {
+    async (
+      input: CreateMockSettlementExpenseInput
+    ): Promise<{ expense: MockSettlementExpense | null; errorMessage: string | null }> => {
       const amount = Math.floor(input.amount);
       const title = input.title.trim();
       const splitMemberIds = input.splitMemberIds.filter(Boolean);
       if (!title || amount <= 0 || splitMemberIds.length === 0) {
-        return null;
+        return { expense: null, errorMessage: 'タイトルと金額を入力してください。' };
       }
 
       const expense: MockSettlementExpense = {
@@ -217,9 +253,17 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
       };
 
-      const saved = settlementStore.saveExpense(input.roomId, expense);
+      const published = await commitSharedSettlementExpense(input.roomId, expense);
+      if (published.errorMessage) {
+        return { expense: null, errorMessage: published.errorMessage };
+      }
+      if (published.skipped) {
+        return { expense: null, errorMessage: SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE };
+      }
+
+      const saved = settlementStore.saveExpense(input.roomId, expense, { skipSharedPush: true });
       if (!saved) {
-        return null;
+        return { expense: null, errorMessage: '支出の保存に失敗しました。' };
       }
 
       setRooms((prev) =>
@@ -229,7 +273,7 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
             : room
         )
       );
-      return expense;
+      return { expense, errorMessage: null };
     },
     []
   );
@@ -244,19 +288,31 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
     [completedTransferKeys]
   );
 
-  const toggleTransferCompleted = useCallback((key: string) => {
+  const toggleTransferCompleted = useCallback(async (key: string): Promise<{ errorMessage: string | null }> => {
+    const willComplete = !completedTransferKeys.has(key);
+    const roomId = parseSettlementRoomIdFromTransferKey(key);
+    if (!roomId) {
+      return { errorMessage: '清算項目が見つかりません。' };
+    }
+    const published = await pushSharedSettlementCompletion(roomId, key, willComplete);
+    if (published.errorMessage) {
+      return { errorMessage: published.errorMessage };
+    }
+    if (published.skipped) {
+      return { errorMessage: SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE };
+    }
+    settlementStore.setTransferCompleted(key, willComplete, { skipSharedPush: true });
     setCompletedTransferKeys((prev) => {
       const next = new Set(prev);
-      const willComplete = !next.has(key);
       if (willComplete) {
         next.add(key);
       } else {
         next.delete(key);
       }
-      settlementStore.setTransferCompleted(key, willComplete);
       return next;
     });
-  }, []);
+    return { errorMessage: null };
+  }, [completedTransferKeys]);
 
   const value = useMemo(
     () => ({
@@ -271,6 +327,7 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       isTransferCompleted,
       toggleTransferCompleted,
       loadIfNeeded,
+      reloadFromStore,
     }),
     [
       rooms,
@@ -284,6 +341,7 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       isTransferCompleted,
       toggleTransferCompleted,
       loadIfNeeded,
+      reloadFromStore,
     ]
   );
 

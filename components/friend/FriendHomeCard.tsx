@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { OffsetCard } from '@/components/ui/OffsetCard';
 import { HomeCardElevation } from '@/constants/theme';
@@ -7,6 +7,7 @@ import { useUiKit } from '@/contexts/UiPreviewContext';
 import { withAlpha } from '@/utils/colorHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import type { Friend } from '../../types';
+import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
 
 /** Stable 既定値（シャッフル等・UiKit 未参照の箇所用） */
 export const FRIEND_HOME_CARD_GAP = 10;
@@ -57,6 +58,10 @@ export function FriendHomeCard({
   const { colors: appTheme, variant, shape } = useAppTheme();
   const content = useContentColors();
   const [imageError, setImageError] = useState(false);
+  const displayPhotoUri = resolveFriendDisplayPhotoUri(friend);
+  useEffect(() => {
+    setImageError(false);
+  }, [displayPhotoUri]);
   const cardBorderWidth = shape.cardBorderWidth;
   const photoRadius = shape.cardBorderRadius;
   const resolvedNameFontSize = nameFontSize ?? FRIEND_HOME_CARD_NAME_FONT_SIZE;
@@ -149,9 +154,9 @@ export function FriendHomeCard({
             },
           ]}
         >
-          {friend.photoUri && !imageError ? (
+          {displayPhotoUri && !imageError ? (
             <Image
-              source={{ uri: friend.photoUri }}
+              source={{ uri: displayPhotoUri }}
               style={styles.cardPhoto}
               resizeMode="cover"
               onError={() => setImageError(true)}

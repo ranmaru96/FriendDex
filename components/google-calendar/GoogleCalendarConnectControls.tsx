@@ -23,6 +23,7 @@ import {
   getGoogleCalendarConnectionSnapshot,
   pushAllLocalEventsToGoogleCalendar,
 } from '@/utils/googleCalendarSync';
+import { requireOnline } from '@/lib/networkReachability';
 
 let Google: typeof import('expo-auth-session/providers/google') | null = null;
 try {
@@ -170,6 +171,9 @@ function GoogleCalendarConnectControlsInner({
     if (!request || busy) {
       return;
     }
+    if (!requireOnline()) {
+      return;
+    }
     try {
       await promptAsync();
     } catch (error) {
@@ -181,6 +185,9 @@ function GoogleCalendarConnectControlsInner({
   };
 
   const handleDisconnect = () => {
+    if (!requireOnline()) {
+      return;
+    }
     Alert.alert(
       '接続を解除',
       `Google カレンダーとの接続を解除します。${FRIENDEX_GOOGLE_CALENDAR_SUMMARY} カレンダー自体は Google 側に残ります。`,
@@ -207,6 +214,9 @@ function GoogleCalendarConnectControlsInner({
 
   const handlePushExisting = () => {
     if (busy) {
+      return;
+    }
+    if (!requireOnline()) {
       return;
     }
     void (async () => {

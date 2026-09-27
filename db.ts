@@ -70,6 +70,7 @@ import { resolvePersonNameParts } from './utils/personName';
 import { normalizeDesignPatternId, type DesignPatternId } from '@/constants/designPatterns';
 import type {
   MockSettlementExpense,
+  MockSettlementMember,
   MockSettlementRoom,
 } from './types/settlementMock';
 
@@ -133,6 +134,8 @@ type ProfileRow = {
   importSource?: string | null;
   scannedUserId?: string | null;
   scannedAt?: string | null;
+  identityPhotoUri?: string | null;
+  photoSource?: string | null;
   updatedAt: string;
 };
 
@@ -195,6 +198,8 @@ type MoneyLoanRow = {
   memo: string;
   is_repaid: number;
   created_at: string;
+  shared_id?: string;
+  incoming_from_peer?: number;
 };
 
 type ShufflePoolRow = {
@@ -215,6 +220,8 @@ const SETTINGS_TABLE = 'app_settings';
 const PROFILES_TABLE = 'friend_profiles';
 const COMMON_ITEM_OPTIONS_TABLE = 'common_item_options';
 export const EPISODE_PHOTOS_TABLE = 'episode_photos';
+const INCOMING_SHARED_EPISODES_TABLE = 'incoming_shared_episodes';
+const INCOMING_SHARED_EPISODE_PHOTOS_TABLE = 'incoming_shared_episode_photos';
 const EVENTS_TABLE = 'events';
 const EVENT_PARTICIPANTS_TABLE = 'event_participants';
 const MONEY_LOAN_SESSIONS_TABLE = 'money_loan_sessions';
@@ -622,6 +629,8 @@ const applyDefaultProfileToFriend = (friend: Friend, profile: Profile | null): F
     category: profile.category,
     description: profile.description,
     photoUri: profile.photoUri,
+    identityPhotoUri: friend.identityPhotoUri,
+    photoSource: friend.photoSource,
     affiliations: profile.affiliations,
     personalities: profile.personalities,
     experiences: profile.experiences,
@@ -660,6 +669,8 @@ const defaultProfileRowToFriend = (row: ProfileRow): Friend => {
     category: row.category,
     description: row.description,
     photoUri: resolvePersistedImageUri(row.photoUri),
+    identityPhotoUri: resolvePersistedImageUri(row.identityPhotoUri ?? null),
+    photoSource: row.photoSource === 'identity' ? 'identity' : 'local',
     affiliations: fromJson(row.affiliations),
     personalities: fromJson(row.personalities),
     experiences: fromJson(row.experiences),
@@ -677,24 +688,38 @@ const defaultProfileRowToFriend = (row: ProfileRow): Friend => {
 
 const rewriteStalePersistedPhotoUris = (): void => {
   const timestamp = nowIso();
-  const profileRows = db.getAllSync<{ id: string; photoUri: string | null }>(
-    `SELECT id, photoUri FROM ${PROFILES_TABLE};`
+  const profileRows = db.getAllSync<{ id: string; photoUri: string | null; identityPhotoUri?: string | null }>(
+    `SELECT id, photoUri, identityPhotoUri FROM ${PROFILES_TABLE};`
   );
   for (const row of profileRows) {
     try {
+      const photoUpdates: string[] = [];
+      const photoValues: (string | number | null)[] = [];
       const current = row.photoUri?.trim() ?? '';
-      if (!current) {
+      if (current) {
+        const resolved = resolvePersistedImageUri(current);
+        if (resolved && resolved !== current) {
+          photoUpdates.push('photoUri = ?');
+          photoValues.push(resolved);
+        }
+      }
+      const identityCurrent = row.identityPhotoUri?.trim() ?? '';
+      if (identityCurrent) {
+        const resolvedIdentity = resolvePersistedImageUri(identityCurrent);
+        if (resolvedIdentity && resolvedIdentity !== identityCurrent) {
+          photoUpdates.push('identityPhotoUri = ?');
+          photoValues.push(resolvedIdentity);
+        }
+      }
+      if (photoUpdates.length === 0) {
         continue;
       }
-      const resolved = resolvePersistedImageUri(current);
-      if (!resolved || resolved === current) {
-        continue;
-      }
-      db.runSync(`UPDATE ${PROFILES_TABLE} SET photoUri = ?, updatedAt = ? WHERE id = ?;`, [
-        resolved,
-        timestamp,
-        row.id,
-      ]);
+      photoUpdates.push('updatedAt = ?');
+      photoValues.push(timestamp, row.id);
+      db.runSync(
+        `UPDATE ${PROFILES_TABLE} SET ${photoUpdates.join(', ')} WHERE id = ?;`,
+        photoValues
+      );
     } catch (error) {
       console.warn('Failed to rewrite profile photo URI.', row.id, error);
     }
@@ -790,6 +815,38 @@ export const initializeDatabase = (): void => {
       photo_uri TEXT NOT NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL
+    );
+  `);
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${INCOMING_SHARED_EPISODES_TABLE} (
+      shared_id TEXT PRIMARY KEY NOT NULL,
+      owner_user_id TEXT NOT NULL,
+      owner_local_episode_id TEXT NOT NULL,
+      author_friend_id TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      date TEXT NOT NULL DEFAULT '',
+      time TEXT,
+      description TEXT NOT NULL DEFAULT '',
+      visibility_mode TEXT NOT NULL DEFAULT 'public',
+      tag TEXT,
+      participant_tags TEXT NOT NULL DEFAULT '[]',
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${INCOMING_SHARED_EPISODES_TABLE}_author ON ${INCOMING_SHARED_EPISODES_TABLE}(author_friend_id);`
+  );
+  db.execSync(
+    `CREATE INDEX IF NOT EXISTS idx_${INCOMING_SHARED_EPISODES_TABLE}_owner ON ${INCOMING_SHARED_EPISODES_TABLE}(owner_user_id);`
+  );
+  db.execSync(`
+    CREATE TABLE IF NOT EXISTS ${INCOMING_SHARED_EPISODE_PHOTOS_TABLE} (
+      shared_id TEXT NOT NULL,
+      local_photo_id INTEGER NOT NULL,
+      photo_path TEXT NOT NULL,
+      photo_uri TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (shared_id, local_photo_id)
     );
   `);
   db.execSync(`
@@ -924,6 +981,13 @@ export const initializeDatabase = (): void => {
     db.runSync(`UPDATE ${MONEY_LOANS_TABLE} SET session_id = ? WHERE session_id IS NULL OR session_id = '';`, [
       LEGACY_MONEY_LOAN_SESSION_ID,
     ]);
+  }
+
+  if (!moneyLoanColumns.has('shared_id')) {
+    db.execSync(`ALTER TABLE ${MONEY_LOANS_TABLE} ADD COLUMN shared_id TEXT NOT NULL DEFAULT '';`);
+  }
+  if (!moneyLoanColumns.has('incoming_from_peer')) {
+    db.execSync(`ALTER TABLE ${MONEY_LOANS_TABLE} ADD COLUMN incoming_from_peer INTEGER NOT NULL DEFAULT 0;`);
   }
 
   db.execSync(`
@@ -1266,6 +1330,8 @@ const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COM
     { column: 'scannedUserId', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN scannedUserId TEXT NOT NULL DEFAULT '';` },
     { column: 'scannedAt', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN scannedAt TEXT NOT NULL DEFAULT '';` },
     { column: 'notes', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN notes TEXT NOT NULL DEFAULT '[]';` },
+    { column: 'identityPhotoUri', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN identityPhotoUri TEXT;` },
+    { column: 'photoSource', sql: `ALTER TABLE ${PROFILES_TABLE} ADD COLUMN photoSource TEXT NOT NULL DEFAULT 'local';` },
   ];
 
   db.execSync('BEGIN IMMEDIATE;');
@@ -1546,25 +1612,38 @@ export const createFriend = (input: FriendInput): Friend => {
     importSource: 'manual',
     scannedUserId: '',
     scannedAt: '',
+    identityPhotoUri: null,
+    photoSource: 'local',
   };
   syncFriendGroupLabelsToOptions(personId, null, input);
   return created;
 };
 
-export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string): Friend => {
+export const createFriendFromQrScan = (
+  input: FriendInput,
+  scannedUserId: string,
+  options?: { identityPhotoUri?: string | null }
+): Friend => {
+  const normalizedUserId = scannedUserId.trim();
+  const existingLinked = findFriendByScannedUserId(normalizedUserId);
+  if (existingLinked) {
+    return existingLinked;
+  }
   const personId = uuidv4();
   const profileId = uuidv4();
   const timestamp = nowIso();
-  const normalizedUserId = scannedUserId.trim();
   const nameParts = resolvePersonNameParts(input);
+  const identityPhotoUri = options?.identityPhotoUri?.trim() || null;
+  const localPhotoUri = input.photoUri?.trim() || null;
+  const photoSource = localPhotoUri ? 'local' : identityPhotoUri ? 'identity' : 'local';
 
   db.runSync(
     `
       INSERT INTO ${PROFILES_TABLE} (
         id, friendId, name, familyName, givenName, authorUserId, source, isDefault, nickname, origin, residence, mbti, birthday, height, weight, category,
         description, photoUri, affiliations, personalities, experiences, traits, notes, likes, dislikes, episodes, sayings,
-        importSource, scannedUserId, scannedAt, createdAt, updatedAt
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        importSource, scannedUserId, scannedAt, identityPhotoUri, photoSource, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
     `,
     [
       profileId,
@@ -1584,7 +1663,7 @@ export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string
       input.weight,
       input.category,
       input.description,
-      input.photoUri,
+      localPhotoUri,
       toJson(input.affiliations),
       toJson(input.personalities),
       toJson(input.experiences),
@@ -1597,6 +1676,8 @@ export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string
       'qr_scan',
       normalizedUserId,
       timestamp,
+      identityPhotoUri,
+      photoSource,
       timestamp,
       timestamp,
     ]
@@ -1608,6 +1689,9 @@ export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string
     name: nameParts.name,
     familyName: nameParts.familyName,
     givenName: nameParts.givenName,
+    photoUri: localPhotoUri,
+    identityPhotoUri,
+    photoSource,
     episodes: input.episodes ?? [],
     sayings: input.sayings ?? [],
     importSource: 'qr_scan',
@@ -1618,6 +1702,272 @@ export const createFriendFromQrScan = (input: FriendInput, scannedUserId: string
   return created;
 };
 
+export type RestorePersonCardInput = {
+  friendId: string;
+  familyName: string;
+  givenName: string;
+  nickname: string;
+  origin: string;
+  residence: string;
+  mbti: Friend['mbti'];
+  birthday: string;
+  height: number | null;
+  weight: number | null;
+  category: string;
+  description: string;
+  photoUri: string | null;
+  affiliations: string[];
+  personalities: string[];
+  experiences: string[];
+  traits: string[];
+  notes: string[];
+  likes: string[];
+  dislikes: string[];
+  sayings: Saying[];
+  importSource: ImportSource;
+  scannedUserId: string;
+  scannedAt: string;
+  publicFields?: string[];
+  userId?: string;
+};
+
+/** 同じ friendId が無いときだけ人物カードを入れる。既存は触らない。 */
+export const restorePersonCardIfMissing = (input: RestorePersonCardInput): boolean => {
+  const friendId = input.friendId.trim();
+  if (!friendId || getFriendById(friendId)) {
+    return false;
+  }
+  const profileId = uuidv4();
+  const timestamp = nowIso();
+  const nameParts = resolvePersonNameParts({
+    familyName: input.familyName,
+    givenName: input.givenName,
+  });
+  const scannedUserId = input.scannedUserId.trim();
+  const importSource = input.importSource === 'qr_scan' ? 'qr_scan' : 'manual';
+  db.runSync(
+    `
+      INSERT INTO ${PROFILES_TABLE} (
+        id, friendId, name, familyName, givenName, authorUserId, source, isDefault, nickname, origin, residence, mbti, birthday, height, weight, category,
+        description, photoUri, affiliations, personalities, experiences, traits, notes, likes, dislikes, episodes, sayings,
+        importSource, scannedUserId, scannedAt, publicFields, userId, identityPhotoUri, photoSource, createdAt, updatedAt
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    `,
+    [
+      profileId,
+      friendId,
+      nameParts.name,
+      nameParts.familyName,
+      nameParts.givenName,
+      getMyself(),
+      importSource === 'qr_scan' ? 'shared' : 'self',
+      1,
+      input.nickname,
+      input.origin,
+      input.residence,
+      input.mbti,
+      input.birthday,
+      input.height,
+      input.weight,
+      input.category,
+      input.description,
+      input.photoUri,
+      toJson(input.affiliations),
+      toJson(input.personalities),
+      toJson(input.experiences),
+      toJson(input.traits),
+      toJson(input.notes ?? []),
+      toJson(input.likes),
+      toJson(input.dislikes),
+      toEpisodeJson([]),
+      toSayingJson(input.sayings ?? []),
+      importSource,
+      scannedUserId,
+      input.scannedAt ?? '',
+      toJson(input.publicFields ?? []),
+      input.userId?.trim() ?? '',
+      null,
+      'local',
+      timestamp,
+      timestamp,
+    ]
+  );
+  syncFriendGroupLabelsToOptions(friendId, null, {
+    name: nameParts.name,
+    familyName: nameParts.familyName,
+    givenName: nameParts.givenName,
+    nickname: input.nickname,
+    origin: input.origin,
+    residence: input.residence,
+    mbti: input.mbti,
+    birthday: input.birthday,
+    height: input.height,
+    weight: input.weight,
+    category: input.category,
+    description: input.description,
+    photoUri: input.photoUri,
+    affiliations: input.affiliations,
+    personalities: input.personalities,
+    experiences: input.experiences,
+    traits: input.traits,
+    notes: input.notes,
+    likes: input.likes,
+    dislikes: input.dislikes,
+  });
+  return true;
+};
+
+/** 復元で本人番号を揃える。確認済みロックを越える。 */
+export const forceSetMyselfForRestore = (friendId: string): boolean => {
+  const normalized = friendId.trim();
+  if (!normalized || !getFriendById(normalized)) {
+    return false;
+  }
+  db.runSync(
+    `INSERT INTO ${SETTINGS_TABLE} (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value;`,
+    [MYSELF_KEY, normalized]
+  );
+  setMyselfConfirmed(true);
+  return true;
+};
+
+export type RestoreEventInput = {
+  eventId: string;
+  title: string;
+  startAt: string;
+  endAt: string | null;
+  allDay: boolean;
+  memo: string | null;
+  notifyAt: string | null;
+  notifyEnabled: boolean;
+  autoEpisodeCreated: boolean;
+  episodeTag: string | null;
+  locationTag: string | null;
+  googleEventId: string | null;
+  createdAt: string;
+  participantFriendIds: string[];
+};
+
+/** 同じ予定 ID が無いときだけ入れる。通知 ID は付けない。Google の予定 ID は保持する。 */
+export const restoreEventIfMissing = (input: RestoreEventInput): boolean => {
+  const eventId = input.eventId.trim();
+  if (!eventId || getEvent(eventId)) {
+    return false;
+  }
+  if (!input.title.trim() || !input.startAt.trim()) {
+    return false;
+  }
+  const timestamp = nowIso();
+  db.runSync(
+    `INSERT INTO ${EVENTS_TABLE} (
+      id, title, start_at, end_at, all_day, memo, notify_at, notify_enabled, notification_id, auto_episode_created, episode_tag, location_tag, google_event_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+    [
+      eventId,
+      input.title,
+      input.startAt,
+      input.endAt,
+      input.allDay ? 1 : 0,
+      input.memo,
+      input.notifyAt,
+      input.notifyEnabled ? 1 : 0,
+      null,
+      input.autoEpisodeCreated ? 1 : 0,
+      normalizeEpisodeTag(input.episodeTag),
+      normalizeEpisodeTag(input.locationTag),
+      input.googleEventId?.trim() || null,
+      input.createdAt?.trim() || timestamp,
+      timestamp,
+    ]
+  );
+  input.participantFriendIds.forEach((friendId) => {
+    const profile = getDefaultProfile(friendId);
+    if (profile) {
+      addEventParticipant(eventId, profile.id);
+    }
+  });
+  return true;
+};
+
+export type RestoreEpisodeInput = {
+  episodeId: string;
+  title: string;
+  date: string;
+  time: string | null;
+  description: string;
+  authorFriendId: string;
+  visibilityMode: EpisodeVisibilityMode;
+  participantEntries: EpisodeParticipant[];
+  visibilityEntries: EpisodeVisibilityEntry[];
+  eventId: string | null;
+  isAutoGenerated: boolean;
+  pendingReview: boolean;
+  pendingReviewDismissed: boolean;
+  tag: string | null;
+  locationTag: string | null;
+};
+
+/** 同じエピソード ID が無いときだけ入れる。既存の本文は触らない。 */
+export const restoreEpisodeIfMissing = (input: RestoreEpisodeInput): boolean => {
+  const episodeId = input.episodeId.trim();
+  if (!episodeId || findEpisodeAcrossProfiles(episodeId)) {
+    return false;
+  }
+  const myselfId = getMyself();
+  if (!myselfId || !getFriendById(myselfId)) {
+    return false;
+  }
+  const authorFriendId = input.authorFriendId.trim() || myselfId;
+  const participantEntries = Array.isArray(input.participantEntries) ? input.participantEntries : [];
+  const visibilityMode = sanitizeVisibilityMode(input.visibilityMode);
+  const visibilityEntries =
+    visibilityMode === 'limited'
+      ? excludeSelfFromVisibility(input.visibilityEntries ?? [], myselfId)
+      : [];
+  const time = normalizeEpisodeTime(input.time);
+  const tag = normalizeEpisodeTag(input.tag);
+  const locationTag = normalizeEpisodeTag(input.locationTag);
+  const episode: Episode = {
+    id: episodeId,
+    title: input.title,
+    date: input.date,
+    ...(time ? { time } : {}),
+    description: input.description,
+    authorFriendId,
+    visibilityMode,
+    participantEntries,
+    visibilityEntries,
+    ...(input.eventId?.trim() ? { eventId: input.eventId.trim() } : {}),
+    ...(tag ? { tag } : {}),
+    ...(locationTag ? { locationTag } : {}),
+    isAutoGenerated: input.isAutoGenerated === true,
+    pendingReview: input.pendingReview === true,
+    pendingReviewDismissed: input.pendingReviewDismissed === true,
+  };
+  const targetIds = Array.from(
+    new Set(
+      [myselfId, authorFriendId, ...expandParticipantEntriesToFriendIds(participantEntries)].filter(
+        (id) => Boolean(getFriendById(id))
+      )
+    )
+  );
+  const rows = getDefaultProfileRowsByPersonIds(targetIds);
+  const timestamp = nowIso();
+  rows.forEach((row) => {
+    const episodes = fromEpisodeJson(row.episodes);
+    if (episodes.some((item) => item.id === episodeId)) {
+      return;
+    }
+    episodes.push(episode);
+    db.runSync(`UPDATE ${PROFILES_TABLE} SET episodes = ?, updatedAt = ? WHERE id = ?;`, [
+      toEpisodeJson(episodes),
+      timestamp,
+      row.id,
+    ]);
+  });
+  return rows.length > 0;
+};
+
 export const findFriendByScannedUserId = (scannedUserId: string): Friend | null => {
   const normalized = scannedUserId.trim();
   if (!normalized) return null;
@@ -1626,6 +1976,26 @@ export const findFriendByScannedUserId = (scannedUserId: string): Friend | null 
     [normalized]
   );
   if (!row) return null;
+  const baseFriend = defaultProfileRowToFriend(row);
+  return applyDefaultProfileToFriend(baseFriend, getEffectiveProfile(baseFriend.id));
+};
+
+export const findFriendByAuthUserId = (authUserId: string): Friend | null => {
+  const fromQr = findFriendByScannedUserId(authUserId);
+  if (fromQr) {
+    return fromQr;
+  }
+  const normalized = authUserId.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  const row = db.getFirstSync<ProfileRow>(
+    `SELECT * FROM ${PROFILES_TABLE} WHERE isDefault = 1 AND lower(scannedUserId) = ? LIMIT 1;`,
+    [normalized]
+  );
+  if (!row) {
+    return null;
+  }
   const baseFriend = defaultProfileRowToFriend(row);
   return applyDefaultProfileToFriend(baseFriend, getEffectiveProfile(baseFriend.id));
 };
@@ -1667,6 +2037,7 @@ export const applyQrLinkToFriend = (
   }
 
   const merged = mergeFriendInputWithPublicFields(existing, input, publicFields);
+  const incomingIdentityPhoto = publicFields.includes('photo') ? input.photoUri?.trim() || null : null;
   const timestamp = nowIso();
   const defaultProfile = db.getFirstSync<{ id: string }>(
     `SELECT id FROM ${PROFILES_TABLE} WHERE friendId = ? AND isDefault = 1 ORDER BY updatedAt DESC LIMIT 1;`,
@@ -1705,6 +2076,18 @@ export const applyQrLinkToFriend = (
     values.push(value);
   });
 
+  if (incomingIdentityPhoto) {
+    const previousIdentity = existing.identityPhotoUri?.trim() || null;
+    if (previousIdentity && previousIdentity !== incomingIdentityPhoto) {
+      deletePersistedImages([previousIdentity]);
+    }
+    assignments.push('identityPhotoUri = ?');
+    values.push(incomingIdentityPhoto);
+    if (!existing.photoUri?.trim()) {
+      assignments.push(`photoSource = 'identity'`);
+    }
+  }
+
   assignments.push('updatedAt = ?');
   values.push(timestamp, defaultProfile.id);
 
@@ -1730,6 +2113,34 @@ export const updateQrScannedFriend = (
     return false;
   }
   return applyQrLinkToFriend(friendId, input, publicFields, userId);
+};
+
+export const setFriendPhotoSource = (
+  friendId: string,
+  photoSource: 'local' | 'identity'
+): boolean => {
+  const existing = getFriendById(friendId);
+  if (!existing) {
+    return false;
+  }
+  if (photoSource === 'local' && !existing.photoUri?.trim()) {
+    return false;
+  }
+  if (photoSource === 'identity' && !existing.identityPhotoUri?.trim()) {
+    return false;
+  }
+  const defaultProfile = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM ${PROFILES_TABLE} WHERE friendId = ? AND isDefault = 1 ORDER BY updatedAt DESC LIMIT 1;`,
+    [friendId]
+  );
+  if (!defaultProfile) {
+    return false;
+  }
+  const result = db.runSync(
+    `UPDATE ${PROFILES_TABLE} SET photoSource = ?, updatedAt = ? WHERE id = ?;`,
+    [photoSource, nowIso(), defaultProfile.id]
+  );
+  return result.changes > 0;
 };
 
 export const getFriendById = (id: string): Friend | null => {
@@ -1884,6 +2295,9 @@ export const GOOGLE_CALENDAR_ID_KEY = 'google_calendar_id';
 export const GOOGLE_CALENDAR_EMAIL_KEY = 'google_account_email';
 export const GOOGLE_CALENDAR_LAST_SYNC_AT_KEY = 'google_calendar_last_sync_at';
 export const GOOGLE_CALENDAR_LAST_ERROR_KEY = 'google_calendar_last_error';
+export const BOUND_AUTH_USER_ID_KEY = 'bound_auth_user_id';
+export const PENDING_OWNED_DELETES_KEY = 'pending_owned_deletes';
+export const PENDING_SHARED_EPISODE_UNPUBLISH_KEY = 'pending_shared_episode_unpublish';
 
 export const getAppSetting = (key: string): string | null => {
   const row = db.getFirstSync<{ value: string }>(`SELECT value FROM ${SETTINGS_TABLE} WHERE key = ?;`, [key]);
@@ -2128,29 +2542,6 @@ export const ensureProfileUserId = (profileId: string): string | null => {
   return userId;
 };
 
-/** ログイン後に、本人カードの userId を Supabase Auth の id で上書きする */
-export const setMyselfProfileAuthUserId = (authUserId: string): boolean => {
-  const trimmed = authUserId.trim();
-  if (!trimmed) {
-    return false;
-  }
-  const myselfId = getResolvedMyselfId();
-  if (!myselfId) {
-    return false;
-  }
-  const profile = getDefaultProfile(myselfId);
-  if (!profile) {
-    return false;
-  }
-  const timestamp = nowIso();
-  const result = db.runSync(`UPDATE ${PROFILES_TABLE} SET userId = ?, updatedAt = ? WHERE id = ?;`, [
-    trimmed,
-    timestamp,
-    profile.id,
-  ]);
-  return result.changes > 0;
-};
-
 export const updateProfile = (profileId: string, input: ProfileSelfUpdateInput): boolean => {
   const row = db.getFirstSync<ProfileRow>(`SELECT * FROM ${PROFILES_TABLE} WHERE id = ?;`, [profileId]);
   if (!row) {
@@ -2199,11 +2590,11 @@ export const deleteFriend = (id: string): boolean => {
     return false;
   }
   const uris = db
-    .getAllSync<{ photoUri: string | null }>(
-      `SELECT photoUri FROM ${PROFILES_TABLE} WHERE friendId = ?;`,
+    .getAllSync<{ photoUri: string | null; identityPhotoUri?: string | null }>(
+      `SELECT photoUri, identityPhotoUri FROM ${PROFILES_TABLE} WHERE friendId = ?;`,
       [id]
     )
-    .map((row) => row.photoUri);
+    .flatMap((row) => [row.photoUri, row.identityPhotoUri ?? null]);
   const result = db.runSync(`DELETE FROM ${PROFILES_TABLE} WHERE friendId = ?;`, [id]);
   if (result.changes > 0) {
     deletePersistedImages(uris);
@@ -2228,7 +2619,7 @@ export const deleteProfileById = (profileId: string): boolean => {
   }
   const result = db.runSync(`DELETE FROM ${PROFILES_TABLE} WHERE id = ?;`, [profileId]);
   if (result.changes > 0) {
-    deletePersistedImages([row.photoUri]);
+    deletePersistedImages([row.photoUri, row.identityPhotoUri ?? null]);
   }
   return result.changes > 0;
 };
@@ -2818,6 +3209,303 @@ export const deleteEpisodePhotosByEpisodeId = (episodeId: string): boolean => {
     deletePersistedImages(uris);
   }
   return result.changes > 0;
+};
+
+export const INCOMING_SHARED_EPISODE_PREFIX = 'incoming:';
+
+export const toIncomingSharedEpisodeId = (sharedId: string): string =>
+  `${INCOMING_SHARED_EPISODE_PREFIX}${sharedId.trim()}`;
+
+export const parseIncomingSharedEpisodeId = (episodeId: string): string | null => {
+  const trimmed = episodeId.trim();
+  if (!trimmed.startsWith(INCOMING_SHARED_EPISODE_PREFIX)) {
+    return null;
+  }
+  const sharedId = trimmed.slice(INCOMING_SHARED_EPISODE_PREFIX.length).trim();
+  return sharedId || null;
+};
+
+export type IncomingSharedEpisodeRecord = {
+  sharedId: string;
+  ownerUserId: string;
+  ownerLocalEpisodeId: string;
+  authorFriendId: string;
+  title: string;
+  date: string;
+  time: string | null;
+  description: string;
+  visibilityMode: EpisodeVisibilityMode;
+  tag: string | null;
+  participantTags: string[];
+  updatedAt: string;
+};
+
+type IncomingSharedEpisodeRow = {
+  shared_id: string;
+  owner_user_id: string;
+  owner_local_episode_id: string;
+  author_friend_id: string;
+  title: string;
+  date: string;
+  time: string | null;
+  description: string;
+  visibility_mode: string;
+  tag: string | null;
+  participant_tags: string;
+  updated_at: string;
+};
+
+const incomingVisibilityMode = (value: string): EpisodeVisibilityMode =>
+  value === 'limited' ? 'limited' : 'public';
+
+const incomingRowToRecord = (row: IncomingSharedEpisodeRow): IncomingSharedEpisodeRecord => ({
+  sharedId: row.shared_id,
+  ownerUserId: row.owner_user_id,
+  ownerLocalEpisodeId: row.owner_local_episode_id,
+  authorFriendId: row.author_friend_id,
+  title: row.title,
+  date: row.date,
+  time: row.time,
+  description: row.description,
+  visibilityMode: incomingVisibilityMode(row.visibility_mode),
+  tag: row.tag,
+  participantTags: fromJson(row.participant_tags ?? '[]'),
+  updatedAt: row.updated_at,
+});
+
+export const incomingSharedRecordToEpisode = (record: IncomingSharedEpisodeRecord): Episode => ({
+  id: toIncomingSharedEpisodeId(record.sharedId),
+  title: record.title,
+  date: record.date,
+  ...(record.time?.trim() ? { time: record.time.trim() } : {}),
+  description: record.description,
+  authorFriendId: record.authorFriendId,
+  visibilityMode: record.visibilityMode,
+  participantEntries: record.participantTags
+    .map((label) => label.trim())
+    .filter(Boolean)
+    .map((label) => ({ kind: 'individual' as const, value: label })),
+  visibilityEntries: [],
+  ...(record.tag?.trim() ? { tag: record.tag.trim() } : {}),
+});
+
+export const upsertIncomingSharedEpisode = (record: IncomingSharedEpisodeRecord): void => {
+  initializeDatabase();
+  const sharedId = record.sharedId.trim();
+  if (!sharedId) {
+    return;
+  }
+  db.runSync(
+    `INSERT INTO ${INCOMING_SHARED_EPISODES_TABLE} (
+      shared_id, owner_user_id, owner_local_episode_id, author_friend_id,
+      title, date, time, description, visibility_mode, tag, participant_tags, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(shared_id) DO UPDATE SET
+      owner_user_id = excluded.owner_user_id,
+      owner_local_episode_id = excluded.owner_local_episode_id,
+      author_friend_id = excluded.author_friend_id,
+      title = excluded.title,
+      date = excluded.date,
+      time = excluded.time,
+      description = excluded.description,
+      visibility_mode = excluded.visibility_mode,
+      tag = excluded.tag,
+      participant_tags = excluded.participant_tags,
+      updated_at = excluded.updated_at;`,
+    [
+      sharedId,
+      record.ownerUserId,
+      record.ownerLocalEpisodeId,
+      record.authorFriendId,
+      record.title,
+      record.date,
+      record.time,
+      record.description,
+      record.visibilityMode,
+      record.tag,
+      toJson(record.participantTags),
+      record.updatedAt,
+    ]
+  );
+};
+
+export const listIncomingSharedEpisodeRecords = (): IncomingSharedEpisodeRecord[] => {
+  initializeDatabase();
+  return db
+    .getAllSync<IncomingSharedEpisodeRow>(
+      `SELECT * FROM ${INCOMING_SHARED_EPISODES_TABLE} ORDER BY date DESC, updated_at DESC;`
+    )
+    .map(incomingRowToRecord);
+};
+
+export const getIncomingSharedEpisodeRecord = (
+  sharedId: string
+): IncomingSharedEpisodeRecord | null => {
+  initializeDatabase();
+  const trimmed = sharedId.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const row = db.getFirstSync<IncomingSharedEpisodeRow>(
+    `SELECT * FROM ${INCOMING_SHARED_EPISODES_TABLE} WHERE shared_id = ? LIMIT 1;`,
+    [trimmed]
+  );
+  return row ? incomingRowToRecord(row) : null;
+};
+
+export const listIncomingSharedEpisodesForAuthor = (authorFriendId: string): Episode[] => {
+  initializeDatabase();
+  const trimmed = authorFriendId.trim();
+  if (!trimmed) {
+    return [];
+  }
+  return db
+    .getAllSync<IncomingSharedEpisodeRow>(
+      `SELECT * FROM ${INCOMING_SHARED_EPISODES_TABLE} WHERE author_friend_id = ?;`,
+      [trimmed]
+    )
+    .map((row) => incomingSharedRecordToEpisode(incomingRowToRecord(row)));
+};
+
+type IncomingPhotoRow = {
+  shared_id: string;
+  local_photo_id: number;
+  photo_path: string;
+  photo_uri: string;
+  sort_order: number;
+};
+
+export const getIncomingSharedEpisodePhotoPath = (
+  sharedId: string,
+  localPhotoId: number
+): string | null => {
+  initializeDatabase();
+  const row = db.getFirstSync<{ photo_path: string }>(
+    `SELECT photo_path FROM ${INCOMING_SHARED_EPISODE_PHOTOS_TABLE} WHERE shared_id = ? AND local_photo_id = ? LIMIT 1;`,
+    [sharedId.trim(), localPhotoId]
+  );
+  return row?.photo_path ?? null;
+};
+
+export const upsertIncomingSharedEpisodePhoto = (input: {
+  sharedId: string;
+  localPhotoId: number;
+  photoPath: string;
+  photoUri: string;
+  sortOrder: number;
+}): void => {
+  initializeDatabase();
+  db.runSync(
+    `INSERT INTO ${INCOMING_SHARED_EPISODE_PHOTOS_TABLE} (
+      shared_id, local_photo_id, photo_path, photo_uri, sort_order
+    ) VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(shared_id, local_photo_id) DO UPDATE SET
+      photo_path = excluded.photo_path,
+      photo_uri = excluded.photo_uri,
+      sort_order = excluded.sort_order;`,
+    [input.sharedId, input.localPhotoId, input.photoPath, input.photoUri, input.sortOrder]
+  );
+};
+
+export const getIncomingSharedEpisodePhotos = (sharedId: string): EpisodePhoto[] => {
+  initializeDatabase();
+  const trimmed = sharedId.trim();
+  if (!trimmed) {
+    return [];
+  }
+  return db
+    .getAllSync<IncomingPhotoRow>(
+      `SELECT * FROM ${INCOMING_SHARED_EPISODE_PHOTOS_TABLE} WHERE shared_id = ? ORDER BY sort_order ASC, local_photo_id ASC;`,
+      [trimmed]
+    )
+    .map((row) => ({
+      id: row.local_photo_id,
+      episodeId: toIncomingSharedEpisodeId(row.shared_id),
+      photoUri: resolvePersistedImageUri(row.photo_uri) ?? row.photo_uri,
+      sortOrder: row.sort_order,
+      createdAt: '',
+    }));
+};
+
+export const getIncomingSharedEpisodePhotoUrisMap = (maxPhotos = 2): Map<string, string[]> => {
+  initializeDatabase();
+  const limit = Math.max(1, Math.floor(maxPhotos));
+  const rows = db.getAllSync<IncomingPhotoRow>(
+    `SELECT * FROM ${INCOMING_SHARED_EPISODE_PHOTOS_TABLE} ORDER BY sort_order ASC, local_photo_id ASC;`
+  );
+  const map = new Map<string, string[]>();
+  for (const row of rows) {
+    const episodeId = toIncomingSharedEpisodeId(row.shared_id);
+    const list = map.get(episodeId) ?? [];
+    if (list.length < limit) {
+      list.push(resolvePersistedImageUri(row.photo_uri) ?? row.photo_uri);
+      map.set(episodeId, list);
+    }
+  }
+  return map;
+};
+
+const deleteIncomingSharedEpisodePhotos = (sharedId: string): void => {
+  const rows = db.getAllSync<{ photo_uri: string }>(
+    `SELECT photo_uri FROM ${INCOMING_SHARED_EPISODE_PHOTOS_TABLE} WHERE shared_id = ?;`,
+    [sharedId]
+  );
+  db.runSync(`DELETE FROM ${INCOMING_SHARED_EPISODE_PHOTOS_TABLE} WHERE shared_id = ?;`, [sharedId]);
+  deletePersistedImages(rows.map((row) => row.photo_uri));
+};
+
+export const deleteIncomingSharedEpisodePhoto = (
+  sharedId: string,
+  localPhotoId: number
+): void => {
+  initializeDatabase();
+  const row = db.getFirstSync<{ photo_uri: string }>(
+    `SELECT photo_uri FROM ${INCOMING_SHARED_EPISODE_PHOTOS_TABLE} WHERE shared_id = ? AND local_photo_id = ? LIMIT 1;`,
+    [sharedId.trim(), localPhotoId]
+  );
+  db.runSync(
+    `DELETE FROM ${INCOMING_SHARED_EPISODE_PHOTOS_TABLE} WHERE shared_id = ? AND local_photo_id = ?;`,
+    [sharedId.trim(), localPhotoId]
+  );
+  if (row?.photo_uri) {
+    deletePersistedImages([row.photo_uri]);
+  }
+};
+
+export const deleteIncomingSharedEpisode = (sharedId: string): void => {
+  initializeDatabase();
+  const trimmed = sharedId.trim();
+  if (!trimmed) {
+    return;
+  }
+  deleteIncomingSharedEpisodePhotos(trimmed);
+  db.runSync(`DELETE FROM ${INCOMING_SHARED_EPISODES_TABLE} WHERE shared_id = ?;`, [trimmed]);
+};
+
+export const pruneIncomingSharedEpisodesExcept = (keepSharedIds: Iterable<string>): void => {
+  initializeDatabase();
+  const keep = new Set(
+    [...keepSharedIds].map((id) => id.trim()).filter(Boolean)
+  );
+  const rows = db.getAllSync<{ shared_id: string }>(`SELECT shared_id FROM ${INCOMING_SHARED_EPISODES_TABLE};`);
+  rows.forEach((row) => {
+    if (!keep.has(row.shared_id)) {
+      deleteIncomingSharedEpisode(row.shared_id);
+    }
+  });
+};
+
+export const deleteIncomingSharedEpisodesByOwnerUserId = (ownerUserId: string): void => {
+  initializeDatabase();
+  const normalized = ownerUserId.trim().toLowerCase();
+  if (!normalized) {
+    return;
+  }
+  const rows = db.getAllSync<{ shared_id: string }>(
+    `SELECT shared_id FROM ${INCOMING_SHARED_EPISODES_TABLE} WHERE lower(owner_user_id) = ?;`,
+    [normalized]
+  );
+  rows.forEach((row) => deleteIncomingSharedEpisode(row.shared_id));
 };
 
 export const createSayings = (friendId: string, items: Array<{ text: string; date?: string }>): Saying[] => {
@@ -4004,6 +4692,8 @@ const rowToMoneyLoan = (row: MoneyLoanRow): MoneyLoan => ({
   memo: row.memo,
   isRepaid: row.is_repaid === 1,
   createdAt: row.created_at,
+  sharedId: row.shared_id?.trim() ?? '',
+  incomingFromPeer: row.incoming_from_peer === 1,
 });
 
 const sanitizeMoneyLoanDirection = (value: string): MoneyLoanDirection | null =>
@@ -4107,6 +4797,84 @@ export const getMoneyLoan = (loanId: string): MoneyLoan | null => {
   return row ? rowToMoneyLoan(row) : null;
 };
 
+export const getMoneyLoanBySharedId = (sharedId: string): MoneyLoan | null => {
+  const normalized = sharedId.trim();
+  if (!normalized) {
+    return null;
+  }
+  const row = db.getFirstSync<MoneyLoanRow>(
+    `SELECT * FROM ${MONEY_LOANS_TABLE} WHERE shared_id = ? LIMIT 1;`,
+    [normalized]
+  );
+  return row ? rowToMoneyLoan(row) : null;
+};
+
+export const setMoneyLoanSharedMeta = (
+  loanId: string,
+  sharedId: string,
+  incomingFromPeer: boolean
+): boolean => {
+  const normalizedId = loanId.trim();
+  const normalizedSharedId = sharedId.trim();
+  if (!normalizedId || !normalizedSharedId) {
+    return false;
+  }
+  const result = db.runSync(
+    `UPDATE ${MONEY_LOANS_TABLE} SET shared_id = ?, incoming_from_peer = ? WHERE id = ?;`,
+    [normalizedSharedId, incomingFromPeer ? 1 : 0, normalizedId]
+  );
+  return result.changes > 0;
+};
+
+export const applyIncomingSharedMoneyLoan = (input: {
+  sharedId: string;
+  localLoanId?: string;
+  sessionTitle: string;
+  friendId: string;
+  amount: number;
+  direction: MoneyLoanDirection;
+  isRepaid: boolean;
+  createdAt: string;
+  incomingFromPeer?: boolean;
+}): MoneyLoan | null => {
+  const sharedId = input.sharedId.trim();
+  const friendId = input.friendId.trim();
+  const amount = Math.floor(input.amount);
+  const incomingFromPeer = input.incomingFromPeer !== false;
+  if (!sharedId || !friendId || amount <= 0) {
+    return null;
+  }
+  const existing =
+    getMoneyLoanBySharedId(sharedId) ?? (input.localLoanId?.trim() ? getMoneyLoan(input.localLoanId) : null);
+  if (existing) {
+    if (existing.isRepaid !== input.isRepaid) {
+      setMoneyLoanRepaid(existing.id, input.isRepaid);
+    }
+    if (!existing.sharedId || existing.incomingFromPeer !== incomingFromPeer) {
+      setMoneyLoanSharedMeta(existing.id, sharedId, incomingFromPeer);
+    }
+    return getMoneyLoan(existing.id);
+  }
+  const sessionTitle = input.sessionTitle.trim();
+  const session = getOrCreateMoneyLoanSessionByTitle(
+    sessionTitle ||
+      `${new Date().getFullYear()}/${new Date().getMonth() + 1}/${new Date().getDate()}`
+  );
+  if (!session) {
+    return null;
+  }
+  const created = createMoneyLoans({
+    sessionId: session.id,
+    loanId: input.localLoanId,
+    sharedId,
+    incomingFromPeer,
+    isRepaid: input.isRepaid,
+    createdAt: input.createdAt,
+    lines: [{ kind: 'friend', value: friendId, amount, direction: input.direction }],
+  });
+  return created[0] ?? null;
+};
+
 export const getOrCreateMoneyLoanSessionByTitle = (title: string): MoneyLoanSession | null => {
   const normalizedTitle = title.trim();
   if (!normalizedTitle) {
@@ -4147,11 +4915,15 @@ export const createMoneyLoans = (input: CreateMoneyLoansInput): MoneyLoan[] => {
   db.execSync('BEGIN IMMEDIATE;');
   try {
     lines.forEach((line) => {
-      const id = uuidv4();
+      const id = lines.length === 1 && input.loanId?.trim() ? input.loanId.trim() : uuidv4();
+      const sharedId = input.sharedId?.trim() ?? '';
+      const incomingFromPeer = input.incomingFromPeer === true;
+      const isRepaid = input.isRepaid === true;
+      const createdAt = input.createdAt?.trim() || timestamp;
       db.runSync(
         `INSERT INTO ${MONEY_LOANS_TABLE} (
-          id, session_id, group_id, counterparty_kind, counterparty_value, amount, direction, memo, is_repaid, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?);`,
+          id, session_id, group_id, counterparty_kind, counterparty_value, amount, direction, memo, is_repaid, created_at, shared_id, incoming_from_peer
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
         [
           id,
           sessionId,
@@ -4161,7 +4933,10 @@ export const createMoneyLoans = (input: CreateMoneyLoansInput): MoneyLoan[] => {
           line.amount,
           line.direction,
           memo,
-          timestamp,
+          isRepaid ? 1 : 0,
+          createdAt,
+          sharedId,
+          incomingFromPeer ? 1 : 0,
         ]
       );
       created.push({
@@ -4173,8 +4948,10 @@ export const createMoneyLoans = (input: CreateMoneyLoansInput): MoneyLoan[] => {
         amount: line.amount,
         direction: line.direction,
         memo,
-        isRepaid: false,
-        createdAt: timestamp,
+        isRepaid,
+        createdAt,
+        sharedId,
+        incomingFromPeer,
       });
     });
     db.execSync('COMMIT;');
@@ -4601,6 +5378,69 @@ export const insertMockSettlementExpense = (
     ]
   );
   return expense;
+};
+
+export const getMockSettlementRoomById = (roomId: string): MockSettlementRoom | null => {
+  const normalized = roomId.trim();
+  if (!normalized) {
+    return null;
+  }
+  return getAllMockSettlementRooms().find((room) => room.id === normalized) ?? null;
+};
+
+const upsertMockSettlementMember = (roomId: string, member: MockSettlementMember): void => {
+  const existing = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM ${SETTLEMENT_MEMBERS_TABLE} WHERE room_id = ? AND id = ? LIMIT 1;`,
+    [roomId, member.id]
+  );
+  if (existing) {
+    db.runSync(
+      `UPDATE ${SETTLEMENT_MEMBERS_TABLE}
+       SET friend_id = ?, display_name = ?, ledger_synced = 1
+       WHERE room_id = ? AND id = ?;`,
+      [member.friendId, member.displayName, roomId, member.id]
+    );
+    return;
+  }
+  db.runSync(
+    `INSERT INTO ${SETTLEMENT_MEMBERS_TABLE} (id, room_id, friend_id, display_name, ledger_synced)
+     VALUES (?, ?, ?, ?, 1);`,
+    [member.id, roomId, member.friendId, member.displayName]
+  );
+};
+
+export const mergeSharedSettlementRoomLocally = (room: MockSettlementRoom): void => {
+  const existing = getMockSettlementRoomById(room.id);
+  if (!existing) {
+    insertMockSettlementRoom(room);
+    return;
+  }
+  if (room.title.trim() && room.title !== existing.title) {
+    updateMockSettlementRoomTitle(room.id, room.title);
+  }
+  room.members.forEach((member) => {
+    const existingMember = existing.members.find((item) => item.id === member.id);
+    const mappedToPlaceholder = member.friendId === member.id || member.friendId.startsWith('user:');
+    if (!existingMember) {
+      upsertMockSettlementMember(room.id, member);
+      return;
+    }
+    if (mappedToPlaceholder && !existingMember.friendId.startsWith('user:')) {
+      return;
+    }
+    if (
+      member.friendId !== existingMember.friendId ||
+      member.displayName !== existingMember.displayName
+    ) {
+      upsertMockSettlementMember(room.id, member);
+    }
+  });
+  const haveExpenseIds = new Set(existing.expenses.map((expense) => expense.id));
+  room.expenses.forEach((expense) => {
+    if (!haveExpenseIds.has(expense.id)) {
+      insertMockSettlementExpense(room.id, expense);
+    }
+  });
 };
 
 export const setMockSettlementMemberLedgerSynced = (

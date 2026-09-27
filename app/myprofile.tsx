@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -27,7 +27,7 @@ import {
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import { getAllProfiles, getMyself, initializeDatabase, updateProfile } from '../db';
-import { upsertMyselfIdentityProfile } from '@/lib/identityProfileSync';
+import { scheduleFriendProfileSync } from '@/lib/identityProfileSync';
 import { MBTIType, Profile } from '../types';
 import { isPersonNameValid, resolvePersonNameParts } from '@/utils/personName';
 
@@ -39,7 +39,8 @@ type PublicFieldKey =
   | 'weight'
   | 'origin'
   | 'residence'
-  | 'mbti';
+  | 'mbti'
+  | 'photo';
 
 type FormFieldKey = Exclude<PublicFieldKey, 'name'>;
 
@@ -118,6 +119,8 @@ export default function MyProfileScreen() {
   const [publicFields, setPublicFields] = useState<string[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [hasProfile, setHasProfile] = useState(false);
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   const loadMyProfile = useCallback(() => {
     initializeDatabase();
@@ -163,7 +166,10 @@ export default function MyProfileScreen() {
     });
   };
 
-  const handleSave = async () => {
+  const handleSave = () => {
+    if (savingRef.current) {
+      return;
+    }
     if (!profileId) {
       return;
     }
@@ -171,6 +177,9 @@ export default function MyProfileScreen() {
       Alert.alert('入力エラー', '苗字か名前のどちらかを入力してください。');
       return;
     }
+
+    savingRef.current = true;
+    setIsSaving(true);
 
     const nameParts = resolvePersonNameParts(form);
     initializeDatabase();
@@ -189,23 +198,17 @@ export default function MyProfileScreen() {
     });
 
     if (!ok) {
+      savingRef.current = false;
+      setIsSaving(false);
       Alert.alert('エラー', '保存に失敗しました。');
       return;
     }
 
     loadMyProfile();
-    const sync = await upsertMyselfIdentityProfile();
-    if (sync.errorMessage) {
-      Alert.alert(
-        '端末には保存しました',
-        `サーバーへの反映に失敗しました。\n${sync.errorMessage}`
-      );
-      return;
-    }
-    Alert.alert(
-      '保存しました',
-      sync.skipped ? 'プロフィールを更新しました。' : 'プロフィールを更新し、サーバーへ送りました。'
-    );
+    scheduleFriendProfileSync(profileId);
+    Alert.alert('保存しました', 'プロフィールを更新しました。');
+    savingRef.current = false;
+    setIsSaving(false);
   };
 
   const handleShowQr = () => {
@@ -256,7 +259,9 @@ export default function MyProfileScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.sectionHint, contentMutedTextStyle(content)]}>各項目の右側スイッチで公開する項目を選べます</Text>
+        <Text style={[styles.sectionHint, contentMutedTextStyle(content)]}>
+          各項目の右側スイッチで公開する項目を選べます。写真は人物カード側で設定します
+        </Text>
 
         {usesOffsetChrome(patternId) ? (
         <OffsetCard style={{ marginBottom: Spacing.lg }} contentStyle={{ overflow: 'hidden' }}>
@@ -316,6 +321,19 @@ export default function MyProfileScreen() {
               </View>
             </View>
           ))}
+          <View>
+            <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
+            <View style={styles.fieldRow}>
+              <Text style={[styles.fieldLabel, contentTextStyle(content)]}>写真</Text>
+              <View style={styles.fieldInputSpacer} />
+              <Switch
+                value={publicFieldSet.has('photo')}
+                onValueChange={(enabled) => togglePublicField('photo', enabled)}
+                {...contentSwitchProps(content, publicFieldSet.has('photo'))}
+                accessibilityLabel="写真を公開"
+              />
+            </View>
+          </View>
         </View>
         </OffsetCard>
         ) : (
@@ -375,12 +393,30 @@ export default function MyProfileScreen() {
               </View>
             </View>
           ))}
+          <View>
+            <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
+            <View style={styles.fieldRow}>
+              <Text style={[styles.fieldLabel, contentTextStyle(content)]}>写真</Text>
+              <View style={styles.fieldInputSpacer} />
+              <Switch
+                value={publicFieldSet.has('photo')}
+                onValueChange={(enabled) => togglePublicField('photo', enabled)}
+                {...contentSwitchProps(content, publicFieldSet.has('photo'))}
+                accessibilityLabel="写真を公開"
+              />
+            </View>
+          </View>
         </View>
         )}
 
         <Pressable
-          style={[styles.primaryButton, contentFilledButtonStyle(content)]}
+          style={[
+            styles.primaryButton,
+            contentFilledButtonStyle(content),
+            isSaving ? { opacity: 0.55 } : null,
+          ]}
           onPress={handleSave}
+          disabled={isSaving}
         >
           <Text style={[styles.primaryButtonText, contentFilledButtonTextStyle(content)]}>保存する</Text>
         </Pressable>

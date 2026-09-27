@@ -13,6 +13,7 @@ type SettlementPersonAggregateCardProps = {
   aggregate: SettlementPersonAggregate;
   isItemCompleted: (key: string) => boolean;
   onToggleItem: (key: string) => void;
+  canToggleItem?: (item: SettlementPersonAggregate['items'][number]) => boolean;
   /** 行テキスト側タップで編集（チェックは清算済トグルのまま） */
   onEditItem?: (key: string) => void;
   settled?: boolean;
@@ -22,6 +23,7 @@ export function SettlementPersonAggregateCard({
   aggregate,
   isItemCompleted,
   onToggleItem,
+  canToggleItem,
   onEditItem,
   settled = false,
 }: SettlementPersonAggregateCardProps) {
@@ -55,6 +57,8 @@ export function SettlementPersonAggregateCard({
       ) : null}
       {aggregate.items.map((item) => {
         const completed = isItemCompleted(item.key);
+        const allowToggle = canToggleItem ? canToggleItem(item) : true;
+        const allowEdit = Boolean(onEditItem) && item.incomingFromPeer !== true;
         const body = (
           <View style={styles.breakdownBody}>
             <Text
@@ -69,14 +73,20 @@ export function SettlementPersonAggregateCard({
               {item.roomTitle}
             </Text>
             <Text style={[styles.breakdownMeta, contentMutedTextStyle(content)]}>{item.lineLabel}</Text>
-            {onEditItem ? (
+            {allowEdit ? (
               <Text style={[styles.editHint, contentMutedTextStyle(content)]}>タップで編集</Text>
             ) : null}
           </View>
         );
 
         return (
-          <View key={item.key} style={styles.breakdownRow}>
+          <View
+            key={item.key}
+            style={[
+              styles.breakdownRow,
+              item.incomingFromPeer ? { backgroundColor: content.contentPersonTagBg, borderRadius: 8 } : null,
+            ]}
+          >
             <Pressable
               style={[
                 styles.check,
@@ -88,7 +98,11 @@ export function SettlementPersonAggregateCard({
                     }
                   : null,
               ]}
-              onPress={() => onToggleItem(item.key)}
+              onPress={() => {
+                if (allowToggle) {
+                  onToggleItem(item.key);
+                }
+              }}
               hitSlop={6}
             >
               <Text
@@ -101,12 +115,19 @@ export function SettlementPersonAggregateCard({
                 済
               </Text>
             </Pressable>
-            {onEditItem ? (
+            {allowEdit && onEditItem ? (
               <Pressable style={styles.breakdownBodyPressable} onPress={() => onEditItem(item.key)}>
                 {body}
               </Pressable>
             ) : (
-              <Pressable style={styles.breakdownBodyPressable} onPress={() => onToggleItem(item.key)}>
+              <Pressable
+                style={styles.breakdownBodyPressable}
+                onPress={() => {
+                  if (allowToggle) {
+                    onToggleItem(item.key);
+                  }
+                }}
+              >
                 {body}
               </Pressable>
             )}

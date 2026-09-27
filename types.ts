@@ -156,6 +156,8 @@ export type MoneyLoan = {
   memo: string;
   isRepaid: boolean;
   createdAt: string;
+  sharedId: string;
+  incomingFromPeer: boolean;
 };
 
 export type CreateMoneyLoanLineInput = {
@@ -169,6 +171,11 @@ export type CreateMoneyLoansInput = {
   sessionId: string;
   lines: CreateMoneyLoanLineInput[];
   memo?: string;
+  loanId?: string;
+  sharedId?: string;
+  incomingFromPeer?: boolean;
+  isRepaid?: boolean;
+  createdAt?: string;
 };
 
 export type ShufflePool = {
@@ -237,6 +244,10 @@ export type Friend = {
   category: string;
   description: string;
   photoUri: string | null;
+  /** フォロー相手本人が公開している写真。手元の photoUri とは別に保持する */
+  identityPhotoUri: string | null;
+  /** 一覧・詳細で出す写真。両方あるときだけ切り替える */
+  photoSource: 'local' | 'identity';
   affiliations: string[];
   personalities: string[];
   experiences: string[];
@@ -255,7 +266,14 @@ export type Friend = {
 
 export type FriendInput = Omit<
   Friend,
-  'id' | 'episodes' | 'sayings' | 'importSource' | 'scannedUserId' | 'scannedAt'
+  | 'id'
+  | 'episodes'
+  | 'sayings'
+  | 'importSource'
+  | 'scannedUserId'
+  | 'scannedAt'
+  | 'identityPhotoUri'
+  | 'photoSource'
 > & {
   episodes?: Episode[];
   sayings?: Saying[];

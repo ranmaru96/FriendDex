@@ -85,6 +85,59 @@ export const persistImageFile = async (tempUri: string): Promise<string> => {
   }
 };
 
+/** Storage から落とした JPEG を photos/ に保存する。失敗時は null */
+export const persistImageFromBase64 = async (base64: string): Promise<string | null> => {
+  const payload = base64.trim();
+  if (!payload) {
+    return null;
+  }
+  try {
+    await ensurePhotosDirectory();
+    const filename = `photo_${Date.now()}_${Math.floor(Math.random() * 100000)}.jpg`;
+    const destUri = `${getPhotosDirectory()}${filename}`;
+    await getFileSystem().writeAsStringAsync(destUri, payload, { encoding: 'base64' });
+    return destUri;
+  } catch (error) {
+    console.warn('Failed to persist downloaded image.', error);
+    return null;
+  }
+};
+
+/** 署名 URL などリモート画像を photos/ に保存する。失敗時は null */
+export const persistImageFromRemoteUrl = async (url: string): Promise<string | null> => {
+  const source = url.trim();
+  if (!source) {
+    return null;
+  }
+  try {
+    await ensurePhotosDirectory();
+    const filename = `photo_${Date.now()}_${Math.floor(Math.random() * 100000)}.jpg`;
+    const destUri = `${getPhotosDirectory()}${filename}`;
+    const result = await getFileSystem().downloadAsync(source, destUri);
+    if (result.status !== 200) {
+      await getFileSystem().deleteAsync(destUri, { idempotent: true });
+      return null;
+    }
+    return destUri;
+  } catch (error) {
+    console.warn('Failed to persist remote image.', error);
+    return null;
+  }
+};
+
+export const readPersistedImageAsBase64 = async (uri: string): Promise<string | null> => {
+  const resolved = resolvePersistedImageUri(uri)?.trim() || uri.trim();
+  if (!resolved) {
+    return null;
+  }
+  try {
+    return await getFileSystem().readAsStringAsync(resolved, { encoding: 'base64' });
+  } catch (error) {
+    console.warn('Failed to read image as base64.', error);
+    return null;
+  }
+};
+
 /** photos ディレクトリ配下（＝アプリが管理している実体）か。コンテナ UUID が古くても true。 */
 export const isPersistedImageUri = (uri: string | null | undefined): boolean =>
   extractPersistedPhotoFilename(uri) != null;

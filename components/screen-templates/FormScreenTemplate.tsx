@@ -14,6 +14,7 @@ type FormScreenTemplateProps = {
   title?: string;
   titleAlign?: 'center' | 'left';
   onBack?: () => void;
+  backDisabled?: boolean;
   left?: ReactNode;
   right?: ReactNode;
   /** 中央タイトルの左側 */
@@ -35,6 +36,7 @@ export function FormScreenTemplate({
   title,
   titleAlign = 'center',
   onBack,
+  backDisabled = false,
   left,
   right,
   titleLeading,
@@ -73,6 +75,7 @@ export function FormScreenTemplate({
           <ScreenTopBar
             title={title}
             onBack={onBack}
+            backDisabled={backDisabled}
             left={left}
             right={right}
             titleLeading={titleLeading}

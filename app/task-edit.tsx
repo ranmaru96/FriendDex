@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Platform,
@@ -64,6 +64,7 @@ import {
   parseDateKey,
 } from '@/utils/eventHelpers';
 import { scheduleGoogleCalendarPush } from '@/utils/googleCalendarSync';
+import { scheduleOwnedEventSync } from '@/lib/ownedEventSync';
 import { useContentColors } from '@/utils/useContentColors';
 import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
 import { openRangeDatePickerBounds } from '@/utils/datePickerBounds';
@@ -173,6 +174,27 @@ export default function TaskEditScreen() {
   const [remindDaysBefore, setRemindDaysBefore] = useState(0);
   const [remindTime, setRemindTime] = useState(DEFAULT_REMIND_TIME);
   const [ready, setReady] = useState(false);
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const unlockSave = () => {
+    savingRef.current = false;
+    setIsSaving(false);
+  };
+  const lockSave = () => {
+    if (savingRef.current) {
+      return false;
+    }
+    savingRef.current = true;
+    setIsSaving(true);
+    return true;
+  };
+  const leaveScreen = () => {
+    if (savingRef.current) {
+      return;
+    }
+    savingRef.current = true;
+    router.back();
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -327,11 +349,13 @@ export default function TaskEditScreen() {
     if (groupSelect === GROUP_NEW) {
       const groupTitle = newGroupTitle.trim();
       if (!groupTitle) {
+        unlockSave();
         Alert.alert('入力エラー', '新しいグループ名を入力してください');
         return;
       }
         const createdGroup = createTaskGroup({ title: groupTitle, kind: effectiveKind });
         if (!createdGroup) {
+          unlockSave();
           Alert.alert('エラー', 'グループの作成に失敗しました');
           return;
         }
@@ -341,6 +365,7 @@ export default function TaskEditScreen() {
       }
 
       if (resolvedGroupId && !getTaskGroupsByKind(effectiveKind).some((group) => group.id === resolvedGroupId)) {
+        unlockSave();
         Alert.alert('入力エラー', 'グループの種別がタスクと一致しません');
         return;
       }
@@ -350,6 +375,7 @@ export default function TaskEditScreen() {
       if (eventLinkMode === 'create_new') {
         const dateKey = dueDate.trim();
         if (!dateKey) {
+          unlockSave();
           Alert.alert('入力エラー', '予定を新規作成するには期限を設定してください');
           return;
         }
@@ -366,14 +392,17 @@ export default function TaskEditScreen() {
           locationTag: null,
         });
         if (!createdEvent) {
+          unlockSave();
           Alert.alert('エラー', '予定の作成に失敗しました');
           return;
         }
         scheduleGoogleCalendarPush(createdEvent.id);
+        scheduleOwnedEventSync(createdEvent.id);
         resolvedEventId = createdEvent.id;
       } else if (eventLinkMode === 'existing') {
         const linked = eventId.trim();
         if (!linked) {
+          unlockSave();
           Alert.alert('入力エラー', '紐づける予定を選択してください');
           return;
         }
@@ -411,12 +440,14 @@ export default function TaskEditScreen() {
     if (isEditing) {
       const ok = updateTask(taskId, input);
       if (!ok) {
+        unlockSave();
         Alert.alert('エラー', '保存に失敗しました');
         return;
       }
     } else {
       const created = createTask(input);
       if (!created) {
+        unlockSave();
         Alert.alert('エラー', '作成に失敗しました');
         return;
       }
@@ -431,6 +462,9 @@ export default function TaskEditScreen() {
   };
 
   const handleSave = () => {
+    if (savingRef.current) {
+      return;
+    }
     const trimmed = title.trim();
     if (!trimmed) {
       Alert.alert('入力エラー', 'タイトルを入力してください');
@@ -458,11 +492,14 @@ export default function TaskEditScreen() {
     const historyCount = turningOffTrack ? getTaskCompletionCount(taskId) : 0;
 
     if (turningOffTrack && historyCount > 0) {
+      if (!lockSave()) {
+        return;
+      }
       Alert.alert(
         '実施記録をやめる',
         `これまでの実施履歴（${historyCount}件）がすべて削除されます。この操作は取り消せません。`,
         [
-          { text: 'キャンセル', style: 'cancel' },
+          { text: 'キャンセル', style: 'cancel', onPress: unlockSave },
           {
             text: '次へ',
             style: 'destructive',
@@ -471,7 +508,7 @@ export default function TaskEditScreen() {
                 '本当に履歴を消しますか？',
                 '連続記録・過去の実施日もすべて消えます。',
                 [
-                  { text: 'キャンセル', style: 'cancel' },
+                  { text: 'キャンセル', style: 'cancel', onPress: unlockSave },
                   {
                     text: '理解した',
                     style: 'destructive',
@@ -480,7 +517,7 @@ export default function TaskEditScreen() {
                         '最終確認',
                         '実施記録をオフにして、履歴を完全に削除します。',
                         [
-                          { text: 'キャンセル', style: 'cancel' },
+                          { text: 'キャンセル', style: 'cancel', onPress: unlockSave },
                           {
                             text: '削除してオフにする',
                             style: 'destructive',
@@ -499,17 +536,24 @@ export default function TaskEditScreen() {
       return;
     }
 
+    if (!lockSave()) {
+      return;
+    }
     persistTask(trackCompletions);
   };
 
   const confirmDeleteFinally = () => {
+    if (savingRef.current) {
+      return;
+    }
+    savingRef.current = true;
     deleteTask(taskId);
     void syncTaskReminders();
     router.back();
   };
 
   const handleDelete = () => {
-    if (!isEditing) return;
+    if (savingRef.current || !isEditing) return;
     if (kind === 'recurring') {
       Alert.alert(
         '定期タスクを削除',
@@ -621,11 +665,12 @@ export default function TaskEditScreen() {
   return (
     <FormScreenTemplate
       title={isEditing ? 'タスク編集' : 'タスク追加'}
-      onBack={() => router.back()}
+      onBack={leaveScreen}
+      backDisabled={isSaving}
       scrollEnabled={formScrollEnabled}
       right={
-        <Pressable onPress={handleSave} hitSlop={8}>
-          <Text style={[styles.saveText, contentTextStyle(content)]}>保存</Text>
+        <Pressable onPress={handleSave} disabled={isSaving} hitSlop={8}>
+          <Text style={[styles.saveText, contentTextStyle(content), isSaving ? styles.saveTextBusy : null]}>保存</Text>
         </Pressable>
       }
     >
@@ -1209,6 +1254,7 @@ export default function TaskEditScreen() {
             <Pressable
               style={[styles.deleteButton, { borderColor: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.1)' }]}
               onPress={handleDelete}
+              disabled={isSaving}
               accessibilityRole="button"
               accessibilityLabel="タスクを削除"
             >
@@ -1415,5 +1461,8 @@ const styles = StyleSheet.create({
   saveText: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  saveTextBusy: {
+    opacity: 0.55,
   },
 });

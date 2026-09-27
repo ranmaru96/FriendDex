@@ -40,11 +40,16 @@ import { deletePersistedImages } from '@/utils/persistImageFile';
 import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 
+import { scheduleFriendProfileSync } from '@/lib/identityProfileSync';
+import { acceptConnection, scheduleRequestConnection } from '@/lib/connectionSync';
+import { requireOnline } from '@/lib/networkReachability';
 import {
+  applyQrLinkToFriend,
   createFriend,
   createFriendFromQrScan,
   getFriendById,
   getMergedCommonItemLabels,
+  getQrUserIdOwnerFriendId,
   initializeDatabase,
   resyncEpisodesForFriendAffiliationChange,
   updateFriend,
@@ -52,6 +57,11 @@ import {
 import { FriendInput, MBTIType, MBTI_TYPES } from './types';
 import { filterLabelSuggestions, findMatchingRegisteredLabel } from '@/utils/labelSuggestions';
 import { isPersonNameValid, joinPersonName, resolvePersonNameParts } from '@/utils/personName';
+import { buildFriendInputFromQrPayload } from '@/utils/qrScanHelpers';
+import {
+  clearPendingQrImportPayload,
+  getPendingQrImportPayload,
+} from '@/utils/qrImportSession';
 
 const PHOTO_SIZE = 80;
 const INPUT_H = 36;
@@ -446,6 +456,8 @@ export default function EditScreen() {
     fromScan?: string;
     scannedUserId?: string;
     publicFields?: string;
+    photoUri?: string;
+    fromFollow?: string;
   }>();
 
   const friendId = useMemo(() => {
@@ -454,9 +466,12 @@ export default function EditScreen() {
   }, [params.id]);
 
   const fromScan = getParam(params.fromScan) === 'true';
+  const fromFollow = getParam(params.fromFollow) === 'true';
   const scannedUserId = getParam(params.scannedUserId);
 
   const isEditMode = !!friendId;
+  const savingRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState<FriendInput>(EMPTY_FORM);
   const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
   useDismissPickerOnKeyboardShow(showBirthdayPicker, () => setShowBirthdayPicker(false));
@@ -490,24 +505,15 @@ export default function EditScreen() {
     setDislikeSuggestions(getMergedCommonItemLabels('dislike'));
     if (!friendId) {
       if (fromScan) {
-        const nameParts = resolvePersonNameParts({
-          familyName: getParam(params.hasSplitName) === '1' ? getParam(params.familyName) : undefined,
-          givenName: getParam(params.hasSplitName) === '1' ? getParam(params.givenName) : undefined,
-          name: getParam(params.name),
-        });
-        setForm({
-          ...EMPTY_FORM,
-          name: nameParts.name,
-          familyName: nameParts.familyName,
-          givenName: nameParts.givenName,
-          nickname: getParam(params.nickname),
-          birthday: getParam(params.birthday),
-          height: parseOptionalNumber(getParam(params.height)),
-          weight: parseOptionalNumber(getParam(params.weight)),
-          origin: getParam(params.origin),
-          residence: getParam(params.residence),
-          mbti: getParam(params.mbti) as MBTIType,
-        });
+        const pending = getPendingQrImportPayload();
+        if (pending) {
+          setForm({
+            ...EMPTY_FORM,
+            ...buildFriendInputFromQrPayload(pending),
+          });
+        } else {
+          setForm(EMPTY_FORM);
+        }
       } else {
         setForm(EMPTY_FORM);
       }
@@ -544,7 +550,7 @@ export default function EditScreen() {
       episodes: friend.episodes,
       sayings: friend.sayings,
     });
-  }, [friendId, fromScan, params.birthday, params.familyName, params.givenName, params.hasSplitName, params.height, params.mbti, params.name, params.nickname, params.origin, params.residence, params.weight, router]);
+  }, [friendId, fromScan, router]);
 
   useFocusEffect(
     useCallback(() => {
@@ -606,11 +612,32 @@ export default function EditScreen() {
   const showNameError = nameSaveAttempted && !nameIsValid;
   const displayNamePreview = joinPersonName(form.familyName, form.givenName);
 
+  const unlockSave = () => {
+    savingRef.current = false;
+    setIsSaving(false);
+  };
+
+  const leaveScreen = () => {
+    if (savingRef.current) {
+      return;
+    }
+    router.back();
+  };
+
   const handleSave = () => {
+    if (savingRef.current) {
+      return;
+    }
     if (!nameIsValid) {
       setNameSaveAttempted(true);
       return;
     }
+    if (fromScan && !requireOnline()) {
+      return;
+    }
+
+    savingRef.current = true;
+    setIsSaving(true);
 
     const nameParts = resolvePersonNameParts(form);
     const payload: FriendInput = {
@@ -634,6 +661,7 @@ export default function EditScreen() {
     };
 
     const finishSave = (targetId: string, message = '人物データを登録しました。') => {
+      scheduleFriendProfileSync(targetId);
       Alert.alert('保存完了', message, [
         { text: 'OK', onPress: () => router.replace({ pathname: '/detail', params: { id: targetId } }) },
       ]);
@@ -642,6 +670,7 @@ export default function EditScreen() {
     if (isEditMode) {
       const existing = getFriendById(friendId);
       if (!existing) {
+        unlockSave();
         Alert.alert('保存エラー', '更新対象の人物データが見つかりません。');
         return;
       }
@@ -652,6 +681,7 @@ export default function EditScreen() {
         notes: existing.notes,
       });
       if (!success) {
+        unlockSave();
         Alert.alert('保存エラー', '更新に失敗しました。');
         return;
       }
@@ -666,16 +696,62 @@ export default function EditScreen() {
     if (fromScan) {
       const normalizedUserId = scannedUserId.trim();
       if (!normalizedUserId) {
+        unlockSave();
         Alert.alert('保存エラー', 'QRコードのユーザー情報が不正です。');
         return;
       }
-      const created = createFriendFromQrScan(payload, normalizedUserId);
-      finishSave(created.id);
+      const existingOwnerId = getQrUserIdOwnerFriendId(normalizedUserId);
+      if (existingOwnerId) {
+        const pending = getPendingQrImportPayload();
+        if (pending) {
+          applyQrLinkToFriend(
+            existingOwnerId,
+            buildFriendInputFromQrPayload(pending),
+            pending.publicFields,
+            normalizedUserId
+          );
+        }
+        clearPendingQrImportPayload();
+        if (fromFollow) {
+          void acceptConnection(normalizedUserId).then((result) => {
+            if (result.errorMessage) {
+              Alert.alert('許可できませんでした', result.errorMessage);
+            }
+            finishSave(existingOwnerId, '人物データを登録しました。');
+          });
+          return;
+        }
+        scheduleRequestConnection(normalizedUserId);
+        finishSave(existingOwnerId, '人物データを登録しました。');
+        return;
+      }
+      const pending = getPendingQrImportPayload();
+      const identityPhotoUri = pending?.photoUri?.trim() || null;
+      const formPhotoUri = payload.photoUri?.trim() || null;
+      const localPhotoUri =
+        formPhotoUri && formPhotoUri !== identityPhotoUri ? formPhotoUri : null;
+      const created = createFriendFromQrScan(
+        { ...payload, photoUri: localPhotoUri },
+        normalizedUserId,
+        { identityPhotoUri }
+      );
+      clearPendingQrImportPayload();
+      if (fromFollow) {
+        void acceptConnection(normalizedUserId).then((result) => {
+          if (result.errorMessage) {
+            Alert.alert('許可できませんでした', result.errorMessage);
+          }
+          finishSave(created.id, '人物データを登録しました。');
+        });
+        return;
+      }
+      scheduleRequestConnection(normalizedUserId);
+      finishSave(created.id, '人物データを登録しました。');
       return;
     }
 
     const created = createFriend(payload);
-    finishSave(created.id);
+    finishSave(created.id, '人物データを登録しました。');
   };
 
   const handleResyncAffiliationEpisodes = () => {
@@ -707,8 +783,9 @@ export default function EditScreen() {
         />
       ) : null}
       <Pressable
-        style={[styles.saveButton, contentFilledButtonStyle(content)]}
+        style={[styles.saveButton, contentFilledButtonStyle(content), isSaving ? styles.saveButtonBusy : null]}
         onPress={handleSave}
+        disabled={isSaving}
         accessibilityLabel="保存"
       >
         <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
@@ -720,7 +797,8 @@ export default function EditScreen() {
     <>
     <FormScreenTemplate
       title="人物情報の登録"
-      onBack={() => router.back()}
+      onBack={leaveScreen}
+      backDisabled={isSaving}
       right={topBarActions}
       extraScrollHeight={180}
     >
@@ -1009,12 +1087,17 @@ export default function EditScreen() {
       
         <FormScreenSection>
           <View style={styles.formActions}>
-            <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
+            <Pressable
+              style={[styles.formCancelButton, isSaving ? styles.saveButtonBusy : null]}
+              onPress={leaveScreen}
+              disabled={isSaving}
+            >
               <Text style={styles.formCancelButtonText}>キャンセル</Text>
             </Pressable>
             <Pressable
-              style={[styles.formSaveButton, contentFilledButtonStyle(content)]}
+              style={[styles.formSaveButton, contentFilledButtonStyle(content), isSaving ? styles.saveButtonBusy : null]}
               onPress={handleSave}
+              disabled={isSaving}
             >
               <Text style={[styles.formSaveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
             </Pressable>
@@ -1060,6 +1143,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: Radius.sm,
+  },
+  saveButtonBusy: {
+    opacity: 0.55,
   },
   saveButtonText: {
     fontWeight: '700',

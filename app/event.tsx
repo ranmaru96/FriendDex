@@ -12,7 +12,7 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import type { Option } from '@/components/episode/types';
@@ -59,7 +59,6 @@ import {
   getEventParticipants,
   getEpisodeParticipantFriendIds,
   getMergedEpisodeTagLabels,
-  getMergedLocationTagLabels,
   getDefaultProfile,
   getMyself,
   getTasksByEventId,
@@ -70,12 +69,10 @@ import {
 } from '../db';
 import type { Episode, EpisodeParticipant, EventInput, Friend, Task } from '../types';
 import { buildParticipantChipDisplays, buildParticipantChips } from '../utils/episodeHelpers';
+import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
 const buildFriendNameById = (friendList: Friend[]): Map<string, string> =>
   new Map(friendList.map((friend) => [friend.id, friend.name]));
-
-const buildFriendPhotoById = (friendList: Friend[]): Map<string, string | null> =>
-  new Map(friendList.map((friend) => [friend.id, friend.photoUri ?? null]));
 import {
   buildAllDayEndAt,
   buildAllDayStartAt,
@@ -111,11 +108,12 @@ import {
   deleteEpisodesLinkedToEvent,
   unlinkEpisodesFromEvent,
 } from '../utils/eventEpisodeBidirectionalSync';
-import { registerSavedEpisodeTag, registerSavedLocationTag } from '../utils/episodeTagMaster';
+import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
 import {
   scheduleGoogleCalendarDelete,
   scheduleGoogleCalendarPush,
 } from '@/utils/googleCalendarSync';
+import { markOwnedEventDeleted, scheduleOwnedEventSync } from '@/lib/ownedEventSync';
 
 type PickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime' | null;
 
@@ -149,6 +147,7 @@ const addDaysToDateKey = (dateKey: string, days: number): string => {
 
 export default function EventScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const kit = useUiKit();
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
@@ -179,6 +178,47 @@ export default function EventScreen() {
   const [endDateKey, setEndDateKey] = useState(initialDate || formatDateKey(new Date()));
   const [endTime, setEndTime] = useState(DEFAULT_END_TIME);
   const previousStartRef = useRef<Date | null>(null);
+  const savingRef = useRef(false);
+  const allowLeaveRef = useRef(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const unlockScreen = () => {
+    savingRef.current = false;
+    setIsSaving(false);
+  };
+
+  const leaveScreen = () => {
+    if (savingRef.current) {
+      return;
+    }
+    allowLeaveRef.current = true;
+    savingRef.current = true;
+    router.back();
+  };
+
+  const finishAndLeave = () => {
+    allowLeaveRef.current = true;
+    router.back();
+  };
+
+  useEffect(() => {
+    navigation.setOptions({ gestureEnabled: !isSaving });
+  }, [isSaving, navigation]);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', (event) => {
+      if (allowLeaveRef.current) {
+        return;
+      }
+      if (savingRef.current) {
+        event.preventDefault();
+        return;
+      }
+      savingRef.current = true;
+    });
+    return unsubscribe;
+  }, [navigation]);
+
   const [activePicker, setActivePicker] = useState<PickerTarget>(null);
   useDismissPickerOnKeyboardShow(activePicker != null, () => setActivePicker(null));
   const [isReady, setIsReady] = useState(false);
@@ -206,11 +246,8 @@ export default function EventScreen() {
   );
   const [timingModalVisible, setTimingModalVisible] = useState(false);
   const [episodeTag, setEpisodeTag] = useState('');
-  const [locationTag, setLocationTag] = useState('');
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
-  const [locationTagOptions, setLocationTagOptions] = useState<Option[]>([]);
   const [tagModalVisible, setTagModalVisible] = useState(false);
-  const [locationTagModalVisible, setLocationTagModalVisible] = useState(false);
   const [myselfId, setMyselfId] = useState<string | null>(null);
 
   const selectableFriends = useMemo(
@@ -251,6 +288,9 @@ export default function EventScreen() {
 
   const handleOpenLinkedEpisode = useCallback(
     (episode: Episode) => {
+      if (savingRef.current) {
+        return;
+      }
       const ownerId = episode.authorFriendId.trim() || myselfId || '';
       if (!ownerId) {
         return;
@@ -264,7 +304,7 @@ export default function EventScreen() {
   );
 
   const handleAddLinkedEpisode = useCallback(() => {
-    if (!isEditing) {
+    if (savingRef.current || !isEditing) {
       return;
     }
     const todayKey = formatDateKey(new Date());
@@ -285,14 +325,12 @@ export default function EventScreen() {
     setAffiliationOptions(getDistinctAffiliations().map((value) => ({ label: value, value })));
     setExperienceOptions(getDistinctExperiences().map((value) => ({ label: value, value })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((value) => ({ label: value, value })));
-    setLocationTagOptions(getMergedLocationTagLabels().map((value) => ({ label: value, value })));
 
     if (!isEditing) {
       const baseDate = initialDate || formatDateKey(new Date());
       setTitle('');
       setMemo('');
       setEpisodeTag('');
-      setLocationTag('');
       setAllDay(false);
       setStartDateKey(baseDate);
       setEndDateKey(baseDate);
@@ -320,7 +358,6 @@ export default function EventScreen() {
     setTitle(event.title);
     setMemo(event.memo ?? '');
     setEpisodeTag(event.episodeTag ?? '');
-    setLocationTag(event.locationTag ?? '');
     setAllDay(event.allDay);
     if (event.allDay) {
       const { startDateKey: allDayStart, endDateKey: allDayEnd } = getAllDayDateKeysFromEvent(event);
@@ -390,7 +427,7 @@ export default function EventScreen() {
   }, [eventId, isEditing]);
 
   const handleAddLinkedTask = useCallback(() => {
-    if (!isEditing) {
+    if (savingRef.current || !isEditing) {
       return;
     }
     const todayKey = formatDateKey(new Date());
@@ -405,20 +442,31 @@ export default function EventScreen() {
   }, [endDateKey, eventId, isEditing, router, startDateKey]);
 
   const performEventDelete = useCallback(async () => {
+    if (savingRef.current) {
+      return;
+    }
+    savingRef.current = true;
+    setIsSaving(true);
     initializeDatabase();
     const existing = getEvent(eventId);
     await cancelEventNotification(existing?.notificationId);
     const googleEventId = existing?.googleEventId ?? null;
     const ok = deleteEvent(eventId);
     if (!ok) {
+      unlockScreen();
       Alert.alert('エラー', '予定の削除に失敗しました。');
       return;
     }
     scheduleGoogleCalendarDelete(googleEventId);
+    void markOwnedEventDeleted(eventId);
+    allowLeaveRef.current = true;
     router.back();
   }, [eventId, router]);
 
   const handleDelete = () => {
+    if (savingRef.current) {
+      return;
+    }
     Alert.alert('予定を削除', 'この予定を削除しますか？', [
       { text: 'キャンセル', style: 'cancel' },
       {
@@ -529,7 +577,6 @@ export default function EventScreen() {
     const timingInput = { startDateKey, startTime, allDay };
     const notifyAt = notifyEnabled ? computeNotifyAtFromPreset(notifyTimingPreset, timingInput) : null;
     const normalizedEpisodeTag = episodeTag.trim() || null;
-    const normalizedLocationTag = locationTag.trim() || null;
 
     if (allDay) {
       const normalizedEndDateKey = endDateKey.trim() || startDateKey;
@@ -545,7 +592,7 @@ export default function EventScreen() {
         notifyAt,
         notifyEnabled,
         episodeTag: normalizedEpisodeTag,
-        locationTag: normalizedLocationTag,
+        locationTag: null,
       };
     }
 
@@ -568,7 +615,7 @@ export default function EventScreen() {
       notifyAt,
       notifyEnabled,
       episodeTag: normalizedEpisodeTag,
-      locationTag: normalizedLocationTag,
+      locationTag: null,
     };
   };
 
@@ -587,8 +634,15 @@ export default function EventScreen() {
   };
 
   const handleSave = async () => {
+    if (savingRef.current) {
+      return;
+    }
+    savingRef.current = true;
+    setIsSaving(true);
+
     const input = buildEventInput();
     if (!input) {
+      unlockScreen();
       if (!title.trim()) {
         Alert.alert('入力エラー', 'タイトルを入力してください。');
         return;
@@ -608,40 +662,47 @@ export default function EventScreen() {
     initializeDatabase();
     const previousNotificationId = isEditing ? (getEvent(eventId)?.notificationId ?? null) : null;
 
-    if (!isEditing) {
-      await requestNotificationPermissionOnFirstCreate();
+    try {
+      if (!isEditing) {
+        await requestNotificationPermissionOnFirstCreate();
+      }
+    } catch {
+      unlockScreen();
+      return;
     }
 
     const persistEvent = async (options?: { skipClamp?: boolean }) => {
       if (isEditing) {
         const ok = updateEvent(eventId, input);
         if (!ok) {
+          unlockScreen();
           Alert.alert('エラー', '予定の更新に失敗しました。');
           return;
         }
         registerSavedEpisodeTag(input.episodeTag);
-        registerSavedLocationTag(input.locationTag);
         syncEventParticipants(eventId, selectedProfileIds);
         if (!options?.skipClamp) {
           clampLinkedEpisodeDatesToEvent(eventId);
         }
         await applySavedEventNotifications(eventId, previousNotificationId);
         scheduleGoogleCalendarPush(eventId);
-        router.back();
+        scheduleOwnedEventSync(eventId);
+        finishAndLeave();
         return;
       }
 
       const created = createEvent(input);
       if (!created) {
+        unlockScreen();
         Alert.alert('エラー', '予定の作成に失敗しました。');
         return;
       }
       registerSavedEpisodeTag(input.episodeTag);
-      registerSavedLocationTag(input.locationTag);
       syncEventParticipants(created.id, selectedProfileIds);
       await applySavedEventNotifications(created.id, null);
       scheduleGoogleCalendarPush(created.id);
-      router.back();
+      scheduleOwnedEventSync(created.id);
+      finishAndLeave();
     };
 
     if (isEditing) {
@@ -653,7 +714,7 @@ export default function EventScreen() {
           'エピソードとの矛盾',
           '開始日を未来に変更すると、紐づいているエピソードを予定に残せません。どうしますか？',
           [
-            { text: 'キャンセル', style: 'cancel' },
+            { text: 'キャンセル', style: 'cancel', onPress: unlockScreen },
             {
               text: 'エピソードを削除',
               style: 'destructive',
@@ -735,6 +796,9 @@ export default function EventScreen() {
   };
 
   const handleOpenProfileDetail = (friendId: string) => {
+    if (savingRef.current) {
+      return;
+    }
     router.push({ pathname: '/detail', params: { id: friendId } });
   };
 
@@ -849,11 +913,13 @@ export default function EventScreen() {
     <>
       <FormScreenTemplate
         title={screenTitle}
-        onBack={() => router.back()}
+        onBack={leaveScreen}
+        backDisabled={isSaving}
         right={
           <Pressable
-            style={[styles.saveButton, contentFilledButtonStyle(content)]}
+            style={[styles.saveButton, contentFilledButtonStyle(content), isSaving ? styles.saveButtonBusy : null]}
             onPress={handleSave}
+            disabled={isSaving}
           >
             <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
           </Pressable>
@@ -896,30 +962,6 @@ export default function EventScreen() {
                   numberOfLines={1}
                 >
                   {episodeTag || '予定タグ'}
-                </Text>
-                <Text style={[styles.tagChipChevron, contentMutedTextStyle(content)]}>▼</Text>
-              </Pressable>
-              <Pressable
-                style={[
-                  styles.tagChipButton,
-                  contentPersonTagStyle(content),
-                  { borderRadius: tagChipRadius },
-                ]}
-                onPress={() => {
-                  dismissKeyboardFocus();
-                  setLocationTagModalVisible(true);
-                }}
-                accessibilityLabel="場所タグを選択"
-                accessibilityRole="button"
-              >
-                <Text
-                  style={[
-                    styles.tagChipText,
-                    locationTag ? contentTextStyle(content) : contentMutedTextStyle(content),
-                  ]}
-                  numberOfLines={1}
-                >
-                  {locationTag || '場所タグ'}
                 </Text>
                 <Text style={[styles.tagChipChevron, contentMutedTextStyle(content)]}>▼</Text>
               </Pressable>
@@ -1102,9 +1144,12 @@ export default function EventScreen() {
                       contentSurfaceStyle(content),
                       { borderWidth: 1, borderRadius: 8 },
                     ]}
-                    onPress={() =>
-                      router.push({ pathname: '/task-edit', params: { taskId: task.id } })
-                    }
+                    onPress={() => {
+                      if (savingRef.current) {
+                        return;
+                      }
+                      router.push({ pathname: '/task-edit', params: { taskId: task.id } });
+                    }}
                   >
                     <Text style={[styles.linkedTaskTitle, contentTextStyle(content)]}>{task.title}</Text>
                     <Text style={[styles.linkedTaskMeta, contentMutedTextStyle(content)]}>
@@ -1159,7 +1204,6 @@ export default function EventScreen() {
                       title={episode.title}
                       date={episode.date}
                       episodeTag={episode.tag}
-                      locationTag={episode.locationTag}
                       chips={chips}
                       visibilityMode={episode.visibilityMode}
                       photoUris={episodePhotoUrisById.get(episode.id)}
@@ -1180,12 +1224,21 @@ export default function EventScreen() {
 
         <FormScreenSection elevated style={[styles.formSection, styles.formActionsSection]}>
           <View style={styles.formActions}>
-            <Pressable style={styles.formCancelButton} onPress={() => router.back()}>
+            <Pressable
+              style={[styles.formCancelButton, isSaving ? styles.saveButtonBusy : null]}
+              onPress={leaveScreen}
+              disabled={isSaving}
+            >
               <Text style={styles.formCancelButtonText}>キャンセル</Text>
             </Pressable>
             <Pressable
-              style={[styles.formSaveButton, contentFilledButtonStyle(content)]}
+              style={[
+                styles.formSaveButton,
+                contentFilledButtonStyle(content),
+                isSaving ? styles.saveButtonBusy : null,
+              ]}
               onPress={handleSave}
+              disabled={isSaving}
             >
               <Text style={[styles.formSaveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
             </Pressable>
@@ -1195,8 +1248,9 @@ export default function EventScreen() {
 
         {isEditing ? (
           <Pressable
-            style={styles.deleteLinkWrap}
+            style={[styles.deleteLinkWrap, isSaving ? styles.saveButtonBusy : null]}
             onPress={handleDelete}
+            disabled={isSaving}
             accessibilityLabel="予定を削除"
             hitSlop={8}
           >
@@ -1259,19 +1313,6 @@ export default function EventScreen() {
         clearLabel="未設定"
         allowCustomValue
         customInputPlaceholder="新しいタグ名"
-        customActionLabel="このタグを使う"
-      />
-
-      <OptionPickerModal
-        visible={locationTagModalVisible}
-        label="場所タグ"
-        value={locationTag}
-        options={locationTagOptions}
-        onValueChange={setLocationTag}
-        onClose={() => setLocationTagModalVisible(false)}
-        clearLabel="未設定"
-        allowCustomValue
-        customInputPlaceholder="新しい場所名"
         customActionLabel="このタグを使う"
       />
 
@@ -1381,6 +1422,9 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: Radius.sm,
+  },
+  saveButtonBusy: {
+    opacity: 0.55,
   },
   saveButtonText: {
     fontWeight: '700',

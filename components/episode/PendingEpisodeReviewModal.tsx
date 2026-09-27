@@ -12,6 +12,7 @@ import { useContentColors } from '@/utils/useContentColors';
 import { deleteEpisode, dismissPendingReviewPrompt, getMyself, initializeDatabase } from '@/db';
 import type { PendingReviewEpisodeRef } from '@/types';
 import { resolveEpisodeRecordOwnerId } from '@/utils/episodeHelpers';
+import { scheduleOwnedEpisodeDelete, scheduleOwnedEpisodeSync } from '@/lib/ownedEpisodeSync';
 
 type PendingEpisodeReviewModalProps = {
   visible: boolean;
@@ -38,6 +39,7 @@ export function PendingEpisodeReviewModal({
   const handleLater = () => {
     initializeDatabase();
     dismissPendingReviewPrompt(currentItem.episode.id);
+    scheduleOwnedEpisodeSync(currentItem.episode.id);
     onChanged();
   };
 
@@ -60,6 +62,7 @@ export function PendingEpisodeReviewModal({
             Alert.alert('エラー', 'エピソードの削除に失敗しました。');
             return;
           }
+          scheduleOwnedEpisodeDelete(currentItem.episode.id);
           onChanged();
         },
       },

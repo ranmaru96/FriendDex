@@ -17,6 +17,7 @@ import {
   setAppSetting,
   updateEventGoogleEventId,
 } from '@/db';
+import { scheduleOwnedEventSync } from '@/lib/ownedEventSync';
 import {
   clearGoogleTokens,
   hasGoogleTokens,
@@ -113,9 +114,6 @@ const buildGoogleEventBody = (event: Event): GoogleCalendarEventBody => {
   if (event.episodeTag) {
     descriptionLines.push(`予定タグ: ${event.episodeTag}`);
   }
-  if (event.locationTag) {
-    descriptionLines.push(`場所: ${event.locationTag}`);
-  }
 
   const body: GoogleCalendarEventBody = {
     summary: event.title,
@@ -182,6 +180,7 @@ export const ensureFriendDexGoogleCalendarId = async (): Promise<string> => {
 const persistGoogleEventId = (eventId: string, googleEventId: string): void => {
   initializeDatabase();
   updateEventGoogleEventId(eventId, googleEventId);
+  scheduleOwnedEventSync(eventId);
 };
 
 export const pushLocalEventToGoogleCalendar = async (eventId: string): Promise<boolean> => {

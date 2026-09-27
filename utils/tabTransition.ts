@@ -43,6 +43,7 @@ export function clearNextReplaceAsPop(): void {
  * - index + one-shot override: Detail→Home の横スライドなど
  * - bottom tabs (incl. index): BottomNav の左右スライド
  * - detail / otherwise: slide_from_right
+ * - mypage: slide_from_left
  */
 export function resolveStackAnimation(
   routeName: string,
@@ -55,6 +56,9 @@ export function resolveStackAnimation(
   }
   if (bottomTabRouteNames.has(routeName)) {
     return getNextTabAnimation();
+  }
+  if (routeName === 'mypage') {
+    return 'slide_from_left';
   }
   return 'slide_from_right';
 }

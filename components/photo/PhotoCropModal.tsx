@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -14,6 +14,7 @@ import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanima
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImageManipulator from 'expo-image-manipulator';
 import type { Action } from 'expo-image-manipulator';
+import { Image as ExpoImage } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Spacing } from '@/constants/theme';
 import { persistImageFile } from '@/utils/persistImageFile';
@@ -27,11 +28,28 @@ type PhotoCropModalProps = {
   /** width / height。人物カードは 1、エピソードは 4/3 */
   aspectRatio?: number;
   hint?: string;
+  /** 別モーダルにせず、親の中へ重ねて出す。写真一覧の上に調整を出すときに使う。 */
+  embedded?: boolean;
+  /** この回で調整する写真。一番下のプレビューに出す。 */
+  previews?: { id: string; uri: string }[];
+  activePreviewIndex?: number;
+  onSelectPreview?: (index: number) => void;
   onCancel: () => void;
   onConfirm: (croppedUri: string) => void;
 };
 
 type ImageSize = { width: number; height: number };
+
+type CropDraft = {
+  workingUri: string;
+  width: number;
+  height: number;
+  translateX: number;
+  translateY: number;
+  scale: number;
+};
+
+const PREVIEW_WIDTH = 72;
 
 const SCREEN = Dimensions.get('window');
 const OUTPUT_MAX = 1024;
@@ -40,11 +58,54 @@ function clampJs(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+/** 枠からはみ出した分だけ動かせる。枠と写真が同じ幅なら、その方向には動かない。 */
+function clampCoverTranslate(value: number, displayed: number, frame: number) {
+  'worklet';
+  const limit = Math.max(0, (displayed - frame) / 2);
+  return Math.min(limit, Math.max(-limit, value));
+}
+
+function PreviewStill({
+  draft,
+  frameWidth,
+  frameHeight,
+  cropWidth,
+  cropHeight,
+}: {
+  draft: CropDraft;
+  frameWidth: number;
+  frameHeight: number;
+  cropWidth: number;
+  cropHeight: number;
+}) {
+  const ratio = frameWidth / cropWidth;
+  const baseScale = Math.max(cropWidth / draft.width, cropHeight / draft.height);
+  const displayScale = baseScale * draft.scale * ratio;
+  return (
+    <Image
+      source={{ uri: draft.workingUri }}
+      style={{
+        width: draft.width * displayScale,
+        height: draft.height * displayScale,
+        transform: [
+          { translateX: draft.translateX * ratio },
+          { translateY: draft.translateY * ratio },
+        ],
+      }}
+      resizeMode="stretch"
+    />
+  );
+}
+
 export function PhotoCropModal({
   visible,
   uri,
   aspectRatio = 1,
   hint = 'ピンチで拡大・ドラッグで位置調整',
+  embedded = false,
+  previews = [],
+  activePreviewIndex = 0,
+  onSelectPreview,
   onCancel,
   onConfirm,
 }: PhotoCropModalProps) {
@@ -65,6 +126,11 @@ export function PhotoCropModal({
   const baseScaleSv = useSharedValue(1);
   const cropWidthSv = useSharedValue(1);
   const cropHeightSv = useSharedValue(1);
+  const draftsRef = useRef<Map<string, CropDraft>>(new Map());
+  const previewsRef = useRef(previews);
+  const activePreviewIndexRef = useRef(activePreviewIndex);
+  previewsRef.current = previews;
+  activePreviewIndexRef.current = activePreviewIndex;
 
   const cropWidth = useMemo(() => Math.min(SCREEN.width - 32, SCREEN.width * 0.88), []);
   const cropHeight = useMemo(() => cropWidth / aspectRatio, [aspectRatio, cropWidth]);
@@ -93,9 +159,32 @@ export function PhotoCropModal({
       return;
     }
 
-    setWorkingUri(uri);
     setError('');
     setBusy(false);
+    const previewId = previewsRef.current[activePreviewIndexRef.current]?.id;
+    const draft = previewId ? draftsRef.current.get(previewId) : undefined;
+    if (draft) {
+      setWorkingUri(draft.workingUri);
+      setImageSize({ width: draft.width, height: draft.height });
+      imageWidth.value = draft.width;
+      imageHeight.value = draft.height;
+      const nextBase = Math.max(cropWidth / draft.width, cropHeight / draft.height);
+      baseScaleSv.value = nextBase;
+      const displayScale = nextBase * draft.scale;
+      translateX.value = clampJs(
+        draft.translateX,
+        -Math.max(0, (draft.width * displayScale - cropWidth) / 2),
+        Math.max(0, (draft.width * displayScale - cropWidth) / 2)
+      );
+      translateY.value = clampJs(
+        draft.translateY,
+        -Math.max(0, (draft.height * displayScale - cropHeight) / 2),
+        Math.max(0, (draft.height * displayScale - cropHeight) / 2)
+      );
+      scale.value = draft.scale;
+      return;
+    }
+    setWorkingUri(uri);
     resetTransform();
     Image.getSize(
       uri,
@@ -127,8 +216,17 @@ export function PhotoCropModal({
     })
     .onUpdate((event) => {
       'worklet';
-      translateX.value = startX.value + event.translationX;
-      translateY.value = startY.value + event.translationY;
+      const displayScale = baseScaleSv.value * scale.value;
+      translateX.value = clampCoverTranslate(
+        startX.value + event.translationX,
+        imageWidth.value * displayScale,
+        cropWidthSv.value
+      );
+      translateY.value = clampCoverTranslate(
+        startY.value + event.translationY,
+        imageHeight.value * displayScale,
+        cropHeightSv.value
+      );
     });
 
   const pinchGesture = Gesture.Pinch()
@@ -138,8 +236,19 @@ export function PhotoCropModal({
     })
     .onUpdate((event) => {
       'worklet';
-      const next = startScale.value * event.scale;
-      scale.value = Math.min(Math.max(next, 1), 4);
+      const next = Math.min(Math.max(startScale.value * event.scale, 1), 4);
+      scale.value = next;
+      const displayScale = baseScaleSv.value * next;
+      translateX.value = clampCoverTranslate(
+        translateX.value,
+        imageWidth.value * displayScale,
+        cropWidthSv.value
+      );
+      translateY.value = clampCoverTranslate(
+        translateY.value,
+        imageHeight.value * displayScale,
+        cropHeightSv.value
+      );
     });
 
   const composedGesture = Gesture.Simultaneous(panGesture, pinchGesture);
@@ -152,6 +261,44 @@ export function PhotoCropModal({
       transform: [{ translateX: translateX.value }, { translateY: translateY.value }],
     };
   });
+
+  const previewHeight = PREVIEW_WIDTH / aspectRatio;
+
+  const saveCurrentDraft = useCallback(() => {
+    const previewId = previewsRef.current[activePreviewIndexRef.current]?.id;
+    if (!previewId || !workingUri || !imageSize) {
+      return;
+    }
+    draftsRef.current.set(previewId, {
+      workingUri,
+      width: imageSize.width,
+      height: imageSize.height,
+      translateX: translateX.value,
+      translateY: translateY.value,
+      scale: scale.value,
+    });
+  }, [imageSize, scale, translateX, translateY, workingUri]);
+
+  const activePreviewStyle = useAnimatedStyle(() => {
+    const ratio = PREVIEW_WIDTH / cropWidthSv.value;
+    const displayScale = baseScaleSv.value * scale.value * ratio;
+    return {
+      width: imageWidth.value * displayScale,
+      height: imageHeight.value * displayScale,
+      transform: [
+        { translateX: translateX.value * ratio },
+        { translateY: translateY.value * ratio },
+      ],
+    };
+  });
+
+  const handleSelectPreview = (index: number) => {
+    if (!onSelectPreview || index === activePreviewIndex || busy) {
+      return;
+    }
+    saveCurrentDraft();
+    onSelectPreview(index);
+  };
 
   const handleRotate = async () => {
     if (!workingUri || busy) return;
@@ -181,6 +328,7 @@ export function PhotoCropModal({
 
   const handleConfirm = async () => {
     if (!workingUri || !imageSize || busy) return;
+    saveCurrentDraft();
     setBusy(true);
     setError('');
     try {
@@ -246,9 +394,12 @@ export function PhotoCropModal({
   const cropRight = Math.max(0, editorSize.width - cropLeft - cropWidth);
   const cropBottom = Math.max(0, editorSize.height - cropTop - cropHeight);
 
-  return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
-      <GestureHandlerRootView style={styles.root}>
+  if (embedded && !visible) {
+    return null;
+  }
+
+  const editor = (
+      <GestureHandlerRootView style={[styles.root, embedded ? styles.embedded : null]}>
         <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
           <View style={styles.topBar}>
             <Pressable style={styles.topButton} onPress={onCancel} disabled={busy}>
@@ -324,6 +475,51 @@ export function PhotoCropModal({
               <Text style={styles.toolButtonText}>回転</Text>
             </Pressable>
           </View>
+          {previews.length > 0 ? (
+            <View style={styles.previewRow}>
+              {previews.map((preview, index) => {
+                const active = index === activePreviewIndex;
+                const draft = draftsRef.current.get(preview.id);
+                const frameStyle = { width: PREVIEW_WIDTH, height: previewHeight };
+                return (
+                  <Pressable
+                    key={preview.id}
+                    style={styles.previewItem}
+                    onPress={() => handleSelectPreview(index)}
+                    disabled={busy}
+                  >
+                    <View style={[styles.previewFrame, frameStyle, active ? styles.previewFrameActive : null]}>
+                      {active && workingUri && imageSize ? (
+                        <Animated.View style={activePreviewStyle}>
+                          <Image source={{ uri: workingUri }} style={styles.previewImage} resizeMode="stretch" />
+                        </Animated.View>
+                      ) : draft ? (
+                        <PreviewStill
+                          draft={draft}
+                          frameWidth={PREVIEW_WIDTH}
+                          frameHeight={previewHeight}
+                          cropWidth={cropWidth}
+                          cropHeight={cropHeight}
+                        />
+                      ) : (
+                        <ExpoImage
+                          source={{ uri: preview.uri }}
+                          style={styles.previewImage}
+                          contentFit="cover"
+                          recyclingKey={preview.id}
+                          cachePolicy="memory-disk"
+                          allowDownscaling
+                        />
+                      )}
+                    </View>
+                    <Text style={[styles.previewIndex, active ? styles.previewIndexActive : null]}>
+                      {index + 1}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          ) : null}
 
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           {busy ? (
@@ -333,6 +529,15 @@ export function PhotoCropModal({
           ) : null}
         </View>
       </GestureHandlerRootView>
+  );
+
+  if (embedded) {
+    return editor;
+  }
+
+  return (
+    <Modal visible={visible} animationType="slide" onRequestClose={onCancel}>
+      {editor}
     </Modal>
   );
 }
@@ -341,6 +546,10 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: '#0f172a',
+  },
+  embedded: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 30,
   },
   topBar: {
     flexDirection: 'row',
@@ -416,6 +625,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 16,
     paddingHorizontal: Spacing.md,
+  },
+  previewRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 10,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: 8,
+  },
+  previewItem: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  previewFrame: {
+    overflow: 'hidden',
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#111827',
+  },
+  previewFrameActive: {
+    borderColor: '#ffffff',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  previewIndex: {
+    color: '#94a3b8',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  previewIndexActive: {
+    color: '#ffffff',
   },
   toolButton: {
     alignItems: 'center',

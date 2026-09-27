@@ -33,6 +33,10 @@ type OptionPickerModalProps = {
   allowCustomValue?: boolean;
   customInputPlaceholder?: string;
   customActionLabel?: string;
+  /** 候補の列数。未指定は1列 */
+  columns?: 1 | 2;
+  /** chips のとき候補を折り返して並べる */
+  layout?: 'list' | 'chips';
 };
 
 /** 一覧検索の所属／経験選択と同じ見た目の選択肢モーダル */
@@ -47,6 +51,8 @@ export function OptionPickerModal({
   allowCustomValue = false,
   customInputPlaceholder = '新しい項目を入力',
   customActionLabel = '使う',
+  columns = 1,
+  layout = 'list',
 }: OptionPickerModalProps) {
   const content = useContentColors();
   const [customValue, setCustomValue] = useState('');
@@ -122,6 +128,45 @@ export function OptionPickerModal({
         },
         options: {
           maxHeight: 320,
+        },
+        optionGrid: {
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+        },
+        optionCell: {
+          width: '50%',
+          padding: 4,
+        },
+        chipWrap: {
+          flexDirection: 'row',
+          flexWrap: 'wrap',
+          gap: 8,
+          paddingTop: 4,
+        },
+        chip: {
+          borderWidth: 1,
+          borderColor: content.contentBorder,
+          backgroundColor: content.contentPersonTagBg,
+          borderRadius: Radius.full,
+          paddingHorizontal: 12,
+          paddingVertical: 8,
+        },
+        chipSelected: {
+          borderWidth: 2,
+          borderColor: content.contentText,
+          backgroundColor: content.contentInputBg,
+        },
+        chipClear: {
+          backgroundColor: 'transparent',
+          borderColor: content.contentDivider,
+        },
+        chipClearSelected: {
+          borderWidth: 2,
+          borderColor: content.contentText,
+          backgroundColor: 'transparent',
+        },
+        chipClearText: {
+          color: content.contentTextSecondary,
         },
         option: {
           paddingVertical: 12,
@@ -245,7 +290,45 @@ export function OptionPickerModal({
               </Pressable>
             </View>
           ) : null}
-          <ScrollView style={modalStyles.options} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            style={modalStyles.options}
+            keyboardShouldPersistTaps="handled"
+          >
+            {layout === 'chips' ? (
+              <View style={modalStyles.chipWrap}>
+                {clearLabel != null ? (
+                  <Pressable
+                    style={[
+                      modalStyles.chip,
+                      modalStyles.chipClear,
+                      !value ? modalStyles.chipClearSelected : null,
+                    ]}
+                    onPress={() => {
+                      onValueChange('');
+                      closePicker();
+                    }}
+                  >
+                    <Text style={[modalStyles.optionText, modalStyles.chipClearText]}>{clearLabel}</Text>
+                  </Pressable>
+                ) : null}
+                {options.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    style={[
+                      modalStyles.chip,
+                      option.value === value ? modalStyles.chipSelected : null,
+                    ]}
+                    onPress={() => {
+                      onValueChange(option.value);
+                      closePicker();
+                    }}
+                  >
+                    <Text style={modalStyles.optionText}>{option.label}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+            <>
             {clearLabel != null ? (
               <>
                 <Pressable
@@ -260,23 +343,46 @@ export function OptionPickerModal({
                 <View style={modalStyles.clearOptionDivider} />
               </>
             ) : null}
-            {options.map((option, index) => (
-              <View key={option.value}>
-                {index > 0 ? <View style={modalStyles.optionDivider} /> : null}
-                <Pressable
-                  style={[
-                    modalStyles.option,
-                    option.value === value ? modalStyles.optionSelected : null,
-                  ]}
-                  onPress={() => {
-                    onValueChange(option.value);
-                    closePicker();
-                  }}
-                >
-                  <Text style={modalStyles.optionText}>{option.label}</Text>
-                </Pressable>
+            {columns === 2 ? (
+              <View style={modalStyles.optionGrid}>
+                {options.map((option) => (
+                  <View key={option.value} style={modalStyles.optionCell}>
+                    <Pressable
+                      style={[
+                        modalStyles.option,
+                        option.value === value ? modalStyles.optionSelected : null,
+                      ]}
+                      onPress={() => {
+                        onValueChange(option.value);
+                        closePicker();
+                      }}
+                    >
+                      <Text style={modalStyles.optionText}>{option.label}</Text>
+                    </Pressable>
+                  </View>
+                ))}
               </View>
-            ))}
+            ) : (
+              options.map((option, index) => (
+                <View key={option.value}>
+                  {index > 0 ? <View style={modalStyles.optionDivider} /> : null}
+                  <Pressable
+                    style={[
+                      modalStyles.option,
+                      option.value === value ? modalStyles.optionSelected : null,
+                    ]}
+                    onPress={() => {
+                      onValueChange(option.value);
+                      closePicker();
+                    }}
+                  >
+                    <Text style={modalStyles.optionText}>{option.label}</Text>
+                  </Pressable>
+                </View>
+              ))
+            )}
+            </>
+            )}
           </ScrollView>
         </View>
       </KeyboardAvoidingView>

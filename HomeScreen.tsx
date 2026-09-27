@@ -44,6 +44,8 @@ import {
 } from '@/utils/persistedFilterTypes';
 import { Friend, FriendSearchFilters, MBTI_TYPES, PendingReviewEpisodeRef } from './types';
 import { sortFriendsByDefaultOrder } from '@/utils/friendDefaultSort';
+import { isPersonCardLockedByAcceptedConnection } from '@/lib/connectionSync';
+import { requireOnline } from '@/lib/networkReachability';
 
 type Option = {
   label: string;
@@ -150,6 +152,13 @@ export default function HomeScreen() {
       Alert.alert('削除できません', '本人の人物カードは削除できません。');
       return;
     }
+    if (isPersonCardLockedByAcceptedConnection(friend.id)) {
+      Alert.alert(
+        '削除できません',
+        'コネクト中の人物カードは削除できません。マイページからコネクトを解除してください。'
+      );
+      return;
+    }
     const executeDelete = () => {
       initializeDatabase();
       const profile = getDefaultProfile(friend.id);
@@ -221,7 +230,12 @@ export default function HomeScreen() {
             />
             <CircleIconButton
               icon="scan-outline"
-              onPress={() => router.push('/scan')}
+              onPress={() => {
+                if (!requireOnline()) {
+                  return;
+                }
+                router.push('/scan');
+              }}
               accessibilityLabel="QRコードを読み取る"
             />
             <AddCircleButton

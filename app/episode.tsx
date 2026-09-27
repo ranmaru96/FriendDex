@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
@@ -29,6 +30,7 @@ import {
   DEFAULT_EPISODE_LIST_FILTER,
   isEpisodeListFilterState,
 } from '@/utils/persistedFilterTypes';
+import { readUsableEpisodeDraft } from '@/utils/episodeDraft';
 import {
   createEpisode,
   deleteEpisode,
@@ -36,12 +38,17 @@ import {
   getDistinctExperiences,
   getEpisodeListPhotoUrisMap,
   getEpisodeParticipantFriendIds,
+  getIncomingSharedEpisodePhotoUrisMap,
   getMergedEpisodeTagLabels,
-  getMergedLocationTagLabels,
   getMyself,
+  incomingSharedRecordToEpisode,
   initializeDatabase,
+  listIncomingSharedEpisodeRecords,
   updateEpisode,
 } from '../db';
+import { scheduleOwnedEpisodeDelete } from '@/lib/ownedEpisodeSync';
+import { afterEpisodeSavedLocally, guardEpisodeShareOnline } from '@/lib/episodeShareSave';
+import { pullIncomingSharedEpisodes } from '@/lib/sharedEpisodeSync';
 import { Episode, EpisodeParticipant, Friend } from '../types';
 import {
   buildParticipantChips,
@@ -55,8 +62,9 @@ import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
 } from '../utils/episodeEventLinking';
-import { registerSavedEpisodeTag, registerSavedLocationTag } from '../utils/episodeTagMaster';
+import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
+import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
 type EpisodeRow = { episode: Episode; recordOwnerId: string };
 
@@ -110,10 +118,6 @@ function buildFriendNameById(friends: Friend[]): Map<string, string> {
   return new Map(friends.map((f) => [f.id, f.name]));
 }
 
-function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
-  return new Map(friends.map((f) => [f.id, f.photoUri ?? null]));
-}
-
 export default function EpisodeScreen() {
   const kit = useUiKit();
   const content = useContentColors();
@@ -131,13 +135,20 @@ export default function EpisodeScreen() {
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
-  const [locationTagOptions, setLocationTagOptions] = useState<Option[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
+  const [listReady, setListReady] = useState(false);
   const [photoUrisByEpisodeId, setPhotoUrisByEpisodeId] = useState<Map<string, string[]>>(
     () => new Map()
   );
+  const [incomingEpisodeRows, setIncomingEpisodeRows] = useState<EpisodeRow[]>([]);
 
   const [isFormVisible, setIsFormVisible] = useState(false);
+  const episodeSaveLockRef = useRef(false);
+  const mainScrollRef = useRef<ScrollView>(null);
+  const scrollContentRef = useRef<View>(null);
+  const episodeCardRefs = useRef<Map<string, View>>(new Map());
+  const pendingScrollEpisodeIdRef = useRef<string | null>(null);
+  const [episodeSaving, setEpisodeSaving] = useState(false);
 
   const [episodeListFilter, setEpisodeListFilter] = usePersistedFilter(
     FILTER_KEYS.episodeList,
@@ -192,11 +203,19 @@ export default function EpisodeScreen() {
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
-    setLocationTagOptions(getMergedLocationTagLabels().map((v) => ({ label: v, value: v })));
     setMyselfId(getMyself());
-    setPhotoUrisByEpisodeId(
-      getEpisodeListPhotoUrisMap(collectUniqueEpisodes(nextFriends).map((row) => row.episode.id))
-    );
+    const ownedRows = collectUniqueEpisodes(nextFriends);
+    const incomingRows = listIncomingSharedEpisodeRecords().map((record) => ({
+      episode: incomingSharedRecordToEpisode(record),
+      recordOwnerId: record.authorFriendId,
+    }));
+    setIncomingEpisodeRows(incomingRows);
+    const photoMap = getEpisodeListPhotoUrisMap(ownedRows.map((row) => row.episode.id));
+    getIncomingSharedEpisodePhotoUrisMap().forEach((uris, episodeId) => {
+      photoMap.set(episodeId, uris);
+    });
+    setPhotoUrisByEpisodeId(photoMap);
+    setListReady(true);
   }, []);
 
   const pendingEditEpisodeId = useMemo(() => {
@@ -217,15 +236,71 @@ export default function EpisodeScreen() {
   useFocusEffect(
     useCallback(() => {
       loadData();
+      void pullIncomingSharedEpisodes().then(() => {
+        loadData();
+      });
       if (!pendingEditEpisodeId || !pendingEditOwnerId) {
         pendingEditKeyRef.current = null;
       }
     }, [loadData, pendingEditEpisodeId, pendingEditOwnerId])
   );
 
+  const newDraftPromptingRef = useRef(false);
+  const isFormVisibleRef = useRef(isFormVisible);
+  isFormVisibleRef.current = isFormVisible;
+  useFocusEffect(
+    useCallback(() => {
+      if (isFormVisibleRef.current || createForEventId || newDraftPromptingRef.current) {
+        return;
+      }
+      const draft = readUsableEpisodeDraft(null, '');
+      if (!draft) {
+        return;
+      }
+      newDraftPromptingRef.current = true;
+      const finishPrompt = () => {
+        newDraftPromptingRef.current = false;
+      };
+      Alert.alert('前回の下書きを復元しますか？', undefined, [
+        {
+          text: '復元しない',
+          style: 'cancel',
+          onPress: () => {
+            finishPrompt();
+            episodeForm.declineDraft(draft);
+          },
+        },
+        {
+          text: '復元する',
+          onPress: () => {
+            finishPrompt();
+            episodeSaveLockRef.current = false;
+            setEpisodeSaving(false);
+            episodeForm.armRestoredNewDraft(draft);
+            setIsFormVisible(true);
+          },
+        },
+      ], { cancelable: true, onDismiss: finishPrompt });
+      return () => {
+        newDraftPromptingRef.current = false;
+      };
+    }, [createForEventId, episodeForm.armRestoredNewDraft, episodeForm.declineDraft])
+  );
+
   const friendNameById = useMemo(() => buildFriendNameById(friends), [friends]);
   const friendPhotoById = useMemo(() => buildFriendPhotoById(friends), [friends]);
-  const episodeRows = useMemo(() => collectUniqueEpisodes(friends), [friends]);
+  const episodeRows = useMemo(() => {
+    const byId = new Map<string, EpisodeRow>();
+    collectUniqueEpisodes(friends).forEach((row) => {
+      byId.set(row.episode.id, row);
+    });
+    incomingEpisodeRows.forEach((row) => {
+      byId.set(row.episode.id, row);
+    });
+    return [...byId.values()].sort((a, b) =>
+      compareEpisodesByEventDateTime(a.episode, b.episode)
+    );
+  }, [friends, incomingEpisodeRows]);
 
   const restoreFilterSelectorFromParticipants = useCallback((drafts: EpisodeParticipantDraft[]) => {
     const individuals = new Set<string>();
@@ -334,6 +409,47 @@ export default function EpisodeScreen() {
     });
   }, [episodeRows, filterParticipantEntries, filterTag, filterTitle]);
 
+  const episodeListFiltersActive =
+    filterTitle.trim().length > 0 ||
+    filterTag.trim().length > 0 ||
+    filterParticipantEntries.length > 0;
+
+  const scrollToPendingEpisode = useCallback(() => {
+    const episodeId = pendingScrollEpisodeIdRef.current;
+    const content = scrollContentRef.current;
+    if (!episodeId || !content) {
+      return;
+    }
+    if (episodeListFiltersActive) {
+      pendingScrollEpisodeIdRef.current = null;
+      return;
+    }
+    const card = episodeCardRefs.current.get(episodeId);
+    if (!card) {
+      return;
+    }
+    card.measureLayout(
+      content,
+      (_x, y) => {
+        if (pendingScrollEpisodeIdRef.current !== episodeId) {
+          return;
+        }
+        mainScrollRef.current?.scrollTo({ y: Math.max(0, y), animated: false });
+        pendingScrollEpisodeIdRef.current = null;
+      },
+      () => {}
+    );
+  }, [episodeListFiltersActive]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const frame = requestAnimationFrame(() => {
+        scrollToPendingEpisode();
+      });
+      return () => cancelAnimationFrame(frame);
+    }, [scrollToPendingEpisode])
+  );
+
   const filterParticipantSummary = useMemo(() => {
     const labels = filterParticipants
       .filter((participant) => participant.value.trim().length > 0)
@@ -352,16 +468,23 @@ export default function EpisodeScreen() {
     return `${labels.length}件`;
   }, [filterParticipants, friendNameById, myselfId]);
 
+  const releaseEpisodeSaveLock = () => {
+    episodeSaveLockRef.current = false;
+    setEpisodeSaving(false);
+  };
+
   const openCreateForm = () => {
     if (!myselfId) {
       Alert.alert('案内', '本人が設定されていません。');
       return;
     }
+    releaseEpisodeSaveLock();
     episodeForm.reset();
     setIsFormVisible(true);
   };
 
   const startEditEpisode = (row: EpisodeRow) => {
+    releaseEpisodeSaveLock();
     episodeForm.loadFromEpisode(row.episode);
     setIsFormVisible(true);
   };
@@ -379,6 +502,7 @@ export default function EpisodeScreen() {
       return;
     }
     pendingCreateForEventKeyRef.current = createForEventId;
+    releaseEpisodeSaveLock();
     setIsFormVisible(true);
     router.setParams({ createForEventId: undefined });
   }, [createForEventId, episodeForm, myselfId, router]);
@@ -414,7 +538,10 @@ export default function EpisodeScreen() {
             Alert.alert('エラー', 'エピソードの削除に失敗しました。');
             return;
           }
+          scheduleOwnedEpisodeDelete(row.episode.id);
           if (episodeForm.editingEpisodeId === row.episode.id) {
+            episodeForm.discardUncommittedPhotos();
+            episodeForm.forgetDraft();
             episodeForm.reset();
             setIsFormVisible(false);
           }
@@ -425,12 +552,24 @@ export default function EpisodeScreen() {
   };
 
   const handleSaveEpisode = () => {
+    if (episodeSaveLockRef.current) {
+      return;
+    }
+    episodeSaveLockRef.current = true;
+    setEpisodeSaving(true);
     if (!myselfId) {
+      releaseEpisodeSaveLock();
       episodeForm.setFormError('本人が設定されていません。');
+      Alert.alert('エラー', '本人が設定されていません。');
       return;
     }
     const payload = episodeForm.buildSavePayload();
     if (!payload) {
+      releaseEpisodeSaveLock();
+      return;
+    }
+    if (!guardEpisodeShareOnline(payload.visibilityMode)) {
+      releaseEpisodeSaveLock();
       return;
     }
     const resolved = resolveEpisodeSaveEventId(payload, () => {
@@ -438,6 +577,7 @@ export default function EpisodeScreen() {
       episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
     });
     if (!resolved.ok) {
+      releaseEpisodeSaveLock();
       return;
     }
     const { createLinkedEvent: _createLinkedEvent, eventId: _formEventId, ...episodeFields } =
@@ -448,32 +588,44 @@ export default function EpisodeScreen() {
       pendingReview: false,
     };
 
+    const finish = async (savedId: string, isEdit: boolean) => {
+      episodeForm.persistPhotos(savedId, isEdit);
+      if (!episodeListFiltersActive) {
+        pendingScrollEpisodeIdRef.current = savedId;
+      }
+      try {
+        await afterEpisodeSavedLocally(savedId);
+      } finally {
+        episodeForm.forgetDraft();
+        episodeForm.reset();
+        setIsFormVisible(false);
+        loadData();
+        releaseEpisodeSaveLock();
+      }
+    };
+
     if (episodeForm.editingEpisodeId) {
       const updated = updateEpisode(myselfId, episodeForm.editingEpisodeId, episodeInput);
       if (!updated) {
+        releaseEpisodeSaveLock();
         episodeForm.setFormError('エピソードの更新に失敗しました。');
+        Alert.alert('エラー', 'エピソードの更新に失敗しました。');
         return;
       }
       registerSavedEpisodeTag(episodeInput.tag);
-      registerSavedLocationTag(episodeInput.locationTag);
-      episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
-      episodeForm.reset();
-      setIsFormVisible(false);
-      loadData();
+      void finish(episodeForm.editingEpisodeId, true);
       return;
     }
 
     const created = createEpisode(episodeInput);
     if (!created) {
+      releaseEpisodeSaveLock();
       episodeForm.setFormError('エピソードの追加に失敗しました。');
+      Alert.alert('エラー', 'エピソードの追加に失敗しました。');
       return;
     }
     registerSavedEpisodeTag(episodeInput.tag);
-    registerSavedLocationTag(episodeInput.locationTag);
-    episodeForm.persistPhotos(created.id, false);
-    episodeForm.reset();
-    setIsFormVisible(false);
-    loadData();
+    void finish(created.id, false);
   };
 
   return (
@@ -489,14 +641,23 @@ export default function EpisodeScreen() {
         }
       >
         <ScrollView
+          ref={mainScrollRef}
           style={styles.mainScroll}
           contentContainerStyle={[
             styles.mainScrollContent,
             { paddingHorizontal: kit.episodeListPaddingHorizontal, paddingBottom: 80 },
+            !listReady ? styles.mainScrollContentLoading : null,
             isEdgeToEdge ? styles.mainScrollContentEdgeToEdge : null,
           ]}
           keyboardShouldPersistTaps="handled"
         >
+          {!listReady ? (
+            <View style={styles.loadingWrap}>
+              <ActivityIndicator color={content.contentTextSecondary} />
+              <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>読み込み中…</Text>
+            </View>
+          ) : (
+          <View ref={scrollContentRef} collapsable={false}>
           <SearchArea style={isEdgeToEdge ? styles.searchAreaEdgeToEdge : undefined}>
             <SearchAreaRow>
               <SearchAreaTextInputField
@@ -540,19 +701,37 @@ export default function EpisodeScreen() {
                 const posterName = canManage
                   ? null
                   : friendNameById.get(row.episode.authorFriendId) ?? row.episode.authorFriendId;
-                const openDetail = () =>
+                const openDetail = () => {
+                  if (!episodeListFiltersActive) {
+                    pendingScrollEpisodeIdRef.current = row.episode.id;
+                  }
                   router.push({
                     pathname: '/episode-detail',
                     params: { episodeId: row.episode.id, ownerId: authorId },
                   });
+                };
                 return (
-                  <EpisodeListCard
+                  <View
                     key={row.episode.id}
+                    collapsable={false}
+                    onLayout={() => {
+                      if (pendingScrollEpisodeIdRef.current === row.episode.id) {
+                        scrollToPendingEpisode();
+                      }
+                    }}
+                    ref={(node) => {
+                      if (node) {
+                        episodeCardRefs.current.set(row.episode.id, node);
+                      } else {
+                        episodeCardRefs.current.delete(row.episode.id);
+                      }
+                    }}
+                  >
+                  <EpisodeListCard
                     embedded={listItemEmbedded}
                     title={row.episode.title}
                     date={row.episode.date}
                     episodeTag={row.episode.tag}
-                    locationTag={row.episode.locationTag}
                     chips={chips}
                     visibilityMode={canManage ? row.episode.visibilityMode : undefined}
                     posterName={posterName}
@@ -560,9 +739,12 @@ export default function EpisodeScreen() {
                     unfilled={row.episode.pendingReview === true}
                     onPress={openDetail}
                   />
+                  </View>
                 );
               })}
             </ListItemGroup>
+          )}
+          </View>
           )}
         </ScrollView>
       </ListScreenTemplate>
@@ -574,12 +756,13 @@ export default function EpisodeScreen() {
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
         episodeTagOptions={episodeTagOptions}
-        locationTagOptions={locationTagOptions}
         onClose={() => {
+          releaseEpisodeSaveLock();
           episodeForm.reset();
           setIsFormVisible(false);
         }}
         onSave={handleSaveEpisode}
+        saving={episodeSaving}
         onPersonCreated={() => setFriends(getAllFriendsInDefaultOrder())}
       />
 
@@ -628,6 +811,15 @@ const styles = StyleSheet.create({
   },
   mainScrollContent: {
     paddingBottom: 120,
+  },
+  mainScrollContentLoading: {
+    flexGrow: 1,
+  },
+  loadingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
   },
   mainScrollContentEdgeToEdge: {
     gap: Spacing.sm,

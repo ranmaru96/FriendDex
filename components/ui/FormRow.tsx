@@ -17,6 +17,8 @@ type FormRowProps = {
   layout?: 'horizontal' | 'vertical';
   labelWidth?: number;
   labelNumberOfLines?: number;
+  /** 未入力など、この行が保存エラーの対象であるとき内容の枠を強調する */
+  error?: boolean;
 };
 
 export function FormRow({
@@ -29,6 +31,7 @@ export function FormRow({
   layout,
   labelWidth,
   labelNumberOfLines = 1,
+  error = false,
 }: FormRowProps) {
   const kit = useUiKit();
   const isHorizontal = (layout ?? kit.formLayout) === 'horizontal';
@@ -65,6 +68,7 @@ export function FormRow({
           contentLayout === 'compact' ? styles.contentCompact : null,
           contentLayout === 'action' ? styles.contentAction : null,
           contentStyle,
+          error ? styles.contentError : null,
         ]}
       >
         {children}
@@ -108,5 +112,11 @@ const styles = StyleSheet.create({
   contentAction: {
     flex: 1,
     alignItems: 'flex-end',
+  },
+  contentError: {
+    borderWidth: 1.5,
+    borderColor: '#b91c1c',
+    borderRadius: 8,
+    padding: 2,
   },
 });

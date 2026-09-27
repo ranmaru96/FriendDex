@@ -30,17 +30,15 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
-import { getAllProfiles, ensureProfileUserId, getMyself, initializeDatabase } from '../db';
+import { getAllProfiles, getMyself, initializeDatabase } from '../db';
 import { Profile } from '../types';
+import { useAuthSession } from '@/contexts/AuthSessionContext';
+import { requireOnline } from '@/lib/networkReachability';
 
 const QR_SIZE = 280;
 const ICON_SIZE = 56;
 const QR_COLOR = '#000000';
 const CARD_BG = '#ffffff';
-
-const QR_KEYS = ['name', 'nickname', 'birthday', 'height', 'weight', 'origin', 'residence', 'mbti'] as const;
-
-type QrKey = (typeof QR_KEYS)[number];
 
 const FIELD_LABELS: Record<string, string> = {
   name: '名前',
@@ -51,14 +49,13 @@ const FIELD_LABELS: Record<string, string> = {
   origin: '出身',
   residence: '居住地',
   mbti: 'MBTI',
+  photo: '写真',
 };
 
 type QrPayload = {
   userId: string;
   publicFields: string[];
-  familyName?: string;
-  givenName?: string;
-} & Partial<Record<QrKey, string | number | null>>;
+};
 
 const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | null): string => {
   if (!myselfFriendId) {
@@ -71,26 +68,10 @@ const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | nu
   return profiles.find((profile) => profile.friendId === myselfFriendId)?.id ?? '';
 };
 
-const buildQrData = (profile: Profile): QrPayload => {
-  const publicFields = profile.publicFields ?? [];
-  const data: QrPayload = {
-    userId: profile.userId ?? '',
-    publicFields: [...publicFields],
-  };
-
-  publicFields.forEach((key) => {
-    if ((QR_KEYS as readonly string[]).includes(key)) {
-      data[key as QrKey] = profile[key as QrKey];
-    }
-  });
-
-  if (publicFields.includes('name')) {
-    data.familyName = profile.familyName;
-    data.givenName = profile.givenName;
-  }
-
-  return data;
-};
+const buildQrData = (profile: Profile, authUserId: string): QrPayload => ({
+  userId: authUserId,
+  publicFields: [...(profile.publicFields ?? [])],
+});
 
 type FriendDexIconProps = {
   size: number;
@@ -146,6 +127,8 @@ export default function MyProfileQrScreen() {
   const content = useContentColors();
   const headerStyles = useSubScreenHeaderStyles();
   const cardShotRef = useRef<ViewShot>(null);
+  const { session } = useAuthSession();
+  const authUserId = session?.user.id?.trim() ?? '';
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isReady, setIsReady] = useState(false);
 
@@ -153,11 +136,7 @@ export default function MyProfileQrScreen() {
     initializeDatabase();
     const profiles = getAllProfiles();
     const resolvedId = resolveMyselfProfileId(profiles, getMyself());
-    if (resolvedId) {
-      ensureProfileUserId(resolvedId);
-    }
-    const refreshedProfiles = getAllProfiles();
-    const myselfProfile = refreshedProfiles.find((item) => item.id === resolvedId) ?? null;
+    const myselfProfile = profiles.find((item) => item.id === resolvedId) ?? null;
     setProfile(myselfProfile);
     setIsReady(true);
   }, []);
@@ -172,11 +151,11 @@ export default function MyProfileQrScreen() {
   const hasPublicFields = publicFields.length > 0;
 
   const qrData = useMemo(() => {
-    if (!profile || !hasPublicFields) {
+    if (!profile || !hasPublicFields || !authUserId) {
       return null;
     }
-    return buildQrData(profile);
-  }, [profile, hasPublicFields]);
+    return buildQrData(profile, authUserId);
+  }, [authUserId, profile, hasPublicFields]);
 
   const qrValue = useMemo(() => (qrData ? JSON.stringify(qrData) : ''), [qrData]);
 
@@ -262,7 +241,12 @@ export default function MyProfileQrScreen() {
           </Pressable>
           <Pressable
             style={styles.headerIconButton}
-            onPress={() => router.push('/scan')}
+            onPress={() => {
+              if (!requireOnline()) {
+                return;
+              }
+              router.push('/scan');
+            }}
             accessibilityLabel="QRコードを読み取る"
           >
             <Ionicons name="scan-outline" size={24} color={appTheme.topBarText} />
@@ -282,6 +266,12 @@ export default function MyProfileQrScreen() {
                 設定画面へ戻る
               </Text>
             </Pressable>
+          </View>
+        ) : !authUserId ? (
+          <View style={styles.emptyContainer}>
+            <Text style={[styles.emptyMessage, contentMutedTextStyle(content)]}>
+              ログイン中のみ QR を表示します。
+            </Text>
           </View>
         ) : !hasPublicFields ? (
           <View style={styles.emptyContainer}>

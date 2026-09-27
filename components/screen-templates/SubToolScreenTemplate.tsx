@@ -3,11 +3,13 @@ import type { StyleProp, ViewStyle } from 'react-native';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
+import { usePathname } from 'expo-router';
 import { Spacing } from '@/constants/theme';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
+import { shouldKeepSharedHeaderFrame } from '@/utils/bottomNavVisibility';
 
 type SubToolScreenTemplateProps = {
   children: ReactNode;
@@ -48,6 +50,7 @@ export function SubToolScreenTemplate({
   extraScrollHeight = 20,
 }: SubToolScreenTemplateProps) {
   const kit = useUiKit();
+  const pathname = usePathname();
   const sharedHeaderApi = useSharedHeaderChromeOptional();
   const upsertSubToolHeader = sharedHeaderApi?.upsertSubToolHeader;
   const removeSubToolHeader = sharedHeaderApi?.removeSubToolHeader;
@@ -55,13 +58,14 @@ export function SubToolScreenTemplate({
   const bottomNavClearance = useBottomNavScrollClearance();
   const horizontalPadding = useScreenPadding ? kit.subToolScreenPaddingHorizontal : 0;
   const navInShell = bottomNavClearance > 0;
-  /** 下部ナビが無い画面はシェル側ヘッダーが出ないので、ここでトップバーを描く */
+  const keepSharedHeader = shouldKeepSharedHeaderFrame(pathname);
+  /** シェル側がヘッダー枠を維持する画面は、ここでトップバーを重ねず枠へ載せる */
   const useSharedTopBar = Boolean(
     kit.sharedHeaderChrome &&
       useTopBar &&
       upsertSubToolHeader &&
       removeSubToolHeader &&
-      navInShell
+      (navInShell || keepSharedHeader)
   );
   const onBackRef = useRef(onBack);
   onBackRef.current = onBack;

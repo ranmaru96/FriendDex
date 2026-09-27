@@ -25,6 +25,7 @@ type ParticipantChipListProps = {
   onPressProfile?: (friendId: string) => void;
   onChipPress?: (chip: ParticipantChipDisplay) => void;
   onRemoveChip?: (chipId: string) => void;
+  suggestion?: boolean;
   onScrollBeginDrag?: ScrollHandler;
   onScrollEndDrag?: ScrollHandler;
   onMomentumScrollEnd?: ScrollHandler;
@@ -40,6 +41,7 @@ export function ParticipantChipList({
   onPressProfile,
   onChipPress,
   onRemoveChip,
+  suggestion = false,
   onScrollBeginDrag,
   onScrollEndDrag,
   onMomentumScrollEnd,
@@ -69,6 +71,7 @@ export function ParticipantChipList({
             : undefined
       }
       onRemove={onRemoveChip ? () => onRemoveChip(chip.id) : undefined}
+      suggestion={suggestion}
     />
   );
 

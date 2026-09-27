@@ -10,6 +10,7 @@ export type SettlementPersonTransferItem = {
   /** 正 = 自分が受け取る、負 = 自分が支払う */
   signedAmount: number;
   lineLabel: string;
+  incomingFromPeer?: boolean;
 };
 
 export type SettlementPersonAggregate = {

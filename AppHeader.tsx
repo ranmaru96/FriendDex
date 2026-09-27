@@ -4,8 +4,11 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { useIncomingFollowCount } from '@/hooks/useIncomingFollowCount';
 
 const SIDE_WIDTH = 44;
+const BADGE_BG = '#DC2626';
+const BADGE_TEXT = '#FFFFFF';
 
 type AppHeaderProps = {
   /** SharedHeaderFrame 内に置くとき、safe area / 下線は親に任せる */
@@ -19,10 +22,28 @@ export default function AppHeader({ embedded = false }: AppHeaderProps) {
   const headerBackground = appTheme?.colors.headerBackground ?? Theme.surface;
   const headerBorder = appTheme?.colors.headerBorder ?? Theme.border;
   const headerText = appTheme?.colors.headerText ?? Theme.heading;
+  const incomingCount = useIncomingFollowCount();
+  const badgeLabel = incomingCount > 9 ? '9+' : String(incomingCount);
+  const followAccessibility =
+    incomingCount > 0 ? `マイページ、未許可が${incomingCount}件` : 'マイページ';
 
   const row = (
     <View style={styles.row}>
-      <View style={styles.side} />
+      <View style={styles.side}>
+        <Pressable
+          style={styles.gearButton}
+          onPress={() => router.push('/mypage')}
+          accessibilityLabel={followAccessibility}
+          hitSlop={8}
+        >
+          <Ionicons name="people-circle-outline" size={26} color={headerText} />
+          {incomingCount > 0 ? (
+            <View style={styles.badge} pointerEvents="none">
+              <Text style={styles.badgeText}>{badgeLabel}</Text>
+            </View>
+          ) : null}
+        </Pressable>
+      </View>
       <View style={styles.center}>
         <Ionicons name="people" size={22} color={headerText} />
         <Text style={[styles.title, { color: headerText }]}>FriendDex</Text>
@@ -93,5 +114,23 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  badge: {
+    position: 'absolute',
+    top: 4,
+    right: 2,
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: BADGE_BG,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: BADGE_TEXT,
+    fontSize: 10,
+    fontWeight: '800',
+    lineHeight: 12,
   },
 });

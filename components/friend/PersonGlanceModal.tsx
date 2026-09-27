@@ -7,6 +7,7 @@ import {
 } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import type { Friend } from '@/types';
+import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
 
 type PersonGlanceModalProps = {
   visible: boolean;
@@ -21,7 +22,7 @@ export function PersonGlanceModal({ visible, friend, onClose }: PersonGlanceModa
   }
 
   const initial = (friend.name.trim().charAt(0) || '?').toUpperCase();
-  const photoUri = friend.photoUri?.trim() || null;
+  const photoUri = resolveFriendDisplayPhotoUri(friend);
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

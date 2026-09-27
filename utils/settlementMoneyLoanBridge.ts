@@ -75,6 +75,7 @@ export function buildMoneyLoanTransferSections(
             key: buildMoneyLoanBalanceKey(loan.id),
             fromName,
             toName,
+            incomingFromPeer: loan.incomingFromPeer === true,
           };
         });
 
@@ -121,6 +122,7 @@ export function mergeMoneyLoansIntoPersonAggregates(
       roomTitle: sessionTitleById.get(loan.sessionId) ?? '（不明）',
       amount: loan.amount,
       signedAmount,
+      incomingFromPeer: loan.incomingFromPeer === true,
       lineLabel:
         loan.direction === 'lent'
           ? `貸した : ${formatYen(loan.amount)}`

@@ -18,6 +18,7 @@ import { ScreenShell } from '@/components/screen/ScreenShell';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { parseQrScanPayload, qrPayloadToRouteParams } from '@/utils/qrScanHelpers';
 import { Theme } from '@/constants/theme';
+import { requireOnline } from '@/lib/networkReachability';
 
 const FRAME_SIZE = 250;
 const SCAN_FAILURE_COOLDOWN_MS = 3000;
@@ -99,6 +100,9 @@ export default function ScanScreen() {
   const processScanData = useCallback(
     (data: string) => {
       if (scanned) return;
+      if (!requireOnline()) {
+        return;
+      }
 
       const result = navigateToQrImport(data);
       if (!result.ok) {

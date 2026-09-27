@@ -53,6 +53,10 @@ import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
 import { deletePersistedImages } from '@/utils/persistImageFile';
 import { computeProfileCompleteness } from '@/utils/profileCompleteness';
 import {
+  friendHasBothPhotos,
+  resolveFriendDisplayPhotoUri,
+} from '@/utils/friendPhoto';
+import {
   getAllFriendsInDefaultOrder,
   sortFriendsByDefaultOrder,
 } from '@/utils/friendDefaultSort';
@@ -64,19 +68,26 @@ import {
   getDistinctAffiliations,
   getDistinctExperiences,
   getMergedEpisodeTagLabels,
-  getMergedLocationTagLabels,
   getEpisodeListPhotoUrisMap,
   getEpisodeParticipantFriendIds,
   getFriendById,
+  getIncomingSharedEpisodePhotoUrisMap,
   getMyself,
   getProfilesByFriendId,
   initializeDatabase,
+  listIncomingSharedEpisodesForAuthor,
+  parseIncomingSharedEpisodeId,
   searchFriends,
   setDefaultProfile,
+  setFriendPhotoSource,
   updateFriend,
   updateEpisode,
   updateSaying,
 } from './db';
+import { scheduleFriendProfileSync } from '@/lib/identityProfileSync';
+import { scheduleOwnedEpisodeDelete } from '@/lib/ownedEpisodeSync';
+import { afterEpisodeSavedLocally, guardEpisodeShareOnline } from '@/lib/episodeShareSave';
+import { pullIncomingSharedEpisodes } from '@/lib/sharedEpisodeSync';
 import {
   Episode,
   Friend,
@@ -110,7 +121,7 @@ import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
 } from './utils/episodeEventLinking';
-import { registerSavedEpisodeTag, registerSavedLocationTag } from './utils/episodeTagMaster';
+import { registerSavedEpisodeTag } from './utils/episodeTagMaster';
 
 const DETAIL_SLIDE_MS = 260;
 
@@ -245,7 +256,7 @@ const resolveProfileImageStatus = (
     return known;
   }
   // 未観測の相手は URI があれば pending（Completeness は出さない）
-  return friend.photoUri?.trim() ? 'pending' : 'none';
+  return resolveFriendDisplayPhotoUri(friend) ? 'pending' : 'none';
 };
 
 const buildAdjacentSlideSnapshot = (
@@ -493,7 +504,7 @@ function DetailAdjacentSlidePanel({
     return formatted === '-' ? '' : formatted;
   })();
   const [photoFailed, setPhotoFailed] = useState(profileImageStatus === 'failed');
-  const photoUri = friend.photoUri?.trim() ?? '';
+  const photoUri = resolveFriendDisplayPhotoUri(friend) ?? '';
   const showPhoto = Boolean(photoUri) && !photoFailed && profileImageStatus !== 'failed';
   const isCompletenessReady = profileImageStatus !== 'pending';
   const inkActiveColor =
@@ -633,6 +644,7 @@ function DetailAdjacentSlidePanel({
             ]}
           >
             <View style={styles.heroIdentityRow}>
+              <View style={styles.heroPhotoCol}>
               <View style={[styles.heroPhotoOuterFrame, heroPhotoChrome.outer]}>
                 <View style={[styles.heroPhotoInnerFrame, heroPhotoChrome.inner]}>
                   {showPhoto ? (
@@ -644,10 +656,15 @@ function DetailAdjacentSlidePanel({
                     />
                   ) : (
                     <View style={[styles.heroPhotoPlaceholder, heroPhotoChrome.media]}>
-                      <Text style={styles.heroPhotoPlaceholderText}>No Image</Text>
+                      <Ionicons name="camera-outline" size={28} color={c.textMuted} />
+                      <Text style={styles.heroPhotoPlaceholderText}>写真を登録</Text>
                     </View>
                   )}
+                  <View style={styles.heroPhotoCameraBadge} pointerEvents="none">
+                    <Ionicons name="camera-outline" size={14} color="#FFFFFF" />
+                  </View>
                 </View>
+              </View>
               </View>
               <View style={styles.heroIdentityCol}>
                 <View style={styles.heroNameRow}>
@@ -835,6 +852,7 @@ export default function DetailScreen() {
   const [episodePhotoUrisById, setEpisodePhotoUrisById] = useState<Map<string, string[]>>(
     () => new Map()
   );
+  const [incomingAuthorEpisodes, setIncomingAuthorEpisodes] = useState<Episode[]>([]);
   const [profileImageStatus, setProfileImageStatus] = useState<ProfileImageStatus>('none');
   const [heroPhotoCropUri, setHeroPhotoCropUri] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -843,6 +861,8 @@ export default function DetailScreen() {
   const isEpisodeTab = activeTab === 'エピソード';
   const bottomNavClearance = useBottomNavScrollClearance();
   const detailListRef = useRef<FlatList<Episode>>(null);
+  const [episodeScrollTargetId, setEpisodeScrollTargetId] = useState<string | null>(null);
+  const episodeScrollRetryRef = useRef(0);
   const detailScrollOffsetRef = useRef(0);
   const [habitNotes, setHabitNotes] = useState<string[]>([]);
   const [memoNotes, setMemoNotes] = useState<string[]>([]);
@@ -869,10 +889,11 @@ export default function DetailScreen() {
   const [filterSelectorExperienceFilter, setFilterSelectorExperienceFilter] = useState('');
   const [episodeTitleDraft, setEpisodeTitleDraft] = useState('');
   const [isEpisodeFormVisible, setIsEpisodeFormVisible] = useState(false);
+  const episodeSaveLockRef = useRef(false);
+  const [episodeSaving, setEpisodeSaving] = useState(false);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
-  const [locationTagOptions, setLocationTagOptions] = useState<Option[]>([]);
   const [isSayingFormVisible, setIsSayingFormVisible] = useState(false);
   const [editingSayingId, setEditingSayingId] = useState<string | null>(null);
   const [sayingText, setSayingText] = useState('');
@@ -1045,6 +1066,7 @@ export default function DetailScreen() {
       setMyselfId(null);
       setAllFriends([]);
       setProfileImageStatus('none');
+      setIncomingAuthorEpisodes([]);
       setHasAttemptedFriendLoad(true);
       return;
     }
@@ -1061,12 +1083,16 @@ export default function DetailScreen() {
       }
     }
     setFriend(loaded);
-    setEpisodePhotoUrisById(
-      getEpisodeListPhotoUrisMap((loaded?.episodes ?? []).map((episode) => episode.id))
-    );
+    const incoming = loaded ? listIncomingSharedEpisodesForAuthor(loaded.id) : [];
+    setIncomingAuthorEpisodes(incoming);
+    const photoMap = getEpisodeListPhotoUrisMap((loaded?.episodes ?? []).map((episode) => episode.id));
+    getIncomingSharedEpisodePhotoUrisMap().forEach((uris, episodeId) => {
+      photoMap.set(episodeId, uris);
+    });
+    setEpisodePhotoUrisById(photoMap);
     setProfiles(loadedProfiles);
     setMyselfId(currentMyselfId);
-    setProfileImageStatus(loaded?.photoUri?.trim() ? 'pending' : 'none');
+    setProfileImageStatus(loaded && resolveFriendDisplayPhotoUri(loaded) ? 'pending' : 'none');
     const loadedTraits = loaded?.traits ?? [];
     setHabitNotes(loadedTraits);
     setMemoNotes(loaded?.notes ?? []);
@@ -1074,7 +1100,6 @@ export default function DetailScreen() {
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
-    setLocationTagOptions(getMergedLocationTagLabels().map((v) => ({ label: v, value: v })));
     setHasAttemptedFriendLoad(true);
   }, [friendId]);
 
@@ -1085,6 +1110,9 @@ export default function DetailScreen() {
   useLayoutEffect(() => {
     skipNextFocusReloadRef.current = true;
     loadFriend();
+    void pullIncomingSharedEpisodes().then(() => {
+      loadFriendRef.current();
+    });
   }, [friendId, loadFriend]);
 
   useFocusEffect(
@@ -1094,6 +1122,9 @@ export default function DetailScreen() {
         return;
       }
       loadFriend();
+      void pullIncomingSharedEpisodes().then(() => {
+        loadFriendRef.current();
+      });
     }, [loadFriend])
   );
 
@@ -1133,6 +1164,7 @@ export default function DetailScreen() {
     setHabitFormError('');
     setIsEpisodeFormVisible(false);
     setFilterSelectorVisible(false);
+    episodeForm.flushDraft();
     episodeForm.reset();
     setIsSayingFormVisible(false);
     setEditingSayingId(null);
@@ -1140,7 +1172,7 @@ export default function DetailScreen() {
     setSayingDate('');
     setSayingFormError('');
     setShowSayingDatePicker(false);
-  }, [friendId, episodeForm.reset]);
+  }, [friendId, episodeForm.flushDraft, episodeForm.reset]);
 
   const friendNameById = useMemo(() => {
     const map = new Map<string, string>();
@@ -1149,7 +1181,7 @@ export default function DetailScreen() {
   }, [allFriends]);
   const friendPhotoById = useMemo(() => {
     const map = new Map<string, string | null>();
-    allFriends.forEach((item) => map.set(item.id, item.photoUri ?? null));
+    allFriends.forEach((item) => map.set(item.id, resolveFriendDisplayPhotoUri(item)));
     return map;
   }, [allFriends]);
   const selectedProfile = useMemo(() => {
@@ -1203,8 +1235,8 @@ export default function DetailScreen() {
 
   const sortedEpisodes = useMemo(() => {
     if (!friend) return [];
-    return [...friend.episodes].sort(compareEpisodesByEventDateTime);
-  }, [friend]);
+    return [...friend.episodes, ...incomingAuthorEpisodes].sort(compareEpisodesByEventDateTime);
+  }, [friend, incomingAuthorEpisodes]);
 
   const filteredEpisodes = useMemo(() => {
     return sortedEpisodes.filter((episode) => {
@@ -1223,6 +1255,31 @@ export default function DetailScreen() {
       return true;
     });
   }, [episodeFilterSelectedIds, episodeTitleFilter, sortedEpisodes]);
+
+  const personEpisodeFiltersActive =
+    episodeTitleFilter.trim().length > 0 || episodeFilterSelectedIds.size > 0;
+
+  useEffect(() => {
+    const targetId = episodeScrollTargetId;
+    if (!targetId || !isEpisodeTab) {
+      return;
+    }
+    if (personEpisodeFiltersActive) {
+      setEpisodeScrollTargetId(null);
+      return;
+    }
+    const index = filteredEpisodes.findIndex((episode) => episode.id === targetId);
+    if (index < 0) {
+      setEpisodeScrollTargetId(null);
+      return;
+    }
+    episodeScrollRetryRef.current = 0;
+    const timer = setTimeout(() => {
+      detailListRef.current?.scrollToIndex({ index, viewPosition: 0, animated: false });
+      setEpisodeScrollTargetId(null);
+    }, 50);
+    return () => clearTimeout(timer);
+  }, [episodeScrollTargetId, filteredEpisodes, isEpisodeTab, personEpisodeFiltersActive]);
 
 
   const sortedSayings = useMemo(() => {
@@ -1477,6 +1534,10 @@ export default function DetailScreen() {
     setDetailEpisodeFilter((prev) => ({ ...prev, title: episodeTitleDraft }));
   }, [episodeTitleDraft, setDetailEpisodeFilter]);
 
+  const notifyMyselfSync = (id: string) => {
+    scheduleFriendProfileSync(id);
+  };
+
   const handleSaveSayings = () => {
     const text = sayingText.trim();
     const date = sayingDate.trim();
@@ -1501,6 +1562,7 @@ export default function DetailScreen() {
     setSayingFormError('');
     closeSayingForm();
     loadFriend();
+    notifyMyselfSync(friendId);
   };
 
   const startCreateSaying = () => {
@@ -1538,6 +1600,7 @@ export default function DetailScreen() {
             setSayingDate('');
           }
           loadFriend();
+          notifyMyselfSync(friendId);
         },
       },
     ]);
@@ -1583,6 +1646,7 @@ export default function DetailScreen() {
       setFriend((prev) =>
         prev ? { ...prev, traits: normalizedTraits, notes: normalizedNotes } : prev
       );
+      notifyMyselfSync(friend.id);
     }
   };
 
@@ -1630,11 +1694,32 @@ export default function DetailScreen() {
       }
       return;
     }
-    if (previousUri && previousUri !== nextPhotoUri) {
+    if (
+      previousUri &&
+      previousUri !== nextPhotoUri &&
+      previousUri !== friend.identityPhotoUri
+    ) {
       deletePersistedImages([previousUri]);
     }
-    setFriend((prev) => (prev ? { ...prev, photoUri: nextPhotoUri } : prev));
-    setProfileImageStatus(nextPhotoUri?.trim() ? 'loaded' : 'none');
+    const nextSource = nextPhotoUri?.trim()
+      ? 'local'
+      : friend.identityPhotoUri?.trim()
+        ? 'identity'
+        : 'local';
+    if (nextSource === 'local' && nextPhotoUri?.trim()) {
+      setFriendPhotoSource(friend.id, 'local');
+    } else if (nextSource === 'identity') {
+      setFriendPhotoSource(friend.id, 'identity');
+    }
+    setFriend((prev) =>
+      prev ? { ...prev, photoUri: nextPhotoUri, photoSource: nextSource } : prev
+    );
+    setProfileImageStatus(
+      nextPhotoUri?.trim() || (nextSource === 'identity' && Boolean(friend.identityPhotoUri?.trim()))
+        ? 'loaded'
+        : 'none'
+    );
+    notifyMyselfSync(friend.id);
   };
 
   const onPickHeroPhoto = async () => {
@@ -1647,6 +1732,18 @@ export default function DetailScreen() {
     if (!result.canceled && result.assets[0]) {
       setHeroPhotoCropUri(result.assets[0].uri);
     }
+  };
+
+  const handlePhotoSourceChange = (photoSource: 'local' | 'identity') => {
+    if (!friend) {
+      return;
+    }
+    const ok = setFriendPhotoSource(friend.id, photoSource);
+    if (!ok) {
+      return;
+    }
+    setFriend((prev) => (prev ? { ...prev, photoSource } : prev));
+    setProfileImageStatus('pending');
   };
 
   const activeNoteItems = activeTab === 'メモ' ? memoNotes : habitNotes;
@@ -1753,16 +1850,26 @@ export default function DetailScreen() {
     episodeForm.reset();
   };
 
+  const releaseEpisodeSaveLock = () => {
+    episodeSaveLockRef.current = false;
+    setEpisodeSaving(false);
+  };
+
   const startCreateEpisode = () => {
     if (!myselfId) {
       Alert.alert('案内', '本人が設定されていません。');
       return;
     }
+    releaseEpisodeSaveLock();
     episodeForm.reset();
     setIsEpisodeFormVisible(true);
   };
 
   const startEditEpisode = (episode: Episode) => {
+    if (parseIncomingSharedEpisodeId(episode.id)) {
+      return;
+    }
+    releaseEpisodeSaveLock();
     episodeForm.loadFromEpisode(episode);
     setIsEpisodeFormVisible(true);
   };
@@ -1785,7 +1892,10 @@ export default function DetailScreen() {
             Alert.alert('エラー', 'エピソードの削除に失敗しました。');
             return;
           }
+          scheduleOwnedEpisodeDelete(episodeId);
           if (episodeForm.editingEpisodeId === episodeId) {
+            episodeForm.discardUncommittedPhotos();
+            episodeForm.forgetDraft();
             episodeForm.reset();
             setIsEpisodeFormVisible(false);
           }
@@ -1820,7 +1930,6 @@ export default function DetailScreen() {
             title={episode.title}
             date={episode.date}
             episodeTag={episode.tag}
-            locationTag={episode.locationTag}
             chips={chips}
             visibilityMode={canManage ? episode.visibilityMode : undefined}
             posterName={canManage ? null : posterName}
@@ -1994,16 +2103,30 @@ export default function DetailScreen() {
   );
 
   const handleSaveEpisode = () => {
+    if (episodeSaveLockRef.current) {
+      return;
+    }
+    episodeSaveLockRef.current = true;
+    setEpisodeSaving(true);
     if (!friend) {
+      releaseEpisodeSaveLock();
       episodeForm.setFormError('人物データが見つかりません。');
+      Alert.alert('エラー', '人物データが見つかりません。');
       return;
     }
     if (!myselfId) {
+      releaseEpisodeSaveLock();
       episodeForm.setFormError('本人が設定されていません。');
+      Alert.alert('エラー', '本人が設定されていません。');
       return;
     }
     const payload = episodeForm.buildSavePayload();
     if (!payload) {
+      releaseEpisodeSaveLock();
+      return;
+    }
+    if (!guardEpisodeShareOnline(payload.visibilityMode)) {
+      releaseEpisodeSaveLock();
       return;
     }
     const resolved = resolveEpisodeSaveEventId(payload, () => {
@@ -2011,6 +2134,7 @@ export default function DetailScreen() {
       episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
     });
     if (!resolved.ok) {
+      releaseEpisodeSaveLock();
       return;
     }
     const { createLinkedEvent: _createLinkedEvent, eventId: _formEventId, ...episodeFields } =
@@ -2021,28 +2145,45 @@ export default function DetailScreen() {
       pendingReview: false,
     };
 
+    const finish = async (savedId: string, isEdit: boolean) => {
+      episodeForm.persistPhotos(savedId, isEdit);
+      if (!personEpisodeFiltersActive) {
+        setActiveTab('エピソード');
+        setEpisodeScrollTargetId(savedId);
+      }
+      try {
+        await afterEpisodeSavedLocally(savedId);
+      } finally {
+        episodeForm.forgetDraft();
+        episodeForm.reset();
+        setIsEpisodeFormVisible(false);
+        loadFriend();
+        releaseEpisodeSaveLock();
+      }
+    };
+
     if (episodeForm.editingEpisodeId) {
       const updated = updateEpisode(myselfId, episodeForm.editingEpisodeId, episodeInput);
       if (!updated) {
+        releaseEpisodeSaveLock();
         episodeForm.setFormError('エピソードの更新に失敗しました。');
+        Alert.alert('エラー', 'エピソードの更新に失敗しました。');
         return;
       }
       registerSavedEpisodeTag(episodeInput.tag);
-      registerSavedLocationTag(episodeInput.locationTag);
-      episodeForm.persistPhotos(episodeForm.editingEpisodeId, true);
-    } else {
-      const created = createEpisode(episodeInput);
-      if (!created) {
-        episodeForm.setFormError('エピソードの追加に失敗しました。');
-        return;
-      }
-      registerSavedEpisodeTag(episodeInput.tag);
-      registerSavedLocationTag(episodeInput.locationTag);
-      episodeForm.persistPhotos(created.id, false);
+      void finish(episodeForm.editingEpisodeId, true);
+      return;
     }
-    episodeForm.reset();
-    setIsEpisodeFormVisible(false);
-    loadFriend();
+
+    const created = createEpisode(episodeInput);
+    if (!created) {
+      releaseEpisodeSaveLock();
+      episodeForm.setFormError('エピソードの追加に失敗しました。');
+      Alert.alert('エラー', 'エピソードの追加に失敗しました。');
+      return;
+    }
+    registerSavedEpisodeTag(episodeInput.tag);
+    void finish(created.id, false);
   };
 
   if (!friend) {
@@ -2070,6 +2211,8 @@ export default function DetailScreen() {
       </TabScreenTemplate>
     );
   }
+
+  const displayPhotoUri = resolveFriendDisplayPhotoUri(friend);
 
   const openProfileSwitcher = () => {
     if (!friend || selectableProfiles.length === 0) {
@@ -2239,6 +2382,24 @@ export default function DetailScreen() {
                 onScroll={(event) => {
                   detailScrollOffsetRef.current = event.nativeEvent.contentOffset.y;
                 }}
+                onScrollToIndexFailed={(info) => {
+                  if (!episodeScrollTargetId || episodeScrollRetryRef.current >= 2) {
+                    setEpisodeScrollTargetId(null);
+                    return;
+                  }
+                  episodeScrollRetryRef.current += 1;
+                  detailListRef.current?.scrollToOffset({
+                    offset: info.averageItemLength * info.index,
+                    animated: false,
+                  });
+                  setTimeout(() => {
+                    detailListRef.current?.scrollToIndex({
+                      index: info.index,
+                      viewPosition: 0,
+                      animated: false,
+                    });
+                  }, 80);
+                }}
                 scrollEventThrottle={16}
                 contentContainerStyle={{
                   paddingBottom: noteComposerOpen
@@ -2344,6 +2505,7 @@ export default function DetailScreen() {
           ]}
         >
           <View style={styles.heroIdentityRow}>
+            <View style={styles.heroPhotoCol}>
             <Pressable
               style={[
                 styles.heroPhotoOuterFrame,
@@ -2354,9 +2516,9 @@ export default function DetailScreen() {
               accessibilityLabel={friend.photoUri ? '写真を変更' : '写真を登録'}
             >
               <View style={[styles.heroPhotoInnerFrame, heroPhotoChrome.inner]}>
-                {friend.photoUri && profileImageStatus !== 'failed' ? (
+                {displayPhotoUri && profileImageStatus !== 'failed' ? (
                   <Image
-                    source={{ uri: friend.photoUri }}
+                    source={{ uri: displayPhotoUri }}
                     style={[styles.heroPhoto, heroPhotoChrome.media]}
                     resizeMode="cover"
                     onLoad={() => setProfileImageStatus('loaded')}
@@ -2373,6 +2535,47 @@ export default function DetailScreen() {
                 </View>
               </View>
             </Pressable>
+            {friendHasBothPhotos(friend) ? (
+              <View style={styles.photoSourceRow}>
+                <Pressable
+                  style={[
+                    styles.photoSourceChip,
+                    friend.photoSource !== 'identity' ? styles.photoSourceChipOn : null,
+                  ]}
+                  onPress={() => handlePhotoSourceChange('local')}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: friend.photoSource !== 'identity' }}
+                >
+                  <Text
+                    style={[
+                      styles.photoSourceChipText,
+                      friend.photoSource !== 'identity' ? styles.photoSourceChipTextOn : null,
+                    ]}
+                  >
+                    登録
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.photoSourceChip,
+                    friend.photoSource === 'identity' ? styles.photoSourceChipOn : null,
+                  ]}
+                  onPress={() => handlePhotoSourceChange('identity')}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: friend.photoSource === 'identity' }}
+                >
+                  <Text
+                    style={[
+                      styles.photoSourceChipText,
+                      friend.photoSource === 'identity' ? styles.photoSourceChipTextOn : null,
+                    ]}
+                  >
+                    本人
+                  </Text>
+                </Pressable>
+              </View>
+            ) : null}
+            </View>
             <View style={styles.heroIdentityCol}>
               <View style={styles.heroNameRow}>
                 <View style={styles.heroNameTextCol}>
@@ -2442,7 +2645,7 @@ export default function DetailScreen() {
             <View style={styles.heroStatCell}>
               <Text style={styles.heroStatLabel}>episodes</Text>
               <View style={styles.heroStatValueRow}>
-                <Text style={styles.heroStatValue}>{friend.episodes.length}</Text>
+                <Text style={styles.heroStatValue}>{friend.episodes.length + incomingAuthorEpisodes.length}</Text>
                 <Text style={styles.heroStatUnit}>件</Text>
               </View>
             </View>
@@ -2615,6 +2818,7 @@ export default function DetailScreen() {
                 addLabel="エピソードを追加"
                 onPress={() => {
                   if (isEpisodeFormVisible && !episodeForm.editingEpisodeId) {
+                    episodeForm.flushDraft();
                     episodeForm.reset();
                     setIsEpisodeFormVisible(false);
                   } else {
@@ -2912,12 +3116,13 @@ export default function DetailScreen() {
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
         episodeTagOptions={episodeTagOptions}
-        locationTagOptions={locationTagOptions}
         onClose={() => {
+          releaseEpisodeSaveLock();
           episodeForm.reset();
           setIsEpisodeFormVisible(false);
         }}
         onSave={handleSaveEpisode}
+        saving={episodeSaving}
         onPersonCreated={() => setAllFriends(getAllFriendsInDefaultOrder())}
       />
       <EntrySelectorModal

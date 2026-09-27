@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Theme, Radius, Spacing } from '@/constants/theme';
@@ -13,7 +13,11 @@ import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormSty
 import { useSettlementMock } from '@/contexts/SettlementMockContext';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
+import { buildFriendPhotoById } from '@/utils/friendPhoto';
 import { getMyself, initializeDatabase } from '@/db';
+import { pullSharedSettlementRooms } from '@/lib/sharedSettlementSync';
+import { requireOnline } from '@/lib/networkReachability';
+import { canToggleGroupTransfer } from '@/utils/settlementToggleAccess';
 import type { Friend } from '@/types';
 import type { SettlementExpense, SettlementRoomMember } from '@/types/settlement';
 import { buildFriendNameById, formatYen } from '@/utils/moneyLoanHelpers';
@@ -70,7 +74,7 @@ function mockRoomToEngine(
 
 export default function SettlementRoomDetailScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
-  const { getRoom, addExpense, updateRoomTitle, isTransferCompleted, toggleTransferCompleted } =
+  const { getRoom, addExpense, updateRoomTitle, isTransferCompleted, toggleTransferCompleted, reloadFromStore } =
     useSettlementMock();
   const storedRoom = roomId ? getRoom(roomId) : undefined;
 
@@ -84,6 +88,7 @@ export default function SettlementRoomDetailScreen() {
   const [titleDraft, setTitleDraft] = useState('');
   const [titleError, setTitleError] = useState('');
   const [titleEditorVisible, setTitleEditorVisible] = useState(false);
+  const [writing, setWriting] = useState(false);
   const appTheme = useAppThemeOptional();
   const topBarText = appTheme?.colors.topBarText ?? Theme.topBarText;
   const formStyles = useMoneyLoanFormStyles();
@@ -97,15 +102,24 @@ export default function SettlementRoomDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      let cancelled = false;
       loadFriends();
-    }, [loadFriends])
+      void (async () => {
+        await pullSharedSettlementRooms();
+        if (cancelled) {
+          return;
+        }
+        reloadFromStore();
+        loadFriends();
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [loadFriends, reloadFromStore])
   );
 
   const friendNameById = useMemo(() => buildFriendNameById(friends), [friends]);
-  const friendPhotoById = useMemo(
-    () => new Map(friends.map((friend) => [friend.id, friend.photoUri ?? null])),
-    [friends]
-  );
+  const friendPhotoById = useMemo(() => buildFriendPhotoById(friends), [friends]);
 
   const room = useMemo(
     () =>
@@ -139,8 +153,11 @@ export default function SettlementRoomDetailScreen() {
     }
   }, [room]);
 
-  const handleSaveTitle = useCallback(() => {
+  const handleSaveTitle = useCallback(async () => {
     if (!room) {
+      return;
+    }
+    if (!requireOnline() || writing) {
       return;
     }
     const normalized = titleDraft.trim();
@@ -153,14 +170,19 @@ export default function SettlementRoomDetailScreen() {
       setTitleError('');
       return;
     }
-    const ok = updateRoomTitle(room.id, normalized);
-    if (!ok) {
-      setTitleError('グループ名の更新に失敗しました。');
-      return;
+    setWriting(true);
+    try {
+      const { ok, errorMessage } = await updateRoomTitle(room.id, normalized);
+      if (!ok) {
+        setTitleError(errorMessage ?? 'グループ名の更新に失敗しました。');
+        return;
+      }
+      setTitleError('');
+      setTitleEditorVisible(false);
+    } finally {
+      setWriting(false);
     }
-    setTitleError('');
-    setTitleEditorVisible(false);
-  }, [room, titleDraft, updateRoomTitle]);
+  }, [room, titleDraft, updateRoomTitle, writing]);
 
   const memberChips = useMemo(
     () =>
@@ -240,8 +262,11 @@ export default function SettlementRoomDetailScreen() {
     });
   }, []);
 
-  const handleAddExpense = useCallback(() => {
+  const handleAddExpense = useCallback(async () => {
     if (!room || !engine) {
+      return;
+    }
+    if (!requireOnline() || writing) {
       return;
     }
     const payerId =
@@ -258,21 +283,26 @@ export default function SettlementRoomDetailScreen() {
       return;
     }
     const amount = Math.floor(Number(expenseAmountText.replace(/,/g, '')) || 0);
-    const created = addExpense({
-      roomId: room.id,
-      payerMemberId: payerId,
-      title: expenseTitle,
-      amount,
-      splitMemberIds: splitIds,
-    });
-    if (!created) {
-      setFormError('タイトルと金額を入力してください。');
-      return;
+    setWriting(true);
+    try {
+      const { expense, errorMessage } = await addExpense({
+        roomId: room.id,
+        payerMemberId: payerId,
+        title: expenseTitle,
+        amount,
+        splitMemberIds: splitIds,
+      });
+      if (!expense) {
+        setFormError(errorMessage ?? 'タイトルと金額を入力してください。');
+        return;
+      }
+      setFormError('');
+      setExpenseTitle('');
+      setExpenseAmountText('');
+      setSplitMemberIds(new Set(room.members.map((member) => member.id)));
+    } finally {
+      setWriting(false);
     }
-    setFormError('');
-    setExpenseTitle('');
-    setExpenseAmountText('');
-    setSplitMemberIds(new Set(room.members.map((member) => member.id)));
   }, [
     addExpense,
     engine,
@@ -282,6 +312,7 @@ export default function SettlementRoomDetailScreen() {
     payerMemberId,
     room,
     splitMemberIds,
+    writing,
   ]);
 
   if (!room || !engine) {
@@ -408,7 +439,11 @@ export default function SettlementRoomDetailScreen() {
           <Text style={[styles.splitPreview, contentMutedTextStyle(content)]}>{splitPreview}</Text>
         ) : null}
         {formError ? <Text style={formStyles.formError}>{formError}</Text> : null}
-        <Pressable style={formStyles.primaryButton} onPress={handleAddExpense}>
+        <Pressable
+          style={[formStyles.primaryButton, writing ? { opacity: 0.55 } : null]}
+          onPress={() => void handleAddExpense()}
+          disabled={writing}
+        >
           <Text style={formStyles.primaryButtonText}>支出を登録</Text>
         </Pressable>
       </MoneyLoanFormCard>
@@ -444,7 +479,25 @@ export default function SettlementRoomDetailScreen() {
               key={transfer.key}
               transfer={transfer}
               isCompleted={isTransferCompleted(transfer.key)}
-              onToggle={() => toggleTransferCompleted(transfer.key)}
+              canToggle={canToggleGroupTransfer(room, transfer.fromMemberId, myselfId)}
+              onToggle={() => {
+                if (!canToggleGroupTransfer(room, transfer.fromMemberId, myselfId) || writing) {
+                  return;
+                }
+                if (!requireOnline()) {
+                  return;
+                }
+                setWriting(true);
+                void toggleTransferCompleted(transfer.key)
+                  .then((result) => {
+                    if (result.errorMessage) {
+                      Alert.alert('更新できませんでした', result.errorMessage);
+                    }
+                  })
+                  .finally(() => {
+                    setWriting(false);
+                  });
+              }}
             />
           ))}
         </MoneyLoanFormCard>
@@ -473,7 +526,7 @@ export default function SettlementRoomDetailScreen() {
               placeholderTextColor={content.contentTextSecondary}
               autoFocus
               returnKeyType="done"
-              onSubmitEditing={handleSaveTitle}
+              onSubmitEditing={() => void handleSaveTitle()}
             />
             {titleError ? <Text style={styles.titleModalError}>{titleError}</Text> : null}
             <View style={styles.titleModalActions}>
@@ -484,8 +537,13 @@ export default function SettlementRoomDetailScreen() {
                 <Text style={[styles.titleModalCancelText, contentTextStyle(content)]}>キャンセル</Text>
               </Pressable>
               <Pressable
-                style={[styles.titleModalSave, contentFilledButtonStyle(content)]}
-                onPress={handleSaveTitle}
+                style={[
+                  styles.titleModalSave,
+                  contentFilledButtonStyle(content),
+                  writing ? { opacity: 0.55 } : null,
+                ]}
+                onPress={() => void handleSaveTitle()}
+                disabled={writing}
               >
                 <Text style={[styles.titleModalSaveText, contentFilledButtonTextStyle(content)]}>保存</Text>
               </Pressable>

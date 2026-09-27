@@ -95,7 +95,12 @@ export function shouldRememberTabRoute(
   if (shouldHideBottomNav(pathname)) {
     return false;
   }
-  if (pathname.includes('setup-myself') || pathname.includes('/appsettings')) {
+  if (
+    pathname.includes('setup-myself') ||
+    pathname.includes('/appsettings') ||
+    pathname.includes('login') ||
+    pathname.includes('auth-preview')
+  ) {
     return false;
   }
   return true;

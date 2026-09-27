@@ -18,6 +18,7 @@ const HIDE_HEADER_PATHS = [
   'your-answer',
   'wishlist',
   'follows',
+  'mypage',
   'friends',
   'task-edit',
   'task-detail',
@@ -25,6 +26,8 @@ const HIDE_HEADER_PATHS = [
   'appsettings',
   'commonitems',
   'setup-myself',
+  'login',
+  'auth-preview',
 ];
 
 const HIDE_BOTTOM_NAV_PATHS = [
@@ -35,12 +38,15 @@ const HIDE_BOTTOM_NAV_PATHS = [
   'scan',
   'qr-import',
   'follows',
+  'mypage',
   'friends',
   'task-edit',
   'task-detail',
   'task-group',
   'commonitems',
   'setup-myself',
+  'login',
+  'auth-preview',
 ];
 
 export function shouldHideHeader(pathname: string): boolean {
@@ -49,6 +55,14 @@ export function shouldHideHeader(pathname: string): boolean {
 
 export function shouldHideBottomNav(pathname: string): boolean {
   return HIDE_BOTTOM_NAV_PATHS.some((segment) => pathname.includes(segment));
+}
+
+/** シェルのヘッダー枠を残す。外すと遷移中に中身が上下へ跳ねる */
+export function shouldKeepSharedHeaderFrame(pathname: string): boolean {
+  if (pathname.includes('mypage')) {
+    return true;
+  }
+  return shouldHideHeader(pathname) && !shouldHideBottomNav(pathname);
 }
 
 export function getBottomNavScrollClearance(pathname: string): number {

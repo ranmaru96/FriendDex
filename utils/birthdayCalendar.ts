@@ -1,4 +1,5 @@
 import type { Friend } from '@/types';
+import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
 
 export type BirthdayFriendDisplay = {
   friendId: string;
@@ -38,7 +39,7 @@ export const buildBirthdayFriendsByMonthDay = (
     list.push({
       friendId: friend.id,
       name: friend.name,
-      photoUri: friend.photoUri ?? null,
+      photoUri: resolveFriendDisplayPhotoUri(friend),
     });
     map.set(monthDay, list);
   });

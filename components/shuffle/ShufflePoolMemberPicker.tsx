@@ -6,6 +6,7 @@ import type { Option } from '@/components/episode/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import type { Friend } from '@/types';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
+import { buildFriendPhotoById } from '@/utils/friendPhoto';
 import { memberIdsToParticipantEntries } from '@/utils/shuffleHelpers';
 import {
   contentMutedTextStyle,
@@ -88,7 +89,7 @@ export function ShufflePoolMemberPicker({
     [eligibleFriends]
   );
   const friendPhotoById = useMemo(
-    () => new Map(eligibleFriends.map((friend) => [friend.id, friend.photoUri ?? null])),
+    () => buildFriendPhotoById(eligibleFriends),
     [eligibleFriends]
   );
 

@@ -8,6 +8,7 @@ import {
 } from '../db';
 import type { Episode } from '../types';
 import { formatDateKey, getLocalDateKeysForEvent, parseDateKey } from './eventHelpers';
+import { scheduleOwnedEpisodeDelete, scheduleOwnedEpisodeSync } from '@/lib/ownedEpisodeSync';
 
 let isSyncingEventEpisode = false;
 
@@ -73,6 +74,7 @@ export const clampLinkedEpisodeDatesToEvent = (eventId: string): void => {
           episode.id,
           buildEpisodeInputFromEpisode(episode, { eventId: null })
         );
+        scheduleOwnedEpisodeSync(episode.id);
         return;
       }
       updateEpisode(
@@ -80,6 +82,7 @@ export const clampLinkedEpisodeDatesToEvent = (eventId: string): void => {
         episode.id,
         buildEpisodeInputFromEpisode(episode, { date: fallbackDate })
       );
+      scheduleOwnedEpisodeSync(episode.id);
     });
   } finally {
     isSyncingEventEpisode = false;
@@ -112,6 +115,7 @@ export const unlinkEpisodesFromEvent = (eventId: string): void => {
         return;
       }
       updateEpisode(ownerId, episode.id, buildEpisodeInputFromEpisode(episode, { eventId: null }));
+      scheduleOwnedEpisodeSync(episode.id);
     });
   } finally {
     isSyncingEventEpisode = false;
@@ -131,6 +135,7 @@ export const deleteEpisodesLinkedToEvent = (eventId: string): void => {
       return;
     }
     deleteEpisode(ownerId, episode.id);
+    scheduleOwnedEpisodeDelete(episode.id);
   });
 };
 

@@ -26,6 +26,7 @@ import Animated, {
 import { Theme, Radius, Typography } from '@/constants/theme';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
 import { createFriend, getAllFriends, initializeDatabase } from '@/db';
+import { syncOwnedPersonCardIfNeeded } from '@/lib/ownedPersonCardSync';
 import {
   contentFilledButtonStyle,
   contentFilledButtonTextStyle,
@@ -39,6 +40,7 @@ import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
 import { useContentColors } from '@/utils/useContentColors';
 import type { Option } from '@/components/episode/types';
 import type { Friend, FriendInput } from '@/types';
+import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import type { ParticipantChipDisplay } from '@/utils/episodeHelpers';
 import {
@@ -267,6 +269,10 @@ export type EntrySelectorModalProps = {
   allowCreate?: boolean;
   /** 選択中の対象者を全部外す（モーダルは閉じない） */
   onResetSelection?: () => void;
+  /** 選択中チップの見出し。未指定は「対象者」 */
+  selectionTitle?: string;
+  /** 候補が0件のときの文言 */
+  emptyListMessage?: string;
 };
 
 export function EntrySelectorModal({
@@ -297,6 +303,8 @@ export function EntrySelectorModal({
   highlightedIds,
   allowCreate = true,
   onResetSelection,
+  selectionTitle = '対象者',
+  emptyListMessage,
 }: EntrySelectorModalProps) {
   const content = useContentColors();
   const highlightColor = '#f59e0b';
@@ -472,7 +480,7 @@ export function EntrySelectorModal({
         kind: 'individual' as const,
         label: friend?.name?.trim() || friendId,
         friendId,
-        photoUri: friend?.photoUri ?? null,
+        photoUri: friend ? resolveFriendDisplayPhotoUri(friend) : null,
       };
     });
   }, [directoryFriends, selectedIndividualIds]);
@@ -515,6 +523,7 @@ export function EntrySelectorModal({
         familyName: nameParts.familyName,
         givenName: nameParts.givenName,
       });
+      void syncOwnedPersonCardIfNeeded(created.id);
       setExtraFriends((prev) => (prev.some((friend) => friend.id === created.id) ? prev : [...prev, created]));
       onPersonCreated?.(created);
       if (!selectedIndividualIds.has(created.id)) {
@@ -655,7 +664,9 @@ export function EntrySelectorModal({
 
             <View style={styles.selectorHeaderRow}>
               <View style={styles.selectorHeaderLeading}>
-                <Text style={[styles.selectorHeaderTitle, contentTextStyle(content)]}>対象者</Text>
+                <Text style={[styles.selectorHeaderTitle, contentTextStyle(content)]}>
+                  {selectionTitle}
+                </Text>
                 {onResetSelection ? (
                   <Pressable
                     onPress={onResetSelection}
@@ -796,17 +807,27 @@ export function EntrySelectorModal({
                       checked={selectedIndividualIds.has(item.id)}
                       highlighted={highlightedIds?.has(item.id)}
                       highlightColor={highlightColor}
-                      photoUri={item.photoUri}
+                      photoUri={resolveFriendDisplayPhotoUri(item)}
                       width={itemWidth}
                       onPress={() => onToggleIndividual(item.id)}
                       content={content}
                     />
                   )}
-                  numColumns={SELECTOR_COLUMNS}
-                  columnWrapperStyle={styles.selectorColumnWrapper}
+                  numColumns={filteredFriends.length === 0 ? 1 : SELECTOR_COLUMNS}
+                  columnWrapperStyle={filteredFriends.length > 0 ? styles.selectorColumnWrapper : undefined}
                   style={styles.selectorListScroll}
-                  contentContainerStyle={styles.selectorListContent}
+                  contentContainerStyle={[
+                    styles.selectorListContent,
+                    filteredFriends.length === 0 ? styles.selectorListEmpty : null,
+                  ]}
                   keyboardShouldPersistTaps="handled"
+                  ListEmptyComponent={
+                    emptyListMessage ? (
+                      <Text style={[styles.selectedChipsEmpty, contentMutedTextStyle(content)]}>
+                        {emptyListMessage}
+                      </Text>
+                    ) : null
+                  }
                 />
               ) : (
                 <FlatList
@@ -1116,6 +1137,7 @@ const styles = StyleSheet.create({
   },
   selectorListScroll: { flex: 1 },
   selectorListContent: { paddingBottom: 8 },
+  selectorListEmpty: { flexGrow: 1, paddingTop: 16 },
   selectorColumnWrapper: { gap: SELECTOR_GAP, marginBottom: SELECTOR_GAP },
   selectorPersonRow: {
     alignItems: 'center',

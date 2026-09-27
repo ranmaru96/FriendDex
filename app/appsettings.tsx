@@ -387,17 +387,6 @@ export default function AppSettingsScreen() {
           完了した臨時タスクを自動削除するまでの期間です（デフォルト1か月）
         </Text>
 
-        <Text style={[styles.sectionHeader, themed.sectionHeader]}>フォロー</Text>
-        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
-          <Pressable style={styles.row} onPress={() => router.push('/follows')}>
-            <Text style={[styles.rowLabel, themed.rowLabel]}>フォロー一覧</Text>
-            <Text style={[styles.rowChevron, themed.hint]}>›</Text>
-          </Pressable>
-        </SettingsGroup>
-        <Text style={[styles.hint, themed.hint]}>
-          QRコードで追加した人など、フォロー関連の確認はここから開きます
-        </Text>
-
         <GoogleCalendarSettingsSection themed={themed} />
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>バックアップ</Text>
@@ -414,16 +403,6 @@ export default function AppSettingsScreen() {
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>今後の構想</Text>
         <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
-          <View style={styles.roadmapBlock}>
-            <Text style={[styles.roadmapTitle, themed.rowLabel]}>一覧FABのフォローアイコン</Text>
-            <Text style={[styles.roadmapBody, themed.hint]}>
-              ・現状: 入り口は設定「フォロー一覧」のみ。Home FAB のフォローボタンは一旦削除。{'\n'}
-              ・概念・画面（/follows）はそのまま。{'\n'}
-              ・復活時: HomeScreen の fabRow に CircleIconButton
-              （icon="people-circle-outline" → /follows、accessibilityLabel="フォロー一覧"）を戻す。
-            </Text>
-          </View>
-          <View style={[styles.separator, themed.separator]} />
           <View style={styles.roadmapBlock}>
             <Text style={[styles.roadmapTitle, themed.rowLabel]}>予定完了後のフォロー</Text>
             <Text style={[styles.roadmapBody, themed.hint]}>

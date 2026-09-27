@@ -1,5 +1,5 @@
 export const PHOTO_LIMITS = {
-  free: 2,
+  free: 5,
   paid: 10,
 } as const;
 

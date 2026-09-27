@@ -15,6 +15,7 @@ import {
 } from '@/utils/relationshipMapHelpers';
 import { contentTextStyle } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
 import type { Friend, RelationshipMapMember } from '@/types';
 
 type RelationshipMapPersonNodeProps = {
@@ -163,7 +164,7 @@ export function RelationshipMapPersonNode({
   }));
 
   const initial = (friend.name.trim().charAt(0) || '?').toUpperCase();
-  const photoUri = friend.photoUri?.trim() || null;
+  const photoUri = resolveFriendDisplayPhotoUri(friend);
 
   return (
     <GestureDetector gesture={composedGesture}>

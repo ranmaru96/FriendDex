@@ -20,23 +20,16 @@ import { SettlementPersonAggregateCard } from '@/components/settlement/Settlemen
 import { SettlementSettledDivider } from '@/components/settlement/SettlementSettledDivider';
 import { Theme, Spacing, ScreenHorizontalInset } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
+import { getMoneyLoanSession } from '@/db';
 import {
-  createMoneyLoans,
-  deleteMoneyLoan,
-  getAllFriends,
-  getDistinctAffiliations,
-  getDistinctExperiences,
-  getMoneyLoanSession,
-  getMoneyLoanSessions,
-  getMoneyLoans,
-  getMyself,
-  getOrCreateMoneyLoanSessionByTitle,
-  initializeDatabase,
-  setMoneyLoanRepaid,
-  updateMoneyLoan,
-  updateMoneyLoanSessionTitle,
-} from '@/db';
-import type { Friend, MoneyLoan, MoneyLoanDirection } from '@/types';
+  createCanonicalSharedMoneyLoan,
+  deleteCanonicalSharedMoneyLoan,
+  pullSharedMoneyLoans,
+  setCanonicalSharedMoneyLoanRepaid,
+  updateCanonicalSharedMoneyLoan,
+} from '@/lib/sharedMoneyLoanSync';
+import { requireOnline } from '@/lib/networkReachability';
+import type { MoneyLoan, MoneyLoanDirection } from '@/types';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
 import { buildMoneyLoanCounterpartyFriends, getRecentTogetherFriendIdsFromPastEvents } from '@/utils/eventRecencyHelpers';
 import {
@@ -52,13 +45,9 @@ import {
 } from '@/utils/settlementMoneyLoanBridge';
 import { useContentColors } from '@/utils/useContentColors';
 import { contentTextStyle } from '@/utils/contentStyleHelpers';
+import { buildFriendPhotoById } from '@/utils/friendPhoto';
+import { readLocalMoneyLoanUiState } from '@/utils/settlementLocalSnapshot';
 import { useFocusEffect } from 'expo-router';
-
-type Option = { label: string; value: string };
-
-function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
-  return new Map(friends.map((friend) => [friend.id, friend.photoUri ?? null]));
-}
 
 function parseYenInput(value: string): number {
   const normalized = value.replace(/,/g, '').trim();
@@ -76,19 +65,19 @@ export function SettlementIndividualLoanPanel() {
   const { colors: appTheme } = useAppTheme();
   const headerStyles = useSubScreenHeaderStyles();
 
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [myselfId, setMyselfId] = useState<string | null>(null);
-  const [sessions, setSessions] = useState(() => getMoneyLoanSessions());
-  const [loans, setLoans] = useState<MoneyLoan[]>([]);
+  const [loanUi, setLoanUi] = useState(readLocalMoneyLoanUiState);
+  const friends = loanUi.friends;
+  const myselfId = loanUi.myselfId;
+  const sessions = loanUi.sessions;
+  const loans = loanUi.loans;
+  const affiliationOptions = loanUi.affiliationOptions;
+  const experienceOptions = loanUi.experienceOptions;
 
   const [title, setTitle] = useState(() => resolveMoneyLoanSessionTitle(''));
   const [friendId, setFriendId] = useState<string | null>(null);
   const [direction, setDirection] = useState<MoneyLoanDirection>('lent');
   const [amountText, setAmountText] = useState('');
   const [formError, setFormError] = useState('');
-
-  const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
-  const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [selectorForEdit, setSelectorForEdit] = useState(false);
   const [selectorTab, setSelectorTab] = useState<'individual' | 'group'>('individual');
@@ -104,20 +93,25 @@ export function SettlementIndividualLoanPanel() {
   const [editDirection, setEditDirection] = useState<MoneyLoanDirection>('lent');
   const [editAmountText, setEditAmountText] = useState('');
   const [editError, setEditError] = useState('');
+  const [writing, setWriting] = useState(false);
 
   const loadData = useCallback(() => {
-    initializeDatabase();
-    setFriends(getAllFriends());
-    setMyselfId(getMyself());
-    setSessions(getMoneyLoanSessions());
-    setLoans(getMoneyLoans());
-    setAffiliationOptions(getDistinctAffiliations().map((value) => ({ label: value, value })));
-    setExperienceOptions(getDistinctExperiences().map((value) => ({ label: value, value })));
+    setLoanUi(readLocalMoneyLoanUiState());
   }, []);
 
   useFocusEffect(
     useCallback(() => {
+      let cancelled = false;
       loadData();
+      void (async () => {
+        await pullSharedMoneyLoans();
+        if (!cancelled) {
+          loadData();
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
     }, [loadData])
   );
 
@@ -272,7 +266,10 @@ export function SettlementIndividualLoanPanel() {
     setFormError('');
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
+    if (!requireOnline() || writing) {
+      return;
+    }
     const resolvedTitle = resolveMoneyLoanSessionTitle(title);
     if (resolvedTitle !== title.trim()) {
       setTitle(resolvedTitle);
@@ -287,26 +284,29 @@ export function SettlementIndividualLoanPanel() {
       return;
     }
 
-    const session = getOrCreateMoneyLoanSessionByTitle(resolvedTitle);
-    if (!session) {
-      setFormError('登録に失敗しました。');
-      return;
+    setWriting(true);
+    try {
+      const { loan, errorMessage } = await createCanonicalSharedMoneyLoan({
+        friendId,
+        amount,
+        direction,
+        title: resolvedTitle,
+      });
+      if (!loan) {
+        setFormError(errorMessage ?? '登録に失敗しました。');
+        return;
+      }
+      resetForm();
+      loadData();
+    } finally {
+      setWriting(false);
     }
-
-    const created = createMoneyLoans({
-      sessionId: session.id,
-      lines: [{ kind: 'friend', value: friendId, amount, direction }],
-    });
-    if (created.length === 0) {
-      setFormError('登録に失敗しました。');
-      return;
-    }
-
-    resetForm();
-    loadData();
   };
 
   const handleToggleItem = (key: string) => {
+    if (!requireOnline() || writing) {
+      return;
+    }
     const loanId = parseMoneyLoanBalanceKey(key);
     if (!loanId) {
       return;
@@ -315,10 +315,18 @@ export function SettlementIndividualLoanPanel() {
     if (!loan) {
       return;
     }
-    const ok = setMoneyLoanRepaid(loanId, !loan.isRepaid);
-    if (ok) {
-      loadData();
-    }
+    setWriting(true);
+    void setCanonicalSharedMoneyLoanRepaid(loanId, !loan.isRepaid)
+      .then((result) => {
+        if (result.errorMessage) {
+          Alert.alert('更新できませんでした', result.errorMessage);
+          return;
+        }
+        loadData();
+      })
+      .finally(() => {
+        setWriting(false);
+      });
   };
 
   const openEditLoan = (key: string) => {
@@ -327,7 +335,7 @@ export function SettlementIndividualLoanPanel() {
       return;
     }
     const loan = loanById.get(loanId);
-    if (!loan) {
+    if (!loan || loan.incomingFromPeer) {
       return;
     }
     const session = getMoneyLoanSession(loan.sessionId);
@@ -344,8 +352,11 @@ export function SettlementIndividualLoanPanel() {
     setEditError('');
   };
 
-  const handleSaveEdit = () => {
-    if (!editLoan) {
+  const handleSaveEdit = async () => {
+    if (!editLoan || editLoan.incomingFromPeer) {
+      return;
+    }
+    if (!requireOnline() || writing) {
       return;
     }
     if (!editFriendId) {
@@ -358,27 +369,31 @@ export function SettlementIndividualLoanPanel() {
       return;
     }
     const resolvedTitle = resolveMoneyLoanSessionTitle(editTitle);
-    const titleOk = updateMoneyLoanSessionTitle(editLoan.sessionId, resolvedTitle);
-    if (!titleOk) {
-      setEditError('タイトルの更新に失敗しました。');
-      return;
+    setWriting(true);
+    try {
+      const { errorMessage } = await updateCanonicalSharedMoneyLoan({
+        loanId: editLoan.id,
+        friendId: editFriendId,
+        amount,
+        direction: editDirection,
+        title: resolvedTitle,
+      });
+      if (errorMessage) {
+        setEditError(errorMessage);
+        return;
+      }
+      closeEditLoan();
+      loadData();
+    } finally {
+      setWriting(false);
     }
-    const ok = updateMoneyLoan(editLoan.id, {
-      counterpartyKind: 'friend',
-      counterpartyValue: editFriendId,
-      amount,
-      direction: editDirection,
-    });
-    if (!ok) {
-      setEditError('更新に失敗しました。');
-      return;
-    }
-    closeEditLoan();
-    loadData();
   };
 
   const handleDeleteEdit = () => {
-    if (!editLoan) {
+    if (!editLoan || editLoan.incomingFromPeer) {
+      return;
+    }
+    if (!requireOnline() || writing) {
       return;
     }
     Alert.alert('削除確認', 'この貸し借りを削除しますか？', [
@@ -387,13 +402,19 @@ export function SettlementIndividualLoanPanel() {
         text: '削除',
         style: 'destructive',
         onPress: () => {
-          const ok = deleteMoneyLoan(editLoan.id);
-          if (!ok) {
-            Alert.alert('エラー', '削除に失敗しました。');
-            return;
-          }
-          closeEditLoan();
-          loadData();
+          setWriting(true);
+          void deleteCanonicalSharedMoneyLoan(editLoan.id)
+            .then((result) => {
+              if (result.errorMessage) {
+                Alert.alert('削除できませんでした', result.errorMessage);
+                return;
+              }
+              closeEditLoan();
+              loadData();
+            })
+            .finally(() => {
+              setWriting(false);
+            });
         },
       },
     ]);
@@ -493,7 +514,11 @@ export function SettlementIndividualLoanPanel() {
 
         {formError ? <Text style={formStyles.formError}>{formError}</Text> : null}
 
-        <Pressable style={formStyles.primaryButton} onPress={handleRegister}>
+        <Pressable
+          style={[formStyles.primaryButton, writing ? { opacity: 0.55 } : null]}
+          onPress={() => void handleRegister()}
+          disabled={writing}
+        >
           <Text style={formStyles.primaryButtonText}>登録</Text>
         </Pressable>
       </MoneyLoanFormCard>
@@ -642,12 +667,18 @@ export function SettlementIndividualLoanPanel() {
 
             {editError ? <Text style={formStyles.formError}>{editError}</Text> : null}
 
-            <Pressable style={formStyles.primaryButton} onPress={handleSaveEdit}>
+            <Pressable
+              style={[formStyles.primaryButton, writing ? { opacity: 0.55 } : null]}
+              onPress={() => void handleSaveEdit()}
+              disabled={writing}
+            >
               <Text style={formStyles.primaryButtonText}>保存</Text>
             </Pressable>
-            <Pressable style={styles.deleteButton} onPress={handleDeleteEdit}>
-              <Text style={styles.deleteButtonText}>削除</Text>
-            </Pressable>
+            {editLoan?.incomingFromPeer ? null : (
+              <Pressable style={styles.deleteButton} onPress={handleDeleteEdit}>
+                <Text style={styles.deleteButtonText}>削除</Text>
+              </Pressable>
+            )}
           </MoneyLoanFormCard>
         </SafeAreaView>
       </Modal>

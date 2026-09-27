@@ -9,13 +9,26 @@ type SettlementTransferRowProps = {
   transfer: SettlementTransferDisplay;
   isCompleted: boolean;
   onToggle: () => void;
+  canToggle?: boolean;
 };
 
-export function SettlementTransferRow({ transfer, isCompleted, onToggle }: SettlementTransferRowProps) {
+export function SettlementTransferRow({
+  transfer,
+  isCompleted,
+  onToggle,
+  canToggle = true,
+}: SettlementTransferRowProps) {
   const content = useContentColors();
 
   return (
-    <Pressable style={styles.row} onPress={onToggle}>
+    <Pressable
+      style={[
+        styles.row,
+        transfer.incomingFromPeer ? { backgroundColor: content.contentPersonTagBg, borderRadius: 8, paddingHorizontal: 6 } : null,
+      ]}
+      onPress={canToggle ? onToggle : undefined}
+      disabled={!canToggle}
+    >
       <View
         style={[
           styles.check,

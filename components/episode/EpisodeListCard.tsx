@@ -72,8 +72,6 @@ export type EpisodeListCardProps = {
   /** 詳細画面など日付表示を差し替えるとき（一覧カードは未指定のまま） */
   dateLabel?: string;
   episodeTag?: string | null;
-  /** 場所タグ（日付行の予定タグの右） */
-  locationTag?: string | null;
   chips: ParticipantChipDisplay[];
   visibility?: string[];
   visibilityMode?: EpisodeVisibilityMode;
@@ -107,7 +105,6 @@ export function EpisodeListCard({
   date,
   dateLabel,
   episodeTag,
-  locationTag,
   chips,
   visibility = [],
   visibilityMode,
@@ -138,12 +135,12 @@ export function EpisodeListCard({
   const photoFrameChrome = {
     backgroundColor: content.contentPhotoPlaceholder,
     borderRadius: photoFrameRadius,
-    borderWidth: 0,
+    borderWidth: 0.5,
+    borderColor: Theme.inputBorder,
   };
   const episodeCardBackgroundColor =
     appTheme?.variant === 'black' ? content.contentInputBg : content.contentCard;
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
-  const normalizedLocationTag = normalizeEpisodeTag(locationTag);
   const normalizedPosterName = posterName?.trim() ? posterName.trim() : null;
   const showPosterName = visibilityMode == null && normalizedPosterName != null;
   const normalizedEventTitle = eventTitle?.trim() ? eventTitle.trim() : null;
@@ -192,14 +189,6 @@ export function EpisodeListCard({
         {normalizedEpisodeTag ? (
           <EpisodeTagChip
             label={normalizedEpisodeTag}
-            style={styles.photoRightMetaTagChip}
-            textStyle={styles.photoRightMetaTagText}
-          />
-        ) : null}
-        {normalizedLocationTag ? (
-          <EpisodeTagChip
-            label={normalizedLocationTag}
-            variant="location"
             style={styles.photoRightMetaTagChip}
             textStyle={styles.photoRightMetaTagText}
           />
@@ -416,8 +405,7 @@ export function EpisodeListCard({
     );
   }
 
-  const showMetaRow2 =
-    visibility.length > 0 || normalizedEpisodeTag != null || normalizedLocationTag != null;
+  const showMetaRow2 = visibility.length > 0 || normalizedEpisodeTag != null;
 
   const cardBody = (
     <>
@@ -478,9 +466,6 @@ export function EpisodeListCard({
       {showMetaRow2 ? (
         <View style={styles.episodeCardRow2}>
           {normalizedEpisodeTag ? <EpisodeTagChip label={normalizedEpisodeTag} /> : null}
-          {normalizedLocationTag ? (
-            <EpisodeTagChip label={normalizedLocationTag} variant="location" />
-          ) : null}
           {visibilityMode == null && visibility.length > 0 ? (
             <View style={styles.visibilityCol}>
               <Text style={[styles.visibilityLabelFixed, contentMutedTextStyle(content)]}>公開先：</Text>
@@ -699,7 +684,7 @@ const styles = StyleSheet.create({
     borderRadius: Radius.sm,
     overflow: 'hidden',
     backgroundColor: Theme.homeCardPhotoPlaceholder,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: Theme.inputBorder,
   },
   photoRightPhotoFrameCompact: {

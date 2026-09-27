@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { popCurrentTabScreen } from '@/utils/tabNavigation';
+import { readUsableEpisodeDraft } from '@/utils/episodeDraft';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
@@ -37,13 +38,19 @@ import {
   getEpisodeById,
   getEpisodePhotos,
   getEvent,
+  getIncomingSharedEpisodePhotos,
+  getIncomingSharedEpisodeRecord,
   getMergedEpisodeTagLabels,
-  getMergedLocationTagLabels,
   getMyself,
+  incomingSharedRecordToEpisode,
   initializeDatabase,
+  parseIncomingSharedEpisodeId,
   updateEpisode,
   type EpisodeInput,
 } from '../db';
+import { scheduleOwnedEpisodeDelete, scheduleOwnedEpisodeSync } from '@/lib/ownedEpisodeSync';
+import { afterEpisodeSavedLocally, guardEpisodeShareOnline } from '@/lib/episodeShareSave';
+import { republishSharedEpisodeIfPublished } from '@/lib/sharedEpisodeSync';
 import { Episode, EpisodePhoto, Event, Friend } from '../types';
 import {
   buildParticipantChips,
@@ -56,8 +63,9 @@ import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
 } from '../utils/episodeEventLinking';
-import { registerSavedEpisodeTag, registerSavedLocationTag } from '../utils/episodeTagMaster';
+import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
+import { buildFriendPhotoById } from '@/utils/friendPhoto';
 import { noteBlocksHaveContent } from '@/utils/noteBlocks';
 
 const LIST_HORIZONTAL_INSET = 12;
@@ -79,7 +87,7 @@ function episodeToInput(episode: Episode, description: string): EpisodeInput {
     pendingReview: episode.pendingReview,
     pendingReviewDismissed: episode.pendingReviewDismissed,
     tag: episode.tag,
-    locationTag: episode.locationTag,
+    locationTag: null,
   };
 }
 
@@ -103,8 +111,9 @@ export default function EpisodeDetailScreen() {
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
-  const [locationTagOptions, setLocationTagOptions] = useState<Option[]>([]);
   const [isEditVisible, setIsEditVisible] = useState(false);
+  const episodeSaveLockRef = useRef(false);
+  const [episodeSaving, setEpisodeSaving] = useState(false);
   const openedEditFromParamRef = useRef(false);
 
   const hiddenParticipantIds = useMemo(() => (myselfId ? [myselfId] : []), [myselfId]);
@@ -143,16 +152,24 @@ export default function EpisodeDetailScreen() {
     const allFriends = getAllFriendsInDefaultOrder();
     setFriends(allFriends);
     setFriendNameById(new Map(allFriends.map((f) => [f.id, f.name])));
-    setFriendPhotoById(new Map(allFriends.map((f) => [f.id, f.photoUri ?? null])));
+    setFriendPhotoById(buildFriendPhotoById(allFriends));
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((v) => ({ label: v, value: v })));
-    setLocationTagOptions(getMergedLocationTagLabels().map((v) => ({ label: v, value: v })));
 
     if (!episodeId || !ownerId) {
       setEpisode(null);
       setParentEvent(null);
       setPhotos([]);
+      return;
+    }
+
+    const incomingId = parseIncomingSharedEpisodeId(episodeId);
+    if (incomingId) {
+      const incoming = getIncomingSharedEpisodeRecord(incomingId);
+      setEpisode(incoming ? incomingSharedRecordToEpisode(incoming) : null);
+      setParentEvent(null);
+      setPhotos(incoming ? getIncomingSharedEpisodePhotos(incomingId) : []);
       return;
     }
 
@@ -169,12 +186,81 @@ export default function EpisodeDetailScreen() {
     }, [loadData])
   );
 
+  const episodeForDraftRef = useRef(episode);
+  episodeForDraftRef.current = episode;
+  const isEditVisibleRef = useRef(isEditVisible);
+  isEditVisibleRef.current = isEditVisible;
+  const shouldOpenEditRef = useRef(shouldOpenEdit);
+  shouldOpenEditRef.current = shouldOpenEdit;
+  const editDraftPromptLockRef = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      const current = episodeForDraftRef.current;
+      if (
+        !current ||
+        current.id !== episodeId ||
+        isEditVisibleRef.current ||
+        editDraftPromptLockRef.current
+      ) {
+        return;
+      }
+      const draft = readUsableEpisodeDraft(current.id, current.description);
+      if (!draft) {
+        return;
+      }
+      editDraftPromptLockRef.current = true;
+      if (shouldOpenEditRef.current) {
+        router.setParams({ edit: undefined });
+      }
+      const finishPrompt = () => {
+        editDraftPromptLockRef.current = false;
+      };
+      Alert.alert('前回の下書きを復元しますか？', undefined, [
+        {
+          text: '復元しない',
+          style: 'cancel',
+          onPress: () => {
+            finishPrompt();
+            episodeForm.declineDraft(draft);
+          },
+        },
+        {
+          text: '復元する',
+          onPress: () => {
+            finishPrompt();
+            const latest = episodeForDraftRef.current;
+            if (!latest || latest.id !== current.id) {
+              return;
+            }
+            episodeSaveLockRef.current = false;
+            setEpisodeSaving(false);
+            episodeForm.armRestoredEditDraft(latest, draft);
+            setIsEditVisible(true);
+          },
+        },
+      ]);
+      return () => {
+        editDraftPromptLockRef.current = false;
+      };
+    }, [
+      episode?.description,
+      episode?.id,
+      episodeForm.armRestoredEditDraft,
+      episodeForm.declineDraft,
+      episodeId,
+      router,
+    ])
+  );
+
   useEffect(() => {
     openedEditFromParamRef.current = false;
   }, [episodeId]);
 
   useEffect(() => {
     if (!episode || !shouldOpenEdit || openedEditFromParamRef.current) {
+      return;
+    }
+    if (readUsableEpisodeDraft(episode.id, episode.description)) {
       return;
     }
     openedEditFromParamRef.current = true;
@@ -198,7 +284,9 @@ export default function EpisodeDetailScreen() {
     [episode, friendNameById]
   );
   const canManage =
-    episode && ownerId ? canManageEpisode(episode, ownerId, myselfId) : false;
+    episode && ownerId && !parseIncomingSharedEpisodeId(episodeId)
+      ? canManageEpisode(episode, ownerId, myselfId)
+      : false;
   const recordOwnerId = episode ? resolveEpisodeRecordOwnerId(episode, ownerId) : ownerId;
   const photoFrameWidth = useMemo(
     () => (photos.length > 1 ? Math.max(0, photoContentWidth - PHOTO_PEEK) : photoContentWidth),
@@ -232,30 +320,50 @@ export default function EpisodeDetailScreen() {
   const loadFromEpisode = episodeForm.loadFromEpisode;
   const resetEpisodeForm = episodeForm.reset;
 
+  const releaseEpisodeSaveLock = useCallback(() => {
+    episodeSaveLockRef.current = false;
+    setEpisodeSaving(false);
+  }, []);
+
   const handleEdit = useCallback(() => {
     if (!episode) {
       return;
     }
+    releaseEpisodeSaveLock();
     loadFromEpisode(episode);
     setIsEditVisible(true);
-  }, [episode, loadFromEpisode]);
+  }, [episode, loadFromEpisode, releaseEpisodeSaveLock]);
 
   const handleCloseEdit = useCallback(() => {
+    releaseEpisodeSaveLock();
     resetEpisodeForm();
     setIsEditVisible(false);
-  }, [resetEpisodeForm]);
+  }, [releaseEpisodeSaveLock, resetEpisodeForm]);
 
   const handleSaveEdit = useCallback(() => {
+    if (episodeSaveLockRef.current) {
+      return;
+    }
+    episodeSaveLockRef.current = true;
+    setEpisodeSaving(true);
     if (!myselfId) {
+      releaseEpisodeSaveLock();
       episodeForm.setFormError('本人が設定されていません。');
+      Alert.alert('エラー', '本人が設定されていません。');
       return;
     }
     const editingId = episodeForm.editingEpisodeId;
     if (!editingId) {
+      releaseEpisodeSaveLock();
       return;
     }
     const payload = episodeForm.buildSavePayload();
     if (!payload) {
+      releaseEpisodeSaveLock();
+      return;
+    }
+    if (!guardEpisodeShareOnline(payload.visibilityMode)) {
+      releaseEpisodeSaveLock();
       return;
     }
     const resolved = resolveEpisodeSaveEventId(payload, () => {
@@ -263,6 +371,7 @@ export default function EpisodeDetailScreen() {
       episodeForm.setFormError(EVENT_CREATE_FAILED_MESSAGE);
     });
     if (!resolved.ok) {
+      releaseEpisodeSaveLock();
       return;
     }
     const { createLinkedEvent: _createLinkedEvent, eventId: _formEventId, ...episodeFields } =
@@ -273,16 +382,21 @@ export default function EpisodeDetailScreen() {
       pendingReview: false,
     });
     if (!updated) {
+      releaseEpisodeSaveLock();
       episodeForm.setFormError('エピソードの更新に失敗しました。');
+      Alert.alert('エラー', 'エピソードの更新に失敗しました。');
       return;
     }
     registerSavedEpisodeTag(episodeFields.tag);
-    registerSavedLocationTag(episodeFields.locationTag);
     episodeForm.persistPhotos(editingId, true);
-    episodeForm.reset();
-    setIsEditVisible(false);
-    loadData();
-  }, [episodeForm, loadData, myselfId]);
+    void afterEpisodeSavedLocally(editingId).finally(() => {
+      episodeForm.forgetDraft();
+      episodeForm.reset();
+      setIsEditVisible(false);
+      loadData();
+      releaseEpisodeSaveLock();
+    });
+  }, [episodeForm, loadData, myselfId, releaseEpisodeSaveLock]);
 
   const handleSaveEditRef = useRef(handleSaveEdit);
   handleSaveEditRef.current = handleSaveEdit;
@@ -294,10 +408,11 @@ export default function EpisodeDetailScreen() {
       return (
         <Pressable
           onPress={() => handleSaveEditRef.current()}
+          disabled={episodeSaving}
           accessibilityLabel={episodeForm.editingEpisodeId ? '更新' : '保存'}
           hitSlop={8}
         >
-          <Text style={[styles.headerSaveText, { color: kit.topBarText }]}>
+          <Text style={[styles.headerSaveText, { color: kit.topBarText }, episodeSaving ? { opacity: 0.55 } : null]}>
             {episodeForm.editingEpisodeId ? '更新' : '保存'}
           </Text>
         </Pressable>
@@ -320,6 +435,7 @@ export default function EpisodeDetailScreen() {
     canManage,
     editButtonBorderColor,
     episodeForm.editingEpisodeId,
+    episodeSaving,
     isEditVisible,
     kit.topBarText,
   ]);
@@ -335,6 +451,8 @@ export default function EpisodeDetailScreen() {
         return;
       }
       setEpisode({ ...episode, description: next });
+      void republishSharedEpisodeIfPublished(episode.id);
+      scheduleOwnedEpisodeSync(episode.id);
     },
     [canManage, episode, myselfId]
   );
@@ -351,6 +469,7 @@ export default function EpisodeDetailScreen() {
             Alert.alert('エラー', 'エピソードの削除に失敗しました。');
             return;
           }
+          scheduleOwnedEpisodeDelete(episodeId);
           popCurrentTabScreen();
         },
       },
@@ -361,7 +480,16 @@ export default function EpisodeDetailScreen() {
     <>
       <SubToolScreenTemplate
         title={isEditVisible ? 'エピソードを編集' : 'エピソード'}
-        onBack={isEditVisible ? handleCloseEdit : handleBack}
+        onBack={
+          isEditVisible
+            ? () => {
+                if (episodeSaving) {
+                  return;
+                }
+                episodeForm.requestDismiss(handleCloseEdit);
+              }
+            : handleBack
+        }
         right={headerRight}
         titleFramed={false}
         useScreenPadding={false}
@@ -385,7 +513,6 @@ export default function EpisodeDetailScreen() {
                 date={episode.date}
                 dateLabel={formatEpisodeDateTimeForDetail(episode.date, episode.time)}
                 episodeTag={episode.tag}
-                locationTag={episode.locationTag}
                 chips={chips}
                 visibility={visibility}
                 visibilityMode={episode.visibilityMode}
@@ -434,6 +561,8 @@ export default function EpisodeDetailScreen() {
                 </>
               ) : null}
 
+              {canManage ? (
+              <>
               <SectionDivider style={sectionDividerStyle} />
               <PanelSection style={styles.detailSection}>
                 <Text style={[styles.privateMemoLabel, contentTextStyle(content)]}>非公開メモ</Text>
@@ -441,6 +570,8 @@ export default function EpisodeDetailScreen() {
                   非公開メモ（近日実装予定）
                 </Text>
               </PanelSection>
+              </>
+              ) : null}
 
             {canManage ? (
               <Pressable
@@ -480,9 +611,9 @@ export default function EpisodeDetailScreen() {
         affiliationOptions={affiliationOptions}
         experienceOptions={experienceOptions}
         episodeTagOptions={episodeTagOptions}
-        locationTagOptions={locationTagOptions}
         onClose={handleCloseEdit}
         onSave={handleSaveEdit}
+        saving={episodeSaving}
         useTopBar={false}
       />
     </>
@@ -535,7 +666,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Theme.textPrimary,
     borderRadius: 6,
-    borderWidth: 1,
+    borderWidth: 0.5,
     borderColor: Theme.inputBorder,
     overflow: 'hidden',
   },

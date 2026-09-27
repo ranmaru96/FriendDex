@@ -35,6 +35,7 @@ import {
 } from '@/db';
 import type { Friend, YourQuestion, YourQuestionAnswer } from '@/types';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
+import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
 
 type Option = { label: string; value: string };
 type FilterKey = 'all' | 'empty' | 'logged';
@@ -449,7 +450,7 @@ export default function YourAnswerScreen() {
                   return {
                     id: answer.id,
                     name: friend?.name ?? '不明な人物',
-                    photoUri: friend?.photoUri ?? null,
+                    photoUri: friend ? resolveFriendDisplayPhotoUri(friend) : null,
                     body: answer.body,
                   };
                 })}
@@ -559,7 +560,7 @@ export default function YourAnswerScreen() {
                   <View key={line.friendId} style={answerRowStyles.row}>
                     <AnswerPersonCell
                       name={name}
-                      photoUri={friend?.photoUri ?? null}
+                      photoUri={friend ? resolveFriendDisplayPhotoUri(friend) : null}
                       colors={palette}
                     />
                     <TextInput

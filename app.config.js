@@ -31,8 +31,9 @@ const toReversedGoogleScheme = (clientId) => {
 const googleIosClientId = process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '';
 const googleAndroidClientId = process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '';
 const googleWebClientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '';
+const googleIosUrlScheme = toReversedGoogleScheme(googleIosClientId);
 const googleUrlSchemes = [
-  toReversedGoogleScheme(googleIosClientId),
+  googleIosUrlScheme,
   toReversedGoogleScheme(googleAndroidClientId),
 ].filter((scheme, index, schemes) => Boolean(scheme) && schemes.indexOf(scheme) === index);
 
@@ -57,8 +58,9 @@ export default {
       bundleIdentifier: getUniqueIdentifier(),
       buildNumber: "2",
       supportsTablet: false,
+      usesAppleSignIn: true,
       infoPlist: {
-        NSPhotoLibraryUsageDescription: "プロフィール写真の選択・保存などのために、写真ライブラリへのアクセスが必要になる場合があります。",
+        NSPhotoLibraryUsageDescription: "エピソードの写真選択や、QRコード名刺の保存のために、写真ライブラリへのアクセスが必要です。",
         NSCameraUsageDescription: "QRコードをスキャンして友達を登録するために、カメラへのアクセスが必要です。",
         NSUserNotificationsUsageDescription: "予定とタスクのリマインダーをお知らせするために、通知の許可が必要です。",
         ITSAppUsesNonExemptEncryption: false
@@ -105,7 +107,7 @@ export default {
       [
         "expo-media-library",
         {
-          photosPermission: "QRコード名刺をフォトライブラリに保存するために、写真へのアクセスが必要です。",
+          photosPermission: "エピソードの写真選択や、QRコード名刺の保存のために、写真ライブラリへのアクセスが必要です。",
           savePhotosPermission: "QRコード名刺をフォトライブラリに保存するために、写真の保存権限が必要です。"
         }
       ],
@@ -126,6 +128,17 @@ export default {
         },
       ],
       "./plugins/withStripSentryPropertiesUrl",
+      "expo-apple-authentication",
+      ...(googleIosUrlScheme
+        ? [
+            [
+              "@react-native-google-signin/google-signin",
+              {
+                iosUrlScheme: googleIosUrlScheme,
+              },
+            ],
+          ]
+        : [["@react-native-google-signin/google-signin"]]),
     ],
     extra: {
       router: {},

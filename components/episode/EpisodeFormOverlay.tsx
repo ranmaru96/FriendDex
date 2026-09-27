@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  BackHandler,
   Dimensions,
   FlatList,
   Image,
-  Platform,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -15,6 +16,7 @@ import {
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
+import { PHOTO_LIMITS } from '@/constants';
 import { FormRow } from '@/components/ui/FormRow';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
 import { NoteBlockEditor } from '@/components/ui/NoteBlockEditor';
@@ -26,8 +28,6 @@ import {
   contentInputStyle,
   contentMutedTextStyle,
   contentPersonTagStyle,
-  contentSurfaceStyle,
-  contentTagStyle,
   contentTagTextStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
@@ -52,10 +52,12 @@ import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { EpisodeEventLinkField } from '@/components/episode/EpisodeEventLinkField';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { PhotoCropModal, EPISODE_PHOTO_ASPECT } from '@/components/photo/PhotoCropModal';
-import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
+import { EpisodePhotoLibraryModal } from '@/components/episode/EpisodePhotoLibraryModal';
+import { SlidingSegmentedControl } from '@/components/ui/SlidingSegmentedControl';
 import type { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import type { Friend } from '@/types';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
+import { buildFriendPhotoById } from '@/utils/friendPhoto';
 import { combineLocalDateTime, formatTimeFromDate } from '@/utils/eventHelpers';
 
 type EpisodeFormState = ReturnType<typeof useEpisodeForm>;
@@ -67,9 +69,10 @@ type EpisodeFormOverlayProps = {
   affiliationOptions: Option[];
   experienceOptions: Option[];
   episodeTagOptions: Option[];
-  locationTagOptions: Option[];
   onClose: () => void;
   onSave: () => void;
+  /** 保存中は保存と閉じるを止める */
+  saving?: boolean;
   onPersonCreated?: (friend: Friend) => void;
   /** false のとき画面内トップバーを出さず、親ヘッダーを使う */
   useTopBar?: boolean;
@@ -87,6 +90,8 @@ function SelectInput({
   allowCustomValue = false,
   customInputPlaceholder = '新しいタグ名',
   variant,
+  pickerColumns = 1,
+  pickerLayout = 'list',
 }: {
   value: string;
   placeholder: string;
@@ -100,6 +105,8 @@ function SelectInput({
   allowCustomValue?: boolean;
   customInputPlaceholder?: string;
   variant?: 'field' | 'chip';
+  pickerColumns?: 1 | 2;
+  pickerLayout?: 'list' | 'chips';
 }) {
   const kit = useUiKit();
   const content = useContentColors();
@@ -112,8 +119,7 @@ function SelectInput({
   }, [options, placeholder, value]);
 
   const isChip = resolvedVariant === 'chip';
-  const fieldRadius = kit.formFieldBorderRadius;
-  const chipRadius = fieldRadius === 0 ? 0 : Radius.full;
+  const fieldRadius = Radius.sm;
 
   return (
     <>
@@ -121,7 +127,7 @@ function SelectInput({
         style={[
           isChip ? styles.selectChipButton : styles.episodeSelectButton,
           isChip ? styles.selectChipButtonLayout : null,
-          { borderRadius: isChip ? chipRadius : fieldRadius },
+          { borderRadius: fieldRadius },
           isChip ? contentPersonTagStyle(content) : contentInputStyle(content),
           style,
         ]}
@@ -162,9 +168,16 @@ function SelectInput({
         allowCustomValue={allowCustomValue}
         customInputPlaceholder={customInputPlaceholder}
         customActionLabel="このタグを使う"
+        columns={pickerColumns}
+        layout={pickerLayout}
       />
     </>
   );
+}
+
+function EpisodeFieldDivider() {
+  const content = useContentColors();
+  return <View style={[styles.fieldDivider, { backgroundColor: content.contentDivider }]} />;
 }
 
 export function EpisodeFormOverlay({
@@ -174,9 +187,9 @@ export function EpisodeFormOverlay({
   affiliationOptions,
   experienceOptions,
   episodeTagOptions,
-  locationTagOptions,
   onClose,
   onSave,
+  saving = false,
   onPersonCreated,
   useTopBar = true,
 }: EpisodeFormOverlayProps) {
@@ -184,13 +197,55 @@ export function EpisodeFormOverlay({
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
-  const fieldRadius = kit.formFieldBorderRadius;
+  const fieldRadius = Radius.sm;
   const fieldCorner = { borderRadius: fieldRadius };
-  const tagChipRadius = fieldRadius === 0 ? 0 : 999;
-  const friendPhotoById = useMemo(
-    () => new Map(friends.map((friend) => [friend.id, friend.photoUri ?? null])),
-    [friends]
-  );
+  const [photoRowWidth, setPhotoRowWidth] = useState(0);
+  const photoSlotSize =
+    photoRowWidth > 0
+      ? (photoRowWidth - 8 * PHOTO_LIMITS.free) / (PHOTO_LIMITS.free + 1)
+      : 0;
+  const photoSlotStyle = photoSlotSize > 0 ? { width: photoSlotSize, height: photoSlotSize } : null;
+  const friendPhotoById = useMemo(() => buildFriendPhotoById(friends), [friends]);
+  const titleInputRef = useRef<TextInput>(null);
+  useEffect(() => {
+    if (!visible || form.formErrorField !== 'title') {
+      return;
+    }
+    titleInputRef.current?.focus();
+  }, [visible, form.formErrorField, form.formErrorTick]);
+  const requestClose = useCallback(() => {
+    if (saving) {
+      return;
+    }
+    form.requestDismiss(onClose);
+  }, [form.requestDismiss, onClose, saving]);
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
+      requestClose();
+      return true;
+    });
+    return () => subscription.remove();
+  }, [requestClose, visible]);
+  const draftSessionStartedRef = useRef(false);
+  useEffect(() => {
+    if (!visible) {
+      draftSessionStartedRef.current = false;
+      return;
+    }
+    if (draftSessionStartedRef.current) {
+      return;
+    }
+    draftSessionStartedRef.current = true;
+    form.prepareDraftSession();
+  }, [form.prepareDraftSession, visible]);
+  useEffect(() => {
+    return () => {
+      form.flushDraft();
+    };
+  }, [form.flushDraft]);
   const participantChips = useMemo(
     () =>
       buildParticipantChipDisplays(
@@ -208,17 +263,61 @@ export function EpisodeFormOverlay({
       ),
     [form.participants, form.friendNameById, form.excludeSelfId, friendPhotoById]
   );
-  const visibleVisibilityEntries = useMemo(
+  const selectedParticipantIds = useMemo(
     () =>
-      form.visibility.filter((entry) => {
-        if (!entry.value.trim()) return false;
-        if (entry.kind === 'individual' && form.excludeSelfId && entry.value === form.excludeSelfId) {
-          return false;
-        }
-        return true;
-      }),
-    [form.excludeSelfId, form.visibility]
+      new Set(
+        form.participants
+          .filter((participant) => participant.participantType === 'individual' && participant.value.trim())
+          .map((participant) => participant.value)
+      ),
+    [form.participants]
   );
+  const suggestionChips = useMemo(
+    () =>
+      buildParticipantChipDisplays(
+        form.recentTogetherFriendIds
+          .filter((friendId) => !selectedParticipantIds.has(friendId))
+          .map((friendId) => ({ kind: 'individual' as const, value: friendId })),
+        form.friendNameById,
+        { friendPhotoById }
+      ),
+    [form.recentTogetherFriendIds, form.friendNameById, friendPhotoById, selectedParticipantIds]
+  );
+  const visibilityChips = useMemo(
+    () =>
+      buildParticipantChipDisplays(
+        form.visibility
+          .filter((entry) => entry.kind === 'individual' && entry.value.trim().length > 0)
+          .map((entry) => ({ kind: 'individual' as const, value: entry.value })),
+        form.friendNameById,
+        { friendPhotoById }
+      ),
+    [form.friendNameById, form.visibility, friendPhotoById]
+  );
+  const handleVisibilityModeChange = (value: string) => {
+    if (!isEpisodeVisibilityMode(value)) {
+      return;
+    }
+    if (value === 'limited') {
+      form.setVisibilityMode('limited');
+      form.openVisibilitySelector();
+      return;
+    }
+    form.setVisibilityMode(value);
+    form.setVisibility([]);
+  };
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+    form.refreshAudienceConnections();
+  }, [form.refreshAudienceConnections, visible]);
+  const datePickerOpen = form.showDatePicker && !form.isLinkedEventSingleDay;
+  const timePickerOpen = form.showTimePicker;
+  const closeDateTimePicker = () => {
+    form.setShowDatePicker(false);
+    form.setShowTimePicker(false);
+  };
 
   useDismissPickerOnKeyboardShow(form.showDatePicker || form.showTimePicker, () => {
     form.setShowDatePicker(false);
@@ -234,13 +333,15 @@ export function EpisodeFormOverlay({
       <View style={[styles.overlay, { backgroundColor: kit.screenBackground }]}>
         <FormScreenTemplate
           title={form.editingEpisodeId ? 'エピソードを編集' : 'エピソードを追加'}
-          onBack={onClose}
+          onBack={requestClose}
+          backDisabled={saving}
           useTopBar={useTopBar}
           right={
             useTopBar ? (
               <Pressable
-                style={[styles.saveButton, contentFilledButtonStyle(content)]}
+                style={[styles.saveButton, contentFilledButtonStyle(content), saving ? styles.saveButtonBusy : null]}
                 onPress={onSave}
+                disabled={saving}
               >
                 <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>
                   {form.editingEpisodeId ? '更新' : '保存'}
@@ -253,8 +354,10 @@ export function EpisodeFormOverlay({
         >
           <FormScreenBody style={{ borderRadius: kit.formPanelBorderRadius }}>
             <FormScreenSection style={styles.episodeFormSection}>
-              <FormRow label="タイトル">
+              {form.formError ? <Text style={styles.episodeErrorText}>{form.formError}</Text> : null}
+              <FormRow label="タイトル" labelStyle={styles.episodeFieldLabel} error={form.formErrorField === 'title'}>
                 <TextInput
+                  ref={titleInputRef}
                   style={[styles.episodeInput, fieldCorner, contentInputStyle(content)]}
                   placeholder="入力"
                   placeholderTextColor={content.contentTextSecondary}
@@ -262,123 +365,75 @@ export function EpisodeFormOverlay({
                   onChangeText={form.setTitle}
                 />
               </FormRow>
+              <EpisodeFieldDivider />
 
-              <FormRow
-                label="日付"
-                style={styles.rowAlignStart}
-              >
-                <View style={styles.rowContentStack}>
-                  <Pressable
-                    style={[styles.episodeInput, fieldCorner, contentInputStyle(content), styles.episodeDateInput]}
-                    onPress={() => {
-                      if (form.isLinkedEventSingleDay) {
-                        return;
-                      }
-                      dismissKeyboardFocus();
-                      form.setShowTimePicker(false);
-                      if (!form.date) {
-                        form.setDate(formatEpisodeDateToYMD(new Date()));
-                      }
-                      form.setShowDatePicker(true);
-                    }}
-                  >
-                    <Text style={form.date ? [styles.episodeDateText, contentTextStyle(content)] : [styles.episodeDatePlaceholder, contentMutedTextStyle(content)]}>
-                      {form.date || 'YYYY-MM-DD'}
-                    </Text>
-                  </Pressable>
-                  {form.showDatePicker && !form.isLinkedEventSingleDay ? (
-                    <View style={styles.datePickerWrap}>
-                      <DateTimePicker
-                        value={parseEpisodeDateString(form.date)}
-                        mode="date"
-                        display="spinner"
-                        locale="ja-JP"
-                        style={styles.datePickerSelf}
-                        {...dateTimePickerProps}
-                        minimumDate={form.episodeDateMinimumDate ?? DATE_PICKER_MIN}
-                        maximumDate={form.episodeDateMaximumDate ?? DATE_PICKER_MAX_FAR}
-                        onChange={(_event: DateTimePickerEvent, selected?: Date) => {
-                          if (Platform.OS !== 'ios') form.setShowDatePicker(false);
-                          if (selected) form.setDate(formatEpisodeDateToYMD(selected));
-                        }}
-                      />
-                      <PickerDoneOverlay
-                        style={[fieldCorner, contentInputStyle(content)]}
-                        textStyle={contentTextStyle(content)}
-                        onPress={() => form.setShowDatePicker(false)}
-                      />
-                    </View>
-                  ) : null}
-                  <View style={styles.timeRow}>
+              <FormRow label="日時" labelStyle={styles.episodeFieldLabel}>
+                <View style={styles.dateTimeRow}>
                     <Pressable
-                      style={styles.timeTap}
+                      style={[styles.episodeInput, fieldCorner, contentInputStyle(content), styles.episodeDateInput, styles.dateTimeDate]}
                       onPress={() => {
-                        dismissKeyboardFocus();
-                        form.setShowDatePicker(false);
-                        if (!form.time) {
-                          form.setTime(formatTimeFromDate(new Date()));
+                        if (form.isLinkedEventSingleDay) {
+                          return;
                         }
-                        form.setShowTimePicker(true);
+                        dismissKeyboardFocus();
+                        form.setShowTimePicker(false);
+                        if (!form.date) {
+                          form.setDate(formatEpisodeDateToYMD(new Date()));
+                        }
+                        form.setShowDatePicker(true);
                       }}
-                      hitSlop={6}
                     >
-                      <Text
-                        style={[
-                          styles.timeTapText,
-                          form.time
-                            ? contentTextStyle(content)
-                            : contentMutedTextStyle(content),
-                        ]}
-                      >
-                        {form.time ? `時刻 ${form.time}` : '時刻（任意）'}
+                      <Text style={form.date ? [styles.episodeDateText, contentTextStyle(content)] : [styles.episodeDatePlaceholder, contentMutedTextStyle(content)]}>
+                        {form.date || 'YYYY-MM-DD'}
                       </Text>
                     </Pressable>
-                    {form.time ? (
+                    <View style={[styles.episodeInput, fieldCorner, contentInputStyle(content), styles.episodeDateInput, styles.dateTimeTime]}>
                       <Pressable
+                        style={styles.timeTap}
                         onPress={() => {
-                          form.setTime('');
-                          form.setShowTimePicker(false);
+                          dismissKeyboardFocus();
+                          form.setShowDatePicker(false);
+                          if (!form.time) {
+                            form.setTime(formatTimeFromDate(new Date()));
+                          }
+                          form.setShowTimePicker(true);
                         }}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel="時刻をクリア"
+                        hitSlop={6}
                       >
-                        <Text style={[styles.timeClearText, contentMutedTextStyle(content)]}>クリア</Text>
+                        <Text
+                          style={[
+                            styles.timeTapText,
+                            form.time
+                              ? contentTextStyle(content)
+                              : contentMutedTextStyle(content),
+                          ]}
+                        >
+                          {form.time || '任意'}
+                        </Text>
                       </Pressable>
-                    ) : null}
-                  </View>
-                  {form.showTimePicker ? (
-                    <View style={styles.datePickerWrap}>
-                      <DateTimePicker
-                        value={combineLocalDateTime(
-                          form.date || formatEpisodeDateToYMD(new Date()),
-                          form.time || formatTimeFromDate(new Date())
-                        )}
-                        mode="time"
-                        display="spinner"
-                        locale="ja-JP"
-                        style={styles.datePickerSelf}
-                        {...dateTimePickerProps}
-                        {...openRangeDatePickerBounds()}
-                        onChange={(_event: DateTimePickerEvent, selected?: Date) => {
-                          if (Platform.OS !== 'ios') form.setShowTimePicker(false);
-                          if (selected) form.setTime(formatTimeFromDate(selected));
-                        }}
-                      />
-                      <PickerDoneOverlay
-                        style={[fieldCorner, contentInputStyle(content)]}
-                        textStyle={contentTextStyle(content)}
-                        onPress={() => form.setShowTimePicker(false)}
-                      />
+                      {form.time ? (
+                        <Pressable
+                          onPress={() => {
+                            form.setTime('');
+                            form.setShowTimePicker(false);
+                          }}
+                          hitSlop={8}
+                          accessibilityRole="button"
+                          accessibilityLabel="時刻をクリア"
+                        >
+                          <Text style={[styles.timeClearText, contentMutedTextStyle(content)]}>×</Text>
+                        </Pressable>
+                      ) : null}
                     </View>
-                  ) : null}
                 </View>
               </FormRow>
+              <EpisodeFieldDivider />
 
               <FormRow
-                label={'対応する\n予定'}
-                labelNumberOfLines={2}
+                label="対象予定"
+                labelStyle={styles.episodeFieldLabel}
                 style={styles.rowAlignStart}
+                error={form.formErrorField === 'event'}
               >
                 <EpisodeEventLinkField
                   dateKey={form.date}
@@ -387,127 +442,122 @@ export function EpisodeFormOverlay({
                   onModeChange={form.setEventLinkMode}
                   onSelectEvent={form.linkToEvent}
                   fieldCorner={fieldCorner}
+                  compact
                 />
               </FormRow>
+              <EpisodeFieldDivider />
 
               <FormRow
                 label="参加者"
+                labelStyle={styles.episodeFieldLabel}
                 style={styles.rowAlignStart}
               >
                 <View style={styles.rowContentStack}>
-                  <Pressable
-                    style={[styles.addParticipantButton, fieldCorner, contentInputStyle(content), styles.inlineActionButton]}
-                    onPress={form.openParticipantSelector}
-                  >
-                    <Text style={[styles.addParticipantButtonText, contentTextStyle(content)]}>参加者を選ぶ</Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.selectedEntryTagArea, fieldCorner, contentSurfaceStyle(content)]}
-                    onPress={form.openParticipantSelector}
-                  >
-                    {participantChips.length > 0 ? (
-                      <ParticipantChipList chips={participantChips} layout="wrap" />
-                    ) : (
-                      <Text style={[styles.selectedEntryEmptyText, contentMutedTextStyle(content)]}>
-                        参加者が選択されていません
-                      </Text>
-                    )}
-                  </Pressable>
+                <ParticipantChipList
+                  chips={participantChips}
+                  layout="wrap"
+                  onChipPress={(chip) => form.removeParticipant(chip.id)}
+                  trailing={
+                    <Pressable
+                      style={[styles.participantAddChip, contentPersonTagStyle(content)]}
+                      onPress={form.openParticipantSelector}
+                    >
+                      <Text style={[styles.participantAddChipText, contentTagTextStyle(content)]}>＋</Text>
+                    </Pressable>
+                  }
+                />
+                {suggestionChips.length > 0 ? (
+                  <View style={[styles.suggestionWell, fieldCorner, contentInputStyle(content)]}>
+                    <ParticipantChipList
+                      chips={suggestionChips}
+                      compact
+                      layout="scroll"
+                      suggestion
+                      onChipPress={(chip) => {
+                        if (chip.friendId) {
+                          form.addParticipantFriend(chip.friendId);
+                        }
+                      }}
+                    />
+                  </View>
+                ) : null}
                 </View>
               </FormRow>
+              <EpisodeFieldDivider />
 
-              <FormRow label="タグ" contentLayout="compact">
-                <View style={styles.tagPickersRow}>
-                  <SelectInput
-                    value={form.tag}
-                    placeholder="予定タグ"
-                    modalTitle="予定タグ"
-                    options={episodeTagOptions}
-                    onChange={form.setTag}
-                    allowCustomValue
-                    variant="chip"
-                  />
-                  <SelectInput
-                    value={form.locationTag}
-                    placeholder="場所タグ"
-                    modalTitle="場所タグ"
-                    options={locationTagOptions}
-                    onChange={form.setLocationTag}
-                    allowCustomValue
-                    customInputPlaceholder="新しい場所名"
-                    variant="chip"
-                  />
-                </View>
-              </FormRow>
-
-              <FormRow label="公開設定" contentLayout="compact">
+              <FormRow label="タグ" labelStyle={styles.episodeFieldLabel} contentLayout="compact">
                 <SelectInput
-                  value={form.visibilityMode}
-                  placeholder="公開設定"
-                  options={VISIBILITY_MODE_OPTIONS}
-                  onChange={(value) => {
-                    if (isEpisodeVisibilityMode(value)) {
-                      form.setVisibilityMode(value);
-                    }
-                  }}
-                  includeEmptyOption={false}
+                  value={form.tag}
+                  placeholder="予定タグ"
+                  modalTitle="予定タグ"
+                  options={episodeTagOptions}
+                  onChange={form.setTag}
+                  allowCustomValue
+                  variant="chip"
+                  pickerLayout="chips"
                 />
               </FormRow>
-              {form.visibilityMode === 'limited' ? (
-                <FormRow
-                  label="公開先"
-                  style={styles.rowAlignStart}
-                >
-                  <View style={styles.rowContentStack}>
-                    <Pressable
-                      style={[styles.addParticipantButton, fieldCorner, contentInputStyle(content), styles.inlineActionButton]}
-                      onPress={form.openVisibilitySelector}
-                    >
-                      <Text style={[styles.addParticipantButtonText, contentTextStyle(content)]}>公開先を選ぶ</Text>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.selectedEntryTagArea, fieldCorner, contentSurfaceStyle(content)]}
-                      onPress={form.openVisibilitySelector}
-                    >
-                      {visibleVisibilityEntries.length > 0 ? (
-                        <View style={styles.selectedEntryTagWrap}>
-                          {visibleVisibilityEntries
-                            .map((entry, index) => {
-                              const label =
-                                entry.kind === 'individual'
-                                  ? form.friendNameById.get(entry.value) ?? entry.value
-                                  : entry.value;
-                              return (
-                                <View
-                                  key={`visibility-tag-${entry.kind}-${entry.value}-${index}`}
-                                  style={[styles.episodeParticipantTag, contentPersonTagStyle(content), { borderRadius: tagChipRadius }]}
-                                >
-                                  <Text style={[styles.episodeParticipantTagName, contentTagTextStyle(content)]}>{label}</Text>
-                                </View>
-                              );
-                            })}
-                        </View>
-                      ) : (
-                        <Text style={[styles.selectedEntryEmptyText, contentMutedTextStyle(content)]}>
-                          公開先が選択されていません
-                        </Text>
-                      )}
-                    </Pressable>
-                  </View>
-                </FormRow>
-              ) : null}
+              <EpisodeFieldDivider />
 
               <FormRow
-                label="写真"
+                label="公開設定"
+                labelStyle={styles.episodeFieldLabel}
                 style={styles.rowAlignStart}
               >
                 <View style={styles.rowContentStack}>
+                  <SlidingSegmentedControl
+                    options={VISIBILITY_MODE_OPTIONS}
+                    value={form.visibilityMode}
+                    onChange={handleVisibilityModeChange}
+                    compact
+                  />
+                  {form.visibilityMode === 'limited' ? (
+                    <>
+                      <ParticipantChipList
+                        chips={visibilityChips}
+                        layout="wrap"
+                        onChipPress={(chip) => form.removeVisibility(chip.id)}
+                        trailing={
+                          <Pressable
+                            style={[styles.participantAddChip, contentPersonTagStyle(content)]}
+                            onPress={form.openVisibilitySelector}
+                            accessibilityRole="button"
+                            accessibilityLabel="公開相手を追加"
+                          >
+                            <Text style={[styles.participantAddChipText, contentTagTextStyle(content)]}>＋</Text>
+                          </Pressable>
+                        }
+                      />
+                      {form.connectedAudienceFriends.length === 0 ? (
+                        <Text style={[styles.audienceEmptyHint, contentMutedTextStyle(content)]}>
+                          コネクトしている人がいません
+                        </Text>
+                      ) : null}
+                    </>
+                  ) : null}
+                </View>
+              </FormRow>
+              <EpisodeFieldDivider />
+
+              <FormRow
+                label={`写真\n(${form.visibleExistingPhotos.length + form.newPhotoUris.length}/${PHOTO_LIMITS.free})`}
+                labelNumberOfLines={2}
+                labelStyle={styles.episodeFieldLabel}
+                style={styles.rowAlignStart}
+              >
+                <View
+                  style={styles.photoAddRow}
+                  onLayout={(event) => {
+                    const width = event.nativeEvent.layout.width;
+                    setPhotoRowWidth((prev) => (prev === width ? prev : width));
+                  }}
+                >
                   <Pressable
                     style={[
-                      styles.episodePhotoAddButton,
-                      fieldCorner,
+                      styles.episodePhotoAddTile,
+                      photoSlotStyle,
+                      photoSlotSize > 0 ? { borderRadius: photoSlotSize / 2 } : null,
                       contentInputStyle(content),
-                      styles.inlineActionButton,
                       form.isPhotoLimitReached && styles.episodePhotoAddButtonDisabled,
                     ]}
                     onPress={form.pickPhoto}
@@ -515,15 +565,16 @@ export function EpisodeFormOverlay({
                   >
                     <Text
                       style={[
-                        styles.episodePhotoAddButtonText,
-                        contentTextStyle(content),
-                        form.isPhotoLimitReached && [styles.episodePhotoAddButtonTextDisabled, contentMutedTextStyle(content)],
+                        styles.episodePhotoAddTileText,
+                        photoSlotSize > 0 ? { fontSize: Math.round(photoSlotSize * 0.42), lineHeight: Math.round(photoSlotSize * 0.46) } : null,
+                        { color: '#FFFFFF' },
+                        form.isPhotoLimitReached && contentMutedTextStyle(content),
                       ]}
                     >
-                      写真を追加
+                      ＋
                     </Text>
                   </Pressable>
-                  {(form.visibleExistingPhotos.length > 0 || form.newPhotoUris.length > 0) && (
+                  {(form.visibleExistingPhotos.length > 0 || form.newPhotoUris.length > 0) ? (
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
@@ -531,8 +582,8 @@ export function EpisodeFormOverlay({
                       contentContainerStyle={styles.episodePhotoThumbRow}
                     >
                       {form.visibleExistingPhotos.map((photo) => (
-                        <View key={`existing-photo-${photo.id}`} style={styles.episodePhotoThumbWrap}>
-                          <Image source={{ uri: photo.photoUri }} style={[styles.episodePhotoThumb, fieldCorner, { backgroundColor: content.contentPhotoPlaceholder, borderColor: content.contentBorder }]} />
+                        <View key={`existing-photo-${photo.id}`} style={[styles.episodePhotoThumbWrap, photoSlotStyle]}>
+                          <Image source={{ uri: photo.photoUri }} style={[styles.episodePhotoThumb, photoSlotStyle, fieldCorner, { backgroundColor: content.contentPhotoPlaceholder, borderColor: content.contentBorder }]} />
                           <Pressable
                             style={styles.episodePhotoRemoveButton}
                             onPress={() => form.removeExistingPhoto(photo.id)}
@@ -542,8 +593,8 @@ export function EpisodeFormOverlay({
                         </View>
                       ))}
                       {form.newPhotoUris.map((uri, index) => (
-                        <View key={`new-photo-${index}-${uri}`} style={styles.episodePhotoThumbWrap}>
-                          <Image source={{ uri }} style={[styles.episodePhotoThumb, fieldCorner, { backgroundColor: content.contentPhotoPlaceholder, borderColor: content.contentBorder }]} />
+                        <View key={`new-photo-${index}-${uri}`} style={[styles.episodePhotoThumbWrap, photoSlotStyle]}>
+                          <Image source={{ uri }} style={[styles.episodePhotoThumb, photoSlotStyle, fieldCorner, { backgroundColor: content.contentPhotoPlaceholder, borderColor: content.contentBorder }]} />
                           <Pressable
                             style={styles.episodePhotoRemoveButton}
                             onPress={() => form.removeNewPhoto(index)}
@@ -553,14 +604,10 @@ export function EpisodeFormOverlay({
                         </View>
                       ))}
                     </ScrollView>
-                  )}
-                  {form.isPhotoLimitReached ? (
-                    <Text style={[styles.episodePhotoUpgradeHint, contentMutedTextStyle(content)]}>
-                      プランをアップグレードするとさらに追加できます
-                    </Text>
                   ) : null}
                 </View>
               </FormRow>
+              <EpisodeFieldDivider />
 
               <FormRow label="説明" layout="vertical">
                 <NoteBlockEditor
@@ -573,14 +620,23 @@ export function EpisodeFormOverlay({
                   uncapped
                 />
               </FormRow>
-              {form.formError ? <Text style={styles.episodeErrorText}>{form.formError}</Text> : null}
               <View style={styles.formActions}>
-                <Pressable style={[styles.formCancelButton, fieldCorner]} onPress={onClose}>
+                <Pressable
+                  style={[styles.formCancelButton, fieldCorner, saving ? styles.saveButtonBusy : null]}
+                  onPress={requestClose}
+                  disabled={saving}
+                >
                   <Text style={styles.formCancelButtonText}>キャンセル</Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.formSaveButton, fieldCorner, contentFilledButtonStyle(content)]}
+                  style={[
+                    styles.formSaveButton,
+                    fieldCorner,
+                    contentFilledButtonStyle(content),
+                    saving ? styles.saveButtonBusy : null,
+                  ]}
                   onPress={onSave}
+                  disabled={saving}
                 >
                   <Text style={[styles.formSaveButtonText, contentFilledButtonTextStyle(content)]}>
                     {form.editingEpisodeId ? '更新' : '保存'}
@@ -591,6 +647,69 @@ export function EpisodeFormOverlay({
           </FormScreenBody>
         </FormScreenTemplate>
       </View>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={datePickerOpen || timePickerOpen}
+        onRequestClose={closeDateTimePicker}
+      >
+        <View style={styles.dateTimeModalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={closeDateTimePicker}
+            accessibilityLabel="閉じる"
+            accessibilityRole="button"
+          />
+          <View
+            style={[
+              styles.dateTimeModalCard,
+              { backgroundColor: content.contentCard, borderColor: content.contentBorder },
+            ]}
+          >
+            <Text style={[styles.dateTimeModalTitle, contentTextStyle(content)]}>
+              {datePickerOpen ? '日付' : '時刻'}
+            </Text>
+            {datePickerOpen ? (
+              <DateTimePicker
+                value={parseEpisodeDateString(form.date)}
+                mode="date"
+                display="spinner"
+                locale="ja-JP"
+                style={styles.dateTimePicker}
+                {...dateTimePickerProps}
+                minimumDate={form.episodeDateMinimumDate ?? DATE_PICKER_MIN}
+                maximumDate={form.episodeDateMaximumDate ?? DATE_PICKER_MAX_FAR}
+                onChange={(_event: DateTimePickerEvent, selected?: Date) => {
+                  if (selected) form.setDate(formatEpisodeDateToYMD(selected));
+                }}
+              />
+            ) : (
+              <DateTimePicker
+                value={combineLocalDateTime(
+                  form.date || formatEpisodeDateToYMD(new Date()),
+                  form.time || formatTimeFromDate(new Date())
+                )}
+                mode="time"
+                display="spinner"
+                locale="ja-JP"
+                style={styles.dateTimePicker}
+                {...dateTimePickerProps}
+                {...openRangeDatePickerBounds()}
+                onChange={(_event: DateTimePickerEvent, selected?: Date) => {
+                  if (selected) form.setTime(formatTimeFromDate(selected));
+                }}
+              />
+            )}
+            <Pressable
+              style={[styles.dateTimeModalDone, fieldCorner, contentFilledButtonStyle(content)]}
+              onPress={closeDateTimePicker}
+            >
+              <Text style={[styles.dateTimeModalDoneText, contentFilledButtonTextStyle(content)]}>完了</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <EntrySelectorModal
         visible={form.selectorVisible}
@@ -612,18 +731,37 @@ export function EpisodeFormOverlay({
         onToggleGroup={form.toggleSelectorGroup}
         onCancel={form.handleSelectorCancel}
         onConfirm={form.handleSelectorConfirm}
-        onPersonCreated={onPersonCreated}
-        enableGroupTab={form.selectorTarget === 'visibility'}
+        onPersonCreated={form.selectorTarget === 'visibility' ? undefined : onPersonCreated}
+        enableGroupTab={false}
+        allowCreate={form.selectorTarget !== 'visibility'}
+        selectionTitle={form.selectorTarget === 'visibility' ? '公開相手' : '対象者'}
+        emptyListMessage={
+          form.selectorTarget === 'visibility' ? 'コネクトしている人がいません' : undefined
+        }
       />
 
-      <PhotoCropModal
-        visible={form.photoCropUri != null}
-        uri={form.photoCropUri}
-        aspectRatio={EPISODE_PHOTO_ASPECT}
-        hint="ピンチで拡大・ドラッグで位置調整（カード表示は横4:縦3）"
-        onCancel={form.cancelPhotoCrop}
-        onConfirm={form.confirmPhotoCrop}
-      />
+      <EpisodePhotoLibraryModal
+        visible={form.photoLibraryVisible}
+        maxSelection={form.remainingPhotoSlots}
+        registeredCount={form.visibleExistingPhotos.length + form.newPhotoUris.length}
+        dismissedAssetIds={form.dismissedPhotoAssetIds}
+        preparing={form.photoResolving}
+        onClose={form.closePhotoLibrary}
+        onRegister={form.beginPhotoEdits}
+      >
+        <PhotoCropModal
+          embedded
+          visible={form.photoCropUri != null}
+          uri={form.photoCropUri}
+          aspectRatio={EPISODE_PHOTO_ASPECT}
+          hint="ピンチで拡大・ドラッグで位置調整（カード表示は横4:縦3）"
+          previews={form.photoEditPreviews}
+          activePreviewIndex={form.photoEditIndex}
+          onSelectPreview={form.selectPhotoEdit}
+          onCancel={form.cancelPhotoCrop}
+          onConfirm={form.confirmPhotoCrop}
+        />
+      </EpisodePhotoLibraryModal>
     </>
   );
 }
@@ -645,12 +783,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: Radius.sm,
   },
+  saveButtonBusy: {
+    opacity: 0.55,
+  },
   saveButtonText: {
     fontWeight: '700',
     fontSize: 13,
   },
   scrollContent: {
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.sm,
     paddingBottom: Spacing.lg,
   },
   formActions: {
@@ -686,13 +827,15 @@ const styles = StyleSheet.create({
     fontSize: Typography.base,
   },
   episodeFormSection: {
-    gap: 8,
+    gap: 0,
   },
-  tagPickersRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: Spacing.sm,
+  fieldDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: Spacing.sm,
+  },
+  episodeFieldLabel: {
+    width: 72,
+    textAlign: 'left',
   },
   rowAlignStart: {
     alignItems: 'flex-start',
@@ -701,14 +844,22 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: 8,
   },
-  inlineActionButton: {
-    alignSelf: 'flex-start',
+  audienceEmptyHint: {
+    fontSize: Typography.sm,
+    fontWeight: '600',
+  },
+  suggestionWell: {
+    width: '100%',
+    borderWidth: 1,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    overflow: 'hidden',
   },
   episodeInput: {
     minHeight: 38,
     borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: Radius.sm,
     backgroundColor: Theme.bgSurface,
     color: '#0f172a',
     paddingHorizontal: 10,
@@ -718,26 +869,66 @@ const styles = StyleSheet.create({
   episodeDateInput: { justifyContent: 'center' },
   episodeDateText: { fontSize: Typography.base, color: '#111827' },
   episodeDatePlaceholder: { fontSize: Typography.base, color: '#94a3b8' },
-  timeRow: {
+  dateTimeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+  },
+  dateTimeDate: {
+    flex: 1,
+    width: undefined,
+  },
+  dateTimeTime: {
+    width: 96,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 4,
-    minHeight: 28,
+    paddingRight: 8,
   },
   timeTap: {
-    flexShrink: 1,
-    paddingVertical: 4,
+    flex: 1,
+    justifyContent: 'center',
   },
   timeTapText: {
-    fontSize: 13,
+    fontSize: Typography.base,
   },
   timeClearText: {
-    fontSize: 13,
-    paddingHorizontal: 4,
+    fontSize: 16,
+    fontWeight: '600',
+    lineHeight: 18,
+    paddingLeft: 4,
   },
-  datePickerWrap: { marginBottom: 8 },
-  datePickerSelf: { alignSelf: 'flex-end' },
+  dateTimeModalBackdrop: {
+    flex: 1,
+    backgroundColor: Theme.overlay,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  dateTimeModalCard: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: 16,
+  },
+  dateTimeModalTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  dateTimePicker: {
+    height: 216,
+    width: '100%',
+  },
+  dateTimeModalDone: {
+    alignSelf: 'flex-end',
+    marginTop: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  dateTimeModalDoneText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
   linkToEventButton: {
     alignSelf: 'flex-start',
     marginBottom: 8,
@@ -753,52 +944,51 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#0f172a',
   },
-  addParticipantButton: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
+  participantAddChip: {
+    width: 28,
+    height: 28,
     borderWidth: 1,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  addParticipantButtonText: { color: '#0f172a', fontSize: 12, fontWeight: '700' },
-  selectedEntryTagArea: {
-    borderColor: Theme.inputBorder,
+  participantAddChipText: {
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  photoAddRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    width: '100%',
+  },
+  episodePhotoAddTile: {
     borderWidth: 1,
-    borderRadius: 10,
-    backgroundColor: Theme.bgSurface,
-    padding: 8,
-    marginBottom: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  selectedEntryTagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-  selectedEntryEmptyText: { fontSize: Typography.base, color: '#94a3b8' },
-  episodeParticipantTag: {
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  episodePhotoAddTileText: {
+    fontSize: 18,
+    fontWeight: '500',
+    lineHeight: 22,
   },
-  episodeParticipantTagName: { fontSize: 12, fontWeight: '600', color: '#0f172a' },
-  episodePhotoThumbScroll: { marginBottom: 4 },
-  episodePhotoThumbRow: { flexDirection: 'row', gap: 8, paddingVertical: 2 },
-  episodePhotoThumbWrap: { position: 'relative', width: 72, height: 72 },
+  episodePhotoThumbScroll: { flexGrow: 1, flexShrink: 1 },
+  episodePhotoThumbRow: { flexDirection: 'row', gap: 8 },
+  episodePhotoThumbWrap: { position: 'relative' },
   episodePhotoThumb: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
+    borderRadius: Radius.sm,
     borderWidth: 1,
     borderColor: Theme.inputBorder,
     backgroundColor: '#f1f5f9',
   },
   episodePhotoRemoveButton: {
     position: 'absolute',
-    top: -6,
-    right: -6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    top: 2,
+    right: 2,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#ef4444',
     borderWidth: 1,
     borderColor: '#b91c1c',
@@ -807,27 +997,13 @@ const styles = StyleSheet.create({
   },
   episodePhotoRemoveButtonText: {
     color: Theme.bgSurface,
-    fontSize: 14,
+    fontSize: 11,
     fontWeight: '700',
-    lineHeight: 16,
-  },
-  episodePhotoAddButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#e2e8f0',
-    borderColor: '#94a3b8',
-    borderWidth: 1,
-    borderRadius: Radius.sm,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    lineHeight: 13,
   },
   episodePhotoAddButtonDisabled: {
     opacity: 0.45,
-    backgroundColor: '#e2e8f0',
-    borderColor: Theme.inputBorder,
   },
-  episodePhotoAddButtonText: { color: '#0f172a', fontSize: 12, fontWeight: '700' },
-  episodePhotoAddButtonTextDisabled: { color: '#94a3b8' },
-  episodePhotoUpgradeHint: { marginTop: 6, fontSize: 11, color: '#64748b' },
   episodeDescriptionInput: {
     minHeight: 86,
     textAlignVertical: 'top',
@@ -842,14 +1018,14 @@ const styles = StyleSheet.create({
     minHeight: 38,
     borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: Radius.sm,
     backgroundColor: Theme.bgSurface,
     paddingHorizontal: 10,
     justifyContent: 'center',
   },
   selectChipButton: {
     borderWidth: 1,
-    borderRadius: Radius.full,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 6,
     maxWidth: '100%',

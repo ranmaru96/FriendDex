@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { usesOffsetChrome } from '@/constants/designPatterns';
 import { OffsetCard } from '@/components/ui/OffsetCard';
@@ -23,7 +24,10 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 import { signInWithEmail, signOutSupabase, signUpWithEmail } from '@/lib/supabase';
-import { upsertMyselfIdentityProfile } from '@/lib/identityProfileSync';
+import { requireOnline } from '@/lib/networkReachability';
+import { DEVICE_BIND_MISMATCH_MESSAGE, discardForeignAuthSession, isAuthUserAllowedOnThisDevice } from '@/lib/deviceAuthBind';
+import { runOwnedLoginSideEffects } from '@/lib/ownedLoginSync';
+import { restoreOwnedPersonEpisodeCalendar, isOwnedRestoreSafeLocally } from '@/lib/ownedDataRestore';
 
 type ThemedStyles = {
   sectionHeader: object | null;
@@ -34,6 +38,7 @@ type ThemedStyles = {
 };
 
 export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
+  const router = useRouter();
   const { variant, colors, patternId } = useAppTheme();
   const content = useContentColors();
   const isMonochrome = isMonochromeAppTheme(variant);
@@ -44,6 +49,9 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
   const [busy, setBusy] = useState(false);
 
   const runAuth = async (mode: 'signup' | 'signin') => {
+    if (!requireOnline()) {
+      return;
+    }
     const trimmedEmail = email.trim();
     if (!trimmedEmail || !password) {
       Alert.alert('入力エラー', 'メールアドレスとパスワードを入力してください。');
@@ -67,10 +75,35 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
         );
         return;
       }
-      const sync = await upsertMyselfIdentityProfile();
-      const body = sync.errorMessage
-        ? `ログインはできました。公開カードのサーバー反映に失敗しました。\n${sync.errorMessage}`
-        : '本人カードがある場合、公開カードをサーバーへ送りました。';
+      const sessionId = result.session.user.id?.trim() ?? '';
+      if (sessionId && !isAuthUserAllowedOnThisDevice(sessionId)) {
+        await discardForeignAuthSession();
+        Alert.alert('ログインできません', DEVICE_BIND_MISMATCH_MESSAGE);
+        return;
+      }
+      let restoreNote = '';
+      const { restore, syncError, rejected } = await runOwnedLoginSideEffects(mode);
+      if (rejected) {
+        Alert.alert('ログインできません', syncError ?? 'この端末では入れません。');
+        return;
+      }
+      if (mode === 'signin' && restore) {
+        if (restore.refusedBecauseLocalData) {
+          restoreNote = '端末にデータがあるため、サーバーからの書き戻しはしませんでした。';
+        } else if (restore.errorMessage) {
+          restoreNote = `サーバーからの書き戻しに失敗しました。\n${restore.errorMessage}`;
+        } else if (!restore.skipped) {
+          restoreNote = `人物 ${restore.people}、予定 ${restore.events}、エピソード ${restore.episodes} を端末へ書き戻しました。`;
+        }
+      }
+      const body = [
+        syncError
+          ? `ログインはできました。サーバー反映に失敗しました。\n${syncError}`
+          : '本人カード・人物カード・カレンダー・エピソード・個別の貸し借り・グループ精算をサーバーへ送りました。相手と共有している貸し借りも取り込みました。',
+        restoreNote,
+      ]
+        .filter(Boolean)
+        .join('\n');
       Alert.alert(mode === 'signup' ? '登録しました' : 'ログインしました', body);
     } finally {
       setBusy(false);
@@ -86,6 +119,33 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
         return;
       }
       setPassword('');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runRestore = async () => {
+    if (!session?.user) {
+      return;
+    }
+    if (!isOwnedRestoreSafeLocally()) {
+      Alert.alert(
+        '復元しません',
+        '今の端末に人物・予定・エピソードがあるので、サーバーから書き戻しません。空の端末でログインしたときだけ書き戻します。'
+      );
+      return;
+    }
+    setBusy(true);
+    try {
+      const restored = await restoreOwnedPersonEpisodeCalendar();
+      if (restored.errorMessage) {
+        Alert.alert('復元できませんでした', restored.errorMessage);
+        return;
+      }
+      Alert.alert(
+        '復元しました',
+        `人物 ${restored.people}、予定 ${restored.events}、エピソード ${restored.episodes} を端末へ書き戻しました。`
+      );
     } finally {
       setBusy(false);
     }
@@ -109,6 +169,13 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
             ) : (
               <Text style={[styles.buttonText, contentFilledButtonTextStyle(content)]}>ログアウト</Text>
             )}
+          </Pressable>
+          <Pressable
+            style={[styles.secondaryButton, { borderColor: content.contentBorder }, busy && styles.buttonDisabled]}
+            onPress={() => void runRestore()}
+            disabled={busy}
+          >
+            <Text style={[styles.secondaryButtonText, contentMutedTextStyle(content)]}>サーバーから復元</Text>
           </Pressable>
         </>
       ) : (
@@ -192,8 +259,16 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
         アカウント
       </Text>
       {group}
+      <Pressable
+        style={[styles.previewButton, { borderColor: content.contentBorder }]}
+        onPress={() => router.push('/auth-preview')}
+      >
+        <Text style={[styles.secondaryButtonText, contentMutedTextStyle(content)]}>
+          ログイン画面を見る（仮）
+        </Text>
+      </Pressable>
       <Text style={[styles.hint, themed.hint]}>
-        メールとパスワードでサーバーにログインします。ログインすると本人カードの公開項目をサーバーへ送ります。QRで相手が取る処理はまだありません。
+        メールとパスワードでサーバーにログインします。端末が空のときは人物・予定・エピソードをサーバーから書き戻してから送ります。端末にデータがあるときは書き戻しません。
       </Text>
     </>
   );
@@ -267,6 +342,16 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     fontSize: 15,
     fontWeight: '700',
+  },
+  previewButton: {
+    marginTop: 12,
+    marginHorizontal: 16,
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 12,
   },
   hint: {
     marginTop: 12,

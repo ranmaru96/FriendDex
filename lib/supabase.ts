@@ -2,7 +2,6 @@ import 'react-native-url-polyfill/auto';
 import Constants from 'expo-constants';
 import { createClient, type Session, type SupabaseClient } from '@supabase/supabase-js';
 import { createSupabaseAuthStorage } from '@/lib/secureStoreChunkAdapter';
-import { initializeDatabase, setMyselfProfileAuthUserId } from '@/db';
 
 const readExtraString = (key: string): string | undefined => {
   const extra = (Constants.expoConfig?.extra ?? {}) as Record<string, unknown>;
@@ -53,11 +52,6 @@ export const getSupabaseClient = (): SupabaseClient | null => {
   return client;
 };
 
-export const applyAuthUserIdToMyselfProfile = (authUserId: string): boolean => {
-  initializeDatabase();
-  return setMyselfProfileAuthUserId(authUserId);
-};
-
 export const signUpWithEmail = async (
   email: string,
   password: string
@@ -69,9 +63,6 @@ export const signUpWithEmail = async (
   const { data, error } = await supabase.auth.signUp({ email, password });
   if (error) {
     return { session: null, errorMessage: error.message };
-  }
-  if (data.session?.user.id) {
-    applyAuthUserIdToMyselfProfile(data.session.user.id);
   }
   return { session: data.session, errorMessage: null };
 };
@@ -88,8 +79,25 @@ export const signInWithEmail = async (
   if (error) {
     return { session: null, errorMessage: error.message };
   }
-  if (data.session?.user.id) {
-    applyAuthUserIdToMyselfProfile(data.session.user.id);
+  return { session: data.session, errorMessage: null };
+};
+
+export const signInWithIdTokenProvider = async (
+  provider: 'google' | 'apple',
+  token: string,
+  nonce?: string
+): Promise<{ session: Session | null; errorMessage: string | null }> => {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { session: null, errorMessage: 'Supabase が未設定です' };
+  }
+  const { data, error } = await supabase.auth.signInWithIdToken({
+    provider,
+    token,
+    ...(nonce ? { nonce } : {}),
+  });
+  if (error) {
+    return { session: null, errorMessage: error.message };
   }
   return { session: data.session, errorMessage: null };
 };

@@ -70,6 +70,7 @@ import {
   shuffleAllMemberIds,
 } from '../../utils/shuffleHelpers';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
+import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
 type Option = { label: string; value: string };
 
@@ -86,10 +87,6 @@ const SHUFFLE_TABS: PillTabItem<ShuffleMode>[] = [
   { key: 'role', caption: SHUFFLE_MODE_LABELS.role, icon: 'ribbon-outline' },
   { key: 'team', caption: SHUFFLE_MODE_LABELS.team, icon: 'people-outline' },
 ];
-
-function buildFriendPhotoById(friends: Friend[]): Map<string, string | null> {
-  return new Map(friends.map((friend) => [friend.id, friend.photoUri ?? null]));
-}
 
 function buildDraftFromMemberIds(
   memberIds: string[],

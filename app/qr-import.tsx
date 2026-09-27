@@ -21,7 +21,9 @@ import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { Radius } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { useAuthSession } from '@/contexts/AuthSessionContext';
-import { claimAndFetchIdentityProfile } from '@/lib/identityProfileSync';
+import { claimAndFetchIdentityProfile, scheduleFriendProfileSync } from '@/lib/identityProfileSync';
+import { acceptConnection, scheduleRequestConnection } from '@/lib/connectionSync';
+import { requireOnline } from '@/lib/networkReachability';
 import {
   contentFilledButtonStyle,
   contentFilledButtonTextStyle,
@@ -43,13 +45,16 @@ import type { Friend } from '@/types';
 import { findFriendsWithSameName, resolvePersonNameParts } from '@/utils/personName';
 import {
   buildFriendInputFromQrPayload,
+  filterPayloadByPublicFields,
   getPublicFieldLabels,
   qrPayloadToRouteParams,
   routeParamsToQrPayload,
   sortFriendsByQrNameMatch,
   type QrScanPayload,
 } from '@/utils/qrScanHelpers';
+import { setPendingQrImportPayload } from '@/utils/qrImportSession';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
+import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
 
 type ImportMode = 'new' | 'overwrite';
 type ImportStep = 'confirm-match' | 'choose-mode';
@@ -62,15 +67,17 @@ function previewFriendFromPayload(payload: QrScanPayload): Friend {
     familyName: nameParts.familyName,
     givenName: nameParts.givenName,
     nickname: payload.nickname?.trim() ?? '',
-    origin: '',
-    residence: '',
-    mbti: '',
+    origin: payload.origin?.trim() ?? '',
+    residence: payload.residence?.trim() ?? '',
+    mbti: (payload.mbti?.trim() ?? '') as Friend['mbti'],
     birthday: payload.birthday?.trim() ?? '',
     height: null,
     weight: null,
     category: '',
     description: '',
-    photoUri: null,
+    photoUri: payload.photoUri?.trim() || null,
+    identityPhotoUri: payload.photoUri?.trim() || null,
+    photoSource: payload.photoUri?.trim() ? 'identity' : 'local',
     affiliations: [],
     personalities: [],
     experiences: [],
@@ -94,6 +101,7 @@ export default function QrImportScreen() {
   const params = useLocalSearchParams<{
     scannedUserId?: string;
     publicFields?: string;
+    fromFollow?: string;
     name?: string;
     familyName?: string;
     givenName?: string;
@@ -105,28 +113,18 @@ export default function QrImportScreen() {
     origin?: string;
     residence?: string;
     mbti?: string;
+    photoUri?: string;
   }>();
-  const { ready: authReady } = useAuthSession();
+  const fromFollow = params.fromFollow === 'true';
+  const { ready: authReady, session } = useAuthSession();
+  const sessionUserId = session?.user.id ?? '';
   const qrPayload = useMemo(
     () => routeParamsToQrPayload(params),
-    [
-      params.scannedUserId,
-      params.publicFields,
-      params.name,
-      params.familyName,
-      params.givenName,
-      params.hasSplitName,
-      params.nickname,
-      params.birthday,
-      params.height,
-      params.weight,
-      params.origin,
-      params.residence,
-      params.mbti,
-    ]
+    [params.scannedUserId, params.publicFields]
   );
-  const [payload, setPayload] = useState<QrScanPayload | null>(qrPayload);
+  const [payload, setPayload] = useState<QrScanPayload | null>(null);
   const [hydrateReady, setHydrateReady] = useState(!qrPayload);
+  const [hydrateError, setHydrateError] = useState<'login' | 'fetch' | 'own' | null>(null);
 
   const [mode, setMode] = useState<ImportMode>('new');
   const [step, setStep] = useState<ImportStep>('choose-mode');
@@ -210,24 +208,36 @@ export default function QrImportScreen() {
         kind: 'individual' as const,
         label: selectedOverwriteFriend.name,
         friendId: selectedOverwriteFriend.id,
-        photoUri: selectedOverwriteFriend.photoUri,
+        photoUri: resolveFriendDisplayPhotoUri(selectedOverwriteFriend),
       },
     ];
   }, [selectedOverwriteFriend]);
 
   useEffect(() => {
     let cancelled = false;
+    const showAndStop = (kind: 'login' | 'fetch' | 'own') => {
+      if (cancelled) {
+        return;
+      }
+      setPayload(null);
+      setHydrateError(kind);
+      setHydrateReady(true);
+    };
     if (!qrPayload) {
       setPayload(null);
+      setHydrateError(null);
       setHydrateReady(true);
       return;
     }
     if (!authReady) {
-      setPayload(qrPayload);
       setHydrateReady(false);
       return;
     }
-    setPayload(qrPayload);
+    if (!sessionUserId) {
+      showAndStop('login');
+      return;
+    }
+    setHydrateError(null);
     setHydrateReady(false);
     void claimAndFetchIdentityProfile(qrPayload.userId)
       .then((result) => {
@@ -235,23 +245,33 @@ export default function QrImportScreen() {
           return;
         }
         if (result.payload) {
-          setPayload(result.payload);
+          const allowed =
+            qrPayload.publicFields.length > 0 ? qrPayload.publicFields : result.payload.publicFields;
+          setPayload(filterPayloadByPublicFields(result.payload, allowed));
+          setHydrateReady(true);
+          return;
         }
-        setHydrateReady(true);
+        if (result.skipped && sessionUserId === qrPayload.userId) {
+          showAndStop('own');
+          return;
+        }
+        showAndStop('fetch');
       })
       .catch(() => {
-        if (!cancelled) {
-          setHydrateReady(true);
-        }
+        showAndStop('fetch');
       });
     return () => {
       cancelled = true;
     };
-  }, [authReady, qrPayload]);
+  }, [authReady, qrPayload, sessionUserId]);
 
   useEffect(() => {
     if (!payload || !hydrateReady || initialized) return;
-    if (nameMatchCandidates.length > 0) {
+    if (fromFollow && linkedFriend) {
+      setStep('choose-mode');
+      setMode('overwrite');
+      setSelectedFriendId(linkedFriend.id);
+    } else if (nameMatchCandidates.length > 0) {
       setStep('confirm-match');
       setMatchCandidateId(nameMatchCandidates[0]?.id ?? null);
     } else if (linkedFriend) {
@@ -263,18 +283,45 @@ export default function QrImportScreen() {
       setMode('new');
     }
     setInitialized(true);
-  }, [hydrateReady, initialized, linkedFriend, nameMatchCandidates, payload]);
+  }, [fromFollow, hydrateReady, initialized, linkedFriend, nameMatchCandidates, payload]);
 
   useEffect(() => {
-    if (!hydrateReady) {
+    if (!hydrateReady || payload) {
       return;
     }
-    if (!payload) {
-      Alert.alert('エラー', 'QRコードの内容を読み取れませんでした', [
+    if (hydrateError === 'login') {
+      Alert.alert(
+        'ログインが必要です',
+        fromFollow
+          ? '公開カードをサーバーから取るには、設定のアカウントからログインしてください。ログインしたあと、もう一度許可してください。'
+          : '公開カードをサーバーから取るには、設定のアカウントからログインしてください。ログインしたあと、もう一度QRを読み取ってください。',
+        [
+          { text: '閉じる', onPress: () => router.back() },
+          { text: '設定を開く', onPress: () => router.replace('/appsettings') },
+        ]
+      );
+      return;
+    }
+    if (hydrateError === 'own') {
+      Alert.alert('取り込みできません', '自分のQRは友達として登録しません。', [
         { text: 'OK', onPress: () => router.back() },
       ]);
+      return;
     }
-  }, [hydrateReady, payload, router]);
+    if (hydrateError === 'fetch') {
+      Alert.alert(
+        '取得できませんでした',
+        fromFollow
+          ? '公開カードをサーバーから取れませんでした。ログインした状態でもう一度許可するか、相手がプロフィールをサーバーへ保存しているか確認してください。'
+          : '公開カードをサーバーから取れませんでした。ログインした状態でもう一度試すか、相手がプロフィールをサーバーへ保存しているか確認してください。',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
+      return;
+    }
+    Alert.alert('エラー', 'QRコードの内容を読み取れませんでした', [
+      { text: 'OK', onPress: () => router.back() },
+    ]);
+  }, [fromFollow, hydrateError, hydrateReady, payload, router]);
 
   const reloadFriends = useCallback(() => {
     initializeDatabase();
@@ -326,19 +373,11 @@ export default function QrImportScreen() {
     openExistingSelector();
   }, [openExistingSelector]);
 
-  const handleNewRegister = useCallback(() => {
-    if (!payload) return;
-    router.push({
-      pathname: '/edit',
-      params: {
-        fromScan: 'true',
-        ...qrPayloadToRouteParams(payload),
-      },
-    });
-  }, [payload, router]);
-
   const handleOverwrite = useCallback(
     (friendId?: string) => {
+      if (!requireOnline()) {
+        return;
+      }
       const targetId = friendId ?? selectedFriendId;
       if (!payload || !targetId) return;
       const target = friends.find((friend) => friend.id === targetId);
@@ -348,12 +387,12 @@ export default function QrImportScreen() {
       const fieldsText = fieldLabels.length > 0 ? fieldLabels.join('、') : '（公開項目なし）';
 
       Alert.alert(
-        '上書きしますか？',
-        `${target.name} の以下の項目を更新します。\n\n${fieldsText}\n\n手動で入れた他の項目は保持されます。`,
+        fromFollow ? 'この人物として許可しますか？' : '上書きしますか？',
+        `${target.name} の以下の項目を更新します。\n\n${fieldsText}\n\n手元の写真と、相手本人の写真は両方残します。`,
         [
           { text: 'キャンセル', style: 'cancel' },
           {
-            text: '上書き',
+            text: fromFollow ? '許可する' : '上書き',
             style: 'destructive',
             onPress: () => {
               const input = buildFriendInputFromQrPayload(payload);
@@ -367,14 +406,49 @@ export default function QrImportScreen() {
                 Alert.alert('エラー', '上書きに失敗しました。');
                 return;
               }
-              router.replace({ pathname: '/detail', params: { id: targetId } });
+              const afterSave = () => {
+                scheduleFriendProfileSync(targetId);
+                router.replace({ pathname: '/detail', params: { id: targetId } });
+              };
+              if (fromFollow) {
+                void acceptConnection(payload.userId).then((result) => {
+                  if (result.errorMessage) {
+                    Alert.alert('許可できませんでした', result.errorMessage);
+                    return;
+                  }
+                  afterSave();
+                });
+                return;
+              }
+              scheduleRequestConnection(payload.userId);
+              afterSave();
             },
           },
         ]
       );
     },
-    [friends, payload, router, selectedFriendId]
+    [friends, fromFollow, payload, router, selectedFriendId]
   );
+
+  const handleNewRegister = useCallback(() => {
+    if (!payload) return;
+    if (!requireOnline()) {
+      return;
+    }
+    if (fromFollow && linkedFriend) {
+      handleOverwrite(linkedFriend.id);
+      return;
+    }
+    setPendingQrImportPayload(payload);
+    router.push({
+      pathname: '/edit',
+      params: {
+        fromScan: 'true',
+        ...(fromFollow ? { fromFollow: 'true' } : {}),
+        ...qrPayloadToRouteParams(payload),
+      },
+    });
+  }, [fromFollow, handleOverwrite, linkedFriend, payload, router]);
 
   const handleConfirmMatchYes = useCallback(() => {
     if (!matchCandidateId) return;
@@ -405,7 +479,7 @@ export default function QrImportScreen() {
   if (!hydrateReady) {
     return (
       <SubToolScreenTemplate
-        title="QR読み取り結果"
+        title={fromFollow ? 'コネクトの許可' : 'QR読み取り結果'}
         titleFramed={false}
         onBack={() => router.back()}
         scrollable={false}
@@ -423,6 +497,7 @@ export default function QrImportScreen() {
   }
 
   const confirmMatch = step === 'confirm-match' && nameMatchCandidates.length > 0;
+  const alreadyLinkedFollow = Boolean(fromFollow && linkedFriend);
   const pairCardWidth = Math.min(
     getFriendHomeCardWidth(windowWidth) * 1.2,
     (windowWidth - 92) / 2
@@ -431,7 +506,7 @@ export default function QrImportScreen() {
   return (
     <>
     <SubToolScreenTemplate
-      title="QR読み取り結果"
+      title={fromFollow ? 'コネクトの許可' : 'QR読み取り結果'}
       titleFramed={false}
       onBack={() => router.back()}
       scrollable={false}
@@ -442,7 +517,7 @@ export default function QrImportScreen() {
           <View style={styles.syncPairBlock}>
             <View style={styles.syncPairRow}>
               <Text style={[styles.syncCardLabel, styles.syncCardCol, contentMutedTextStyle(content)]}>
-                読み取り
+                {fromFollow ? '申請者' : '読み取り'}
               </Text>
               <View style={styles.syncArrowSlot} />
               <Text style={[styles.syncCardLabel, styles.syncCardCol, contentMutedTextStyle(content)]}>
@@ -501,9 +576,13 @@ export default function QrImportScreen() {
             </View>
           </View>
           <Text style={[styles.questionText, contentTextStyle(content)]}>
-            {nameMatchCandidates.length > 1
-              ? '同姓同名の人物カードがあります。この人物に同期しますか？'
-              : 'この人物に同期しますか？'}
+            {fromFollow
+              ? nameMatchCandidates.length > 1
+                ? '同姓同名の人物カードがあります。この人物として許可しますか？'
+                : 'この人物として許可しますか？'
+              : nameMatchCandidates.length > 1
+                ? '同姓同名の人物カードがあります。この人物に同期しますか？'
+                : 'この人物に同期しますか？'}
           </Text>
           <View style={styles.modeRow}>
             <Pressable
@@ -547,6 +626,7 @@ export default function QrImportScreen() {
             />
           </View>
 
+          {!alreadyLinkedFollow ? (
           <View style={styles.modeRow}>
             <Pressable
               accessibilityRole="button"
@@ -575,8 +655,16 @@ export default function QrImportScreen() {
               </Text>
             </Pressable>
           </View>
+          ) : null}
 
-          {mode === 'new' ? (
+          {alreadyLinkedFollow ? (
+            <>
+              <Text style={[styles.helpText, contentMutedTextStyle(content)]}>
+                この相手は「{linkedFriend?.name}」とつながっています。許可するとコネクトになります。手元の写真と相手本人の写真は両方残します。
+              </Text>
+              <View style={styles.newSpacer} />
+            </>
+          ) : mode === 'new' ? (
             <>
               <Text style={[styles.helpText, contentMutedTextStyle(content)]}>
                 新しい人物カードとして登録します。内容は次の画面で確認・編集できます。
@@ -623,13 +711,27 @@ export default function QrImportScreen() {
             style={[
               styles.primaryButton,
               contentFilledButtonStyle(content),
-              mode === 'overwrite' && !selectedFriendId ? styles.primaryButtonDisabled : null,
+              !alreadyLinkedFollow && mode === 'overwrite' && !selectedFriendId
+                ? styles.primaryButtonDisabled
+                : null,
             ]}
-            onPress={mode === 'new' ? handleNewRegister : () => handleOverwrite()}
-            disabled={mode === 'overwrite' && !selectedFriendId}
+            onPress={
+              alreadyLinkedFollow
+                ? () => handleOverwrite(linkedFriend?.id)
+                : mode === 'new'
+                  ? handleNewRegister
+                  : () => handleOverwrite()
+            }
+            disabled={!alreadyLinkedFollow && mode === 'overwrite' && !selectedFriendId}
           >
             <Text style={[styles.primaryButtonText, contentFilledButtonTextStyle(content)]}>
-              {mode === 'new' ? '登録内容を確認して保存' : '選択した人物に上書き'}
+              {alreadyLinkedFollow
+                ? 'この人物として許可'
+                : mode === 'new'
+                  ? '登録内容を確認して保存'
+                  : fromFollow
+                    ? '選択した人物として許可'
+                    : '選択した人物に上書き'}
             </Text>
           </Pressable>
         </>

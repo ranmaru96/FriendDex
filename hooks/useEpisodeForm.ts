@@ -1,5 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
-import * as ImagePicker from 'expo-image-picker';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert } from 'react-native';
+import * as MediaLibrary from 'expo-media-library';
 import { PHOTO_LIMITS } from '@/constants';
 import {
   deleteEpisodePhoto,
@@ -37,6 +38,20 @@ import {
 import { profileIdsToFriendIds } from '@/utils/eventParticipantHelpers';
 import { deletePersistedImages } from '@/utils/persistImageFile';
 import {
+  deleteEpisodeDraft,
+  forgetEpisodeDraft,
+  readUsableEpisodeDraft,
+  writeEpisodeDraft,
+  type EpisodeDraft,
+} from '@/utils/episodeDraft';
+import { getRecentTogetherFriendIdsFromPastEvents } from '@/utils/eventRecencyHelpers';
+import {
+  getCachedAcceptedPeerIds,
+  isPersonCardLockedByAcceptedConnection,
+  listConnections,
+} from '@/lib/connectionSync';
+import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
+import {
   EpisodeParticipantDraft,
   EpisodeVisibilityDraft,
   formatEpisodeDateToYMD,
@@ -70,13 +85,69 @@ type UseEpisodeFormOptions = {
 const hiddenIdSet = (ids?: string[]) =>
   new Set((ids ?? []).map((id) => id.trim()).filter((id) => id.length > 0));
 
+type EpisodeFormSnapshot = {
+  title: string;
+  date: string;
+  time: string;
+  description: string;
+  participants: string;
+  visibilityMode: EpisodeVisibilityMode;
+  visibility: string;
+  tag: string;
+  eventLinkMode: EpisodeEventLinkMode;
+  linkedEventId: string;
+  newPhotoUris: string;
+  deletedPhotoIds: string;
+};
+
+const participantSnapshot = (participants: { participantType: string; value: string }[]) =>
+  participants.map((participant) => `${participant.participantType}:${participant.value}`).join('\n');
+
+const visibilitySnapshot = (visibility: { kind: string; value: string }[]) =>
+  visibility.map((entry) => `${entry.kind}:${entry.value}`).join('\n');
+
+/** 限定公開の相手は個人だけ。コネクト一覧が取れていれば、コネクト済みに絞る。 */
+const toConnectedAudienceDrafts = (
+  entries: { kind: string; value: string }[],
+  myselfId: string | null
+): EpisodeVisibilityDraft[] => {
+  const individuals = excludeSelfIndividualEntries(
+    entries
+      .filter((entry) => entry.kind === 'individual' && entry.value.trim().length > 0)
+      .map((entry) => ({ kind: 'individual' as const, value: entry.value.trim() })),
+    myselfId
+  );
+  if (getCachedAcceptedPeerIds().size === 0) {
+    return individuals;
+  }
+  return individuals.filter((entry) => isPersonCardLockedByAcceptedConnection(entry.value));
+};
+
+const blankEpisodeFormSnapshot = (dateValue: string): EpisodeFormSnapshot => ({
+  title: '',
+  date: dateValue,
+  time: '',
+  description: '',
+  participants: '',
+  visibilityMode: 'private',
+  visibility: '',
+  tag: '',
+  eventLinkMode: 'create_new',
+  linkedEventId: '',
+  newPhotoUris: '',
+  deletedPhotoIds: '',
+});
+
+const sameEpisodeFormSnapshot = (left: EpisodeFormSnapshot, right: EpisodeFormSnapshot) =>
+  (Object.keys(left) as (keyof EpisodeFormSnapshot)[]).every((key) => left[key] === right[key]);
+
 export function useEpisodeForm({
   friends,
   hiddenParticipantIds = [],
   implicitParticipantEntries = [],
 }: UseEpisodeFormOptions) {
   const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
-  const [title, setTitle] = useState('');
+  const [title, setTitleState] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -85,7 +156,34 @@ export function useEpisodeForm({
   const [participants, setParticipants] = useState<EpisodeParticipantDraft[]>([]);
   const [visibilityMode, setVisibilityMode] = useState<EpisodeVisibilityMode>('private');
   const [visibility, setVisibility] = useState<EpisodeVisibilityDraft[]>([]);
-  const [formError, setFormError] = useState('');
+  const [formError, setFormErrorState] = useState('');
+  /** 保存エラーがどの入力に対応するか。先頭サマリーと枠の強調に使う。 */
+  const [formErrorField, setFormErrorField] = useState<'title' | 'event' | null>(null);
+  const formErrorFieldRef = useRef(formErrorField);
+  formErrorFieldRef.current = formErrorField;
+  /** 同じエラーで保存を連打しても、タイトルへフォーカスし直す。 */
+  const [formErrorTick, setFormErrorTick] = useState(0);
+
+  const setFormError = useCallback((message: string) => {
+    setFormErrorState(message);
+    setFormErrorField(null);
+  }, []);
+
+  const showFormError = useCallback((message: string, field: 'title' | 'event' | null) => {
+    setFormErrorState(message);
+    setFormErrorField(field);
+    setFormErrorTick((tick) => tick + 1);
+  }, []);
+
+  const setTitle = useCallback((value: string) => {
+    setTitleState(value);
+    // 空白だけは未入力のままなので、エラーは残す。
+    if (!value.trim() || formErrorFieldRef.current !== 'title') {
+      return;
+    }
+    setFormErrorState('');
+    setFormErrorField(null);
+  }, []);
   const [photos, setPhotos] = useState<EpisodePhoto[]>([]);
   const [newPhotoUris, setNewPhotoUris] = useState<string[]>([]);
   const newPhotoUrisRef = useRef<string[]>([]);
@@ -97,11 +195,36 @@ export function useEpisodeForm({
     setNewPhotoUris(next);
   }, []);
   const [photoCropUri, setPhotoCropUri] = useState<string | null>(null);
+  const [photoLibraryVisible, setPhotoLibraryVisible] = useState(false);
+  const [photoResolving, setPhotoResolving] = useState(false);
+  const [dismissedPhotoAssetIds, setDismissedPhotoAssetIds] = useState<string[]>([]);
+  const editQueueRef = useRef<string[]>([]);
+  const editTokenRef = useRef(0);
+  const photoEditIndexRef = useRef(0);
+  const sessionBaseUrisRef = useRef<string[]>([]);
+  const sessionCropsRef = useRef<(string | null)[]>([]);
+  const [photoEditPreviews, setPhotoEditPreviews] = useState<{ id: string; uri: string }[]>([]);
+  const [photoEditIndex, setPhotoEditIndex] = useState(0);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<number[]>([]);
   const [linkedEventId, setLinkedEventId] = useState<string | null>(null);
   const [eventLinkMode, setEventLinkModeState] = useState<EpisodeEventLinkMode>('create_new');
+  /** 開いた直後の入力。ここから変わっていなければ、閉じる確認は出さない。 */
+  const baselineRef = useRef(blankEpisodeFormSnapshot(''));
+  const isDirtyRef = useRef(false);
+  const dismissPromptRef = useRef(false);
+  /** 予定から開いた新規は、前回の下書きを重ねない。 */
+  const draftSuppressRef = useRef(false);
+  const draftSessionActiveRef = useRef(false);
+  const draftGateRef = useRef<'pending' | 'ready'>('ready');
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const draftOriginRef = useRef(blankEpisodeFormSnapshot(''));
+  const draftBaseDescriptionRef = useRef('');
+  const draftEpisodeIdRef = useRef<string | null>(null);
+  /** このセッションで下書きを書いたときだけ、元に戻したらその記録を消す。 */
+  const draftOwnsRecordRef = useRef(false);
+  const draftSessionPreparedRef = useRef(false);
+  const [draftSessionActive, setDraftSessionActive] = useState(false);
   const [tag, setTag] = useState('');
-  const [locationTag, setLocationTag] = useState('');
 
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [selectorTarget, setSelectorTarget] = useState<'participant' | 'visibility'>('participant');
@@ -111,6 +234,7 @@ export function useEpisodeForm({
   const [selectorNameFilter, setSelectorNameFilter] = useState('');
   const [selectorAffiliationFilter, setSelectorAffiliationFilter] = useState('');
   const [selectorExperienceFilter, setSelectorExperienceFilter] = useState('');
+  const [acceptedPeerRevision, setAcceptedPeerRevision] = useState(0);
 
   const friendNameById = useMemo(
     () => new Map(friends.map((friend) => [friend.id, friend.name])),
@@ -162,15 +286,13 @@ export function useEpisodeForm({
   }, []);
 
   const reset = useCallback(() => {
-    // 保存されずに破棄された写真は実体も消す（DB 登録済みのものは残す）。
-    deletePersistedImages(
-      newPhotoUrisRef.current.filter((uri) => !committedPhotoUrisRef.current.has(uri))
-    );
+    const initialDate = formatEpisodeDateToYMD(new Date());
+    draftSuppressRef.current = false;
     committedPhotoUrisRef.current.clear();
     setFormError('');
     setEditingEpisodeId(null);
     setTitle('');
-    setDate(formatEpisodeDateToYMD(new Date()));
+    setDate(initialDate);
     setTime('');
     setShowDatePicker(false);
     setShowTimePicker(false);
@@ -180,28 +302,126 @@ export function useEpisodeForm({
     setVisibility([]);
     setPhotos([]);
     applyNewPhotoUris([]);
+    editTokenRef.current += 1;
+    editQueueRef.current = [];
+    photoEditIndexRef.current = 0;
+    setPhotoEditPreviews([]);
+    setPhotoEditIndex(0);
     setPhotoCropUri(null);
+    setPhotoLibraryVisible(false);
+    setPhotoResolving(false);
+    setDismissedPhotoAssetIds([]);
     setDeletedPhotoIds([]);
     setLinkedEventId(null);
     setEventLinkModeState('create_new');
     setTag('');
-    setLocationTag('');
     setSelectorVisible(false);
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
     setSelectorExperienceFilter('');
+    baselineRef.current = blankEpisodeFormSnapshot(initialDate);
   }, [applyNewPhotoUris]);
 
   const excludeSelfId = useMemo(() => getMyself(), [friends, hiddenParticipantIds]);
 
+  const connectedAudienceFriends = useMemo(() => {
+    void acceptedPeerRevision;
+    return friendsExcludingSelf(friends, excludeSelfId).filter((friend) =>
+      isPersonCardLockedByAcceptedConnection(friend.id)
+    );
+  }, [acceptedPeerRevision, excludeSelfId, friends]);
+
   const selectorFriends = useMemo(() => {
-    const withoutSelf = friendsExcludingSelf(friends, excludeSelfId);
     if (selectorTarget === 'visibility') {
-      return withoutSelf;
+      return connectedAudienceFriends;
     }
     const hidden = hiddenIdSet(hiddenParticipantIds);
-    return withoutSelf.filter((friend) => !hidden.has(friend.id));
-  }, [excludeSelfId, friends, hiddenParticipantIds, selectorTarget]);
+    return friendsExcludingSelf(friends, excludeSelfId).filter(
+      (friend) => !hidden.has(friend.id)
+    );
+  }, [
+    connectedAudienceFriends,
+    excludeSelfId,
+    friends,
+    hiddenParticipantIds,
+    selectorTarget,
+  ]);
+
+  const refreshAudienceConnections = useCallback(() => {
+    void listConnections().then(() => {
+      setAcceptedPeerRevision((revision) => revision + 1);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (acceptedPeerRevision === 0) {
+      return;
+    }
+    setVisibility((current) => {
+      const next = toConnectedAudienceDrafts(current, getMyself());
+      if (
+        next.length === current.length &&
+        next.every((entry, index) => entry.kind === current[index]?.kind && entry.value === current[index]?.value)
+      ) {
+        return current;
+      }
+      return next;
+    });
+  }, [acceptedPeerRevision]);
+
+  const recentTogetherFriendIds = useMemo(() => {
+    const hidden = hiddenIdSet(hiddenParticipantIds);
+    const validFriendIds = new Set(
+      friends
+        .map((friend) => friend.id)
+        .filter((friendId) => friendId !== excludeSelfId && !hidden.has(friendId))
+    );
+    return getRecentTogetherFriendIdsFromPastEvents({
+      validFriendIds,
+      excludeFriendId: excludeSelfId,
+    });
+  }, [excludeSelfId, friends, hiddenParticipantIds]);
+
+  const addParticipantFriend = useCallback((friendId: string) => {
+    const normalized = friendId.trim();
+    if (!normalized || normalized === getMyself()) {
+      return;
+    }
+    if (hiddenIdSet(hiddenParticipantIds).has(normalized)) {
+      return;
+    }
+    setParticipants((prev) => {
+      if (prev.some((participant) => participant.participantType === 'individual' && participant.value === normalized)) {
+        return prev;
+      }
+      return [...prev, { participantType: 'individual', value: normalized }];
+    });
+  }, [hiddenParticipantIds]);
+
+  const removeParticipant = useCallback((chipId: string) => {
+    const separator = chipId.indexOf(':');
+    if (separator < 0) {
+      return;
+    }
+    const kind = chipId.slice(0, separator);
+    const value = chipId.slice(separator + 1);
+    setParticipants((prev) =>
+      prev.filter((participant) => {
+        const participantKind = participant.participantType === 'individual' ? 'individual' : 'group';
+        return !(participantKind === kind && participant.value === value);
+      })
+    );
+  }, []);
+
+  const removeVisibility = useCallback((chipId: string) => {
+    const separator = chipId.indexOf(':');
+    if (separator < 0) {
+      return;
+    }
+    const kind = chipId.slice(0, separator);
+    const value = chipId.slice(separator + 1);
+    setVisibility((prev) => prev.filter((entry) => !(entry.kind === kind && entry.value === value)));
+  }, []);
 
   const restoreSelectorFromParticipants = useCallback((drafts: EpisodeParticipantDraft[]) => {
     const individuals = new Set<string>();
@@ -225,21 +445,11 @@ export function useEpisodeForm({
 
   const restoreSelectorFromVisibility = useCallback((entries: EpisodeVisibilityDraft[]) => {
     const individuals = new Set<string>();
-    const groups = new Set<string>();
-    const myselfId = getMyself();
-    entries.forEach((entry) => {
-      if (!entry.value.trim()) return;
-      if (entry.kind === 'individual') {
-        if (myselfId && entry.value === myselfId) {
-          return;
-        }
-        individuals.add(entry.value);
-      } else {
-        groups.add(entry.value);
-      }
+    toConnectedAudienceDrafts(entries, getMyself()).forEach((entry) => {
+      individuals.add(entry.value);
     });
     setSelectedIndividualIds(individuals);
-    setSelectedGroupValues(groups);
+    setSelectedGroupValues(new Set());
   }, []);
 
   const openParticipantSelector = useCallback(() => {
@@ -253,6 +463,8 @@ export function useEpisodeForm({
   }, [participants, restoreSelectorFromParticipants]);
 
   const openVisibilitySelector = useCallback(() => {
+    dismissKeyboardFocus();
+    refreshAudienceConnections();
     restoreSelectorFromVisibility(visibility);
     setSelectorTarget('visibility');
     setSelectorTab('individual');
@@ -260,14 +472,17 @@ export function useEpisodeForm({
     setSelectorAffiliationFilter('');
     setSelectorExperienceFilter('');
     setSelectorVisible(true);
-  }, [visibility, restoreSelectorFromVisibility]);
+  }, [refreshAudienceConnections, restoreSelectorFromVisibility, visibility]);
 
   const handleSelectorCancel = useCallback(() => {
     setSelectorVisible(false);
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
     setSelectorExperienceFilter('');
-  }, []);
+    if (selectorTarget === 'visibility' && visibility.length === 0) {
+      setVisibilityMode('private');
+    }
+  }, [selectorTarget, visibility.length]);
 
   const handleSelectorConfirm = useCallback(() => {
     const myselfId = getMyself();
@@ -293,17 +508,15 @@ export function useEpisodeForm({
         }))
       );
     } else {
-      const nextVisibility: EpisodeVisibilityDraft[] = [];
-      selectedIndividualIds.forEach((friendId) => {
-        if (myselfId && friendId === myselfId) {
-          return;
-        }
-        nextVisibility.push({ kind: 'individual', value: friendId });
-      });
-      selectedGroupValues.forEach((groupValue) => {
-        nextVisibility.push({ kind: 'group', value: groupValue });
-      });
+      const nextVisibility = toConnectedAudienceDrafts(
+        Array.from(selectedIndividualIds).map((friendId) => ({
+          kind: 'individual',
+          value: friendId,
+        })),
+        myselfId
+      );
       setVisibility(nextVisibility);
+      setVisibilityMode(nextVisibility.length === 0 ? 'private' : 'limited');
     }
     setSelectorVisible(false);
     setSelectorNameFilter('');
@@ -349,8 +562,9 @@ export function useEpisodeForm({
       setEditingEpisodeId(episode.id);
       setTitle(episode.title);
       const eventId = episode.eventId?.trim() || null;
+      const nextEventLinkMode: EpisodeEventLinkMode = eventId ? 'existing' : 'none';
       setLinkedEventId(eventId);
-      setEventLinkModeState(eventId ? 'existing' : 'none');
+      setEventLinkModeState(nextEventLinkMode);
       let nextDate = episode.date;
       if (eventId) {
         const event = getEvent(eventId);
@@ -361,31 +575,42 @@ export function useEpisodeForm({
           }
         }
       }
+      const nextTime = normalizeEpisodeTime(episode.time) ?? '';
+      const nextVisibility = toConnectedAudienceDrafts(
+        episode.visibilityEntries ?? [],
+        myselfId
+      );
+      const nextTag = episode.tag ?? '';
       setDate(nextDate);
-      setTime(normalizeEpisodeTime(episode.time) ?? '');
+      setTime(nextTime);
       setDescription(episode.description);
       setParticipants(participantDrafts);
       setVisibilityMode(episode.visibilityMode);
-      setVisibility(
-        excludeSelfIndividualEntries(
-          (episode.visibilityEntries ?? []).map((entry) => ({
-            kind: entry.kind,
-            value: entry.value,
-          })),
-          myselfId
-        )
-      );
+      setVisibility(nextVisibility);
       setPhotos(getEpisodePhotos(episode.id));
-      setNewPhotoUris([]);
+      applyNewPhotoUris([]);
       setPhotoCropUri(null);
       setDeletedPhotoIds([]);
       setFormError('');
       setShowDatePicker(false);
       setShowTimePicker(false);
-      setTag(episode.tag ?? '');
-      setLocationTag(episode.locationTag ?? '');
+      setTag(nextTag);
+      baselineRef.current = {
+        title: episode.title,
+        date: nextDate,
+        time: nextTime,
+        description: episode.description,
+        participants: participantSnapshot(participantDrafts),
+        visibilityMode: episode.visibilityMode,
+        visibility: visibilitySnapshot(nextVisibility),
+        tag: nextTag,
+        eventLinkMode: nextEventLinkMode,
+        linkedEventId: eventId ?? '',
+        newPhotoUris: '',
+        deletedPhotoIds: '',
+      };
     },
-    [hiddenParticipantIds]
+    [applyNewPhotoUris, hiddenParticipantIds]
   );
 
   const prefillFromEvent = useCallback(
@@ -401,22 +626,38 @@ export function useEpisodeForm({
       setTitle(event.title);
       const today = formatDateKey(new Date());
       const keys = getLocalDateKeysForEvent(event).filter((key) => key <= today);
-      setDate(keys[0] ?? today);
-      setTime(event.allDay ? '' : formatTimeFromDate(new Date(event.startAt)));
-      setTag(event.episodeTag ?? '');
-      setLocationTag(event.locationTag ?? '');
+      const nextDate = keys[0] ?? today;
+      const nextTime = event.allDay ? '' : formatTimeFromDate(new Date(event.startAt));
+      const nextTag = event.episodeTag ?? '';
+      setDate(nextDate);
+      setTime(nextTime);
+      setTag(nextTag);
       setDescription('');
       const myselfId = getMyself();
       const hidden = hiddenIdSet(hiddenParticipantIds);
       const friendIds = profileIdsToFriendIds(
         getEventParticipants(normalized).map((participant) => participant.profileId)
       ).filter((friendId) => !hidden.has(friendId) && friendId !== myselfId);
-      setParticipants(
-        friendIds.map((friendId) => ({
-          participantType: 'individual' as const,
-          value: friendId,
-        }))
-      );
+      const nextParticipants = friendIds.map((friendId) => ({
+        participantType: 'individual' as const,
+        value: friendId,
+      }));
+      setParticipants(nextParticipants);
+      baselineRef.current = {
+        title: event.title,
+        date: nextDate,
+        time: nextTime,
+        description: '',
+        participants: participantSnapshot(nextParticipants),
+        visibilityMode: 'private',
+        visibility: '',
+        tag: nextTag,
+        eventLinkMode: 'existing',
+        linkedEventId: normalized,
+        newPhotoUris: '',
+        deletedPhotoIds: '',
+      };
+      draftSuppressRef.current = true;
       return true;
     },
     [hiddenParticipantIds, reset]
@@ -426,15 +667,15 @@ export function useEpisodeForm({
     const normalizedTitle = title.trim();
     const normalizedDate = date.trim();
     if (!normalizedTitle) {
-      setFormError('タイトルを入力してください。');
+      showFormError('タイトルを入力してください。', 'title');
       return null;
     }
     if (!normalizedDate) {
-      setFormError('日付を選択してください。');
+      showFormError('日付を選択してください。', null);
       return null;
     }
     if (normalizedDate > formatDateKey(new Date())) {
-      setFormError('未来の日付は選択できません。');
+      showFormError('未来の日付は選択できません。', null);
       return null;
     }
 
@@ -456,24 +697,16 @@ export function useEpisodeForm({
       myselfId
     );
     const visibilityEntries: EpisodeVisibilityEntry[] =
-      visibilityMode === 'limited'
-        ? excludeSelfIndividualEntries(
-            visibility
-              .filter((entry) => entry.value.trim().length > 0)
-              .map((entry) => ({
-                kind: entry.kind,
-                value: entry.value.trim(),
-              })),
-            myselfId
-          )
-        : [];
+      visibilityMode === 'limited' ? toConnectedAudienceDrafts(visibility, myselfId) : [];
+    const resolvedVisibilityMode: EpisodeVisibilityMode =
+      visibilityMode === 'limited' && visibilityEntries.length === 0 ? 'private' : visibilityMode;
 
     setFormError('');
     const createLinkedEvent = eventLinkMode === 'create_new';
     const resolvedEventId =
       createLinkedEvent || eventLinkMode === 'none' ? null : linkedEventId?.trim() || null;
     if (eventLinkMode === 'existing' && !resolvedEventId) {
-      setFormError('紐づける予定を選択してください。');
+      showFormError('紐づける予定を選択してください。', 'event');
       return null;
     }
     return {
@@ -481,11 +714,11 @@ export function useEpisodeForm({
       date: normalizedDate,
       time: normalizeEpisodeTime(time),
       description: description.trim(),
-      visibilityMode,
+      visibilityMode: resolvedVisibilityMode,
       participantEntries,
       visibilityEntries,
       tag: normalizeEpisodeTag(tag),
-      locationTag: normalizeEpisodeTag(locationTag),
+      locationTag: null,
       eventId: resolvedEventId,
       createLinkedEvent,
     };
@@ -497,7 +730,7 @@ export function useEpisodeForm({
     linkedEventId,
     participants,
     tag,
-    locationTag,
+    showFormError,
     time,
     title,
     visibility,
@@ -516,7 +749,7 @@ export function useEpisodeForm({
       return;
     }
     if (isEventStartInFuture(event)) {
-      setFormError('未来の予定にはエピソードを紐づけられません。');
+      showFormError('未来の予定にはエピソードを紐づけられません。', 'event');
       return;
     }
     setFormError('');
@@ -535,36 +768,163 @@ export function useEpisodeForm({
       }
       return event.episodeTag ?? '';
     });
-    setLocationTag((prev) => {
-      if (prev.trim()) {
-        return prev;
+  }, [showFormError]);
+
+  const remainingPhotoSlots = Math.max(
+    0,
+    PHOTO_LIMITS.free - visibleExistingPhotos.length - newPhotoUris.length
+  );
+
+  const showNextQueuedPhoto = useCallback(async (assetId: string) => {
+    editTokenRef.current += 1;
+    const token = editTokenRef.current;
+    setPhotoResolving(true);
+    try {
+      const info = await MediaLibrary.getAssetInfoAsync(assetId, {
+        shouldDownloadFromNetwork: true,
+      });
+      if (token !== editTokenRef.current) {
+        return;
       }
-      return event.locationTag ?? '';
-    });
+      const uri =
+        info.localUri ??
+        (info.uri.startsWith('file://') || info.uri.startsWith('content://') ? info.uri : null);
+      if (!uri) {
+        Alert.alert('写真を読み込めませんでした', '別の写真を選んでください。');
+        return;
+      }
+      setPhotoCropUri(uri);
+    } catch {
+      if (token !== editTokenRef.current) {
+        return;
+      }
+      Alert.alert('写真を読み込めませんでした', '別の写真を選んでください。');
+    } finally {
+      if (token === editTokenRef.current) {
+        setPhotoResolving(false);
+      }
+    }
   }, []);
 
   const pickPhoto = useCallback(async () => {
     if (isPhotoLimitReached) return;
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      quality: 1,
-      allowsEditing: false,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setPhotoCropUri(result.assets[0].uri);
+    const permission = await MediaLibrary.requestPermissionsAsync(false, ['photo']);
+    if (!permission.granted) {
+      Alert.alert('権限が必要です', '写真を選ぶには、写真ライブラリへのアクセスが必要です。');
+      return;
     }
+    editTokenRef.current += 1;
+    editQueueRef.current = [];
+    photoEditIndexRef.current = 0;
+    setPhotoEditPreviews([]);
+    setPhotoEditIndex(0);
+    setPhotoCropUri(null);
+    setPhotoResolving(false);
+    setDismissedPhotoAssetIds([]);
+    setPhotoLibraryVisible(true);
   }, [isPhotoLimitReached]);
 
-  const cancelPhotoCrop = useCallback(() => {
+  const closePhotoLibrary = useCallback(() => {
+    editTokenRef.current += 1;
+    editQueueRef.current = [];
+    photoEditIndexRef.current = 0;
+    setPhotoEditPreviews([]);
+    setPhotoEditIndex(0);
     setPhotoCropUri(null);
+    setPhotoResolving(false);
+    setDismissedPhotoAssetIds([]);
+    setPhotoLibraryVisible(false);
   }, []);
+
+  const beginPhotoEdits = useCallback(
+    (assets: { id: string; uri: string }[]) => {
+      const slots = Math.max(
+        0,
+        PHOTO_LIMITS.free - visibleExistingPhotos.length - newPhotoUrisRef.current.length
+      );
+      const queue = assets.slice(0, slots);
+      if (queue.length === 0) {
+        return;
+      }
+      editTokenRef.current += 1;
+      editQueueRef.current = queue.map((asset) => asset.id);
+      photoEditIndexRef.current = 0;
+      sessionBaseUrisRef.current = [...newPhotoUrisRef.current];
+      sessionCropsRef.current = queue.map(() => null);
+      setPhotoEditPreviews(queue);
+      setPhotoEditIndex(0);
+      void showNextQueuedPhoto(queue[0].id);
+    },
+    [showNextQueuedPhoto, visibleExistingPhotos.length]
+  );
+
+  const cancelPhotoCrop = useCallback(() => {
+    editTokenRef.current += 1;
+    editQueueRef.current = [];
+    photoEditIndexRef.current = 0;
+    setPhotoEditPreviews([]);
+    setPhotoEditIndex(0);
+    setPhotoCropUri(null);
+    setPhotoResolving(false);
+  }, []);
+
+  const applySessionCrops = useCallback(() => {
+    applyNewPhotoUris([
+      ...sessionBaseUrisRef.current,
+      ...sessionCropsRef.current.filter((uri): uri is string => uri != null),
+    ]);
+  }, [applyNewPhotoUris]);
+
+  const selectPhotoEdit = useCallback(
+    (index: number) => {
+      if (index === photoEditIndexRef.current) {
+        return;
+      }
+      const assetId = editQueueRef.current[index];
+      if (!assetId) {
+        return;
+      }
+      photoEditIndexRef.current = index;
+      setPhotoEditIndex(index);
+      void showNextQueuedPhoto(assetId);
+    },
+    [showNextQueuedPhoto]
+  );
 
   const confirmPhotoCrop = useCallback(
     (croppedUri: string) => {
-      applyNewPhotoUris([...newPhotoUrisRef.current, croppedUri]);
-      setPhotoCropUri(null);
+      const index = photoEditIndexRef.current;
+      const finishedId = editQueueRef.current[index];
+      const previous = sessionCropsRef.current[index];
+      if (previous && previous !== croppedUri && !committedPhotoUrisRef.current.has(previous)) {
+        deletePersistedImages([previous]);
+      }
+      sessionCropsRef.current[index] = croppedUri;
+      applySessionCrops();
+      if (finishedId) {
+        setDismissedPhotoAssetIds((prev) =>
+          prev.includes(finishedId) ? prev : [...prev, finishedId]
+        );
+      }
+      const nextIndex = sessionCropsRef.current.findIndex((uri) => uri == null);
+      if (nextIndex < 0) {
+        editQueueRef.current = [];
+        photoEditIndexRef.current = 0;
+        sessionBaseUrisRef.current = [];
+        sessionCropsRef.current = [];
+        setPhotoEditPreviews([]);
+        setPhotoEditIndex(0);
+        setPhotoCropUri(null);
+        setPhotoLibraryVisible(false);
+        setDismissedPhotoAssetIds([]);
+        setPhotoResolving(false);
+        return;
+      }
+      photoEditIndexRef.current = nextIndex;
+      setPhotoEditIndex(nextIndex);
+      void showNextQueuedPhoto(editQueueRef.current[nextIndex]);
     },
-    [applyNewPhotoUris]
+    [applySessionCrops, showNextQueuedPhoto]
   );
 
   const removeExistingPhoto = useCallback((photoId: number) => {
@@ -584,23 +944,320 @@ export function useEpisodeForm({
 
   const persistPhotos = useCallback(
     (episodeId: string, isEdit: boolean) => {
-      newPhotoUris.forEach((uri) => committedPhotoUrisRef.current.add(uri));
+      const uris = newPhotoUrisRef.current;
+      uris.forEach((uri) => committedPhotoUrisRef.current.add(uri));
       if (isEdit) {
         deletedPhotoIds.forEach((id) => {
           deleteEpisodePhoto(id);
         });
         const existingCount = photos.filter((photo) => !deletedPhotoIds.includes(photo.id)).length;
-        newPhotoUris.forEach((uri, index) => {
+        uris.forEach((uri, index) => {
           insertEpisodePhoto(episodeId, uri, existingCount + index);
         });
         return;
       }
-      newPhotoUris.forEach((uri, index) => {
+      uris.forEach((uri, index) => {
         insertEpisodePhoto(episodeId, uri, index);
       });
     },
-    [deletedPhotoIds, newPhotoUris, photos]
+    [deletedPhotoIds, photos]
   );
+
+  const currentSnapshot: EpisodeFormSnapshot = {
+    title,
+    date,
+    time,
+    description,
+    participants: participantSnapshot(participants),
+    visibilityMode,
+    visibility: visibilitySnapshot(visibility),
+    tag,
+    eventLinkMode,
+    linkedEventId: linkedEventId ?? '',
+    newPhotoUris: newPhotoUris.join('\n'),
+    deletedPhotoIds: deletedPhotoIds.join(','),
+  };
+  const isDirty = !sameEpisodeFormSnapshot(currentSnapshot, baselineRef.current);
+  isDirtyRef.current = isDirty;
+
+  const draftFieldsRef = useRef({
+    title,
+    date,
+    time,
+    description,
+    participants,
+    visibilityMode,
+    visibility,
+    tag,
+    eventLinkMode,
+    linkedEventId,
+    newPhotoUris,
+    deletedPhotoIds,
+    editingEpisodeId,
+  });
+  draftFieldsRef.current = {
+    title,
+    date,
+    time,
+    description,
+    participants,
+    visibilityMode,
+    visibility,
+    tag,
+    eventLinkMode,
+    linkedEventId,
+    newPhotoUris,
+    deletedPhotoIds,
+    editingEpisodeId,
+  };
+  const editingEpisodeIdRef = useRef(editingEpisodeId);
+  editingEpisodeIdRef.current = editingEpisodeId;
+
+  const snapshotFromCurrentFields = (): EpisodeFormSnapshot => {
+    const fields = draftFieldsRef.current;
+    return {
+      title: fields.title,
+      date: fields.date,
+      time: fields.time,
+      description: fields.description,
+      participants: participantSnapshot(fields.participants),
+      visibilityMode: fields.visibilityMode,
+      visibility: visibilitySnapshot(fields.visibility),
+      tag: fields.tag,
+      eventLinkMode: fields.eventLinkMode,
+      linkedEventId: fields.linkedEventId ?? '',
+      newPhotoUris: fields.newPhotoUris.join('\n'),
+      deletedPhotoIds: fields.deletedPhotoIds.join(','),
+    };
+  };
+
+  const stopDraftTimer = () => {
+    if (draftTimerRef.current) {
+      clearTimeout(draftTimerRef.current);
+      draftTimerRef.current = null;
+    }
+  };
+
+  const persistDraftNow = () => {
+    if (!draftSessionActiveRef.current || draftGateRef.current !== 'ready') {
+      return;
+    }
+    const current = snapshotFromCurrentFields();
+    if (sameEpisodeFormSnapshot(current, draftOriginRef.current)) {
+      if (draftOwnsRecordRef.current) {
+        forgetEpisodeDraft(draftEpisodeIdRef.current);
+        draftOwnsRecordRef.current = false;
+      }
+      return;
+    }
+    const fields = draftFieldsRef.current;
+    writeEpisodeDraft({
+      title: fields.title,
+      date: fields.date,
+      time: fields.time,
+      description: fields.description,
+      baseDescription: draftBaseDescriptionRef.current,
+      participants: fields.participants,
+      visibilityMode: fields.visibilityMode,
+      visibility: fields.visibility,
+      tag: fields.tag,
+      eventLinkMode: fields.eventLinkMode,
+      linkedEventId: fields.linkedEventId,
+      newPhotoUris: fields.newPhotoUris,
+      deletedPhotoIds: fields.deletedPhotoIds,
+      editingEpisodeId: draftEpisodeIdRef.current,
+      savedAt: Date.now(),
+    });
+    draftOwnsRecordRef.current = true;
+  };
+
+  const discardUncommittedPhotos = useCallback(() => {
+    deletePersistedImages(
+      newPhotoUrisRef.current.filter((uri) => !committedPhotoUrisRef.current.has(uri))
+    );
+  }, []);
+
+  const prepareDraftSession = useCallback(() => {
+    if (draftSessionPreparedRef.current) {
+      draftSessionPreparedRef.current = false;
+      draftSessionActiveRef.current = true;
+      draftGateRef.current = 'ready';
+      setDraftSessionActive(true);
+      return;
+    }
+    const episodeId = editingEpisodeIdRef.current;
+    draftEpisodeIdRef.current = episodeId;
+    draftBaseDescriptionRef.current = draftFieldsRef.current.description;
+    draftOriginRef.current = snapshotFromCurrentFields();
+    draftSessionActiveRef.current = true;
+    draftGateRef.current = 'ready';
+    setDraftSessionActive(true);
+    if (draftSuppressRef.current) {
+      draftSuppressRef.current = false;
+    }
+  }, []);
+
+  const restoreDraft = useCallback((draft: EpisodeDraft) => {
+    setTitle(draft.title);
+    setDate(draft.date);
+    setTime(draft.time);
+    setDescription(draft.description);
+    setParticipants(draft.participants);
+    const nextVisibility = toConnectedAudienceDrafts(draft.visibility, getMyself());
+    const nextVisibilityMode =
+      draft.visibilityMode === 'limited' && nextVisibility.length === 0
+        ? 'private'
+        : draft.visibilityMode;
+    setVisibilityMode(nextVisibilityMode);
+    setVisibility(nextVisibility);
+    setTag(draft.tag);
+    setEventLinkModeState(draft.eventLinkMode);
+    setLinkedEventId(draft.linkedEventId);
+    applyNewPhotoUris(draft.newPhotoUris);
+    setDeletedPhotoIds(draft.deletedPhotoIds);
+    baselineRef.current = {
+      title: draft.title,
+      date: draft.date,
+      time: draft.time,
+      description: draft.description,
+      participants: participantSnapshot(draft.participants),
+      visibilityMode: nextVisibilityMode,
+      visibility: visibilitySnapshot(nextVisibility),
+      tag: draft.tag,
+      eventLinkMode: draft.eventLinkMode,
+      linkedEventId: draft.linkedEventId ?? '',
+      newPhotoUris: draft.newPhotoUris.join('\n'),
+      deletedPhotoIds: draft.deletedPhotoIds.join(','),
+    };
+    draftGateRef.current = 'ready';
+    draftOwnsRecordRef.current = true;
+  }, [applyNewPhotoUris]);
+
+  const armRestoredNewDraft = useCallback(
+    (draft: EpisodeDraft) => {
+      reset();
+      draftOriginRef.current = { ...baselineRef.current };
+      draftBaseDescriptionRef.current = '';
+      draftEpisodeIdRef.current = null;
+      draftGateRef.current = 'ready';
+      draftOwnsRecordRef.current = true;
+      draftSessionPreparedRef.current = true;
+      restoreDraft(draft);
+    },
+    [reset, restoreDraft]
+  );
+
+  const armRestoredEditDraft = useCallback(
+    (episode: Episode, draft: EpisodeDraft) => {
+      loadFromEpisode(episode);
+      draftOriginRef.current = { ...baselineRef.current };
+      draftBaseDescriptionRef.current = episode.description;
+      draftEpisodeIdRef.current = episode.id;
+      draftGateRef.current = 'ready';
+      draftOwnsRecordRef.current = true;
+      draftSessionPreparedRef.current = true;
+      restoreDraft(draft);
+    },
+    [loadFromEpisode, restoreDraft]
+  );
+
+  const declineDraft = useCallback((draft: EpisodeDraft) => {
+    deleteEpisodeDraft(draft.editingEpisodeId, draft.newPhotoUris);
+    draftGateRef.current = 'ready';
+    draftOwnsRecordRef.current = false;
+  }, []);
+
+  const flushDraft = useCallback(() => {
+    stopDraftTimer();
+    if (draftSessionActiveRef.current && draftGateRef.current === 'ready') {
+      persistDraftNow();
+    }
+    draftSessionActiveRef.current = false;
+    setDraftSessionActive(false);
+  }, []);
+
+  const forgetDraft = useCallback(() => {
+    stopDraftTimer();
+    draftSessionActiveRef.current = false;
+    draftGateRef.current = 'ready';
+    draftOwnsRecordRef.current = false;
+    setDraftSessionActive(false);
+    forgetEpisodeDraft(draftEpisodeIdRef.current);
+  }, []);
+
+  const requestDismiss = useCallback(
+    (onDismiss: () => void) => {
+      if (draftGateRef.current === 'pending') {
+        return;
+      }
+      if (!isDirtyRef.current) {
+        flushDraft();
+        onDismiss();
+        return;
+      }
+      if (dismissPromptRef.current) {
+        return;
+      }
+      dismissPromptRef.current = true;
+      const releasePrompt = () => {
+        dismissPromptRef.current = false;
+      };
+      Alert.alert('変更を破棄しますか？', undefined, [
+        { text: '編集を続ける', style: 'cancel', onPress: releasePrompt },
+        {
+          text: '破棄する',
+          style: 'destructive',
+          onPress: () => {
+            releasePrompt();
+            stopDraftTimer();
+            draftSessionActiveRef.current = false;
+            setDraftSessionActive(false);
+            discardUncommittedPhotos();
+            draftOwnsRecordRef.current = false;
+            forgetEpisodeDraft(draftEpisodeIdRef.current);
+            onDismiss();
+          },
+        },
+      ], { cancelable: true, onDismiss: releasePrompt });
+    },
+    [discardUncommittedPhotos, flushDraft]
+  );
+
+  const photoDraftSig = `${newPhotoUris.join('\n')}#${deletedPhotoIds.join(',')}`;
+  const photoDraftSigRef = useRef(photoDraftSig);
+
+  useEffect(() => {
+    if (!draftSessionActive || draftGateRef.current !== 'ready') {
+      return;
+    }
+    const photosChanged = photoDraftSigRef.current !== photoDraftSig;
+    photoDraftSigRef.current = photoDraftSig;
+    stopDraftTimer();
+    if (photosChanged) {
+      persistDraftNow();
+      return;
+    }
+    draftTimerRef.current = setTimeout(() => {
+      draftTimerRef.current = null;
+      persistDraftNow();
+    }, 300);
+    return () => {
+      stopDraftTimer();
+    };
+  }, [
+    draftSessionActive,
+    photoDraftSig,
+    title,
+    date,
+    time,
+    description,
+    participants,
+    visibilityMode,
+    visibility,
+    tag,
+    eventLinkMode,
+    linkedEventId,
+  ]);
 
   return {
     editingEpisodeId,
@@ -613,8 +1270,6 @@ export function useEpisodeForm({
     prefillFromEvent,
     tag,
     setTag,
-    locationTag,
-    setLocationTag,
     allowedEventDateRange,
     episodeDateMinimumDate,
     episodeDateMaximumDate,
@@ -636,14 +1291,32 @@ export function useEpisodeForm({
     visibilityMode,
     setVisibilityMode,
     visibility,
+    setVisibility,
     formError,
+    formErrorField,
+    formErrorTick,
     setFormError,
     visibleExistingPhotos,
     newPhotoUris,
     isPhotoLimitReached,
+    remainingPhotoSlots,
+    photoLibraryVisible,
+    photoResolving,
+    dismissedPhotoAssetIds,
+    closePhotoLibrary,
+    beginPhotoEdits,
+    selectPhotoEdit,
+    photoEditPreviews,
+    photoEditIndex,
     friendNameById,
     selectorFriends,
+    connectedAudienceFriends,
+    refreshAudienceConnections,
     excludeSelfId,
+    recentTogetherFriendIds,
+    addParticipantFriend,
+    removeParticipant,
+    removeVisibility,
     selectorVisible,
     selectorTarget,
     selectorTab,
@@ -657,6 +1330,16 @@ export function useEpisodeForm({
     selectedIndividualIds,
     selectedGroupValues,
     reset,
+    isDirty,
+    discardUncommittedPhotos,
+    requestDismiss,
+    prepareDraftSession,
+    restoreDraft,
+    declineDraft,
+    armRestoredNewDraft,
+    armRestoredEditDraft,
+    flushDraft,
+    forgetDraft,
     loadFromEpisode,
     buildSavePayload,
     openParticipantSelector,

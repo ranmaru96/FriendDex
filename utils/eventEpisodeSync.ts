@@ -18,6 +18,7 @@ import {
 import { normalizeEpisodeTag } from './episodeHelpers';
 import { friendIdsToProfileIds, syncEventParticipants } from './eventParticipantHelpers';
 import { scheduleGoogleCalendarPush } from './googleCalendarSync';
+import { scheduleOwnedEventSync } from '@/lib/ownedEventSync';
 
 export type EpisodeEventMatch = {
   event: Event;
@@ -219,7 +220,7 @@ export const createEventFromEpisode = (input: EpisodeEventSyncInput): Event | nu
     notifyEnabled: false,
     autoEpisodeCreated: true,
     episodeTag: normalizeEpisodeTag(input.episodeTag),
-    locationTag: normalizeEpisodeTag(input.locationTag),
+    locationTag: null,
   });
 
   if (!created) {
@@ -228,5 +229,6 @@ export const createEventFromEpisode = (input: EpisodeEventSyncInput): Event | nu
 
   syncEventParticipants(created.id, participantProfileIds);
   scheduleGoogleCalendarPush(created.id);
+  scheduleOwnedEventSync(created.id);
   return created;
 };

@@ -17,6 +17,7 @@ const TITLE_ADORNMENT_GAP = 8;
 type ScreenTopBarProps = {
   title?: string;
   onBack?: () => void;
+  backDisabled?: boolean;
   backLabel?: string;
   left?: ReactNode;
   right?: ReactNode;
@@ -36,6 +37,7 @@ type ScreenTopBarProps = {
 export function ScreenTopBar({
   title,
   onBack,
+  backDisabled = false,
   backLabel = '‹ 戻る',
   left,
   right,
@@ -56,7 +58,12 @@ export function ScreenTopBar({
   const leftContent =
     left ??
     (onBack ? (
-      <Pressable style={styles.sidePressable} onPress={onBack} hitSlop={8}>
+      <Pressable
+        style={[styles.sidePressable, backDisabled ? styles.backDisabled : null]}
+        onPress={onBack}
+        disabled={backDisabled}
+        hitSlop={8}
+      >
         <Text style={[styles.backText, { color: topBarText }, backTextStyle]}>{backLabel}</Text>
       </Pressable>
     ) : null);
@@ -153,6 +160,9 @@ const styles = StyleSheet.create({
   sidePressable: {
     minHeight: 44,
     justifyContent: 'center',
+  },
+  backDisabled: {
+    opacity: 0.55,
   },
   titleSlot: {
     flex: 1,

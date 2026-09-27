@@ -10,6 +10,7 @@ export const QR_PUBLIC_FIELD_KEYS = [
   'origin',
   'residence',
   'mbti',
+  'photo',
 ] as const;
 
 export type QrPublicFieldKey = (typeof QR_PUBLIC_FIELD_KEYS)[number];
@@ -27,6 +28,7 @@ export type QrScanPayload = {
   origin?: string;
   residence?: string;
   mbti?: string;
+  photoUri?: string | null;
 };
 
 const isQrPublicFieldKey = (key: string): key is QrPublicFieldKey =>
@@ -42,18 +44,6 @@ export const parseQrScanPayload = (data: string): QrScanPayload | null => {
     return {
       userId: parsed.userId.trim(),
       publicFields,
-      name: typeof parsed.name === 'string' ? parsed.name : undefined,
-      familyName: typeof parsed.familyName === 'string' ? parsed.familyName : undefined,
-      givenName: typeof parsed.givenName === 'string' ? parsed.givenName : undefined,
-      nickname: typeof parsed.nickname === 'string' ? parsed.nickname : undefined,
-      birthday: typeof parsed.birthday === 'string' ? parsed.birthday : undefined,
-      height:
-        typeof parsed.height === 'number' || typeof parsed.height === 'string' ? parsed.height : undefined,
-      weight:
-        typeof parsed.weight === 'number' || typeof parsed.weight === 'string' ? parsed.weight : undefined,
-      origin: typeof parsed.origin === 'string' ? parsed.origin : undefined,
-      residence: typeof parsed.residence === 'string' ? parsed.residence : undefined,
-      mbti: typeof parsed.mbti === 'string' ? parsed.mbti : undefined,
     };
   } catch {
     return null;
@@ -83,6 +73,7 @@ export const qrPayloadToFriendFields = (payload: QrScanPayload): Partial<FriendI
     if (key === 'origin' && payload.origin != null) fields.origin = payload.origin;
     if (key === 'residence' && payload.residence != null) fields.residence = payload.residence;
     if (key === 'mbti' && payload.mbti != null) fields.mbti = payload.mbti as MBTIType;
+    if (key === 'photo' && payload.photoUri != null) fields.photoUri = payload.photoUri;
   });
   return fields;
 };
@@ -146,12 +137,36 @@ export const QR_FIELD_LABELS: Record<QrPublicFieldKey, string> = {
   origin: '出身',
   residence: '居住地',
   mbti: 'MBTI',
+  photo: '写真',
 };
 
 export const getPublicFieldLabels = (publicFields: string[]): string[] =>
   publicFields
     .filter(isQrPublicFieldKey)
     .map((key) => QR_FIELD_LABELS[key]);
+
+/** サーバーの公開カードから、この QR が許可した項目だけ残す */
+export const filterPayloadByPublicFields = (
+  payload: QrScanPayload,
+  allowedFields: string[]
+): QrScanPayload => {
+  const allowed = new Set(allowedFields.filter(isQrPublicFieldKey));
+  return {
+    userId: payload.userId,
+    publicFields: [...allowed],
+    name: allowed.has('name') ? payload.name : undefined,
+    familyName: allowed.has('name') ? payload.familyName : undefined,
+    givenName: allowed.has('name') ? payload.givenName : undefined,
+    nickname: allowed.has('nickname') ? payload.nickname : undefined,
+    birthday: allowed.has('birthday') ? payload.birthday : undefined,
+    height: allowed.has('height') ? payload.height : undefined,
+    weight: allowed.has('weight') ? payload.weight : undefined,
+    origin: allowed.has('origin') ? payload.origin : undefined,
+    residence: allowed.has('residence') ? payload.residence : undefined,
+    mbti: allowed.has('mbti') ? payload.mbti : undefined,
+    photoUri: allowed.has('photo') ? payload.photoUri : undefined,
+  };
+};
 
 const getParam = (value: string | string[] | undefined): string => {
   if (Array.isArray(value)) return value[0] ?? '';
@@ -164,17 +179,6 @@ export const qrPayloadDisplayName = (payload: QrScanPayload): string =>
 export const qrPayloadToRouteParams = (payload: QrScanPayload): Record<string, string> => ({
   scannedUserId: payload.userId,
   publicFields: JSON.stringify(payload.publicFields),
-  name: payload.name ?? '',
-  familyName: payload.familyName ?? '',
-  givenName: payload.givenName ?? '',
-  hasSplitName: payload.familyName != null || payload.givenName != null ? '1' : '0',
-  nickname: payload.nickname ?? '',
-  birthday: payload.birthday ?? '',
-  height: payload.height?.toString() ?? '',
-  weight: payload.weight?.toString() ?? '',
-  origin: payload.origin ?? '',
-  residence: payload.residence ?? '',
-  mbti: payload.mbti ?? '',
 });
 
 export const routeParamsToQrPayload = (
@@ -182,27 +186,21 @@ export const routeParamsToQrPayload = (
 ): QrScanPayload | null => {
   const userId = getParam(params.scannedUserId).trim();
   if (!userId) return null;
+  const rawFields = getParam(params.publicFields).trim();
+  if (!rawFields) {
+    return { userId, publicFields: [] };
+  }
   try {
-    const parsed = JSON.parse(getParam(params.publicFields));
+    const parsed = JSON.parse(rawFields);
     const publicFields = Array.isArray(parsed)
       ? parsed.filter((item): item is string => typeof item === 'string')
       : [];
     return {
       userId,
       publicFields,
-      name: getParam(params.name) || undefined,
-      familyName: getParam(params.hasSplitName) === '1' ? getParam(params.familyName) : undefined,
-      givenName: getParam(params.hasSplitName) === '1' ? getParam(params.givenName) : undefined,
-      nickname: getParam(params.nickname) || undefined,
-      birthday: getParam(params.birthday) || undefined,
-      height: getParam(params.height) || undefined,
-      weight: getParam(params.weight) || undefined,
-      origin: getParam(params.origin) || undefined,
-      residence: getParam(params.residence) || undefined,
-      mbti: getParam(params.mbti) || undefined,
     };
   } catch {
-    return null;
+    return { userId, publicFields: [] };
   }
 };
 
@@ -226,7 +224,7 @@ export const buildFriendInputFromQrPayload = (payload: QrScanPayload): FriendInp
     weight: fromQr.weight ?? null,
     category: '',
     description: '',
-    photoUri: null,
+    photoUri: fromQr.photoUri ?? null,
     affiliations: [''],
     personalities: [''],
     experiences: [''],
