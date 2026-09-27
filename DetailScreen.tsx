@@ -28,6 +28,7 @@ import { DETAIL_TAB_KEYS } from '@/constants/detailThemes/tabs';
 import { Radius, Theme, Typography, Spacing } from '@/constants/theme';
 import { TabScreenTemplate } from '@/components/screen-templates';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
+import { EpisodeByline, EPISODE_UNREAD_MARK_COLOR } from '@/components/episode/EpisodeByline';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import { PhotoCropModal } from '@/components/photo/PhotoCropModal';
 import { OffsetCard } from '@/components/ui/OffsetCard';
@@ -157,6 +158,37 @@ const NOTE_TAB_COPY = {
 
 type NoteTabCopyKey = keyof typeof NOTE_TAB_COPY;
 
+const episodeIsIncomingShared = (episode: Episode): boolean =>
+  parseIncomingSharedEpisodeId(episode.id) != null;
+
+/** 共有一覧と同じ、著者見出しと左の縦線 */
+const sharedAuthorEpisodeStyles = StyleSheet.create({
+  byline: {
+    marginBottom: 4,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  rail: {
+    width: 24,
+    alignItems: 'center',
+    marginRight: 6,
+  },
+  line: {
+    width: 1.5,
+    flex: 1,
+    borderRadius: 1,
+  },
+  body: {
+    flex: 1,
+    minWidth: 0,
+  },
+  bodyGap: {
+    paddingBottom: 4,
+  },
+});
+
 const textMatchesQuery = (haystack: string, query: string): boolean => {
   const tokens = query
     .trim()
@@ -255,7 +287,6 @@ const resolveProfileImageStatus = (
   if (known) {
     return known;
   }
-  // 未観測の相手は URI があれば pending（Completeness は出さない）
   return resolveFriendDisplayPhotoUri(friend) ? 'pending' : 'none';
 };
 
@@ -274,7 +305,7 @@ const buildAdjacentSlideSnapshot = (
   }
 ): AdjacentSlideSnapshot => {
   const profileImageStatus = resolveProfileImageStatus(friend, options?.profileImageStatus);
-  const hasPhoto = profileImageStatus === 'loaded';
+  const hasPhoto = Boolean(resolveFriendDisplayPhotoUri(friend));
   return {
     friend,
     activeTab,
@@ -506,7 +537,6 @@ function DetailAdjacentSlidePanel({
   const [photoFailed, setPhotoFailed] = useState(profileImageStatus === 'failed');
   const photoUri = resolveFriendDisplayPhotoUri(friend) ?? '';
   const showPhoto = Boolean(photoUri) && !photoFailed && profileImageStatus !== 'failed';
-  const isCompletenessReady = profileImageStatus !== 'pending';
   const inkActiveColor =
     bundle.tabMode === 'perTab'
       ? (detailTabs.find((tab) => tab.key === activeTab)?.color ?? c.accent)
@@ -520,7 +550,7 @@ function DetailAdjacentSlidePanel({
       iconColor={c.tabInactive}
     />
   ) : (
-    <View style={styles.tabTrack}>
+    <View style={[styles.tabTrack, appThemeVariant === 'black' ? styles.tabTrackShadow : null]}>
       <View style={styles.tabInner}>
         {detailTabs.map((tab) => {
           const isActive = activeTab === tab.key;
@@ -749,16 +779,11 @@ function DetailAdjacentSlidePanel({
             <View style={styles.heroCompletenessSection}>
               <View style={styles.heroCompletenessHeader}>
                 <Text style={styles.heroCompletenessLabel}>profile completeness</Text>
-                <Text style={styles.heroCompletenessPercent}>
-                  {isCompletenessReady ? `${profileCompleteness}%` : ''}
-                </Text>
+                <Text style={styles.heroCompletenessPercent}>{profileCompleteness}%</Text>
               </View>
               <View style={styles.heroCompletenessTrack}>
                 <View
-                  style={[
-                    styles.heroCompletenessFill,
-                    { width: `${isCompletenessReady ? profileCompleteness : 0}%` },
-                  ]}
+                  style={[styles.heroCompletenessFill, { width: `${profileCompleteness}%` }]}
                 />
               </View>
             </View>
@@ -767,10 +792,10 @@ function DetailAdjacentSlidePanel({
           <View
             style={[
               styles.tabSection,
+              { overflow: 'visible' },
               isCodex
                 ? {
                     backgroundColor: 'transparent',
-                    overflow: 'visible' as const,
                     borderBottomLeftRadius: 0,
                     borderBottomRightRadius: 0,
                   }
@@ -795,17 +820,29 @@ export default function DetailScreen() {
   const isMonochromeTheme = isMonochromeAppTheme(appThemeVariant);
   const isCodex = usesOffsetChrome(patternId);
   const dateTimePickerProps = contentDateTimePickerProps(appThemeVariant);
-  const bundle = useMemo(
-    () =>
-      bridgeDetailBundleForAppTheme(
-        rawBundle,
-        appThemeVariant,
-        content,
-        appTheme.screenBackground,
-        { id: patternId, colors: patternColors, shape }
-      ),
-    [appTheme.screenBackground, appThemeVariant, content, patternColors, patternId, rawBundle, shape]
-  );
+  const bundle = useMemo(() => {
+    const bridged = bridgeDetailBundleForAppTheme(
+      rawBundle,
+      appThemeVariant,
+      content,
+      appTheme.screenBackground,
+      { id: patternId, colors: patternColors, shape }
+    );
+    if (appThemeVariant !== 'black') {
+      return bridged;
+    }
+    const detailCardBackground = '#111111';
+    return {
+      ...bridged,
+      colors: {
+        ...bridged.colors,
+        card: detailCardBackground,
+        heroBackground: detailCardBackground,
+        tabPaneBackground: detailCardBackground,
+        tabTrackBg: detailCardBackground,
+      },
+    };
+  }, [appTheme.screenBackground, appThemeVariant, content, patternColors, patternId, rawBundle, shape]);
   const c = bundle.colors;
   const styles = useMemo(() => createDetailStyles(c), [c]);
   const detailTabs = bundle.detailTabs;
@@ -857,7 +894,7 @@ export default function DetailScreen() {
   const [heroPhotoCropUri, setHeroPhotoCropUri] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<DetailTabKey>('情報');
+  const [activeTab, setActiveTab] = useState<DetailTabKey>('エピソード');
   const isEpisodeTab = activeTab === 'エピソード';
   const bottomNavClearance = useBottomNavScrollClearance();
   const detailListRef = useRef<FlatList<Episode>>(null);
@@ -1157,7 +1194,7 @@ export default function DetailScreen() {
   useEffect(() => {
     dismissKeyboardFocus();
     setNoteComposerFocused(false);
-    setActiveTab('情報');
+    setActiveTab('エピソード');
     setIsHabitFormVisible(false);
     setEditingHabitIndex(null);
     setHabitText('');
@@ -1304,10 +1341,8 @@ export default function DetailScreen() {
     if (!friend) {
       return 0;
     }
-    const hasPhoto = profileImageStatus === 'loaded';
-    return computeProfileCompleteness(friend, hasPhoto);
-  }, [friend, profileImageStatus]);
-  const isProfileCompletenessReady = profileImageStatus !== 'pending';
+    return computeProfileCompleteness(friend, Boolean(resolveFriendDisplayPhotoUri(friend)));
+  }, [friend]);
 
   const profileCardBorderColor = content.contentBorder;
   const heroPhotoChrome = getHeroPhotoChrome(
@@ -1905,62 +1940,126 @@ export default function DetailScreen() {
     ]);
   };
 
+  const renderEpisodeInPane = useCallback(
+    (episode: Episode, index: number, card: ReactNode, paneStyle: StyleProp<ViewStyle>) => {
+      if (!episodeIsIncomingShared(episode)) {
+        return <View style={paneStyle}>{card}</View>;
+      }
+      const previous = index > 0 ? filteredEpisodes[index - 1] : undefined;
+      const next = filteredEpisodes[index + 1];
+      const continuesGroup = previous != null && episodeIsIncomingShared(previous);
+      const followedByShared = next != null && episodeIsIncomingShared(next);
+      let groupUnread = episode.incomingUnread === true;
+      if (!continuesGroup) {
+        for (let cursor = index + 1; cursor < filteredEpisodes.length; cursor += 1) {
+          const item = filteredEpisodes[cursor];
+          if (!episodeIsIncomingShared(item)) {
+            break;
+          }
+          if (item.incomingUnread === true) {
+            groupUnread = true;
+            break;
+          }
+        }
+      }
+      const authorId = episode.authorFriendId.trim() || friend?.id || '';
+      const authorName = (authorId ? friendNameById.get(authorId) : undefined) || friend?.name || '';
+      return (
+        <View style={paneStyle}>
+          {continuesGroup ? null : (
+            <EpisodeByline
+              variant="heading"
+              name={authorName}
+              friendId={authorId}
+              photoUri={authorId ? (friendPhotoById.get(authorId) ?? null) : null}
+              unread={groupUnread}
+              style={sharedAuthorEpisodeStyles.byline}
+            />
+          )}
+          <View style={sharedAuthorEpisodeStyles.row}>
+            <View style={sharedAuthorEpisodeStyles.rail}>
+              <View
+                style={[
+                  sharedAuthorEpisodeStyles.line,
+                  {
+                    backgroundColor: episode.incomingUnread
+                      ? EPISODE_UNREAD_MARK_COLOR
+                      : content.contentDivider,
+                  },
+                ]}
+              />
+            </View>
+            <View
+              style={[
+                sharedAuthorEpisodeStyles.body,
+                followedByShared ? sharedAuthorEpisodeStyles.bodyGap : null,
+              ]}
+            >
+              {card}
+            </View>
+          </View>
+        </View>
+      );
+    },
+    [content.contentDivider, filteredEpisodes, friend, friendNameById, friendPhotoById]
+  );
+
   const renderSharedEpisodeItem = useCallback<ListRenderItem<Episode>>(
-    ({ item: episode }) => {
+    ({ item: episode, index }) => {
       if (!friend) return null;
       const canManage = canManageEpisode(episode, friend.id, myselfId);
+      const incomingShared = episodeIsIncomingShared(episode);
       const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
       const chips = buildParticipantChips(episode, friendNameById, {
         excludeFriendIds: myselfId ? [myselfId] : [],
         friendPhotoById,
       });
       const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
-      return (
-        <View
-          style={{
-            backgroundColor: isCodex ? 'transparent' : c.tabPaneBackground,
-            borderColor: profileCardBorderColor,
-            borderLeftWidth: profileChromeSideBorder,
-            borderRightWidth: profileChromeSideBorder,
-            paddingHorizontal: 12,
-          }}
-        >
-          <EpisodeListCard
-            embedded={listItemEmbedded}
-            title={episode.title}
-            date={episode.date}
-            episodeTag={episode.tag}
-            chips={chips}
-            visibilityMode={canManage ? episode.visibilityMode : undefined}
-            posterName={canManage ? null : posterName}
-            photoUris={episodePhotoUrisById.get(episode.id) ?? []}
-            unfilled={episode.pendingReview === true}
-            onPress={() =>
-              router.push({
-                pathname: '/episode-detail',
-                params: {
-                  episodeId: episode.id,
-                  ownerId: episodeOwnerId,
-                },
-              })
-            }
-            onLongPress={
-              canManage
-                ? () => {
-                    Alert.alert('操作を選択', 'このエピソードに対する操作を選んでください。', [
-                      { text: 'キャンセル', style: 'cancel' },
-                      { text: '編集', onPress: () => startEditEpisode(episode) },
-                      {
-                        text: '削除',
-                        style: 'destructive',
-                        onPress: () => handleDeleteEpisode(episode.id),
-                      },
-                    ]);
-                  }
-                : undefined
-            }
-          />
-        </View>
+      return renderEpisodeInPane(
+        episode,
+        index,
+        <EpisodeListCard
+          embedded={listItemEmbedded}
+          title={episode.title}
+          date={episode.date}
+          episodeTag={episode.tag}
+          chips={chips}
+          visibilityMode={canManage ? episode.visibilityMode : undefined}
+          posterName={canManage || incomingShared ? null : posterName}
+          photoUris={episodePhotoUrisById.get(episode.id) ?? []}
+          unfilled={episode.pendingReview === true}
+          onPress={() =>
+            router.push({
+              pathname: '/episode-detail',
+              params: {
+                episodeId: episode.id,
+                ownerId: episodeOwnerId,
+              },
+            })
+          }
+          onLongPress={
+            canManage
+              ? () => {
+                  Alert.alert('操作を選択', 'このエピソードに対する操作を選んでください。', [
+                    { text: 'キャンセル', style: 'cancel' },
+                    { text: '編集', onPress: () => startEditEpisode(episode) },
+                    {
+                      text: '削除',
+                      style: 'destructive',
+                      onPress: () => handleDeleteEpisode(episode.id),
+                    },
+                  ]);
+                }
+              : undefined
+          }
+        />,
+        {
+          backgroundColor: isCodex ? 'transparent' : c.tabPaneBackground,
+          borderColor: profileCardBorderColor,
+          borderLeftWidth: profileChromeSideBorder,
+          borderRightWidth: profileChromeSideBorder,
+          paddingHorizontal: 12,
+        }
       );
     },
     [
@@ -1974,6 +2073,7 @@ export default function DetailScreen() {
       myselfId,
       profileCardBorderColor,
       profileChromeSideBorder,
+      renderEpisodeInPane,
       router,
       startEditEpisode,
       handleDeleteEpisode,
@@ -1981,25 +2081,19 @@ export default function DetailScreen() {
   );
 
   const renderLegacyEpisodeItem = useCallback<ListRenderItem<Episode>>(
-    ({ item: episode }) => {
+    ({ item: episode, index }) => {
       if (!friend) return null;
       const canManage = canManageEpisode(episode, friend.id, myselfId);
+      const incomingShared = episodeIsIncomingShared(episode);
       const episodeOwnerId = resolveEpisodeRecordOwnerId(episode, friend.id);
       const chips = buildParticipantChips(episode, friendNameById, {
         excludeFriendIds: myselfId ? [myselfId] : [],
         friendPhotoById,
       });
       const posterName = friendNameById.get(episode.authorFriendId) ?? episode.authorFriendId;
-      return (
-        <View
-          style={{
-            backgroundColor: c.tabPaneBackground,
-            borderColor: profileCardBorderColor,
-            borderLeftWidth: profileChromeSideBorder,
-            borderRightWidth: profileChromeSideBorder,
-            paddingHorizontal: 12,
-          }}
-        >
+      return renderEpisodeInPane(
+        episode,
+        index,
         <Pressable
           onPress={() =>
             router.push({
@@ -2046,7 +2140,7 @@ export default function DetailScreen() {
                     color={getVisibilityModeIconColor(episode.visibilityMode)}
                   />
                 </View>
-              ) : (
+              ) : incomingShared ? null : (
                 <View style={styles.episodeParticipantTag}>
                   <Text style={styles.episodeParticipantTagName} numberOfLines={1}>
                     {posterName || '-'}
@@ -2062,8 +2156,14 @@ export default function DetailScreen() {
               </View>
             ) : null}
           </View>
-        </Pressable>
-        </View>
+        </Pressable>,
+        {
+          backgroundColor: c.tabPaneBackground,
+          borderColor: profileCardBorderColor,
+          borderLeftWidth: profileChromeSideBorder,
+          borderRightWidth: profileChromeSideBorder,
+          paddingHorizontal: 12,
+        }
       );
     },
     [
@@ -2074,6 +2174,7 @@ export default function DetailScreen() {
       myselfId,
       profileCardBorderColor,
       profileChromeSideBorder,
+      renderEpisodeInPane,
       router,
       styles,
       startEditEpisode,
@@ -2082,19 +2183,31 @@ export default function DetailScreen() {
   );
 
   const episodeItemSeparator = useCallback(
-    () => (
-      <View
-        style={{
-          height: kit.episodeListCardGap,
-          backgroundColor: isCodex ? 'transparent' : c.tabPaneBackground,
-          borderColor: profileCardBorderColor,
-          borderLeftWidth: profileChromeSideBorder,
-          borderRightWidth: profileChromeSideBorder,
-        }}
-      />
-    ),
+    ({ leadingItem }: { leadingItem?: Episode }) => {
+      const index = leadingItem
+        ? filteredEpisodes.findIndex((item) => item.id === leadingItem.id)
+        : -1;
+      const next = index >= 0 ? filteredEpisodes[index + 1] : undefined;
+      const bothShared =
+        leadingItem != null &&
+        next != null &&
+        episodeIsIncomingShared(leadingItem) &&
+        episodeIsIncomingShared(next);
+      return (
+        <View
+          style={{
+            height: bothShared ? 0 : kit.episodeListCardGap,
+            backgroundColor: isCodex ? 'transparent' : c.tabPaneBackground,
+            borderColor: profileCardBorderColor,
+            borderLeftWidth: profileChromeSideBorder,
+            borderRightWidth: profileChromeSideBorder,
+          }}
+        />
+      );
+    },
     [
       c.tabPaneBackground,
+      filteredEpisodes,
       isCodex,
       kit.episodeListCardGap,
       profileCardBorderColor,
@@ -2535,46 +2648,6 @@ export default function DetailScreen() {
                 </View>
               </View>
             </Pressable>
-            {friendHasBothPhotos(friend) ? (
-              <View style={styles.photoSourceRow}>
-                <Pressable
-                  style={[
-                    styles.photoSourceChip,
-                    friend.photoSource !== 'identity' ? styles.photoSourceChipOn : null,
-                  ]}
-                  onPress={() => handlePhotoSourceChange('local')}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: friend.photoSource !== 'identity' }}
-                >
-                  <Text
-                    style={[
-                      styles.photoSourceChipText,
-                      friend.photoSource !== 'identity' ? styles.photoSourceChipTextOn : null,
-                    ]}
-                  >
-                    登録
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.photoSourceChip,
-                    friend.photoSource === 'identity' ? styles.photoSourceChipOn : null,
-                  ]}
-                  onPress={() => handlePhotoSourceChange('identity')}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: friend.photoSource === 'identity' }}
-                >
-                  <Text
-                    style={[
-                      styles.photoSourceChipText,
-                      friend.photoSource === 'identity' ? styles.photoSourceChipTextOn : null,
-                    ]}
-                  >
-                    本人
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
             </View>
             <View style={styles.heroIdentityCol}>
               <View style={styles.heroNameRow}>
@@ -2594,14 +2667,58 @@ export default function DetailScreen() {
                   ) : null}
                 </View>
                 <View style={styles.heroNameActions}>
-                  <Pressable
-                    style={styles.heroEditButton}
-                    onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
-                    accessibilityLabel="編集"
-                    hitSlop={8}
-                  >
-                    <Ionicons name="pencil-outline" size={16} color={c.accent} />
-                  </Pressable>
+                  <View style={styles.heroNameActionTop}>
+                    {friendHasBothPhotos(friend) ? (
+                      <Pressable
+                        style={[
+                          styles.photoSourceToggle,
+                          { backgroundColor: content.contentSwitchTrackOff },
+                        ]}
+                        onPress={() =>
+                          handlePhotoSourceChange(
+                            friend.photoSource === 'identity' ? 'local' : 'identity'
+                          )
+                        }
+                        accessibilityRole="button"
+                        accessibilityLabel={
+                          friend.photoSource === 'identity'
+                            ? '本人の写真。登録した写真に切り替え'
+                            : '登録した写真。本人の写真に切り替え'
+                        }
+                      >
+                        {friend.photoSource === 'identity' ? (
+                          <Text style={[styles.photoSourceToggleLabel, { color: content.contentText }]}>
+                            本人
+                          </Text>
+                        ) : null}
+                        <View
+                          style={[
+                            styles.photoSourceToggleKnob,
+                            { backgroundColor: content.contentSwitchThumbOff },
+                          ]}
+                        >
+                          <Ionicons
+                            name={friend.photoSource === 'identity' ? 'person' : 'image'}
+                            size={12}
+                            color="#111111"
+                          />
+                        </View>
+                        {friend.photoSource !== 'identity' ? (
+                          <Text style={[styles.photoSourceToggleLabel, { color: content.contentText }]}>
+                            登録
+                          </Text>
+                        ) : null}
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      style={styles.heroEditButton}
+                      onPress={() => router.push({ pathname: '/edit', params: { id: friend.id } })}
+                      accessibilityLabel="編集"
+                      hitSlop={8}
+                    >
+                      <Ionicons name="pencil-outline" size={16} color={c.accent} />
+                    </Pressable>
+                  </View>
                   {friend.id !== myselfId ? (
                     <Text style={styles.heroRecentMeeting} numberOfLines={1}>
                       {recentMeetingLabel}
@@ -2668,17 +2785,10 @@ export default function DetailScreen() {
           <View style={styles.heroCompletenessSection}>
             <View style={styles.heroCompletenessHeader}>
               <Text style={styles.heroCompletenessLabel}>profile completeness</Text>
-              <Text style={styles.heroCompletenessPercent}>
-                {isProfileCompletenessReady ? `${profileCompleteness}%` : ''}
-              </Text>
+              <Text style={styles.heroCompletenessPercent}>{profileCompleteness}%</Text>
             </View>
             <View style={styles.heroCompletenessTrack}>
-              <View
-                style={[
-                  styles.heroCompletenessFill,
-                  { width: `${isProfileCompletenessReady ? profileCompleteness : 0}%` },
-                ]}
-              />
+              <View style={[styles.heroCompletenessFill, { width: `${profileCompleteness}%` }]} />
             </View>
           </View>
         </View>
@@ -2719,7 +2829,7 @@ export default function DetailScreen() {
               iconColor={c.tabInactive}
             />
           ) : (
-          <View style={styles.tabTrack}>
+          <View style={[styles.tabTrack, appThemeVariant === 'black' ? styles.tabTrackShadow : null]}>
             <View style={styles.tabInner}>
               {detailTabs.map((tab) => {
                 const isActive = activeTab === tab.key;

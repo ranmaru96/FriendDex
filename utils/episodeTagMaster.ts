@@ -1,4 +1,4 @@
-import { addCommonItemOption } from '../db';
+import { addCommonItemOption, rememberRecentEpisodeTag } from '../db';
 import type { CommonItemKind } from '../types';
 import { normalizeEpisodeTag } from './episodeHelpers';
 
@@ -23,8 +23,15 @@ const registerSavedTag = (
  * 本体の保存成功後に予定タグを共通項目へ登録する。
  * 本体保存を優先し、候補登録だけの失敗は保存失敗として扱わない。
  */
-export const registerSavedEpisodeTag = (value: string | null | undefined): boolean =>
-  registerSavedTag('episode_tag', value);
+export const registerSavedEpisodeTag = (value: string | null | undefined): boolean => {
+  const registered = registerSavedTag('episode_tag', value);
+  try {
+    rememberRecentEpisodeTag(value);
+  } catch (error) {
+    console.warn('Failed to remember recent episode tag.', error);
+  }
+  return registered;
+};
 
 export const registerSavedLocationTag = (value: string | null | undefined): boolean =>
   registerSavedTag('location_tag', value);

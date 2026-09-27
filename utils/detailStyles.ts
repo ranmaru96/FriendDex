@@ -44,33 +44,33 @@ export function createDetailStyles(c: DetailThemeColors) {
   heroPhotoCol: {
     width: 132,
     flexShrink: 0,
-    gap: 8,
   },
-  photoSourceRow: {
+  photoSourceToggle: {
+    width: 54,
+    height: 28,
+    borderRadius: 14,
     flexDirection: 'row',
-    gap: 6,
+    alignItems: 'center',
+    padding: 3,
+    flexShrink: 0,
   },
-  photoSourceChip: {
-    flex: 1,
-    minHeight: 28,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: c.border,
-    backgroundColor: c.card,
+  photoSourceToggleKnob: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.16,
+    shadowRadius: 2,
+    elevation: 2,
   },
-  photoSourceChipOn: {
-    backgroundColor: c.accent,
-    borderColor: c.accent,
-  },
-  photoSourceChipText: {
-    fontSize: 11,
+  photoSourceToggleLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 10,
     fontWeight: '700',
-    color: c.textMuted,
-  },
-  photoSourceChipTextOn: {
-    color: c.onAccent,
   },
   heroPhotoOuterFrame: {
     width: 132,
@@ -142,6 +142,11 @@ export function createDetailStyles(c: DetailThemeColors) {
     alignItems: 'flex-end',
     flexShrink: 0,
     gap: 2,
+  },
+  heroNameActionTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   heroRecentMeeting: {
     fontSize: 11,
@@ -312,6 +317,14 @@ export function createDetailStyles(c: DetailThemeColors) {
     marginHorizontal: 12,
     marginTop: 2,
     marginBottom: 8,
+  },
+  /** ブラックの人物詳細。#111 の面上でも輪郭が残る影 */
+  tabTrackShadow: {
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.22,
+    shadowRadius: 6,
+    elevation: 6,
   },
   tabInner: {
     flexDirection: 'row',

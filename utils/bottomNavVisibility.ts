@@ -54,6 +54,9 @@ export function shouldHideHeader(pathname: string): boolean {
 }
 
 export function shouldHideBottomNav(pathname: string): boolean {
+  if (pathname.includes('event-detail')) {
+    return false;
+  }
   return HIDE_BOTTOM_NAV_PATHS.some((segment) => pathname.includes(segment));
 }
 
@@ -73,6 +76,7 @@ export function getActiveTab(pathname: string): BottomNavTabKey | null {
   /** 設定などは下部タブを出すが、どのタブ上でもない（タップで各タブへ移れる） */
   if (pathname.includes('/appsettings')) return null;
   if (pathname.includes('/calendar')) return 'calendar';
+  if (pathname.includes('/event')) return 'calendar';
   if (
     pathname.includes('/shuffle') ||
     pathname.includes('/settlement') ||

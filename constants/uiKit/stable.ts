@@ -42,7 +42,7 @@ export const stableUiKit: UiKit = {
   listScreenPaddingHorizontal: Spacing.sm,
   episodeListPaddingHorizontal: Spacing.sm,
   episodeListCardGap: 8,
-  episodeListCardBorderRadius: 6,
+  episodeListCardBorderRadius: Radius.md,
   episodeListPhotoLayout: 'tallOne',
   episodeListPhotoSpanRows: 3,
   calendarEventMemoDisplay: 'oneLine',

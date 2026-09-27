@@ -13,9 +13,6 @@ import { getSupabaseClient } from '@/lib/supabase';
 import type { MockSettlementMember, MockSettlementRoom } from '@/types/settlementMock';
 import { asAuthUserId, getFriendLinkedAuthUserId } from '@/utils/linkedAuthUser';
 
-export const SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE =
-  'コネクト済みの相手を1人以上入れてください。';
-
 export type SharedSettlementSyncResult = {
   skipped: boolean;
   errorMessage: string | null;
@@ -75,33 +72,63 @@ const memberUserId = (
   return acceptedPeerIds.has(normalized) ? normalized : null;
 };
 
-export async function commitSharedSettlementRoom(
-  room: MockSettlementRoom,
-  options?: { requireLinkedPeer?: boolean }
-): Promise<SharedSettlementSyncResult> {
+type RoomSharePrep =
+  | { status: 'skip' }
+  | { status: 'error'; errorMessage: string }
+  | {
+      status: 'ready';
+      myUserId: string;
+      linkedCount: number;
+      members: Array<{
+        room_id: string;
+        member_id: string;
+        user_id: string | null;
+        display_name: string;
+      }>;
+    };
+
+/** 未ログインやコネクト相手なしは skip。共有が必要なときのセッション障害だけエラー。 */
+async function prepareRoomShare(room: MockSettlementRoom): Promise<RoomSharePrep> {
   const trimmed = room.id.trim();
   if (!asAuthUserId(trimmed)) {
-    return { skipped: true, errorMessage: 'グループをサーバーへ送れませんでした。' };
-  }
-  const supabase = getSupabaseClient();
-  if (!supabase) {
-    return { skipped: true, errorMessage: 'Supabase が未設定です' };
-  }
-  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
-  if (sessionError) {
-    return { skipped: false, errorMessage: sessionError.message };
-  }
-  const myUserId = sessionData.session?.user.id?.trim() ?? '';
-  if (!myUserId) {
-    return { skipped: true, errorMessage: 'ログインしてください。' };
+    return { status: 'error', errorMessage: 'グループをサーバーへ送れませんでした。' };
   }
 
   initializeDatabase();
+  const myselfId = getMyself();
+  const hasLinkableMember = room.members.some((member) => {
+    if (member.friendId === 'myself' || (myselfId && member.friendId === myselfId)) {
+      return false;
+    }
+    if (member.friendId.startsWith('user:')) {
+      return Boolean(asAuthUserId(member.friendId.slice('user:'.length)));
+    }
+    return Boolean(getFriendLinkedAuthUserId(member.friendId));
+  });
+  if (!hasLinkableMember) {
+    return { status: 'skip' };
+  }
+
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { status: 'skip' };
+  }
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+  if (sessionError) {
+    return { status: 'error', errorMessage: sessionError.message };
+  }
+  const myUserId = sessionData.session?.user.id?.trim() ?? '';
+  if (!myUserId) {
+    return { status: 'skip' };
+  }
+
   const accepted = await getAcceptedPeerUserIds();
   if (accepted.errorMessage) {
-    return { skipped: false, errorMessage: accepted.errorMessage };
+    return { status: 'error', errorMessage: accepted.errorMessage };
   }
-  const myselfId = getMyself();
+  if (accepted.skipped) {
+    return { status: 'skip' };
+  }
   const members = room.members.map((member) => ({
     room_id: trimmed,
     member_id: member.id,
@@ -109,18 +136,37 @@ export async function commitSharedSettlementRoom(
     display_name: member.displayName,
   }));
   const linkedCount = members.filter((member) => member.user_id && member.user_id !== myUserId).length;
+  return { status: 'ready', myUserId, linkedCount, members };
+}
 
-  const { data: existingRoom } = await supabase
+export async function commitSharedSettlementRoom(
+  room: MockSettlementRoom
+): Promise<SharedSettlementSyncResult> {
+  const prep = await prepareRoomShare(room);
+  if (prep.status === 'error') {
+    return { skipped: false, errorMessage: prep.errorMessage };
+  }
+  if (prep.status === 'skip') {
+    return { skipped: true, errorMessage: null };
+  }
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return { skipped: true, errorMessage: null };
+  }
+  const trimmed = room.id.trim();
+  const members = prep.members;
+  const { data: existingRoom, error: existingError } = await supabase
     .from('shared_settlement_rooms')
     .select('id, created_by')
     .eq('id', trimmed)
     .maybeSingle();
-  if (linkedCount === 0 && !existingRoom?.id) {
-    return {
-      skipped: true,
-      errorMessage: options?.requireLinkedPeer ? SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE : null,
-    };
+  if (existingError) {
+    return { skipped: false, errorMessage: existingError.message };
   }
+  if (prep.linkedCount === 0 && !existingRoom?.id) {
+    return { skipped: true, errorMessage: null };
+  }
+  const myUserId = prep.myUserId;
   const now = new Date().toISOString();
   if (existingRoom?.id) {
     const { error: roomError } = await supabase
@@ -143,13 +189,9 @@ export async function commitSharedSettlementRoom(
     }
   }
 
-  const canReplaceMembers = !existingRoom?.created_by || existingRoom.created_by === myUserId;
-  if (canReplaceMembers) {
-    await supabase.from('shared_settlement_members').delete().eq('room_id', trimmed);
-    const { error: memberError } = await supabase.from('shared_settlement_members').insert(members);
-    if (memberError) {
-      return { skipped: false, errorMessage: memberError.message };
-    }
+  const memberError = await syncSharedSettlementMembers(supabase, trimmed, members);
+  if (memberError) {
+    return { skipped: false, errorMessage: memberError };
   }
 
   for (const expense of room.expenses) {
@@ -166,7 +208,70 @@ export async function commitSharedSettlementRoom(
       return { skipped: false, errorMessage: expenseError.message };
     }
   }
+  const { data: serverExpenses, error: serverExpensesError } = await supabase
+    .from('shared_settlement_expenses')
+    .select('id')
+    .eq('room_id', trimmed);
+  if (serverExpensesError) {
+    return { skipped: false, errorMessage: serverExpensesError.message };
+  }
+  const localExpenseIds = new Set(room.expenses.map((expense) => expense.id));
+  const staleExpenseIds = ((serverExpenses ?? []) as { id: string }[])
+    .map((expense) => expense.id)
+    .filter((id) => !localExpenseIds.has(id));
+  if (staleExpenseIds.length > 0) {
+    const { error: deleteExpenseError } = await supabase
+      .from('shared_settlement_expenses')
+      .delete()
+      .eq('room_id', trimmed)
+      .in('id', staleExpenseIds);
+    if (deleteExpenseError) {
+      return { skipped: false, errorMessage: deleteExpenseError.message };
+    }
+  }
   return { skipped: false, errorMessage: null };
+}
+
+async function syncSharedSettlementMembers(
+  supabase: NonNullable<ReturnType<typeof getSupabaseClient>>,
+  roomId: string,
+  members: Array<{
+    room_id: string;
+    member_id: string;
+    user_id: string | null;
+    display_name: string;
+  }>
+): Promise<string | null> {
+  const { data, error: readError } = await supabase
+    .from('shared_settlement_members')
+    .select('member_id')
+    .eq('room_id', roomId);
+  if (readError) {
+    return readError.message;
+  }
+  const existingIds = new Set(
+    ((data ?? []) as { member_id: string }[]).map((member) => member.member_id)
+  );
+  const nextIds = new Set(members.map((member) => member.member_id));
+  const toInsert = members.filter((member) => !existingIds.has(member.member_id));
+  const toDelete = [...existingIds].filter((memberId) => !nextIds.has(memberId));
+  if (toInsert.length > 0) {
+    const { error: insertError } = await supabase.from('shared_settlement_members').insert(toInsert);
+    if (insertError) {
+      return insertError.message;
+    }
+  }
+  if (toDelete.length > 0) {
+    const { error: deleteError } = await supabase
+      .from('shared_settlement_members')
+      .delete()
+      .eq('room_id', roomId)
+      .in('member_id', toDelete);
+    if (deleteError) {
+      return deleteError.message;
+    }
+  }
+  return null;
 }
 
 export async function pushSharedSettlementRoom(roomId: string): Promise<SharedSettlementSyncResult> {
@@ -191,22 +296,12 @@ export async function commitSharedSettlementExpense(
   if (!room) {
     return { skipped: true, errorMessage: 'グループが見つかりません。' };
   }
-  const roomResult = await commitSharedSettlementRoom(
-    {
-      ...room,
-      expenses: room.expenses.some((item) => item.id === expense.id)
-        ? room.expenses
-        : [expense, ...room.expenses],
-    },
-    { requireLinkedPeer: true }
-  );
-  if (roomResult.errorMessage) {
-    return roomResult;
-  }
-  if (roomResult.skipped) {
-    return { skipped: true, errorMessage: SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE };
-  }
-  return { skipped: false, errorMessage: null };
+  return commitSharedSettlementRoom({
+    ...room,
+    expenses: room.expenses.some((item) => item.id === expense.id)
+      ? room.expenses
+      : [expense, ...room.expenses],
+  });
 }
 
 export async function pushSharedSettlementCompletion(
@@ -219,15 +314,36 @@ export async function pushSharedSettlementCompletion(
   if (!asAuthUserId(trimmedRoom) || !key) {
     return { skipped: true, errorMessage: null };
   }
+  initializeDatabase();
+  const room = getMockSettlementRoomById(trimmedRoom);
+  if (!room) {
+    return { skipped: true, errorMessage: null };
+  }
+  const prep = await prepareRoomShare(room);
+  if (prep.status === 'error') {
+    return { skipped: false, errorMessage: prep.errorMessage };
+  }
+  if (prep.status === 'skip') {
+    return { skipped: true, errorMessage: null };
+  }
   const supabase = getSupabaseClient();
   if (!supabase) {
     return { skipped: true, errorMessage: null };
   }
-  const { data: sessionData } = await supabase.auth.getSession();
-  const myUserId = sessionData.session?.user.id?.trim() ?? '';
-  if (!myUserId) {
-    return { skipped: true, errorMessage: null };
+  if (prep.linkedCount === 0) {
+    const { data: existingRoom, error: existingError } = await supabase
+      .from('shared_settlement_rooms')
+      .select('id')
+      .eq('id', trimmedRoom)
+      .maybeSingle();
+    if (existingError) {
+      return { skipped: false, errorMessage: existingError.message };
+    }
+    if (!existingRoom?.id) {
+      return { skipped: true, errorMessage: null };
+    }
   }
+  const myUserId = prep.myUserId;
 
   if (!completed) {
     const { error } = await supabase
@@ -276,9 +392,7 @@ export async function pullSharedSettlementRooms(): Promise<SharedSettlementSyncR
     return { skipped: false, errorMessage: roomsError.message };
   }
   const roomRows = (rooms ?? []) as SharedRoomRow[];
-  if (roomRows.length === 0) {
-    return { skipped: true, errorMessage: null };
-  }
+  if (roomRows.length > 0) {
 
   const { data: memberRows, error: membersError } = await supabase
     .from('shared_settlement_members')
@@ -339,6 +453,7 @@ export async function pullSharedSettlementRooms(): Promise<SharedSettlementSyncR
       id: roomRow.id,
       title: roomRow.title,
       createdAt: roomRow.created_at,
+      createdByUserId: roomRow.created_by,
       members: localMembers,
       expenses: (expensesByRoom.get(roomRow.id) ?? []).map((expense) => ({
         id: expense.id,
@@ -374,8 +489,23 @@ export async function pullSharedSettlementRooms(): Promise<SharedSettlementSyncR
       setSettlementTransferCompleted(key, true);
     });
   }
+  }
 
-  return { skipped: false, errorMessage: null };
+  const serverRoomIds = new Set(roomRows.map((row) => row.id));
+  const localOnlyRooms = getAllMockSettlementRooms().filter(
+    (room) => Boolean(asAuthUserId(room.id)) && !serverRoomIds.has(room.id)
+  );
+  for (const room of localOnlyRooms) {
+    const pushed = await pushSharedSettlementRoom(room.id);
+    if (pushed.errorMessage) {
+      return pushed;
+    }
+  }
+
+  return {
+    skipped: roomRows.length === 0 && localOnlyRooms.length === 0,
+    errorMessage: null,
+  };
 }
 
 export async function pushSharedSettlementRoomsForPeerUserId(

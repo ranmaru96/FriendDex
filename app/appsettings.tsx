@@ -22,7 +22,7 @@ import {
 import { CompletedTaskRetention, Profile } from '../types';
 import { COMPLETED_TASK_RETENTION_OPTIONS } from '@/utils/taskHelpers';
 import { APP_THEME_OPTIONS } from '@/constants/appThemes';
-import { DESIGN_PATTERN_OPTIONS, usesOffsetChrome } from '@/constants/designPatterns';
+import { usesOffsetChrome } from '@/constants/designPatterns';
 import {
   EPISODE_LIST_PHOTO_LAYOUT_OPTIONS,
   UI_PREVIEW_OPTIONS,
@@ -162,7 +162,7 @@ function SettingsGroup({
 
 export default function AppSettingsScreen() {
   const router = useRouter();
-  const { variant: appThemeVariant, setVariant: setAppThemeVariant, colors: appThemeColors, patternId, setPatternId } =
+  const { variant: appThemeVariant, setVariant: setAppThemeVariant, colors: appThemeColors, patternId } =
     useAppTheme();
   const {
     variant: uiPreviewVariant,
@@ -294,30 +294,7 @@ export default function AppSettingsScreen() {
             </View>
           ))}
         </SettingsGroup>
-        <Text style={[styles.hint, themed.hint]}>
-          明るさを切り替えます。コーデックスはホワイト＝紙／ブラック＝HUD、静かな図鑑はホワイト＝紙／ブラック＝夜です。
-        </Text>
-
-        <Text style={[styles.sectionHeader, themed.sectionHeader]}>デザインパターン</Text>
-        <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>
-          {DESIGN_PATTERN_OPTIONS.map((option, index) => (
-            <View key={option.id}>
-              {index > 0 ? <View style={[styles.separator, themed.separator]} /> : null}
-              <Pressable style={styles.row} onPress={() => setPatternId(option.id)}>
-                <View style={{ flex: 1, paddingRight: 12 }}>
-                  <Text style={[styles.rowLabel, themed.rowLabel]}>{option.label}</Text>
-                  <Text style={[styles.patternSummary, themed.hint]}>{option.summary}</Text>
-                </View>
-                {patternId === option.id ? (
-                  <Text style={[styles.selectedMark, { color: appThemeColors.onScreenText }]}>✓</Text>
-                ) : null}
-              </Pressable>
-            </View>
-          ))}
-        </SettingsGroup>
-        <Text style={[styles.hint, themed.hint]}>
-          色と形（ずらし影）を全画面に反映します。角ブラケットはコーデックスの主なカードのみです。
-        </Text>
+        <Text style={[styles.hint, themed.hint]}>明るさを切り替えます。</Text>
 
         <Text style={[styles.sectionHeader, themed.sectionHeader]}>UI プレビュー</Text>
         <SettingsGroup themedGroup={themed.group} isCodex={usesOffsetChrome(patternId)}>

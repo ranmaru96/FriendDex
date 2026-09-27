@@ -16,6 +16,8 @@ import { readUsableEpisodeDraft } from '@/utils/episodeDraft';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
+import { EPISODE_DETAIL_SIDE_INSET } from '@/components/episode/EpisodeCardTitle';
+import { EpisodeByline } from '@/components/episode/EpisodeByline';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
 import type { Option } from '@/components/episode/types';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
@@ -40,6 +42,7 @@ import {
   getEvent,
   getIncomingSharedEpisodePhotos,
   getIncomingSharedEpisodeRecord,
+  markIncomingSharedEpisodeSeen,
   getMergedEpisodeTagLabels,
   getMyself,
   incomingSharedRecordToEpisode,
@@ -167,6 +170,9 @@ export default function EpisodeDetailScreen() {
     const incomingId = parseIncomingSharedEpisodeId(episodeId);
     if (incomingId) {
       const incoming = getIncomingSharedEpisodeRecord(incomingId);
+      if (incoming) {
+        markIncomingSharedEpisodeSeen(incomingId);
+      }
       setEpisode(incoming ? incomingSharedRecordToEpisode(incoming) : null);
       setParentEvent(null);
       setPhotos(incoming ? getIncomingSharedEpisodePhotos(incomingId) : []);
@@ -283,8 +289,9 @@ export default function EpisodeDetailScreen() {
     () => (episode ? visibilityDisplayLabels(episode, friendNameById) : []),
     [episode, friendNameById]
   );
+  const isIncomingShared = Boolean(parseIncomingSharedEpisodeId(episodeId));
   const canManage =
-    episode && ownerId && !parseIncomingSharedEpisodeId(episodeId)
+    episode && ownerId && !isIncomingShared
       ? canManageEpisode(episode, ownerId, myselfId)
       : false;
   const recordOwnerId = episode ? resolveEpisodeRecordOwnerId(episode, ownerId) : ownerId;
@@ -505,10 +512,30 @@ export default function EpisodeDetailScreen() {
             </Text>
           </View>
         ) : (
-          <>
-            <EpisodeListCard
+          <View>
+            {isIncomingShared && episode.authorFriendId.trim() ? (
+              <EpisodeByline
+                variant="heading"
+                name={
+                  friendNameById.get(episode.authorFriendId.trim()) ??
+                  episode.authorFriendId.trim()
+                }
+                friendId={episode.authorFriendId.trim()}
+                photoUri={friendPhotoById.get(episode.authorFriendId.trim()) ?? null}
+                style={styles.sharedDetailAuthor}
+              />
+            ) : null}
+          <View style={isIncomingShared ? styles.sharedDetailWithLine : undefined}>
+            {isIncomingShared ? (
+              <View pointerEvents="none" style={styles.sharedDetailRail}>
+                <View style={[styles.sharedDetailLine, { backgroundColor: content.contentDivider }]} />
+              </View>
+            ) : null}
+            <View style={isIncomingShared ? styles.sharedDetailBody : undefined}>
+              <EpisodeListCard
               embedded
                 titleMultiline
+                titleInset
                 title={episode.title}
                 date={episode.date}
                 dateLabel={formatEpisodeDateTimeForDetail(episode.date, episode.time)}
@@ -516,6 +543,7 @@ export default function EpisodeDetailScreen() {
                 chips={chips}
                 visibility={visibility}
                 visibilityMode={episode.visibilityMode}
+                revealLimitedAudience={canManage && episode.visibilityMode === 'limited'}
                 unfilled={episode.pendingReview === true}
                 eventTitle={parentEvent?.title.trim() || null}
                 eventEpisodeTag={parentEvent?.episodeTag}
@@ -523,12 +551,15 @@ export default function EpisodeDetailScreen() {
                   parentEvent
                     ? () =>
                         router.push({
-                          pathname: '/event',
+                          pathname: '/event-detail',
                           params: { eventId: parentEvent.id },
                         })
                     : undefined
                 }
-                style={styles.episodeHeaderPreview}
+                style={[
+                  styles.episodeHeaderPreview,
+                  isIncomingShared ? styles.episodeHeaderAfterAuthor : null,
+                ]}
               />
 
               {hasPhotos ? (
@@ -552,11 +583,13 @@ export default function EpisodeDetailScreen() {
                 <>
                   <SectionDivider style={sectionDividerStyle} />
                   <PanelSection style={styles.detailSection}>
-                    <NoteBlockView
-                      value={episode.description}
-                      textStyle={[styles.descriptionText, contentTextStyle(content)]}
-                      onChangeValue={canManage ? handleDescriptionChange : undefined}
-                    />
+                    <View style={styles.memoInset}>
+                      <NoteBlockView
+                        value={episode.description}
+                        textStyle={[styles.descriptionText, contentTextStyle(content)]}
+                        onChangeValue={canManage ? handleDescriptionChange : undefined}
+                      />
+                    </View>
                   </PanelSection>
                 </>
               ) : null}
@@ -565,10 +598,12 @@ export default function EpisodeDetailScreen() {
               <>
               <SectionDivider style={sectionDividerStyle} />
               <PanelSection style={styles.detailSection}>
-                <Text style={[styles.privateMemoLabel, contentTextStyle(content)]}>非公開メモ</Text>
-                <Text style={[styles.privateMemoPlaceholder, contentMutedTextStyle(content)]}>
-                  非公開メモ（近日実装予定）
-                </Text>
+                <View style={styles.memoInset}>
+                  <Text style={[styles.privateMemoLabel, contentTextStyle(content)]}>非公開メモ</Text>
+                  <Text style={[styles.privateMemoPlaceholder, contentMutedTextStyle(content)]}>
+                    非公開メモ（近日実装予定）
+                  </Text>
+                </View>
               </PanelSection>
               </>
               ) : null}
@@ -583,7 +618,9 @@ export default function EpisodeDetailScreen() {
                 <Text style={styles.deleteLinkText}>エピソードを削除</Text>
               </Pressable>
             ) : null}
-          </>
+            </View>
+          </View>
+          </View>
         )}
       </SubToolScreenTemplate>
 
@@ -644,8 +681,37 @@ const styles = StyleSheet.create({
   episodeHeaderPreview: {
     paddingTop: 14,
   },
+  episodeHeaderAfterAuthor: {
+    paddingTop: 4,
+  },
+  sharedDetailAuthor: {
+    paddingLeft: 12,
+    paddingTop: 14,
+    marginBottom: 4,
+  },
+  sharedDetailWithLine: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  sharedDetailRail: {
+    width: 18,
+    alignItems: 'flex-end',
+    paddingTop: 4,
+  },
+  sharedDetailLine: {
+    width: 1.5,
+    flex: 1,
+    borderRadius: 1,
+  },
+  sharedDetailBody: {
+    flex: 1,
+    minWidth: 0,
+  },
   detailSection: {
     paddingVertical: 10,
+  },
+  memoInset: {
+    marginHorizontal: EPISODE_DETAIL_SIDE_INSET,
   },
   descriptionText: {
     fontSize: 14,

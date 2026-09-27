@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { OffsetCard } from '@/components/ui/OffsetCard';
-import { HomeCardElevation } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { withAlpha } from '@/utils/colorHelpers';
+import { listCardBackgroundColor, listCardShadowStyle } from '@/utils/listCardSurface';
 import { useContentColors } from '@/utils/useContentColors';
 import type { Friend } from '../../types';
 import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
@@ -55,7 +55,7 @@ export function FriendHomeCard({
   style,
 }: FriendHomeCardProps) {
   const kit = useUiKit();
-  const { colors: appTheme, variant, shape } = useAppTheme();
+  const { variant, shape } = useAppTheme();
   const content = useContentColors();
   const [imageError, setImageError] = useState(false);
   const displayPhotoUri = resolveFriendDisplayPhotoUri(friend);
@@ -75,6 +75,8 @@ export function FriendHomeCard({
     backgroundColor: withAlpha(content.contentCard, 0.45),
   };
   const badgeTextStyle = { color: content.contentText };
+  const cardFill = listCardBackgroundColor(variant, content.contentCard);
+  const flatListCard = shape.offsetDistance === 0;
 
   const inner = (
     <>
@@ -214,16 +216,21 @@ export function FriendHomeCard({
     <OffsetCard
       style={[
         width != null ? { width } : null,
-        shape.offsetDistance === 0
-          ? variant === 'white'
-            ? appTheme.homeCardElevation
-            : HomeCardElevation
+        flatListCard
+          ? {
+              backgroundColor: cardFill,
+              borderRadius: shape.cardBorderRadius,
+              ...listCardShadowStyle(variant),
+            }
           : null,
         style,
       ]}
       contentStyle={[
         styles.cardOuter,
-        { paddingBottom: FRIEND_HOME_CARD_OUTER_PADDING_BOTTOM * nameScale },
+        {
+          paddingBottom: FRIEND_HOME_CARD_OUTER_PADDING_BOTTOM * nameScale,
+          backgroundColor: cardFill,
+        },
       ]}
     >
       {onPress || onLongPress ? (

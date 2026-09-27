@@ -6,31 +6,35 @@ import { Theme, Radius, Spacing } from '@/constants/theme';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { screenTopBarIconButtonStyle } from '@/components/screen/ScreenTopBar';
+import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
+import type { Option } from '@/components/episode/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { SettlementTransferRow } from '@/components/settlement';
 import { MoneyLoanFormCard } from '@/components/money-loan/MoneyLoanFormCard';
 import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormStyles';
 import { useSettlementMock } from '@/contexts/SettlementMockContext';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
-import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import { buildFriendPhotoById } from '@/utils/friendPhoto';
-import { getMyself, initializeDatabase } from '@/db';
 import { pullSharedSettlementRooms } from '@/lib/sharedSettlementSync';
+import { getSupabaseClient } from '@/lib/supabase';
 import { requireOnline } from '@/lib/networkReachability';
 import { canToggleGroupTransfer } from '@/utils/settlementToggleAccess';
+import { readLocalMoneyLoanUiState } from '@/utils/settlementLocalSnapshot';
+import {
+  SETTLED_MONEY_LOCK_MESSAGE,
+  settlementMemberRemovalBlockReason,
+} from '@/utils/settlementRoomEdit';
+import { buildMoneyLoanCounterpartyFriends } from '@/utils/eventRecencyHelpers';
 import type { Friend } from '@/types';
+import type { MockSettlementExpense } from '@/types/settlementMock';
 import type { SettlementExpense, SettlementRoomMember } from '@/types/settlement';
 import { buildFriendNameById, formatYen } from '@/utils/moneyLoanHelpers';
-import {
-  computeMemberBalances,
-  computeSettlementTransfers,
-  resolveSplitAmounts,
-} from '@/utils/settlementEngine';
+import { resolveSplitAmounts } from '@/utils/settlementEngine';
+import { getRoomDisplayTransfers } from '@/utils/settlementListPartition';
 import {
   buildSettlementMemberChips,
   withResolvedSettlementRoomName,
 } from '@/utils/settlementMockHelpers';
-import { buildSettlementTransferDisplays } from '@/utils/settlementTransferHelpers';
 import { sortMembersBySelectedId, sortMembersBySelectedIds } from '@/utils/selectionSortHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
@@ -74,8 +78,19 @@ function mockRoomToEngine(
 
 export default function SettlementRoomDetailScreen() {
   const { roomId } = useLocalSearchParams<{ roomId: string }>();
-  const { getRoom, addExpense, updateRoomTitle, isTransferCompleted, toggleTransferCompleted, reloadFromStore } =
-    useSettlementMock();
+  const {
+    getRoom,
+    addExpense,
+    updateExpense,
+    deleteExpense,
+    addRoomMembers,
+    removeRoomMember,
+    updateRoomTitle,
+    isTransferCompleted,
+    completedTransferKeys,
+    toggleTransferCompleted,
+    reloadFromStore,
+  } = useSettlementMock();
   const storedRoom = roomId ? getRoom(roomId) : undefined;
 
   const [expenseTitle, setExpenseTitle] = useState('');
@@ -85,19 +100,35 @@ export default function SettlementRoomDetailScreen() {
   const [formError, setFormError] = useState('');
   const [friends, setFriends] = useState<Friend[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
+  const [myUserId, setMyUserId] = useState('');
+  const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
+  const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [titleDraft, setTitleDraft] = useState('');
   const [titleError, setTitleError] = useState('');
   const [titleEditorVisible, setTitleEditorVisible] = useState(false);
   const [writing, setWriting] = useState(false);
+  const [memberSelectorVisible, setMemberSelectorVisible] = useState(false);
+  const [selectorNameFilter, setSelectorNameFilter] = useState('');
+  const [selectorAffiliationFilter, setSelectorAffiliationFilter] = useState('');
+  const [selectorExperienceFilter, setSelectorExperienceFilter] = useState('');
+  const [selectedMemberIds, setSelectedMemberIds] = useState<Set<string>>(new Set());
+  const [editingExpenseId, setEditingExpenseId] = useState<string | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editAmountText, setEditAmountText] = useState('');
+  const [editPayerMemberId, setEditPayerMemberId] = useState<string | null>(null);
+  const [editSplitMemberIds, setEditSplitMemberIds] = useState<Set<string>>(new Set());
+  const [editError, setEditError] = useState('');
   const appTheme = useAppThemeOptional();
   const topBarText = appTheme?.colors.topBarText ?? Theme.topBarText;
   const formStyles = useMoneyLoanFormStyles();
   const content = useContentColors();
 
   const loadFriends = useCallback(() => {
-    initializeDatabase();
-    setFriends(getAllFriendsInDefaultOrder());
-    setMyselfId(getMyself());
+    const snapshot = readLocalMoneyLoanUiState();
+    setFriends(snapshot.friends);
+    setMyselfId(snapshot.myselfId);
+    setAffiliationOptions(snapshot.affiliationOptions);
+    setExperienceOptions(snapshot.experienceOptions);
   }, []);
 
   useFocusEffect(
@@ -109,6 +140,12 @@ export default function SettlementRoomDetailScreen() {
         if (cancelled) {
           return;
         }
+        const supabase = getSupabaseClient();
+        const session = supabase ? await supabase.auth.getSession() : null;
+        if (cancelled) {
+          return;
+        }
+        setMyUserId(session?.data.session?.user.id?.trim().toLowerCase() ?? '');
         reloadFromStore();
         loadFriends();
       })();
@@ -218,20 +255,10 @@ export default function SettlementRoomDetailScreen() {
     return sortMembersBySelectedId(engine.allMembers, activePayerId);
   }, [engine, payerMemberId]);
 
-  const balances = useMemo(
-    () => (engine ? computeMemberBalances(engine.members, engine.expenses) : []),
-    [engine]
+  const displayTransfers = useMemo(
+    () => (room ? getRoomDisplayTransfers(room, completedTransferKeys) : []),
+    [completedTransferKeys, room]
   );
-
-  const transfers = useMemo(() => computeSettlementTransfers(balances), [balances]);
-
-  const displayTransfers = useMemo(() => {
-    if (!room || transfers.length === 0) {
-      return [];
-    }
-    const nameByMemberId = new Map(balances.map((balance) => [balance.memberId, balance.displayName]));
-    return buildSettlementTransferDisplays(room.id, transfers, nameByMemberId);
-  }, [balances, room, transfers]);
 
   const splitPreview = useMemo(() => {
     if (!engine) {
@@ -315,6 +342,196 @@ export default function SettlementRoomDetailScreen() {
     writing,
   ]);
 
+  const moneyLocked = useMemo(() => {
+    if (!room) {
+      return false;
+    }
+    const prefix = `${room.id}|`;
+    for (const key of completedTransferKeys) {
+      if (key.startsWith(prefix)) {
+        return true;
+      }
+    }
+    return false;
+  }, [completedTransferKeys, room]);
+
+  const counterpartyFriends = useMemo(
+    () => buildMoneyLoanCounterpartyFriends(friends, myselfId),
+    [friends, myselfId]
+  );
+
+  const openMemberSelector = useCallback(() => {
+    setSelectedMemberIds(new Set());
+    setSelectorNameFilter('');
+    setSelectorAffiliationFilter('');
+    setSelectorExperienceFilter('');
+    setMemberSelectorVisible(true);
+  }, []);
+
+  const handleAddMembers = useCallback(async () => {
+    if (!room || !requireOnline() || writing) {
+      return;
+    }
+    setWriting(true);
+    try {
+      const { ok, errorMessage } = await addRoomMembers(room.id, [...selectedMemberIds]);
+      if (!ok) {
+        Alert.alert('追加できませんでした', errorMessage ?? 'メンバーを追加できませんでした。');
+        return;
+      }
+      setMemberSelectorVisible(false);
+      setSelectedMemberIds(new Set());
+    } finally {
+      setWriting(false);
+    }
+  }, [addRoomMembers, room, selectedMemberIds, writing]);
+
+  const handleMemberChipPress = useCallback(
+    (memberId: string) => {
+      if (!room || writing) {
+        return;
+      }
+      const member = room.members.find((item) => item.id === memberId);
+      if (!member) {
+        return;
+      }
+      const reason = settlementMemberRemovalBlockReason(room, memberId, myselfId, myUserId);
+      if (reason) {
+        Alert.alert('外せません', reason);
+        return;
+      }
+      Alert.alert('メンバーを外す', `${member.displayName}を外しますか？`, [
+        { text: 'キャンセル', style: 'cancel' },
+        {
+          text: '外す',
+          style: 'destructive',
+          onPress: () => {
+            if (!requireOnline()) {
+              return;
+            }
+            setWriting(true);
+            void removeRoomMember(room.id, memberId)
+              .then((result) => {
+                if (!result.ok) {
+                  Alert.alert('外せませんでした', result.errorMessage ?? 'メンバーを外せませんでした。');
+                }
+              })
+              .finally(() => {
+                setWriting(false);
+              });
+          },
+        },
+      ]);
+    },
+    [myselfId, myUserId, removeRoomMember, room, writing]
+  );
+
+  const openExpenseEditor = useCallback(
+    (expense: MockSettlementExpense) => {
+      setEditingExpenseId(expense.id);
+      setEditTitle(expense.title);
+      setEditAmountText(String(expense.amount));
+      setEditPayerMemberId(expense.payerMemberId);
+      setEditSplitMemberIds(new Set(expense.splitMemberIds));
+      setEditError('');
+    },
+    []
+  );
+
+  const closeExpenseEditor = useCallback(() => {
+    setEditingExpenseId(null);
+    setEditError('');
+  }, []);
+
+  const handleSaveExpense = useCallback(async () => {
+    if (!room || !editingExpenseId || !requireOnline() || writing) {
+      return;
+    }
+    const current = room.expenses.find((expense) => expense.id === editingExpenseId);
+    if (!current) {
+      setEditError('支出が見つかりません。');
+      return;
+    }
+    const amount = moneyLocked
+      ? current.amount
+      : Math.floor(Number(editAmountText.replace(/,/g, '')) || 0);
+    const payerId = moneyLocked ? current.payerMemberId : editPayerMemberId ?? current.payerMemberId;
+    const splitIds = moneyLocked ? current.splitMemberIds : Array.from(editSplitMemberIds);
+    setWriting(true);
+    try {
+      const { ok, errorMessage } = await updateExpense(room.id, {
+        ...current,
+        title: editTitle,
+        amount,
+        payerMemberId: payerId,
+        splitMemberIds: splitIds,
+      });
+      if (!ok) {
+        setEditError(errorMessage ?? '支出の更新に失敗しました。');
+        return;
+      }
+      closeExpenseEditor();
+    } finally {
+      setWriting(false);
+    }
+  }, [
+    closeExpenseEditor,
+    editAmountText,
+    editPayerMemberId,
+    editSplitMemberIds,
+    editTitle,
+    editingExpenseId,
+    moneyLocked,
+    room,
+    updateExpense,
+    writing,
+  ]);
+
+  const handleDeleteExpense = useCallback(() => {
+    if (!room || !editingExpenseId || writing || moneyLocked) {
+      return;
+    }
+    Alert.alert('支出を削除', 'この支出を削除しますか？', [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '削除',
+        style: 'destructive',
+        onPress: () => {
+          if (!requireOnline()) {
+            return;
+          }
+          setWriting(true);
+          void deleteExpense(room.id, editingExpenseId)
+            .then((result) => {
+              if (!result.ok) {
+                setEditError(result.errorMessage ?? '支出の削除に失敗しました。');
+                return;
+              }
+              closeExpenseEditor();
+            })
+            .finally(() => {
+              setWriting(false);
+            });
+        },
+      },
+    ]);
+  }, [closeExpenseEditor, deleteExpense, editingExpenseId, moneyLocked, room, writing]);
+
+  const editSplitPreview = useMemo(() => {
+    if (!engine) {
+      return null;
+    }
+    const amount = Math.floor(Number(editAmountText.replace(/,/g, '')) || 0);
+    const ids = Array.from(editSplitMemberIds);
+    if (amount <= 0 || ids.length === 0) {
+      return null;
+    }
+    const shares = resolveSplitAmounts(amount, { type: 'even', memberIds: ids }, engine.membersById);
+    return ids
+      .map((id) => `${engine.membersById.get(id)?.displayName ?? '?'} ${formatYen(shares.get(id) ?? 0)}`)
+      .join(' · ');
+  }, [editAmountText, editSplitMemberIds, engine]);
+
   if (!room || !engine) {
     return (
       <SubToolScreenTemplate title="グループ" titleFramed={false} onBack={popCurrentTabScreen}>
@@ -345,7 +562,20 @@ export default function SettlementRoomDetailScreen() {
       >
         <MoneyLoanFormCard>
           <Text style={formStyles.sectionTitleOnCard}>メンバー</Text>
-          <ParticipantChipList chips={memberChips} compact layout="wrap" />
+          <ParticipantChipList
+            chips={memberChips}
+            compact
+            layout="wrap"
+            onChipPress={(chip) => handleMemberChipPress(chip.id)}
+          />
+          <Text style={[styles.memberHint, contentMutedTextStyle(content)]}>タップで外す</Text>
+          <Pressable
+            style={[formStyles.primaryButton, writing ? { opacity: 0.55 } : null]}
+            onPress={openMemberSelector}
+            disabled={writing}
+          >
+            <Text style={formStyles.primaryButtonText}>メンバーを追加</Text>
+          </Pressable>
         </MoneyLoanFormCard>
 
         <MoneyLoanFormCard>
@@ -457,7 +687,12 @@ export default function SettlementRoomDetailScreen() {
             .map((id) => payerNameByMemberId.get(id) ?? '?')
             .join('、');
           return (
-            <View key={expense.id} style={[styles.expenseCard, contentSurfaceStyle(content)]}>
+            <Pressable
+              key={expense.id}
+              style={[styles.expenseCard, contentSurfaceStyle(content)]}
+              onPress={() => openExpenseEditor(expense)}
+              accessibilityLabel={`${expense.title}を編集`}
+            >
               <Text style={[styles.expenseTitle, contentTextStyle(content)]}>{expense.title}</Text>
               <Text style={[styles.expenseMeta, contentMutedTextStyle(content)]}>
                 立替: {payerNameByMemberId.get(expense.payerMemberId) ?? '不明'} ·{' '}
@@ -466,7 +701,8 @@ export default function SettlementRoomDetailScreen() {
               <Text style={[styles.expenseSplit, contentMutedTextStyle(content)]}>
                 割り勘: {splitNames || '—'}
               </Text>
-            </View>
+              <Text style={[styles.memberHint, contentMutedTextStyle(content)]}>タップで編集</Text>
+            </Pressable>
           );
         })
       )}
@@ -551,6 +787,169 @@ export default function SettlementRoomDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={editingExpenseId != null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeExpenseEditor}
+      >
+        <View style={styles.titleModalOverlay}>
+          <View style={[styles.titleModalCard, styles.editModalCard, contentSurfaceStyle(content)]}>
+            <Text style={[styles.titleModalHeading, contentTextStyle(content)]}>支出を編集</Text>
+            <Text style={formStyles.formLabel}>タイトル</Text>
+            <TextInput
+              style={[styles.titleModalInput, contentInputStyle(content)]}
+              value={editTitle}
+              onChangeText={setEditTitle}
+              placeholder="例: 昼食"
+              placeholderTextColor={content.contentTextSecondary}
+            />
+            {moneyLocked ? (
+              <>
+                <Text style={[styles.memberHint, contentMutedTextStyle(content)]}>
+                  {SETTLED_MONEY_LOCK_MESSAGE}
+                </Text>
+                <Text style={[styles.expenseMeta, contentMutedTextStyle(content)]}>
+                  立替: {payerNameByMemberId.get(
+                    room.expenses.find((expense) => expense.id === editingExpenseId)?.payerMemberId ?? ''
+                  ) ?? '不明'}{' '}
+                  ·{' '}
+                  {formatYen(
+                    room.expenses.find((expense) => expense.id === editingExpenseId)?.amount ?? 0
+                  )}
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={formStyles.formLabel}>金額</Text>
+                <TextInput
+                  style={[styles.titleModalInput, contentInputStyle(content)]}
+                  value={editAmountText}
+                  onChangeText={setEditAmountText}
+                  keyboardType="number-pad"
+                  placeholderTextColor={content.contentTextSecondary}
+                />
+                <Text style={formStyles.fieldSectionLabel}>立替者</Text>
+                <View style={styles.chipRow}>
+                  {engine.allMembers.map((member) => {
+                    const selected = editPayerMemberId === member.id;
+                    return (
+                      <Pressable
+                        key={member.id}
+                        style={[
+                          styles.chip,
+                          contentTagStyle(content),
+                          selected ? contentSelectedOptionStyle(content) : null,
+                        ]}
+                        onPress={() => setEditPayerMemberId(member.id)}
+                      >
+                        <Text style={[styles.chipText, contentTextStyle(content)]}>{member.displayName}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Text style={formStyles.fieldSectionLabel}>割り勘対象</Text>
+                {engine.allMembers.map((member) => {
+                  const selected = editSplitMemberIds.has(member.id);
+                  return (
+                    <Pressable
+                      key={member.id}
+                      style={styles.splitMemberRow}
+                      onPress={() => {
+                        setEditSplitMemberIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(member.id)) {
+                            next.delete(member.id);
+                          } else {
+                            next.add(member.id);
+                          }
+                          return next;
+                        });
+                      }}
+                    >
+                      <View
+                        style={[
+                          styles.checkbox,
+                          { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
+                          selected
+                            ? { borderColor: content.contentText, backgroundColor: content.contentPersonTagBg }
+                            : null,
+                        ]}
+                      >
+                        {selected ? (
+                          <Text style={[styles.checkmark, { color: content.contentText }]}>✓</Text>
+                        ) : null}
+                      </View>
+                      <Text style={[styles.splitMemberName, contentTextStyle(content)]}>{member.displayName}</Text>
+                    </Pressable>
+                  );
+                })}
+                {editSplitPreview ? (
+                  <Text style={[styles.splitPreview, contentMutedTextStyle(content)]}>{editSplitPreview}</Text>
+                ) : null}
+              </>
+            )}
+            {editError ? <Text style={styles.titleModalError}>{editError}</Text> : null}
+            <View style={styles.titleModalActions}>
+              {moneyLocked ? null : (
+                <Pressable
+                  style={styles.titleModalCancel}
+                  onPress={handleDeleteExpense}
+                  disabled={writing}
+                >
+                  <Text style={[styles.titleModalCancelText, { color: '#b91c1c' }]}>削除</Text>
+                </Pressable>
+              )}
+              <Pressable style={styles.titleModalCancel} onPress={closeExpenseEditor} disabled={writing}>
+                <Text style={[styles.titleModalCancelText, contentTextStyle(content)]}>キャンセル</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.titleModalSave, contentFilledButtonStyle(content), writing ? { opacity: 0.55 } : null]}
+                onPress={() => void handleSaveExpense()}
+                disabled={writing}
+              >
+                <Text style={[styles.titleModalSaveText, contentFilledButtonTextStyle(content)]}>保存</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <EntrySelectorModal
+        visible={memberSelectorVisible}
+        selectorTab="individual"
+        onTabChange={() => undefined}
+        nameFilter={selectorNameFilter}
+        onNameFilterChange={setSelectorNameFilter}
+        affiliationFilter={selectorAffiliationFilter}
+        onAffiliationFilterChange={setSelectorAffiliationFilter}
+        experienceFilter={selectorExperienceFilter}
+        onExperienceFilterChange={setSelectorExperienceFilter}
+        friends={counterpartyFriends}
+        affiliationOptions={affiliationOptions}
+        experienceOptions={experienceOptions}
+        groupOptions={affiliationOptions}
+        selectedIndividualIds={selectedMemberIds}
+        selectedGroupValues={new Set()}
+        onToggleIndividual={(friendId) => {
+          setSelectedMemberIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(friendId)) {
+              next.delete(friendId);
+            } else {
+              next.add(friendId);
+            }
+            return next;
+          });
+        }}
+        onToggleGroup={() => undefined}
+        onCancel={() => setMemberSelectorVisible(false)}
+        onConfirm={() => void handleAddMembers()}
+        onPersonCreated={loadFriends}
+        enableGroupTab={false}
+        selectionTitle="追加するメンバー"
+      />
     </>
   );
 }
@@ -577,6 +976,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: Spacing.md,
     gap: 10,
+    maxHeight: '86%',
+  },
+  editModalCard: {
+    overflow: 'hidden',
+  },
+  memberHint: {
+    fontSize: 12,
+    lineHeight: 16,
   },
   titleModalHeading: {
     fontSize: 16,

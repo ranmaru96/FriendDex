@@ -132,10 +132,28 @@ export function OptionPickerModal({
         optionGrid: {
           flexDirection: 'row',
           flexWrap: 'wrap',
+          marginHorizontal: -3,
         },
         optionCell: {
           width: '50%',
-          padding: 4,
+          paddingHorizontal: 3,
+          paddingVertical: 3,
+        },
+        optionGridItem: {
+          paddingVertical: 8,
+          paddingHorizontal: 10,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderColor: content.contentBorder,
+          backgroundColor: content.contentPersonTagBg,
+        },
+        optionGridItemSelected: {
+          borderColor: content.contentText,
+          backgroundColor: content.contentInputBg,
+        },
+        optionGridText: {
+          fontSize: 14,
+          color: content.contentText,
         },
         chipWrap: {
           flexDirection: 'row',
@@ -349,15 +367,17 @@ export function OptionPickerModal({
                   <View key={option.value} style={modalStyles.optionCell}>
                     <Pressable
                       style={[
-                        modalStyles.option,
-                        option.value === value ? modalStyles.optionSelected : null,
+                        modalStyles.optionGridItem,
+                        option.value === value ? modalStyles.optionGridItemSelected : null,
                       ]}
                       onPress={() => {
                         onValueChange(option.value);
                         closePicker();
                       }}
                     >
-                      <Text style={modalStyles.optionText}>{option.label}</Text>
+                      <Text style={modalStyles.optionGridText} numberOfLines={1}>
+                        {option.label}
+                      </Text>
                     </Pressable>
                   </View>
                 ))}

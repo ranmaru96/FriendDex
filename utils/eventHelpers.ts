@@ -34,19 +34,24 @@ export const getMonthRangeIso = (year: number, month: number): { rangeStartAt: s
   return { rangeStartAt, rangeEndAt };
 };
 
+const WEEKDAY_SHORT = ['日', '月', '火', '水', '木', '金', '土'] as const;
+
 const formatHm = (date: Date): string => {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   return `${hours}:${minutes}`;
 };
 
+const formatWeekdayShort = (date: Date): string => WEEKDAY_SHORT[date.getDay()] ?? '';
+
 export const formatMonthDayLabel = (date: Date, includeYear = false): string => {
   const month = date.getMonth() + 1;
   const day = date.getDate();
+  const weekday = formatWeekdayShort(date);
   if (includeYear) {
-    return `${date.getFullYear()}年${month}月${day}日`;
+    return `${date.getFullYear()}年${month}月${day}日(${weekday})`;
   }
-  return `${month}月${day}日`;
+  return `${month}月${day}日(${weekday})`;
 };
 
 export const formatMonthDayLabelFromDateKey = (dateKey: string): string => {
@@ -56,6 +61,19 @@ export const formatMonthDayLabelFromDateKey = (dateKey: string): string => {
   }
   const [, month, day] = parts;
   return `${month}月${day}日`;
+};
+
+const formatSlashMonthDayFromDateKey = (dateKey: string, includeYear = false): string => {
+  const parts = dateKey.split('-').map(Number);
+  if (parts.length !== 3 || parts.some((value) => Number.isNaN(value))) {
+    return dateKey;
+  }
+  const [year, month, day] = parts;
+  const weekday = formatWeekdayShort(new Date(year, month - 1, day));
+  if (includeYear) {
+    return `${year}/${month}/${day}(${weekday})`;
+  }
+  return `${month}/${day}(${weekday})`;
 };
 
 const formatDateTimeLabel = (date: Date, includeYear: boolean): string =>
@@ -78,9 +96,10 @@ export const formatEventScheduleLabel = (event: Event): string => {
   if (event.allDay) {
     const { startDateKey, endDateKey } = getAllDayDateKeysFromEvent(event);
     if (startDateKey === endDateKey) {
-      return `終日（${formatMonthDayLabelFromDateKey(startDateKey)}）`;
+      return `${formatSlashMonthDayFromDateKey(startDateKey)}(終日)`;
     }
-    return `終日（${formatMonthDayLabelFromDateKey(startDateKey)} – ${formatMonthDayLabelFromDateKey(endDateKey)}）`;
+    const crossYear = startDateKey.slice(0, 4) !== endDateKey.slice(0, 4);
+    return `${formatSlashMonthDayFromDateKey(startDateKey, crossYear)} – ${formatSlashMonthDayFromDateKey(endDateKey, crossYear)}(終日)`;
   }
 
   const start = new Date(event.startAt);

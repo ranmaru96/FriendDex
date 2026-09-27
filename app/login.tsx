@@ -32,7 +32,7 @@ export default function LoginScreen() {
       } else if (syncError) {
         Alert.alert('ログインしました', `サーバー反映に失敗しました。\n${syncError}`);
       }
-      router.replace('/');
+      router.replace('/calendar');
       return true;
     }
     if (restore?.errorMessage) {
@@ -63,11 +63,11 @@ export default function LoginScreen() {
       if (busy) {
         return;
       }
-      router.replace(getMyselfSetupPhase() === 'ready' ? '/' : '/setup-myself');
+      router.replace(getMyselfSetupPhase() === 'ready' ? '/calendar' : '/setup-myself');
       return;
     }
     if (getMyselfSetupPhase() === 'ready') {
-      router.replace('/');
+      router.replace('/calendar');
       return;
     }
     if (busy) {

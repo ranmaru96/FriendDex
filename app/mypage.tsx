@@ -41,8 +41,8 @@ import {
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
 
-const AVATAR_SM = 40;
-const HERO_PHOTO = 132;
+const AVATAR_SM = 32;
+const HERO_PHOTO = 40;
 
 /** 人物カード詳細と同じ二重枠の丸角四角 */
 function CardPhotoThumb({
@@ -90,7 +90,12 @@ function CardPhotoThumb({
         {uri ? (
           <Image source={{ uri }} style={styles.cardPhotoImage} resizeMode="cover" />
         ) : (
-          <Text style={[styles.cardPhotoInitial, { color: content.contentPhotoPlaceholderText }]}>
+          <Text
+            style={[
+              styles.cardPhotoInitial,
+              { color: content.contentPhotoPlaceholderText, fontSize: Math.max(14, Math.round(size * 0.36)) },
+            ]}
+          >
             {initial}
           </Text>
         )}
@@ -121,13 +126,64 @@ function MenuRow({
       accessibilityLabel={count != null && count > 0 ? `${label} ${count}` : label}
       accessibilityState={expanded != null ? { expanded } : undefined}
     >
-      <Ionicons name={icon} size={24} color={content.contentText} />
+      <Ionicons name={icon} size={20} color={content.contentText} />
       <Text style={[styles.menuLabel, contentTextStyle(content)]} numberOfLines={1}>
         {label}
       </Text>
       {count != null && count > 0 ? (
         <Text style={[styles.menuCount, contentMutedTextStyle(content)]}>{count}</Text>
       ) : null}
+      {expanded != null ? (
+        <Ionicons
+          name={expanded ? 'chevron-down' : 'chevron-forward'}
+          size={18}
+          color={content.contentTextSecondary}
+        />
+      ) : null}
+    </Pressable>
+  );
+}
+
+function HeroActionButton({
+  icon,
+  label,
+  accessibilityLabel,
+  onPress,
+  emphasis,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+  emphasis: 'primary' | 'quiet';
+}) {
+  const content = useContentColors();
+  const primary = emphasis === 'primary';
+  const ink = primary ? content.contentCard : content.contentTextSecondary;
+  return (
+    <Pressable
+      style={({ pressed }) => [
+        styles.heroActionButton,
+        primary ? styles.heroActionButtonPrimary : styles.heroActionButtonQuiet,
+        primary
+          ? contentFilledButtonStyle(content)
+          : { borderColor: content.contentBorder, backgroundColor: 'transparent' },
+        pressed ? { opacity: 0.7 } : null,
+      ]}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+    >
+      <Ionicons name={icon} size={primary ? 18 : 16} color={ink} />
+      <Text
+        style={[
+          styles.heroActionLabel,
+          primary ? contentFilledButtonTextStyle(content) : contentMutedTextStyle(content),
+        ]}
+        numberOfLines={1}
+      >
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -144,7 +200,7 @@ function StatCell({
   const content = useContentColors();
   return (
     <View style={styles.statCell} accessibilityLabel={accessibilityLabel}>
-      <Text style={[styles.statLabel, contentMutedTextStyle(content)]} numberOfLines={2}>
+      <Text style={[styles.statLabel, contentMutedTextStyle(content)]} numberOfLines={1}>
         {label}
       </Text>
       <Text style={[styles.statNumber, contentTextStyle(content)]}>{value}</Text>
@@ -293,7 +349,6 @@ export default function MyPageScreen() {
   };
 
   const myselfName = myself?.name?.trim() || '本人未設定';
-  const myselfNickname = myself?.nickname.trim() ?? '';
   const myselfPhoto = myself ? resolveFriendDisplayPhotoUri(myself) : null;
   const openMyself = () => {
     if (myself) {
@@ -310,23 +365,17 @@ export default function MyPageScreen() {
       onBack={() => router.back()}
       scrollContentStyle={styles.scrollContent}
     >
-      <View style={styles.heroRow}>
-        <Pressable
-          onPress={openMyself}
-          accessibilityLabel="自分のプロフィール"
-        >
-          <CardPhotoThumb name={myselfName} photoUri={myselfPhoto} size={HERO_PHOTO} />
-        </Pressable>
-        <View style={styles.heroIdentityCol}>
-          <Pressable onPress={openMyself} style={styles.heroNameRow}>
+      <View style={styles.heroBlock}>
+        <View style={styles.heroRow}>
+          <Pressable
+            onPress={openMyself}
+            style={styles.heroIdentity}
+            accessibilityLabel="自分のプロフィール"
+          >
+            <CardPhotoThumb name={myselfName} photoUri={myselfPhoto} size={HERO_PHOTO} />
             <Text style={[styles.heroName, contentTextStyle(content)]} numberOfLines={1}>
               {myselfName}
             </Text>
-            {myselfNickname ? (
-              <Text style={[styles.heroNickname, contentMutedTextStyle(content)]} numberOfLines={1}>
-                （{myselfNickname}）
-              </Text>
-            ) : null}
           </Pressable>
           <View
             style={[
@@ -336,7 +385,7 @@ export default function MyPageScreen() {
                 backgroundColor: content.contentInputBg,
               },
             ]}
-            accessibilityLabel={`コネクト${accepted.length}、カード${personCount}、エピソード${episodeCount}`}
+            accessibilityLabel={`コネクト${accepted.length}、人物カード${personCount}、エピソード${episodeCount}`}
           >
             <StatCell
               value={accepted.length}
@@ -346,8 +395,8 @@ export default function MyPageScreen() {
             <View style={[styles.statDivider, { backgroundColor: content.contentBorder }]} />
             <StatCell
               value={personCount}
-              label="カード"
-              accessibilityLabel={`カード ${personCount}`}
+              label="人物カード"
+              accessibilityLabel={`人物カード ${personCount}`}
             />
             <View style={[styles.statDivider, { backgroundColor: content.contentBorder }]} />
             <StatCell
@@ -356,24 +405,34 @@ export default function MyPageScreen() {
               accessibilityLabel={`エピソード ${episodeCount}`}
             />
           </View>
-          <Pressable
-            style={({ pressed }) => [
-              styles.publicSettingsButton,
-              contentFilledButtonStyle(content),
-              pressed ? { opacity: 0.7 } : null,
-            ]}
-            onPress={() => router.push('/myprofile')}
-            accessibilityRole="button"
+        </View>
+        <View style={styles.heroActionRow}>
+          <HeroActionButton
+            emphasis="quiet"
+            icon="options-outline"
+            label="公開設定"
             accessibilityLabel="プロフィール公開項目設定"
-          >
-            <Ionicons name="options-outline" size={14} color={content.contentCard} />
-            <Text
-              style={[styles.publicSettingsButtonText, contentFilledButtonTextStyle(content)]}
-              numberOfLines={1}
-            >
-              プロフィール公開項目設定
-            </Text>
-          </Pressable>
+            onPress={() => router.push('/myprofile')}
+          />
+          <HeroActionButton
+            emphasis="primary"
+            icon="qr-code-outline"
+            label="QR表示"
+            accessibilityLabel="QRコードを表示"
+            onPress={() => router.push('/myprofile-qr')}
+          />
+          <HeroActionButton
+            emphasis="primary"
+            icon="scan-outline"
+            label="読み取る"
+            accessibilityLabel="QRコードを読み取る"
+            onPress={() => {
+              if (!requireOnline()) {
+                return;
+              }
+              router.push('/scan');
+            }}
+          />
         </View>
       </View>
 
@@ -603,86 +662,91 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     gap: 4,
   },
-  heroRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
+  heroBlock: {
+    gap: 10,
     paddingBottom: Spacing.lg,
   },
-  heroIdentityCol: {
+  heroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  heroIdentity: {
     flex: 1,
     minWidth: 0,
-    height: HERO_PHOTO,
-    justifyContent: 'space-between',
-    gap: 6,
-    paddingBottom: 4,
-  },
-  heroNameRow: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 4,
+    alignItems: 'center',
+    gap: 8,
+  },
+  heroActionRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: 8,
+  },
+  heroActionButton: {
     minWidth: 0,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 8,
+    borderRadius: Radius.sm,
+  },
+  heroActionButtonQuiet: {
+    flexGrow: 0.8,
+    flexShrink: 1,
+    flexBasis: 0,
+    borderWidth: 1,
+  },
+  heroActionButtonPrimary: {
+    flexGrow: 1.15,
+    flexShrink: 1,
+    flexBasis: 0,
+    borderWidth: 1,
+  },
+  heroActionLabel: {
+    flexShrink: 1,
+    fontSize: 13,
+    fontWeight: '700',
   },
   heroName: {
-    flexShrink: 1,
-    fontSize: 20,
-    lineHeight: 24,
-    fontWeight: '500',
-  },
-  heroNickname: {
-    flexShrink: 1,
-    fontSize: 14,
-    lineHeight: 18,
-    fontWeight: '400',
+    flex: 1,
+    minWidth: 0,
+    fontSize: Typography.lg,
+    lineHeight: 20,
+    fontWeight: '600',
   },
   statRow: {
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'stretch',
     overflow: 'hidden',
     borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 10,
+    borderRadius: 8,
   },
   statDivider: {
     width: StyleSheet.hairlineWidth,
     alignSelf: 'stretch',
   },
   statCell: {
-    flex: 1,
-    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 4,
-    gap: 1,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
   },
   statLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: '400',
     textAlign: 'center',
-    lineHeight: 11,
+    lineHeight: 12,
   },
   statNumber: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
     textAlign: 'center',
-    lineHeight: 20,
-  },
-  publicSettingsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    minHeight: 38,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderRadius: Radius.sm,
-  },
-  publicSettingsButtonText: {
-    flexShrink: 1,
-    fontSize: 13,
-    fontWeight: '700',
+    lineHeight: 17,
   },
   menuBlock: {
     gap: 0,
@@ -690,24 +754,24 @@ const styles = StyleSheet.create({
   menuRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 20,
-    minHeight: 52,
-    paddingVertical: 12,
+    gap: 10,
+    minHeight: 44,
+    paddingVertical: 8,
   },
   menuLabel: {
     flex: 1,
     minWidth: 0,
-    fontSize: 20,
+    fontSize: Typography.lg,
     fontWeight: '700',
   },
   menuCount: {
-    fontSize: 15,
+    fontSize: Typography.base,
     fontWeight: '600',
   },
   nested: {
     paddingLeft: 4,
-    paddingBottom: 8,
-    gap: 2,
+    paddingBottom: 4,
+    gap: 0,
   },
   footerRule: {
     height: StyleSheet.hairlineWidth,
@@ -722,7 +786,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
-    paddingVertical: 10,
+    minHeight: 40,
+    paddingVertical: 4,
   },
   personRowMain: {
     flex: 1,
@@ -734,7 +799,7 @@ const styles = StyleSheet.create({
   personMain: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: 0,
   },
   personName: {
     minWidth: 0,
@@ -762,7 +827,6 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   cardPhotoInitial: {
-    fontSize: 14,
     fontWeight: '800',
   },
   compactButton: {

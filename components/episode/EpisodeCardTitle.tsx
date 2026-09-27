@@ -1,10 +1,15 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { useContentColors } from '@/utils/useContentColors';
 
+/** エピソード詳細のタイトル・日付・参加者・メモで共通の左右余白 */
+export const EPISODE_DETAIL_SIDE_INSET = 6;
+
 type EpisodeCardTitleProps = {
   title: string;
   /** 詳細画面など：折り返して全文表示 */
   multiline?: boolean;
+  /** 詳細画面だけ、左右に共通の余白を空ける */
+  inset?: boolean;
   /**
    * 横並び行で残り幅を埋める（一覧クラシック行用）。
    * 写真右レイアウトの縦積みでは false にして、固定高さ時にタイトル〜日付の隙間が開かないようにする。
@@ -17,6 +22,7 @@ type EpisodeCardTitleProps = {
 export function EpisodeCardTitle({
   title,
   multiline = false,
+  inset = false,
   fillRow = true,
   unfilled = false,
 }: EpisodeCardTitleProps) {
@@ -28,6 +34,7 @@ export function EpisodeCardTitle({
       style={[
         fillRow ? styles.episodeCardTitleWrap : styles.episodeCardTitleWrapStacked,
         multiline ? styles.episodeCardTitleWrapMultiline : null,
+        inset ? styles.episodeCardTitleInset : null,
       ]}
     >
       <View
@@ -82,6 +89,9 @@ const styles = StyleSheet.create({
     flex: undefined,
     alignSelf: 'flex-start',
     maxWidth: '100%',
+  },
+  episodeCardTitleInset: {
+    marginHorizontal: EPISODE_DETAIL_SIDE_INSET,
   },
   episodeCardTitleUnderline: {
     alignSelf: 'flex-start',

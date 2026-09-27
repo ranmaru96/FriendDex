@@ -73,6 +73,8 @@ export type Episode = {
   tag?: string | null;
   /** 場所タグ（予定とは独立。初期値のみ予定からコピー可） */
   locationTag?: string | null;
+  /** 受信した共有エピソードだけ。詳細を開くと消え、内容が更新されると再び付く */
+  incomingUnread?: boolean;
 };
 
 export type Event = {

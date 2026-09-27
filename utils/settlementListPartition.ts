@@ -4,8 +4,12 @@ import {
   computeMemberBalances,
   computeSettlementTransfers,
 } from '@/utils/settlementEngine';
+import type { SettlementMemberBalance, SettlementTransfer } from '@/types/settlement';
 import {
+  allocateSettlementTransferKey,
   buildSettlementTransferDisplays,
+  buildSettlementTransferKey,
+  parseSettlementTransferKey,
   type SettlementTransferDisplay,
 } from '@/utils/settlementTransferHelpers';
 import type {
@@ -41,18 +45,95 @@ function mockRoomToEngineMembers(room: MockSettlementRoom): {
   return { members, expenses };
 }
 
-export function getRoomDisplayTransfers(room: MockSettlementRoom): SettlementTransferDisplay[] {
+function roomCompletionKeys(roomId: string, completedKeys: ReadonlySet<string>): string[] {
+  const prefix = `${roomId}|`;
+  const keys: string[] = [];
+  completedKeys.forEach((key) => {
+    if (!key.startsWith(prefix)) {
+      return;
+    }
+    const parsed = parseSettlementTransferKey(key);
+    if (parsed && parsed.roomId === roomId) {
+      keys.push(key);
+    }
+  });
+  return keys;
+}
+
+function toTransferDisplay(
+  transfer: SettlementTransfer,
+  key: string,
+  nameByMemberId: Map<string, string>
+): SettlementTransferDisplay {
+  return {
+    ...transfer,
+    key,
+    fromName: nameByMemberId.get(transfer.fromMemberId) ?? '?',
+    toName: nameByMemberId.get(transfer.toMemberId) ?? '?',
+  };
+}
+
+/** 済にした送金を残高から外し、残りの未済分だけを再計算する。 */
+function balancesAfterSettledTransfers(
+  balances: SettlementMemberBalance[],
+  settled: SettlementTransfer[]
+): SettlementMemberBalance[] {
+  const nets = new Map(balances.map((balance) => [balance.memberId, balance.netBalance]));
+  settled.forEach((transfer) => {
+    nets.set(transfer.fromMemberId, (nets.get(transfer.fromMemberId) ?? 0) + transfer.amount);
+    nets.set(transfer.toMemberId, (nets.get(transfer.toMemberId) ?? 0) - transfer.amount);
+  });
+  return balances.map((balance) => ({
+    ...balance,
+    netBalance: nets.get(balance.memberId) ?? 0,
+  }));
+}
+
+export function getRoomDisplayTransfers(
+  room: MockSettlementRoom,
+  completedKeys?: ReadonlySet<string>
+): SettlementTransferDisplay[] {
   const { members, expenses } = mockRoomToEngineMembers(room);
   if (members.length === 0 || expenses.length === 0) {
     return [];
   }
   const balances = computeMemberBalances(members, expenses);
   const transfers = computeSettlementTransfers(balances);
-  if (transfers.length === 0) {
+  const nameByMemberId = new Map(balances.map((balance) => [balance.memberId, balance.displayName]));
+  const settledKeys = completedKeys ? roomCompletionKeys(room.id, completedKeys) : [];
+  if (transfers.length === 0 && settledKeys.length === 0) {
     return [];
   }
-  const nameByMemberId = new Map(balances.map((balance) => [balance.memberId, balance.displayName]));
-  return buildSettlementTransferDisplays(room.id, transfers, nameByMemberId);
+  const engineKeys = new Set(transfers.map((transfer) => buildSettlementTransferKey(room.id, transfer)));
+  if (settledKeys.length === 0 || settledKeys.every((key) => engineKeys.has(key))) {
+    return buildSettlementTransferDisplays(room.id, transfers, nameByMemberId);
+  }
+
+  const settledTransfers = settledKeys.flatMap((key) => {
+    const parsed = parseSettlementTransferKey(key);
+    if (!parsed) {
+      return [];
+    }
+    return [
+      {
+        fromMemberId: parsed.fromMemberId,
+        toMemberId: parsed.toMemberId,
+        amount: parsed.amount,
+        key,
+      },
+    ];
+  });
+  const residual = computeSettlementTransfers(
+    balancesAfterSettledTransfers(balances, settledTransfers)
+  );
+  const usedKeys = new Set(settledKeys);
+  const openDisplays = residual.map((transfer) =>
+    toTransferDisplay(transfer, allocateSettlementTransferKey(room.id, transfer, usedKeys), nameByMemberId)
+  );
+  const settledDisplays = settledTransfers.map((transfer) =>
+    toTransferDisplay(transfer, transfer.key, nameByMemberId)
+  );
+  return [...openDisplays, ...settledDisplays];
 }
 
 /** 支出があり、未完了の精算行がない → 清算済み */

@@ -1,5 +1,5 @@
 -- グループ精算の共有。SQL Editor で Run する。
--- メンバーは全員閲覧・支出登録可。済の制限はアプリ側。
+-- メンバーは全員閲覧・支出の登録と削除・メンバー変更可。済の制限はアプリ側。
 -- 部屋とメンバーの RLS が互いを見ると無限ループになるので、判定は SECURITY DEFINER 関数に置く。
 -- DROP POLICY は再実行用。
 
@@ -99,6 +99,7 @@ drop policy if exists "shared_settlement_members_delete_own" on public.shared_se
 drop policy if exists "shared_settlement_expenses_select_member" on public.shared_settlement_expenses;
 drop policy if exists "shared_settlement_expenses_insert_member" on public.shared_settlement_expenses;
 drop policy if exists "shared_settlement_expenses_update_member" on public.shared_settlement_expenses;
+drop policy if exists "shared_settlement_expenses_delete_member" on public.shared_settlement_expenses;
 drop policy if exists "shared_settlement_completions_select_member" on public.shared_settlement_completions;
 drop policy if exists "shared_settlement_completions_insert_member" on public.shared_settlement_completions;
 drop policy if exists "shared_settlement_completions_update_member" on public.shared_settlement_completions;
@@ -123,11 +124,11 @@ create policy "shared_settlement_members_select_member"
 
 create policy "shared_settlement_members_insert_own"
   on public.shared_settlement_members for insert to authenticated
-  with check (public.is_shared_settlement_creator(room_id));
+  with check (public.is_shared_settlement_party(room_id));
 
 create policy "shared_settlement_members_delete_own"
   on public.shared_settlement_members for delete to authenticated
-  using (public.is_shared_settlement_creator(room_id));
+  using (public.is_shared_settlement_party(room_id));
 
 create policy "shared_settlement_expenses_select_member"
   on public.shared_settlement_expenses for select to authenticated
@@ -141,6 +142,10 @@ create policy "shared_settlement_expenses_update_member"
   on public.shared_settlement_expenses for update to authenticated
   using (public.is_shared_settlement_party(room_id))
   with check (public.is_shared_settlement_party(room_id));
+
+create policy "shared_settlement_expenses_delete_member"
+  on public.shared_settlement_expenses for delete to authenticated
+  using (public.is_shared_settlement_party(room_id));
 
 create policy "shared_settlement_completions_select_member"
   on public.shared_settlement_completions for select to authenticated
@@ -161,7 +166,7 @@ create policy "shared_settlement_completions_delete_member"
 
 grant select, insert, update on table public.shared_settlement_rooms to authenticated;
 grant select, insert, delete on table public.shared_settlement_members to authenticated;
-grant select, insert, update on table public.shared_settlement_expenses to authenticated;
+grant select, insert, update, delete on table public.shared_settlement_expenses to authenticated;
 grant select, insert, update, delete on table public.shared_settlement_completions to authenticated;
 
 notify pgrst, 'reload schema';

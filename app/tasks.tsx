@@ -104,8 +104,8 @@ const DRAG_SCROLL_PX = 12;
 type TaskAccent = (typeof TASK_ACCENT)[keyof typeof TASK_ACCENT];
 
 const accentBorderWidth = (accent: TaskAccent | undefined): number => {
-  if (accent) return 1.5;
-  return 1;
+  if (accent) return 0.75;
+  return 0.5;
 };
 
 /** グループ ID。未所属ボックスは UNGROUPED_DROP_ID。ヒットなしは undefined */
@@ -390,7 +390,7 @@ function RecurringTaskRow({
         catalog && !nested ? styles.catalogRow : null,
         nested ? styles.catalogNestedRow : useOffset ? null : contentSurfaceStyle(content),
         {
-          borderWidth: nested || useOffset ? 0 : catalog || dimmed ? 1 : accentBorderWidth(accent),
+          borderWidth: nested || useOffset ? 0 : catalog ? 1 : dimmed ? 0.5 : accentBorderWidth(accent),
           borderRadius: nested || useOffset ? 0 : 10,
           borderColor: catalog ? content.contentBorder : borderColor,
         },
@@ -561,7 +561,7 @@ function TemporaryTaskRow({
         catalog && !nested ? styles.catalogRow : null,
         nested ? styles.catalogNestedRow : useOffset ? null : contentSurfaceStyle(content),
         {
-          borderWidth: nested || useOffset ? 0 : catalog || completed ? 1 : accentBorderWidth(accent),
+          borderWidth: nested || useOffset ? 0 : catalog ? 1 : completed ? 0.5 : accentBorderWidth(accent),
           borderRadius: nested || useOffset ? 0 : 10,
           borderColor: catalog ? content.contentBorder : borderColor,
         },
@@ -1243,7 +1243,7 @@ export default function TasksScreen() {
           accessibilityState={{ expanded }}
           accessibilityLabel={`${title}を${expanded ? '閉じる' : '開く'}`}
         >
-          <View style={styles.checkboxHit}>
+          <View style={styles.groupIconHit}>
             <Ionicons
               name="layers-outline"
               size={20}
@@ -1439,7 +1439,7 @@ export default function TasksScreen() {
           styles.catalogGroupCard,
           contentSurfaceStyle(content),
           {
-            borderWidth: muted ? 1 : accentBorderWidth(accent),
+            borderWidth: muted ? 0.5 : accentBorderWidth(accent),
             borderColor,
           },
           muted ? styles.dimmedBlock : null,
@@ -1453,11 +1453,11 @@ export default function TasksScreen() {
         ]}
       >
         <Pressable
-          style={styles.row}
+          style={[styles.row, styles.groupTitleRow]}
           onPress={() => toggleExpanded(groupInstanceKey(group.id, options.keySuffix))}
           onLongPress={() => openGroupScreen(group)}
         >
-          <View style={styles.checkboxHit}>
+          <View style={styles.groupIconHit}>
             <Ionicons
               name="layers-outline"
               size={22}
@@ -1489,7 +1489,7 @@ export default function TasksScreen() {
               <Text style={[styles.dropHint, contentTextStyle(content)]}>ここにドロップ</Text>
             ) : null}
           </View>
-          <View style={styles.checkboxHit}>
+          <View style={styles.groupIconHit}>
             <Ionicons
               name={options.expanded ? 'chevron-down' : 'chevron-forward'}
               size={20}
@@ -1615,7 +1615,7 @@ export default function TasksScreen() {
           styles.catalogGroupCard,
           contentSurfaceStyle(content),
           {
-            borderWidth: completed ? 1 : accentBorderWidth(accent),
+            borderWidth: completed ? 0.5 : accentBorderWidth(accent),
             borderColor,
           },
           completed ? styles.dimmedBlock : null,
@@ -1629,11 +1629,11 @@ export default function TasksScreen() {
         ]}
       >
         <Pressable
-          style={styles.row}
+          style={[styles.row, styles.groupTitleRow]}
           onPress={() => toggleExpanded(groupInstanceKey(group.id, options.keySuffix))}
           onLongPress={() => openGroupScreen(group)}
         >
-          <View style={styles.checkboxHit}>
+          <View style={styles.groupIconHit}>
             <Ionicons
               name="layers-outline"
               size={22}
@@ -1690,7 +1690,7 @@ export default function TasksScreen() {
               <Text style={[styles.dropHint, contentTextStyle(content)]}>ここにドロップ</Text>
             ) : null}
           </View>
-          <View style={styles.checkboxHit}>
+          <View style={styles.groupIconHit}>
             <Ionicons
               name={options.expanded ? 'chevron-down' : 'chevron-forward'}
               size={20}
@@ -2163,7 +2163,7 @@ const styles = StyleSheet.create({
   dragGhostCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 7,
     paddingRight: 12,
     borderWidth: 1,
     borderRadius: 10,
@@ -2280,7 +2280,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   catalogRow: {
-    paddingVertical: 12,
+    paddingVertical: 9,
   },
   catalogGroupCard: {
     borderWidth: 1,
@@ -2290,7 +2290,7 @@ const styles = StyleSheet.create({
   catalogGroupHeadRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 4,
     paddingRight: 10,
     gap: 2,
   },
@@ -2323,7 +2323,7 @@ const styles = StyleSheet.create({
     marginLeft: 36,
   },
   catalogNestedRow: {
-    paddingVertical: 10,
+    paddingVertical: 7,
     backgroundColor: 'transparent',
   },
   todayGroupMembers: {
@@ -2373,7 +2373,7 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 7,
     paddingHorizontal: 10,
     gap: 8,
   },
@@ -2389,6 +2389,15 @@ const styles = StyleSheet.create({
     height: 36,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  groupIconHit: {
+    width: 28,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupTitleRow: {
+    paddingVertical: 4,
   },
   dragGrip: {
     width: 18,

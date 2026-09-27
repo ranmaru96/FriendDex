@@ -452,7 +452,6 @@ export function EpisodeFormOverlay({
                 labelStyle={styles.episodeFieldLabel}
                 style={styles.rowAlignStart}
               >
-                <View style={styles.rowContentStack}>
                 <ParticipantChipList
                   chips={participantChips}
                   layout="wrap"
@@ -466,7 +465,14 @@ export function EpisodeFormOverlay({
                     </Pressable>
                   }
                 />
-                {suggestionChips.length > 0 ? (
+              </FormRow>
+              {suggestionChips.length > 0 ? (
+                <View style={[styles.suggestionRow, { gap: kit.formRowGap }]}>
+                  <Text
+                    style={[styles.suggestionLabel, styles.episodeFieldLabel, contentMutedTextStyle(content)]}
+                  >
+                    （候補）
+                  </Text>
                   <View style={[styles.suggestionWell, fieldCorner, contentInputStyle(content)]}>
                     <ParticipantChipList
                       chips={suggestionChips}
@@ -480,9 +486,8 @@ export function EpisodeFormOverlay({
                       }}
                     />
                   </View>
-                ) : null}
                 </View>
-              </FormRow>
+              ) : null}
               <EpisodeFieldDivider />
 
               <FormRow label="タグ" labelStyle={styles.episodeFieldLabel} contentLayout="compact">
@@ -494,7 +499,7 @@ export function EpisodeFormOverlay({
                   onChange={form.setTag}
                   allowCustomValue
                   variant="chip"
-                  pickerLayout="chips"
+                  pickerColumns={2}
                 />
               </FormRow>
               <EpisodeFieldDivider />
@@ -848,8 +853,20 @@ const styles = StyleSheet.create({
     fontSize: Typography.sm,
     fontWeight: '600',
   },
+  suggestionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  suggestionLabel: {
+    fontSize: 12,
+    fontWeight: '400',
+    lineHeight: 16,
+    flexShrink: 0,
+  },
   suggestionWell: {
-    width: '100%',
+    flex: 1,
+    minWidth: 0,
     borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 6,

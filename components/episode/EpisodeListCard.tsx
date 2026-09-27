@@ -1,10 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { EpisodeCardTitle } from '@/components/episode/EpisodeCardTitle';
+import { useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, View, type ReactNode, type StyleProp, type ViewStyle } from 'react-native';
+import { EpisodeCardTitle, EPISODE_DETAIL_SIDE_INSET } from '@/components/episode/EpisodeCardTitle';
 import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { OffsetCard } from '@/components/ui/OffsetCard';
 import { usesOffsetChrome } from '@/constants/designPatterns';
+import { listCardBackgroundColor, listCardShadowStyle } from '@/utils/listCardSurface';
 import { Radius, Theme } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -49,19 +51,54 @@ const TALL_PHOTO_HEIGHT =
 const TALL_PHOTO_WIDTH = TALL_PHOTO_HEIGHT * PHOTO_ASPECT;
 /** コンパクト写真幅（高さ × 4/3） */
 const PHOTO_WIDTH = Math.round(TITLE_META_BLOCK_HEIGHT * PHOTO_ASPECT);
+const LIMITED_AUDIENCE_CHARS_PER_LINE = 10;
+const LIMITED_AUDIENCE_CHAR_PX = 15;
+const LIMITED_AUDIENCE_POP_PADDING_X = 12;
+const LIMITED_AUDIENCE_POP_WIDTH =
+  LIMITED_AUDIENCE_CHARS_PER_LINE * LIMITED_AUDIENCE_CHAR_PX + LIMITED_AUDIENCE_POP_PADDING_X * 2;
 
-function VisibilityModeIcon({ mode }: { mode: EpisodeVisibilityMode }) {
-  return (
-    <View
-      style={styles.visibilityModeIconWrap}
-      accessibilityRole="image"
-      accessibilityLabel={getVisibilityModeLabel(mode)}
-    >
+function VisibilityModeIcon({
+  mode,
+  onPressIn,
+  onPressOut,
+  accessibilityLabel,
+  popover,
+}: {
+  mode: EpisodeVisibilityMode;
+  onPressIn?: () => void;
+  onPressOut?: () => void;
+  accessibilityLabel?: string;
+  popover?: ReactNode;
+}) {
+  const label = accessibilityLabel ?? getVisibilityModeLabel(mode);
+  const icon = (
+    <View style={styles.visibilityModeIconWrap}>
       <Ionicons
         name={getVisibilityModeIconName(mode)}
         size={16}
         color={getVisibilityModeIconColor(mode)}
       />
+    </View>
+  );
+  if (!onPressIn) {
+    return (
+      <View accessibilityRole="image" accessibilityLabel={label}>
+        {icon}
+      </View>
+    );
+  }
+  return (
+    <View style={styles.visibilityModeIconAnchor}>
+      <Pressable
+        onPressIn={onPressIn}
+        onPressOut={onPressOut}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel={label}
+      >
+        {icon}
+      </Pressable>
+      {popover}
     </View>
   );
 }
@@ -95,8 +132,14 @@ export type EpisodeListCardProps = {
   embedded?: boolean;
   /** タイトルを折り返して全文表示（エピソード詳細ページ用） */
   titleMultiline?: boolean;
+  /** 詳細画面だけ、左右に共通の余白を空ける */
+  titleInset?: boolean;
   /** 自動生成後に未記載のとき、タイトル横へ（未記入）を付ける */
   unfilled?: boolean;
+  /** 詳細画面のタイトル横。一覧ではカードの外に出す */
+  byline?: ReactNode;
+  /** 詳細の自分の限定公開。アイコンを押しているあいだ公開対象を出す */
+  revealLimitedAudience?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -121,7 +164,10 @@ export function EpisodeListCard({
   onDelete,
   embedded = false,
   titleMultiline = false,
+  titleInset = false,
   unfilled = false,
+  byline,
+  revealLimitedAudience = false,
   style,
 }: EpisodeListCardProps) {
   const kit = useUiKit();
@@ -138,14 +184,24 @@ export function EpisodeListCard({
     borderWidth: 0.5,
     borderColor: Theme.inputBorder,
   };
-  const episodeCardBackgroundColor =
-    appTheme?.variant === 'black' ? content.contentInputBg : content.contentCard;
+  const episodeCardBackgroundColor = listCardBackgroundColor(
+    appTheme?.variant,
+    content.contentCard,
+  );
+  const blackEpisodeCardLift = listCardShadowStyle(appTheme?.variant);
   const normalizedEpisodeTag = normalizeEpisodeTag(episodeTag);
   const normalizedPosterName = posterName?.trim() ? posterName.trim() : null;
   const showPosterName = visibilityMode == null && normalizedPosterName != null;
   const normalizedEventTitle = eventTitle?.trim() ? eventTitle.trim() : null;
   const eventChipColor = getEventCalendarColor(eventEpisodeTag);
   const resolvedDateLabel = dateLabel?.trim() || formatEpisodeDateForCard(date);
+  const [limitedAudienceOpen, setLimitedAudienceOpen] = useState(false);
+  const canRevealLimitedAudience =
+    revealLimitedAudience && visibilityMode === 'limited' && visibility.length > 0;
+  const limitedAudienceNames = visibility
+    .map((label) => label.trim())
+    .filter((label) => label.length > 0);
+  const limitedAudiencePopColor = appTheme?.variant === 'black' ? '#2c2c2c' : content.contentCard;
 
   if (usePhotoLayout) {
     const resolvedPhotoUris = (photoUris?.length
@@ -174,12 +230,15 @@ export function EpisodeListCard({
         style={[
           styles.photoRightMetaRow,
           titleMultiline ? styles.photoRightMetaRowExpanded : null,
+          titleInset ? styles.detailLineInset : null,
+          canRevealLimitedAudience ? styles.photoRightMetaRowPopover : null,
         ]}
       >
         <Text
           style={[
             styles.episodeCardDateText,
             styles.photoRightMetaDateText,
+            titleMultiline ? styles.episodeCardDateTextDetail : null,
             { color: content.contentTextSecondary },
           ]}
           numberOfLines={1}
@@ -194,7 +253,58 @@ export function EpisodeListCard({
           />
         ) : null}
         {visibilityMode != null ? (
-          <VisibilityModeIcon mode={visibilityMode} />
+          <VisibilityModeIcon
+            mode={visibilityMode}
+            onPressIn={
+              canRevealLimitedAudience ? () => setLimitedAudienceOpen(true) : undefined
+            }
+            onPressOut={
+              canRevealLimitedAudience ? () => setLimitedAudienceOpen(false) : undefined
+            }
+            accessibilityLabel={canRevealLimitedAudience ? '公開対象' : undefined}
+            popover={
+              canRevealLimitedAudience && limitedAudienceOpen ? (
+                <View
+                  pointerEvents="none"
+                  style={[
+                    styles.limitedAudiencePop,
+                    {
+                      width: LIMITED_AUDIENCE_POP_WIDTH,
+                      backgroundColor: limitedAudiencePopColor,
+                      borderColor: content.contentBorder,
+                    },
+                    appTheme?.variant === 'black'
+                      ? styles.limitedAudiencePopShadowDark
+                      : styles.limitedAudiencePopShadowLight,
+                  ]}
+                >
+                  <View style={styles.limitedAudienceTags}>
+                    {limitedAudienceNames.map((name, index) => (
+                      <View
+                        key={`${index}-${name}`}
+                        style={[styles.limitedAudienceTag, contentPersonTagStyle(content)]}
+                      >
+                        <Text
+                          style={[styles.limitedAudienceTagText, contentTagTextStyle(content)]}
+                        >
+                          {name}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View
+                    style={[
+                      styles.limitedAudienceCaret,
+                      {
+                        backgroundColor: limitedAudiencePopColor,
+                        borderColor: content.contentBorder,
+                      },
+                    ]}
+                  />
+                </View>
+              ) : null
+            }
+          />
         ) : showPosterName ? (
           <View style={[styles.episodeParticipantTag, styles.visibilityModeTag, contentPersonTagStyle(content)]}>
             <Text style={[styles.episodeParticipantTagName, contentTagTextStyle(content)]} numberOfLines={1}>
@@ -232,24 +342,43 @@ export function EpisodeListCard({
       </View>
     );
 
-    const titleMetaBlock = (
-      <Pressable
-        onPress={onPress}
-        onLongPress={onLongPress}
-        delayLongPress={delayLongPress}
-        disabled={!onPress && !onLongPress}
-        style={({ pressed }) => [
-          styles.photoRightTopLeft,
-          titleMultiline ? styles.photoRightTopLeftMultiline : null,
-          pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
-        ]}
-      >
-        <View style={titleMultiline ? undefined : styles.photoRightTitleRow}>
-          <EpisodeCardTitle title={title} multiline={titleMultiline} fillRow={false} unfilled={unfilled} />
+    const titleMetaStyle = [
+      styles.photoRightTopLeft,
+      titleMultiline ? styles.photoRightTopLeftMultiline : null,
+    ];
+    const titleMetaInner = (
+      <>
+        <View style={byline ? styles.titleWithByline : titleMultiline ? undefined : styles.photoRightTitleRow}>
+          <View style={byline ? styles.titleWithBylineTitle : undefined}>
+            <EpisodeCardTitle
+              title={title}
+              multiline={titleMultiline}
+              inset={titleInset}
+              fillRow={false}
+              unfilled={unfilled}
+            />
+          </View>
+          {byline ? <View style={styles.titleBylineAlign}>{byline}</View> : null}
         </View>
         {photoRightMetaRow}
-      </Pressable>
+      </>
     );
+    const titleMetaBlock =
+      onPress || onLongPress ? (
+        <Pressable
+          onPress={onPress}
+          onLongPress={onLongPress}
+          delayLongPress={delayLongPress}
+          style={({ pressed }) => [
+            titleMetaStyle,
+            pressed ? styles.photoRightPressablePressed : null,
+          ]}
+        >
+          {titleMetaInner}
+        </Pressable>
+      ) : (
+        <View style={titleMetaStyle}>{titleMetaInner}</View>
+      );
 
     const participantBlock =
       useTallPhoto || hasParticipants ? (
@@ -261,6 +390,7 @@ export function EpisodeListCard({
           style={({ pressed }) => [
             styles.photoRightParticipantRow,
             useTallPhoto ? styles.photoRightParticipantRowInColumn : null,
+            titleInset ? styles.detailLineInset : null,
             pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
           ]}
         >
@@ -397,6 +527,7 @@ export function EpisodeListCard({
             borderColor: content.contentBorder,
             borderWidth: 1,
           },
+          blackEpisodeCardLift,
           style,
         ]}
       >
@@ -419,8 +550,20 @@ export function EpisodeListCard({
           pressed && (onPress || onLongPress) ? styles.photoRightPressablePressed : null,
         ]}
       >
-        <EpisodeCardTitle title={title} multiline={titleMultiline} unfilled={unfilled} />
-        <Text style={[styles.episodeCardDateText, { color: content.contentTextSecondary }]}>
+        <EpisodeCardTitle
+          title={title}
+          multiline={titleMultiline}
+          inset={titleInset}
+          unfilled={unfilled}
+        />
+        {byline}
+        <Text
+          style={[
+            styles.episodeCardDateText,
+            titleMultiline ? styles.episodeCardDateTextDetail : null,
+            { color: content.contentTextSecondary },
+          ]}
+        >
           {resolvedDateLabel}
         </Text>
         {visibilityMode != null ? (
@@ -535,6 +678,7 @@ export function EpisodeListCard({
           borderColor: content.contentBorder,
           borderWidth: 1,
         },
+        blackEpisodeCardLift,
         style,
       ]}
     >
@@ -544,6 +688,19 @@ export function EpisodeListCard({
 }
 
 const styles = StyleSheet.create({
+  titleWithByline: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 6,
+  },
+  titleWithBylineTitle: {
+    flexShrink: 1,
+    minWidth: 0,
+  },
+  /** タグ（高さ28）の中央を、タイトル文字（約20）の中央に合わせる */
+  titleBylineAlign: {
+    marginTop: -4,
+  },
   episodeCard: {
     paddingLeft: 12,
     paddingRight: 6,
@@ -608,6 +765,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'visible',
   },
+  photoRightMetaRowPopover: {
+    overflow: 'visible',
+    zIndex: 4,
+  },
   photoRightMetaDateText: {
     lineHeight: 14,
   },
@@ -658,6 +819,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 14,
     color: '#ffffff',
+  },
+  detailLineInset: {
+    marginHorizontal: EPISODE_DETAIL_SIDE_INSET,
   },
   photoRightParticipantRow: {
     marginTop: META_PARTICIPANT_GAP,
@@ -722,6 +886,11 @@ const styles = StyleSheet.create({
     color: '#64748b',
     flexShrink: 0,
   },
+  /** 詳細のメタ行（高さ26）に対して、日付だけ一段大きくする */
+  episodeCardDateTextDetail: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
   episodeCardActions: {
     flexDirection: 'row',
     gap: 8,
@@ -775,6 +944,64 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 2,
     paddingVertical: 2,
+  },
+  visibilityModeIconAnchor: {
+    flexShrink: 0,
+    position: 'relative',
+    zIndex: 4,
+    overflow: 'visible',
+  },
+  limitedAudiencePop: {
+    position: 'absolute',
+    left: '100%',
+    top: '50%',
+    marginLeft: 10,
+    transform: [{ translateY: '-50%' }],
+    paddingHorizontal: LIMITED_AUDIENCE_POP_PADDING_X,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  limitedAudiencePopShadowLight: {
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  limitedAudiencePopShadowDark: {
+    shadowColor: '#FFFFFF',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.28,
+    shadowRadius: 6,
+    elevation: 6,
+  },
+  limitedAudienceTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+  },
+  limitedAudienceTag: {
+    maxWidth: '100%',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  limitedAudienceTagText: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  limitedAudienceCaret: {
+    position: 'absolute',
+    left: -5,
+    top: '50%',
+    marginTop: -4,
+    width: 8,
+    height: 8,
+    borderLeftWidth: 1,
+    borderBottomWidth: 1,
+    transform: [{ rotate: '45deg' }],
   },
   episodeCardEditButton: {
     width: 32,

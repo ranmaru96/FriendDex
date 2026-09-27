@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { SearchArea, SearchAreaDivider, SearchAreaRow, SearchAreaSelectTrigger, SearchAreaTextInputField } from '@/components/ui/SearchArea';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
@@ -20,6 +22,7 @@ import {
 import { useContentColors } from '@/utils/useContentColors';
 import { EpisodeFormOverlay } from '@/components/episode/EpisodeFormOverlay';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
+import { EpisodeByline, EPISODE_UNREAD_MARK_COLOR } from '@/components/episode/EpisodeByline';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { AddCircleButton } from '@/components/AddCircleButton';
@@ -67,6 +70,25 @@ import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
 type EpisodeRow = { episode: Episode; recordOwnerId: string };
+type EpisodeListSource = 'own' | 'shared';
+
+/** 詳細へ replace で戻ると一覧が作り直される。切り替えと戻り先はモジュールに残す。 */
+let rememberedEpisodeListSource: EpisodeListSource = 'own';
+let rememberedScrollEpisodeId: string | null = null;
+
+function groupSharedEpisodeRows(rows: EpisodeRow[]): { authorId: string; rows: EpisodeRow[] }[] {
+  const groups: { authorId: string; rows: EpisodeRow[] }[] = [];
+  rows.forEach((row) => {
+    const authorId = row.episode.authorFriendId.trim() || row.recordOwnerId;
+    const current = groups[groups.length - 1];
+    if (current && current.authorId === authorId) {
+      current.rows.push(row);
+      return;
+    }
+    groups.push({ authorId, rows: [row] });
+  });
+  return groups;
+}
 
 function collectUniqueEpisodes(friends: Friend[]): EpisodeRow[] {
   const sortedFriends = [...friends].sort((a, b) => a.name.localeCompare(b.name, 'ja'));
@@ -141,13 +163,26 @@ export default function EpisodeScreen() {
     () => new Map()
   );
   const [incomingEpisodeRows, setIncomingEpisodeRows] = useState<EpisodeRow[]>([]);
+  const [episodeListSource, setEpisodeListSourceState] = useState<EpisodeListSource>(
+    rememberedEpisodeListSource
+  );
+  const setEpisodeListSource = useCallback(
+    (value: EpisodeListSource | ((current: EpisodeListSource) => EpisodeListSource)) => {
+      setEpisodeListSourceState((current) => {
+        const next = typeof value === 'function' ? value(current) : value;
+        rememberedEpisodeListSource = next;
+        return next;
+      });
+    },
+    []
+  );
 
   const [isFormVisible, setIsFormVisible] = useState(false);
   const episodeSaveLockRef = useRef(false);
   const mainScrollRef = useRef<ScrollView>(null);
   const scrollContentRef = useRef<View>(null);
   const episodeCardRefs = useRef<Map<string, View>>(new Map());
-  const pendingScrollEpisodeIdRef = useRef<string | null>(null);
+  const pendingScrollEpisodeIdRef = useRef<string | null>(rememberedScrollEpisodeId);
   const [episodeSaving, setEpisodeSaving] = useState(false);
 
   const [episodeListFilter, setEpisodeListFilter] = usePersistedFilter(
@@ -171,8 +206,14 @@ export default function EpisodeScreen() {
       setEpisodeListFilter((prev) => ({ ...prev, participants })),
     [setEpisodeListFilter]
   );
+  const filterAuthorId = episodeListFilter.authorFriendId ?? '';
+  const setFilterAuthorId = useCallback(
+    (authorFriendId: string) => setEpisodeListFilter((prev) => ({ ...prev, authorFriendId })),
+    [setEpisodeListFilter]
+  );
 
   const [tagFilterModalVisible, setTagFilterModalVisible] = useState(false);
+  const [authorFilterModalVisible, setAuthorFilterModalVisible] = useState(false);
   const [filterSelectorVisible, setFilterSelectorVisible] = useState(false);
   const [filterSelectorTab, setFilterSelectorTab] = useState<'individual' | 'group'>('individual');
   const [filterSelectedIndividualIds, setFilterSelectedIndividualIds] = useState<Set<string>>(new Set());
@@ -379,21 +420,58 @@ export default function EpisodeScreen() {
     return filterParticipants
       .filter((participant) => participant.value.trim().length > 0)
       .filter((participant) => !(myselfId && participant.participantType === 'individual' && participant.value === myselfId))
+      .filter(
+        (participant) =>
+          participant.participantType !== 'individual' || friendNameById.has(participant.value)
+      )
       .map((participant) => ({
         kind: participant.participantType,
         value: participant.value,
       }));
-  }, [filterParticipants, myselfId]);
+  }, [filterParticipants, friendNameById, myselfId]);
+
+  const sourceEpisodeRows = useMemo(
+    () =>
+      episodeRows.filter((row) => {
+        const own = canManageEpisode(row.episode, row.recordOwnerId, myselfId);
+        return episodeListSource === 'own' ? own : !own;
+      }),
+    [episodeListSource, episodeRows, myselfId]
+  );
+
+  const sharedAuthorOptions = useMemo(() => {
+    if (episodeListSource !== 'shared') {
+      return [];
+    }
+    const ids = new Set<string>();
+    sourceEpisodeRows.forEach((row) => {
+      const authorId = row.episode.authorFriendId.trim() || row.recordOwnerId;
+      if (authorId && friendNameById.has(authorId)) {
+        ids.add(authorId);
+      }
+    });
+    return [...ids]
+      .map((id) => ({ value: id, label: friendNameById.get(id) ?? '' }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ja'));
+  }, [episodeListSource, friendNameById, sourceEpisodeRows]);
 
   const filteredEpisodeRows = useMemo(() => {
     const normalizedTitle = filterTitle.trim().toLowerCase();
-    const normalizedFilterTag = normalizeEpisodeTag(filterTag);
-    const filterFriendIds = new Set(
-      getEpisodeParticipantFriendIds({ participantEntries: filterParticipantEntries })
-    );
-    return episodeRows.filter((row) => {
+    const sharedMode = episodeListSource === 'shared';
+    const authorId = sharedMode && friendNameById.has(filterAuthorId) ? filterAuthorId : '';
+    const normalizedFilterTag = sharedMode ? '' : normalizeEpisodeTag(filterTag);
+    const filterFriendIds = sharedMode
+      ? new Set<string>()
+      : new Set(getEpisodeParticipantFriendIds({ participantEntries: filterParticipantEntries }));
+    return sourceEpisodeRows.filter((row) => {
       if (normalizedTitle && !row.episode.title.toLowerCase().includes(normalizedTitle)) {
         return false;
+      }
+      if (authorId) {
+        const rowAuthorId = row.episode.authorFriendId.trim() || row.recordOwnerId;
+        if (rowAuthorId !== authorId) {
+          return false;
+        }
       }
       if (normalizedFilterTag && normalizeEpisodeTag(row.episode.tag) !== normalizedFilterTag) {
         return false;
@@ -407,12 +485,28 @@ export default function EpisodeScreen() {
       }
       return true;
     });
-  }, [episodeRows, filterParticipantEntries, filterTag, filterTitle]);
+  }, [
+    episodeListSource,
+    filterAuthorId,
+    filterParticipantEntries,
+    filterTag,
+    filterTitle,
+    friendNameById,
+    sourceEpisodeRows,
+  ]);
+
+  const sharedEpisodeGroups = useMemo(
+    () => (episodeListSource === 'shared' ? groupSharedEpisodeRows(filteredEpisodeRows) : []),
+    [episodeListSource, filteredEpisodeRows]
+  );
 
   const episodeListFiltersActive =
-    filterTitle.trim().length > 0 ||
-    filterTag.trim().length > 0 ||
-    filterParticipantEntries.length > 0;
+    episodeListSource === 'shared'
+      ? filterTitle.trim().length > 0 ||
+        (filterAuthorId.length > 0 && friendNameById.has(filterAuthorId))
+      : filterTitle.trim().length > 0 ||
+        filterTag.trim().length > 0 ||
+        filterParticipantEntries.length > 0;
 
   const scrollToPendingEpisode = useCallback(() => {
     const episodeId = pendingScrollEpisodeIdRef.current;
@@ -421,6 +515,7 @@ export default function EpisodeScreen() {
       return;
     }
     if (episodeListFiltersActive) {
+      rememberedScrollEpisodeId = null;
       pendingScrollEpisodeIdRef.current = null;
       return;
     }
@@ -435,6 +530,7 @@ export default function EpisodeScreen() {
           return;
         }
         mainScrollRef.current?.scrollTo({ y: Math.max(0, y), animated: false });
+        rememberedScrollEpisodeId = null;
         pendingScrollEpisodeIdRef.current = null;
       },
       () => {}
@@ -450,15 +546,29 @@ export default function EpisodeScreen() {
     }, [scrollToPendingEpisode])
   );
 
+  useEffect(() => {
+    if (!listReady || !pendingScrollEpisodeIdRef.current) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      scrollToPendingEpisode();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [episodeListSource, filteredEpisodeRows, listReady, scrollToPendingEpisode]);
+
   const filterParticipantSummary = useMemo(() => {
     const labels = filterParticipants
       .filter((participant) => participant.value.trim().length > 0)
       .filter((participant) => !(myselfId && participant.participantType === 'individual' && participant.value === myselfId))
-      .map((participant) =>
-        participant.participantType === 'individual'
-          ? friendNameById.get(participant.value) ?? participant.value
-          : participant.value
-      );
+      .flatMap((participant) => {
+        if (participant.participantType !== 'individual') {
+          return [participant.value];
+        }
+        if (!friendNameById.has(participant.value)) {
+          return [];
+        }
+        return [friendNameById.get(participant.value) ?? ''];
+      });
     if (labels.length === 0) {
       return '';
     }
@@ -591,6 +701,7 @@ export default function EpisodeScreen() {
     const finish = async (savedId: string, isEdit: boolean) => {
       episodeForm.persistPhotos(savedId, isEdit);
       if (!episodeListFiltersActive) {
+        rememberedScrollEpisodeId = savedId;
         pendingScrollEpisodeIdRef.current = savedId;
       }
       try {
@@ -628,16 +739,68 @@ export default function EpisodeScreen() {
     void finish(created.id, false);
   };
 
+  const renderEpisodeListCard = (row: EpisodeRow) => {
+    const chips = buildParticipantChips(row.episode, friendNameById, {
+      excludeFriendIds: myselfId ? [myselfId] : [],
+      friendPhotoById,
+    });
+    const authorId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
+    const canManage = canManageEpisode(row.episode, row.recordOwnerId, myselfId);
+    const openDetail = () => {
+      if (!episodeListFiltersActive) {
+        rememberedEpisodeListSource = episodeListSource;
+        rememberedScrollEpisodeId = row.episode.id;
+        pendingScrollEpisodeIdRef.current = row.episode.id;
+      }
+      router.push({
+        pathname: '/episode-detail',
+        params: { episodeId: row.episode.id, ownerId: authorId },
+      });
+    };
+    return (
+      <View
+        key={row.episode.id}
+        collapsable={false}
+        onLayout={() => {
+          if (pendingScrollEpisodeIdRef.current === row.episode.id) {
+            scrollToPendingEpisode();
+          }
+        }}
+        ref={(node) => {
+          if (node) {
+            episodeCardRefs.current.set(row.episode.id, node);
+          } else {
+            episodeCardRefs.current.delete(row.episode.id);
+          }
+        }}
+      >
+        <EpisodeListCard
+          embedded={listItemEmbedded}
+          title={row.episode.title}
+          date={row.episode.date}
+          episodeTag={row.episode.tag}
+          chips={chips}
+          visibilityMode={canManage ? row.episode.visibilityMode : undefined}
+          photoUris={photoUrisByEpisodeId.get(row.episode.id) ?? []}
+          unfilled={row.episode.pendingReview === true}
+          onPress={openDetail}
+        />
+      </View>
+    );
+  };
+
   return (
     <>
       <ListScreenTemplate
         fab={
-          <AddCircleButton
-            style={styles.fab}
-            onPress={openCreateForm}
-            disabled={!myselfId}
-            accessibilityLabel="エピソードを追加"
-          />
+          episodeListSource === 'own' ? (
+            <AddCircleButton
+              style={styles.fab}
+              onPress={openCreateForm}
+              disabled={!myselfId}
+              accessibilityLabel="エピソードを追加"
+            />
+          ) : undefined
         }
       >
         <ScrollView
@@ -666,18 +829,75 @@ export default function EpisodeScreen() {
                 onChangeText={setFilterTitle}
                 autoCapitalize="none"
               />
-              <SearchAreaSelectTrigger
-                label="参加者"
-                value={filterParticipantSummary ? 'set' : ''}
-                displayText={filterParticipantSummary}
-                onPress={openFilterParticipantSelector}
-              />
-              <SearchAreaSelectTrigger
-                label="タグ"
-                value={filterTag}
-                displayText={filterTag}
-                onPress={() => setTagFilterModalVisible(true)}
-              />
+              {episodeListSource === 'shared' ? (
+                <SearchAreaSelectTrigger
+                  label="共有元"
+                  value={friendNameById.has(filterAuthorId) ? filterAuthorId : ''}
+                  displayText={
+                    friendNameById.has(filterAuthorId) ? friendNameById.get(filterAuthorId) ?? '' : ''
+                  }
+                  onPress={() => setAuthorFilterModalVisible(true)}
+                />
+              ) : (
+                <>
+                  <SearchAreaSelectTrigger
+                    label="参加者"
+                    value={filterParticipantSummary ? 'set' : ''}
+                    displayText={filterParticipantSummary}
+                    onPress={openFilterParticipantSelector}
+                  />
+                  <SearchAreaSelectTrigger
+                    label="タグ"
+                    value={filterTag}
+                    displayText={filterTag}
+                    onPress={() => setTagFilterModalVisible(true)}
+                  />
+                </>
+              )}
+              <Pressable
+                style={[
+                  styles.episodeSourceToggle,
+                  {
+                    height: kit.searchAreaShowFieldLabels ? 34 : 38,
+                    borderRadius: kit.searchAreaShowFieldLabels ? 17 : 19,
+                    backgroundColor: content.contentSwitchTrackOff,
+                  },
+                ]}
+                onPress={() => {
+                  setEpisodeListSource((current) => (current === 'own' ? 'shared' : 'own'));
+                  mainScrollRef.current?.scrollTo({ y: 0, animated: false });
+                }}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  episodeListSource === 'own'
+                    ? '自分のエピソード。共有に切り替え'
+                    : '共有されたエピソード。自分に切り替え'
+                }
+              >
+                {episodeListSource === 'shared' ? (
+                  <Text style={[styles.episodeSourceLabel, { color: content.contentText }]}>by</Text>
+                ) : null}
+                <View
+                  style={[
+                    styles.episodeSourceKnob,
+                    {
+                      width: (kit.searchAreaShowFieldLabels ? 34 : 38) - 6,
+                      height: (kit.searchAreaShowFieldLabels ? 34 : 38) - 6,
+                      borderRadius: ((kit.searchAreaShowFieldLabels ? 34 : 38) - 6) / 2,
+                      backgroundColor: content.contentSwitchThumbOff,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={episodeListSource === 'own' ? 'person' : 'people'}
+                    size={Math.round(((kit.searchAreaShowFieldLabels ? 34 : 38) - 6) * 0.55)}
+                    color="#111111"
+                  />
+                </View>
+                {episodeListSource === 'own' ? (
+                  <Text style={[styles.episodeSourceLabel, { color: content.contentText }]}>mine</Text>
+                ) : null}
+              </Pressable>
             </SearchAreaRow>
           </SearchArea>
           <SearchAreaDivider />
@@ -685,63 +905,64 @@ export default function EpisodeScreen() {
           {!myselfId ? <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>本人が設定されていません</Text> : null}
           {filteredEpisodeRows.length === 0 ? (
             <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>
-              {episodeRows.length === 0
-                ? '登録されたエピソードはありません。'
+              {sourceEpisodeRows.length === 0
+                ? episodeListSource === 'own'
+                  ? '登録されたエピソードはありません。'
+                  : '共有されたエピソードはありません。'
                 : '条件に一致するエピソードはありません。'}
             </Text>
+          ) : episodeListSource === 'shared' ? (
+            <View>
+              {sharedEpisodeGroups.map((group, index) => (
+                <View key={`${group.authorId}:${group.rows[0]?.episode.id ?? index}`}>
+                  {index > 0 ? (
+                    <View
+                      style={[styles.sharedAuthorDivider, { backgroundColor: content.contentDivider }]}
+                    />
+                  ) : null}
+                  <EpisodeByline
+                    variant="heading"
+                    name={friendNameById.get(group.authorId) ?? group.authorId}
+                    friendId={group.authorId}
+                    photoUri={friendPhotoById.get(group.authorId) ?? null}
+                    unread={group.rows.some((row) => row.episode.incomingUnread === true)}
+                    style={styles.episodeByline}
+                  />
+                  <View>
+                    {group.rows.map((row, rowIndex) => {
+                      const unread = row.episode.incomingUnread === true;
+                      return (
+                        <View key={row.episode.id} style={styles.sharedEpisodeRailRow}>
+                          <View style={styles.sharedEpisodeRail}>
+                            <View
+                              style={[
+                                styles.sharedEpisodeRailLine,
+                                {
+                                  backgroundColor: unread
+                                    ? EPISODE_UNREAD_MARK_COLOR
+                                    : content.contentDivider,
+                                },
+                              ]}
+                            />
+                          </View>
+                          <View
+                            style={[
+                              styles.sharedEpisodeRailBody,
+                              rowIndex < group.rows.length - 1 ? styles.sharedEpisodeRailBodyGap : null,
+                            ]}
+                          >
+                            {renderEpisodeListCard(row)}
+                          </View>
+                        </View>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </View>
           ) : (
             <ListItemGroup gap={kit.episodeListCardGap}>
-              {filteredEpisodeRows.map((row) => {
-                const chips = buildParticipantChips(row.episode, friendNameById, {
-                  excludeFriendIds: myselfId ? [myselfId] : [],
-                  friendPhotoById,
-                });
-                const authorId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
-                const canManage = canManageEpisode(row.episode, row.recordOwnerId, myselfId);
-                const posterName = canManage
-                  ? null
-                  : friendNameById.get(row.episode.authorFriendId) ?? row.episode.authorFriendId;
-                const openDetail = () => {
-                  if (!episodeListFiltersActive) {
-                    pendingScrollEpisodeIdRef.current = row.episode.id;
-                  }
-                  router.push({
-                    pathname: '/episode-detail',
-                    params: { episodeId: row.episode.id, ownerId: authorId },
-                  });
-                };
-                return (
-                  <View
-                    key={row.episode.id}
-                    collapsable={false}
-                    onLayout={() => {
-                      if (pendingScrollEpisodeIdRef.current === row.episode.id) {
-                        scrollToPendingEpisode();
-                      }
-                    }}
-                    ref={(node) => {
-                      if (node) {
-                        episodeCardRefs.current.set(row.episode.id, node);
-                      } else {
-                        episodeCardRefs.current.delete(row.episode.id);
-                      }
-                    }}
-                  >
-                  <EpisodeListCard
-                    embedded={listItemEmbedded}
-                    title={row.episode.title}
-                    date={row.episode.date}
-                    episodeTag={row.episode.tag}
-                    chips={chips}
-                    visibilityMode={canManage ? row.episode.visibilityMode : undefined}
-                    posterName={posterName}
-                    photoUris={photoUrisByEpisodeId.get(row.episode.id) ?? []}
-                    unfilled={row.episode.pendingReview === true}
-                    onPress={openDetail}
-                  />
-                  </View>
-                );
-              })}
+              {filteredEpisodeRows.map(renderEpisodeListCard)}
             </ListItemGroup>
           )}
           </View>
@@ -798,6 +1019,17 @@ export default function EpisodeScreen() {
         onValueChange={setFilterTag}
         onClose={() => setTagFilterModalVisible(false)}
         clearLabel="すべて"
+        columns={2}
+      />
+
+      <OptionPickerModal
+        visible={authorFilterModalVisible}
+        label="共有元"
+        value={filterAuthorId}
+        options={sharedAuthorOptions}
+        onValueChange={setFilterAuthorId}
+        onClose={() => setAuthorFilterModalVisible(false)}
+        clearLabel="すべて"
       />
     </>
   );
@@ -828,6 +1060,57 @@ const styles = StyleSheet.create({
     borderLeftWidth: 0,
     borderRightWidth: 0,
     borderRadius: 0,
+  },
+  episodeSourceToggle: {
+    width: 65,
+    flexDirection: 'row',
+    alignSelf: 'flex-end',
+    alignItems: 'center',
+    padding: 3,
+  },
+  episodeSourceKnob: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.16,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  episodeSourceLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  episodeByline: {
+    marginBottom: 4,
+  },
+  sharedEpisodeRailRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  sharedEpisodeRailBodyGap: {
+    paddingBottom: 4,
+  },
+  sharedEpisodeRail: {
+    width: 24,
+    alignItems: 'center',
+    marginRight: 6,
+  },
+  sharedEpisodeRailLine: {
+    width: 1.5,
+    flex: 1,
+    borderRadius: 1,
+  },
+  sharedEpisodeRailBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  sharedAuthorDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginTop: 10,
+    marginBottom: 8,
   },
   emptyText: {
     fontSize: 14,

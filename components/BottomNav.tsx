@@ -19,9 +19,9 @@ const TABS: {
   label: string;
   icon: ComponentProps<typeof Ionicons>['name'];
 }[] = [
-  { key: 'home', label: '一覧', icon: 'people-outline' },
   { key: 'calendar', label: 'カレンダー', icon: 'calendar-outline' },
   { key: 'episode', label: 'エピソード', icon: 'book-outline' },
+  { key: 'home', label: '一覧', icon: 'people-outline' },
   { key: 'tasks', label: 'タスク', icon: 'checkbox-outline' },
   { key: 'tools', label: 'ツール', icon: 'construct-outline' },
 ];

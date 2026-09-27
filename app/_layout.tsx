@@ -1,5 +1,6 @@
 import '../sentry';
 import { Stack, usePathname, useRouter } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import * as Sentry from '@sentry/react-native';
 import { useEffect, useState } from 'react';
 import { InteractionManager, Pressable, StyleSheet, View } from 'react-native';
@@ -29,7 +30,11 @@ import {
   shouldHideHeader,
   shouldKeepSharedHeaderFrame,
 } from '../utils/bottomNavVisibility';
-import { peekNextReplaceAsPop, resolveStackAnimation } from '../utils/tabTransition';
+import {
+  peekNextReplaceAsPop,
+  resolveStackAnimation,
+  suppressNextTabSlideOnce,
+} from '../utils/tabTransition';
 import { useTabStackBackHandler } from '@/hooks/useTabStackBackHandler';
 import { useTabStackSync } from '@/hooks/useTabStackSync';
 import { getMyselfSetupPhase, initializeDatabase, ensureDatabaseOpened } from '../db';
@@ -43,6 +48,12 @@ const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'tools',
   'tasks',
 ]);
+
+/** プロセスが生きているあいだは、起動時のカレンダー誘導を繰り返さない。 */
+let launchRouteChosen = false;
+
+const isListIndexPath = (pathname: string): boolean =>
+  pathname === '/' || pathname === '/index';
 
 function PastEventConversionScheduler() {
   usePastEventConversionSchedule();
@@ -171,13 +182,23 @@ function AppShell() {
   const onSetupRoute = pathname.includes('setup-myself');
   const onLoginRoute = pathname.includes('login');
   const loggedOut = configured && !session;
+  const [holdLaunchList, setHoldLaunchList] = useState(() => !launchRouteChosen);
+  const coveringLaunchList =
+    holdLaunchList &&
+    authReady &&
+    !loggedOut &&
+    !needsSetup &&
+    !onSetupRoute &&
+    !onLoginRoute &&
+    isListIndexPath(pathname);
   const hideBottomNav =
     shouldHideBottomNav(pathname) ||
     suppressBottomNav ||
     needsSetup ||
     onSetupRoute ||
     onLoginRoute ||
-    loggedOut;
+    loggedOut ||
+    coveringLaunchList;
   const activeTab = getActiveTab(pathname);
   useTabStackSync();
   useTabStackBackHandler(!hideBottomNav && !needsSetup && !onSetupRoute && !onLoginRoute);
@@ -203,7 +224,23 @@ function AppShell() {
 
     if (!setupNeeded) {
       if (onLogin || onSetup) {
-        router.replace('/');
+        launchRouteChosen = true;
+        setHoldLaunchList(false);
+        router.replace('/calendar');
+        return;
+      }
+      if (!launchRouteChosen) {
+        launchRouteChosen = true;
+        if (isListIndexPath(pathname) && !Notifications.getLastNotificationResponse()) {
+          suppressNextTabSlideOnce();
+          router.replace('/calendar');
+          return;
+        }
+        setHoldLaunchList(false);
+        return;
+      }
+      if (!isListIndexPath(pathname)) {
+        setHoldLaunchList(false);
       }
       return;
     }
@@ -248,7 +285,8 @@ function AppShell() {
         />
         {(!authReady ||
           (loggedOut && !onLoginRoute) ||
-          (needsSetup && !onLoginRoute && !onSetupRoute)) ? (
+          (needsSetup && !onLoginRoute && !onSetupRoute) ||
+          coveringLaunchList) ? (
           <View
             pointerEvents="auto"
             style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.screenBackground }]}

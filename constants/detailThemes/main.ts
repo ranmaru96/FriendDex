@@ -1,9 +1,9 @@
 import type { DetailDesignBundle, DetailTabDef } from './types';
 
 const DETAIL_TABS: DetailTabDef[] = [
+  { key: 'エピソード', icon: 'film-outline', caption: 'episode', color: '#e07a2a' },
   { key: '情報', icon: 'book-outline', caption: 'info', color: '#4a7fd4' },
   { key: 'ステータス', icon: 'stats-chart-outline', caption: 'status', color: '#c9a227' },
-  { key: 'エピソード', icon: 'film-outline', caption: 'episode', color: '#e07a2a' },
   { key: '習性', icon: 'cat', iconSet: 'material', caption: 'habit', color: '#3a9d5a' },
   { key: '彼曰く', icon: 'comment-account-outline', iconSet: 'material', caption: 'says', color: '#d44a4a' },
   { key: 'メモ', icon: 'notebook', iconSet: 'material', caption: 'note', color: '#8b5fd4' },

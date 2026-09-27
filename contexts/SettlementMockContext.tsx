@@ -9,14 +9,14 @@ import {
   type ReactNode,
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { getAllFriends, getMyself, initializeDatabase } from '@/db';
+import { getAllFriends, getMockSettlementRoomById, getMyself, initializeDatabase } from '@/db';
 import { settlementStore } from '@/repositories/local/settlementStore';
 import {
   commitSharedSettlementExpense,
   commitSharedSettlementRoom,
   pushSharedSettlementCompletion,
-  SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE,
 } from '@/lib/sharedSettlementSync';
+import { getSupabaseClient } from '@/lib/supabase';
 import { asAuthUserId, getFriendLinkedAuthUserId } from '@/utils/linkedAuthUser';
 import type {
   CreateMockSettlementExpenseInput,
@@ -28,6 +28,12 @@ import type {
 } from '@/types/settlementMock';
 import { buildFriendNameById } from '@/utils/moneyLoanHelpers';
 import { parseSettlementRoomIdFromTransferKey } from '@/utils/settlementTransferHelpers';
+import {
+  SETTLED_MONEY_LOCK_MESSAGE,
+  expenseMoneyFieldsChanged,
+  roomHasSettledTransfer,
+  settlementMemberRemovalBlockReason,
+} from '@/utils/settlementRoomEdit';
 
 type SettlementMockContextValue = {
   rooms: MockSettlementRoom[];
@@ -44,7 +50,24 @@ type SettlementMockContextValue = {
   addExpense: (
     input: CreateMockSettlementExpenseInput
   ) => Promise<{ expense: MockSettlementExpense | null; errorMessage: string | null }>;
+  updateExpense: (
+    roomId: string,
+    expense: MockSettlementExpense
+  ) => Promise<{ ok: boolean; errorMessage: string | null }>;
+  deleteExpense: (
+    roomId: string,
+    expenseId: string
+  ) => Promise<{ ok: boolean; errorMessage: string | null }>;
+  addRoomMembers: (
+    roomId: string,
+    friendIds: string[]
+  ) => Promise<{ ok: boolean; errorMessage: string | null }>;
+  removeRoomMember: (
+    roomId: string,
+    memberId: string
+  ) => Promise<{ ok: boolean; errorMessage: string | null }>;
   getRoom: (roomId: string) => MockSettlementRoom | undefined;
+  completedTransferKeys: ReadonlySet<string>;
   isTransferCompleted: (key: string) => boolean;
   toggleTransferCompleted: (key: string) => Promise<{ errorMessage: string | null }>;
   loadIfNeeded: () => void;
@@ -52,6 +75,19 @@ type SettlementMockContextValue = {
 };
 
 const SettlementMockContext = createContext<SettlementMockContextValue | null>(null);
+
+async function readMyUserId(): Promise<string> {
+  const supabase = getSupabaseClient();
+  if (!supabase) {
+    return '';
+  }
+  const { data } = await supabase.auth.getSession();
+  return data.session?.user.id?.trim().toLowerCase() ?? '';
+}
+
+function roomMoneyIsLocked(room: MockSettlementRoom): boolean {
+  return roomHasSettledTransfer(room, settlementStore.loadCompletedTransferKeys());
+}
 
 export function SettlementMockProvider({ children }: { children: ReactNode }) {
   const loadedRef = useRef(true);
@@ -119,14 +155,12 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       members,
       expenses: [],
       createdAt: new Date().toISOString(),
+      createdByUserId: await readMyUserId(),
     };
 
-    const published = await commitSharedSettlementRoom(room, { requireLinkedPeer: true });
+    const published = await commitSharedSettlementRoom(room);
     if (published.errorMessage) {
       return { room: null, errorMessage: published.errorMessage };
-    }
-    if (published.skipped) {
-      return { room: null, errorMessage: SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE };
     }
 
     settlementStore.saveRoom(room, { skipSharedPush: true });
@@ -146,15 +180,9 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
     if (!current) {
       return { ok: false, errorMessage: 'グループが見つかりません。' };
     }
-    const published = await commitSharedSettlementRoom(
-      { ...current, title: normalizedTitle },
-      { requireLinkedPeer: true }
-    );
+    const published = await commitSharedSettlementRoom({ ...current, title: normalizedTitle });
     if (published.errorMessage) {
       return { ok: false, errorMessage: published.errorMessage };
-    }
-    if (published.skipped) {
-      return { ok: false, errorMessage: SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE };
     }
     const ok = settlementStore.updateRoomTitle(roomId, normalizedTitle, { skipSharedPush: true });
     if (!ok) {
@@ -243,7 +271,6 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       if (!title || amount <= 0 || splitMemberIds.length === 0) {
         return { expense: null, errorMessage: 'タイトルと金額を入力してください。' };
       }
-
       const expense: MockSettlementExpense = {
         id: uuidv4(),
         payerMemberId: input.payerMemberId,
@@ -256,9 +283,6 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       const published = await commitSharedSettlementExpense(input.roomId, expense);
       if (published.errorMessage) {
         return { expense: null, errorMessage: published.errorMessage };
-      }
-      if (published.skipped) {
-        return { expense: null, errorMessage: SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE };
       }
 
       const saved = settlementStore.saveExpense(input.roomId, expense, { skipSharedPush: true });
@@ -274,6 +298,167 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
         )
       );
       return { expense, errorMessage: null };
+    },
+    []
+  );
+
+  const updateExpense = useCallback(
+    async (
+      roomId: string,
+      expense: MockSettlementExpense
+    ): Promise<{ ok: boolean; errorMessage: string | null }> => {
+      initializeDatabase();
+      const room = getMockSettlementRoomById(roomId);
+      if (!room) {
+        return { ok: false, errorMessage: 'グループが見つかりません。' };
+      }
+      const current = room.expenses.find((item) => item.id === expense.id);
+      if (!current) {
+        return { ok: false, errorMessage: '支出が見つかりません。' };
+      }
+      const title = expense.title.trim();
+      const amount = Math.floor(expense.amount);
+      const splitMemberIds = expense.splitMemberIds.filter(Boolean);
+      if (!title || amount <= 0 || splitMemberIds.length === 0 || !expense.payerMemberId.trim()) {
+        return { ok: false, errorMessage: 'タイトルと金額を入力してください。' };
+      }
+      const nextExpense: MockSettlementExpense = {
+        ...current,
+        title,
+        amount,
+        payerMemberId: expense.payerMemberId,
+        splitMemberIds,
+      };
+      if (expenseMoneyFieldsChanged(current, nextExpense) && roomMoneyIsLocked(room)) {
+        return { ok: false, errorMessage: SETTLED_MONEY_LOCK_MESSAGE };
+      }
+      const nextRoom: MockSettlementRoom = {
+        ...room,
+        expenses: room.expenses.map((item) => (item.id === nextExpense.id ? nextExpense : item)),
+      };
+      const published = await commitSharedSettlementRoom(nextRoom);
+      if (published.errorMessage) {
+        return { ok: false, errorMessage: published.errorMessage };
+      }
+      const ok = settlementStore.updateExpense(roomId, nextExpense, { skipSharedPush: true });
+      if (!ok) {
+        return { ok: false, errorMessage: '支出の更新に失敗しました。' };
+      }
+      setRooms((prev) =>
+        prev.map((item) => (item.id === roomId ? { ...item, expenses: nextRoom.expenses } : item))
+      );
+      return { ok: true, errorMessage: null };
+    },
+    []
+  );
+
+  const deleteExpense = useCallback(
+    async (roomId: string, expenseId: string): Promise<{ ok: boolean; errorMessage: string | null }> => {
+      initializeDatabase();
+      const room = getMockSettlementRoomById(roomId);
+      if (!room) {
+        return { ok: false, errorMessage: 'グループが見つかりません。' };
+      }
+      if (!room.expenses.some((expense) => expense.id === expenseId)) {
+        return { ok: false, errorMessage: '支出が見つかりません。' };
+      }
+      if (roomMoneyIsLocked(room)) {
+        return { ok: false, errorMessage: SETTLED_MONEY_LOCK_MESSAGE };
+      }
+      const nextRoom: MockSettlementRoom = {
+        ...room,
+        expenses: room.expenses.filter((expense) => expense.id !== expenseId),
+      };
+      const published = await commitSharedSettlementRoom(nextRoom);
+      if (published.errorMessage) {
+        return { ok: false, errorMessage: published.errorMessage };
+      }
+      const ok = settlementStore.deleteExpense(roomId, expenseId, { skipSharedPush: true });
+      if (!ok) {
+        return { ok: false, errorMessage: '支出の削除に失敗しました。' };
+      }
+      setRooms((prev) =>
+        prev.map((item) => (item.id === roomId ? { ...item, expenses: nextRoom.expenses } : item))
+      );
+      return { ok: true, errorMessage: null };
+    },
+    []
+  );
+
+  const addRoomMembers = useCallback(
+    async (roomId: string, friendIds: string[]): Promise<{ ok: boolean; errorMessage: string | null }> => {
+      initializeDatabase();
+      const room = getMockSettlementRoomById(roomId);
+      if (!room) {
+        return { ok: false, errorMessage: 'グループが見つかりません。' };
+      }
+      const friends = getAllFriends();
+      const myselfId = getMyself();
+      const friendNameById = buildFriendNameById(friends);
+      const existingFriendIds = new Set(room.members.map((member) => member.friendId));
+      const additions: MockSettlementMember[] = [];
+      friendIds.forEach((friendId) => {
+        const normalized = friendId.trim();
+        if (!normalized || (myselfId && normalized === myselfId) || existingFriendIds.has(normalized)) {
+          return;
+        }
+        existingFriendIds.add(normalized);
+        additions.push({
+          id: uuidv4(),
+          friendId: normalized,
+          displayName: friendNameById.get(normalized) ?? normalized,
+          ledgerSynced: Boolean(asAuthUserId(getFriendLinkedAuthUserId(normalized))),
+        });
+      });
+      if (additions.length === 0) {
+        return { ok: false, errorMessage: '追加するメンバーを選んでください。' };
+      }
+      const nextRoom: MockSettlementRoom = { ...room, members: [...room.members, ...additions] };
+      const published = await commitSharedSettlementRoom(nextRoom);
+      if (published.errorMessage) {
+        return { ok: false, errorMessage: published.errorMessage };
+      }
+      for (const member of additions) {
+        const saved = settlementStore.addMember(roomId, member, { skipSharedPush: true });
+        if (!saved) {
+          return { ok: false, errorMessage: 'メンバーの保存に失敗しました。' };
+        }
+      }
+      setRooms((prev) =>
+        prev.map((item) => (item.id === roomId ? { ...item, members: nextRoom.members } : item))
+      );
+      return { ok: true, errorMessage: null };
+    },
+    []
+  );
+
+  const removeRoomMember = useCallback(
+    async (roomId: string, memberId: string): Promise<{ ok: boolean; errorMessage: string | null }> => {
+      initializeDatabase();
+      const room = getMockSettlementRoomById(roomId);
+      if (!room) {
+        return { ok: false, errorMessage: 'グループが見つかりません。' };
+      }
+      const reason = settlementMemberRemovalBlockReason(room, memberId, getMyself(), await readMyUserId());
+      if (reason) {
+        return { ok: false, errorMessage: reason };
+      }
+      const nextRoom: MockSettlementRoom = {
+        ...room,
+        members: room.members.filter((member) => member.id !== memberId),
+      };
+      const published = await commitSharedSettlementRoom(nextRoom);
+      if (published.errorMessage) {
+        return { ok: false, errorMessage: published.errorMessage };
+      }
+      const ok = settlementStore.deleteMember(roomId, memberId, { skipSharedPush: true });
+      if (!ok) {
+        return { ok: false, errorMessage: 'メンバーの削除に失敗しました。' };
+      }
+      setRooms((prev) =>
+        prev.map((item) => (item.id === roomId ? { ...item, members: nextRoom.members } : item))
+      );
+      return { ok: true, errorMessage: null };
     },
     []
   );
@@ -298,9 +483,6 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
     if (published.errorMessage) {
       return { errorMessage: published.errorMessage };
     }
-    if (published.skipped) {
-      return { errorMessage: SHARED_SETTLEMENT_PEER_REQUIRED_MESSAGE };
-    }
     settlementStore.setTransferCompleted(key, willComplete, { skipSharedPush: true });
     setCompletedTransferKeys((prev) => {
       const next = new Set(prev);
@@ -323,7 +505,12 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       acceptInvite,
       declineInvite,
       addExpense,
+      updateExpense,
+      deleteExpense,
+      addRoomMembers,
+      removeRoomMember,
       getRoom,
+      completedTransferKeys,
       isTransferCompleted,
       toggleTransferCompleted,
       loadIfNeeded,
@@ -337,7 +524,12 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
       acceptInvite,
       declineInvite,
       addExpense,
+      updateExpense,
+      deleteExpense,
+      addRoomMembers,
+      removeRoomMember,
       getRoom,
+      completedTransferKeys,
       isTransferCompleted,
       toggleTransferCompleted,
       loadIfNeeded,

@@ -35,6 +35,7 @@ import { buildMoneyLoanCounterpartyFriends, getRecentTogetherFriendIdsFromPastEv
 import {
   buildFriendNameById,
   buildMoneyLoanParticipantsFromSelectorPicks,
+  allocateDatedMoneyLoanTitle,
   buildSessionTitleById,
   resolveMoneyLoanSessionTitle,
 } from '@/utils/moneyLoanHelpers';
@@ -73,7 +74,17 @@ export function SettlementIndividualLoanPanel() {
   const affiliationOptions = loanUi.affiliationOptions;
   const experienceOptions = loanUi.experienceOptions;
 
-  const [title, setTitle] = useState(() => resolveMoneyLoanSessionTitle(''));
+  const [title, setTitle] = useState(() =>
+    allocateDatedMoneyLoanTitle(loanUi.sessions.map((session) => session.title))
+  );
+  const [titleIsAutomatic, setTitleIsAutomatic] = useState(true);
+
+  useEffect(() => {
+    if (!titleIsAutomatic) {
+      return;
+    }
+    setTitle(allocateDatedMoneyLoanTitle(sessions.map((session) => session.title)));
+  }, [sessions, titleIsAutomatic]);
   const [friendId, setFriendId] = useState<string | null>(null);
   const [direction, setDirection] = useState<MoneyLoanDirection>('lent');
   const [amountText, setAmountText] = useState('');
@@ -258,8 +269,13 @@ export function SettlementIndividualLoanPanel() {
     });
   }, []);
 
-  const resetForm = () => {
-    setTitle(resolveMoneyLoanSessionTitle(''));
+  const resetForm = (usedTitle?: string) => {
+    const titles = sessions.map((session) => session.title);
+    if (usedTitle?.trim()) {
+      titles.push(usedTitle);
+    }
+    setTitleIsAutomatic(true);
+    setTitle(allocateDatedMoneyLoanTitle(titles));
     setFriendId(null);
     setDirection('lent');
     setAmountText('');
@@ -270,8 +286,13 @@ export function SettlementIndividualLoanPanel() {
     if (!requireOnline() || writing) {
       return;
     }
-    const resolvedTitle = resolveMoneyLoanSessionTitle(title);
-    if (resolvedTitle !== title.trim()) {
+    const trimmedTitle = title.trim();
+    const takenTitles = new Set(sessions.map((session) => session.title.trim().toLowerCase()));
+    const resolvedTitle =
+      !trimmedTitle || (titleIsAutomatic && takenTitles.has(trimmedTitle.toLowerCase()))
+        ? allocateDatedMoneyLoanTitle(sessions.map((session) => session.title))
+        : trimmedTitle;
+    if (resolvedTitle !== trimmedTitle) {
       setTitle(resolvedTitle);
     }
     if (!friendId) {
@@ -296,7 +317,7 @@ export function SettlementIndividualLoanPanel() {
         setFormError(errorMessage ?? '登録に失敗しました。');
         return;
       }
-      resetForm();
+      resetForm(resolvedTitle);
       loadData();
     } finally {
       setWriting(false);
@@ -443,7 +464,10 @@ export function SettlementIndividualLoanPanel() {
           <TextInput
             style={formStyles.textInput}
             value={title}
-            onChangeText={setTitle}
+            onChangeText={(value) => {
+              setTitleIsAutomatic(false);
+              setTitle(value);
+            }}
             placeholder="例: ランチ代"
             placeholderTextColor={content.contentTextSecondary}
           />

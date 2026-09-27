@@ -26,6 +26,7 @@ import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useJapaneseHolidays } from '@/hooks/useJapaneseHolidays';
 import { useTapUnlessHorizontalScroll } from '@/hooks/useTapUnlessHorizontalScroll';
+import { listCardBackgroundColor, listCardShadowStyle } from '@/utils/listCardSurface';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   getAllFriends,
@@ -190,13 +191,8 @@ export default function CalendarScreen() {
   const isScheduleGrid = kit.calendarMonthLayout === 'scheduleGrid';
   const isEdgeToEdge = kit.calendarScreenPaddingHorizontal === 0;
   const eventMetaLayout: MetaTitleRowLayout = isScheduleGrid ? 'column' : 'stacked';
-  const roundedEventCardElevation = {
-    shadowColor: '#000000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 2,
-  };
+  const eventCardFill = listCardBackgroundColor(appTheme?.variant, content.contentCard);
+  const eventCardShadow = isOffsetPattern ? null : listCardShadowStyle(appTheme?.variant);
   const contentCardSurface = {
     backgroundColor: content.contentCard,
     borderColor: content.contentBorder,
@@ -393,7 +389,7 @@ export default function CalendarScreen() {
   };
 
   const handleOpenEvent = (eventId: string) => {
-    router.push({ pathname: '/event', params: { eventId } });
+    router.push({ pathname: '/event-detail', params: { eventId } });
   };
 
   const handleOpenFriendDetail = (friendId: string) => {
@@ -525,24 +521,24 @@ export default function CalendarScreen() {
             {eventsForSelectedDate.length === 0 ? (
               <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
                 {isOffsetPattern ? (
-                  <OffsetCard>
+                  <OffsetCard contentStyle={{ backgroundColor: eventCardFill }}>
                     <View style={styles.emptyCardCodex}>
                       <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
                       <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
                     </View>
                   </OffsetCard>
                 ) : (
-                  <View style={[styles.eventShadow, roundedEventCardElevation]}>
-                    <View
-                      style={[
-                        styles.emptyCard,
-                        contentCardSurface,
-                        styles.roundedEventCard,
-                      ]}
-                    >
-                      <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
-                      <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
-                    </View>
+                  <View
+                    style={[
+                      styles.emptyCard,
+                      contentCardSurface,
+                      styles.roundedEventCard,
+                      { backgroundColor: eventCardFill },
+                      eventCardShadow,
+                    ]}
+                  >
+                    <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
+                    <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
                   </View>
                 )}
               </View>
@@ -563,20 +559,28 @@ export default function CalendarScreen() {
                       style={[
                         styles.eventCard,
                         contentCardSurface,
+                        { backgroundColor: eventCardFill },
                         isCompactEventCard ? styles.eventCardCompact : null,
                         styles.roundedEventCard,
+                        eventCardShadow,
                         isOffsetPattern
-                          ? { borderWidth: 0, borderRadius: 0, backgroundColor: 'transparent' }
+                          ? {
+                              borderWidth: 0,
+                              borderRadius: 0,
+                              backgroundColor: 'transparent',
+                              shadowOpacity: 0,
+                              elevation: 0,
+                            }
                           : null,
                       ]}
                     />
                   );
                   return isOffsetPattern ? (
-                    <OffsetCard key={event.id}>{body}</OffsetCard>
-                  ) : (
-                    <View key={event.id} style={[styles.eventShadow, roundedEventCardElevation]}>
+                    <OffsetCard key={event.id} contentStyle={{ backgroundColor: eventCardFill }}>
                       {body}
-                    </View>
+                    </OffsetCard>
+                  ) : (
+                    <View key={event.id}>{body}</View>
                   );
                 })}
               </View>
@@ -671,16 +675,6 @@ const styles = StyleSheet.create({
     borderRadius: 0,
     borderWidth: 0,
     backgroundColor: Theme.card,
-  },
-  eventShadow: {
-    borderRadius: Radius.md,
-    backgroundColor: 'transparent',
-    ...HomeCardElevation,
-  },
-  eventShadowEdgeToEdge: {
-    borderRadius: 0,
-    shadowOpacity: 0,
-    elevation: 0,
   },
   eventCard: {
     backgroundColor: Theme.card,

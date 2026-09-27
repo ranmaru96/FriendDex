@@ -30,6 +30,8 @@ export type MockSettlementRoom = {
   members: MockSettlementMember[];
   expenses: MockSettlementExpense[];
   createdAt: string;
+  /** 部屋を作ったアカウント。空なら未共有の自分用。 */
+  createdByUserId?: string;
 };
 
 /** 自分宛: 相手のグループを自分の管理台帳に載せるかの承認依頼（片方向フォロー時） */

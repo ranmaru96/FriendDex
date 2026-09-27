@@ -29,7 +29,6 @@ import {
 import { pullSharedSettlementRooms } from '@/lib/sharedSettlementSync';
 import { readLocalMoneyLoanUiState } from '@/utils/settlementLocalSnapshot';
 import { requireOnline } from '@/lib/networkReachability';
-import type { SettlementExpense, SettlementRoomMember } from '@/types/settlement';
 import { buildParticipantChipDisplays } from '@/utils/episodeHelpers';
 import { buildMoneyLoanCounterpartyFriends, getRecentTogetherFriendIdsFromPastEvents } from '@/utils/eventRecencyHelpers';
 import {
@@ -38,15 +37,10 @@ import {
   buildSessionTitleById,
 } from '@/utils/moneyLoanHelpers';
 import {
-  computeMemberBalances,
-  computeSettlementTransfers,
-} from '@/utils/settlementEngine';
-import { buildSettlementTransferDisplays } from '@/utils/settlementTransferHelpers';
-import { buildSettlementPersonAggregates } from '@/utils/settlementPersonAggregates';
-import {
   partitionPersonAggregates,
   partitionSettlementRooms,
   partitionTransferSections,
+  getRoomDisplayTransfers,
 } from '@/utils/settlementListPartition';
 import {
   mergeMoneyLoansIntoPersonAggregates,
@@ -54,6 +48,7 @@ import {
   isMoneyLoanBalanceSectionId,
   parseMoneyLoanBalanceKey,
 } from '@/utils/settlementMoneyLoanBridge';
+import { buildSettlementPersonAggregates } from '@/utils/settlementPersonAggregates';
 import { withResolvedSettlementRoomNames } from '@/utils/settlementMockHelpers';
 import { canToggleGroupTransfer } from '@/utils/settlementToggleAccess';
 import {
@@ -76,33 +71,6 @@ const SETTLEMENT_TAB_DEFS: { key: SettlementTab; caption: string; icon: PillTabI
   { key: 'balances', caption: '清算', icon: 'swap-horizontal-outline' },
 ];
 
-type MockRoom = ReturnType<typeof useSettlementMock>['rooms'][number];
-
-function mockRoomToEngine(room: MockRoom) {
-  const members: SettlementRoomMember[] = room.members.map((member) => ({
-    id: member.id,
-    roomId: room.id,
-    userId: null,
-    displayName: member.displayName,
-    localFriendId: member.friendId,
-    role: member.friendId === 'myself' ? 'owner' : 'member',
-    joinedAt: room.createdAt,
-  }));
-  const expenses: SettlementExpense[] = room.expenses.map((expense) => ({
-    id: expense.id,
-    roomId: room.id,
-    payerMemberId: expense.payerMemberId,
-    title: expense.title,
-    amount: expense.amount,
-    splitRule: { type: 'even', memberIds: expense.splitMemberIds },
-    memo: '',
-    isSettled: false,
-    createdAt: expense.createdAt,
-    updatedAt: expense.createdAt,
-  }));
-  return { members, expenses };
-}
-
 export default function SettlementScreen() {
   const router = useRouter();
   const formStyles = useMoneyLoanFormStyles();
@@ -116,7 +84,7 @@ export default function SettlementScreen() {
     ],
     [patternColors.accent, patternColors.cyan, patternColors.gold]
   );
-  const { rooms, invites, createRoom, acceptInvite, declineInvite, isTransferCompleted, toggleTransferCompleted, reloadFromStore } =
+  const { rooms, invites, createRoom, acceptInvite, declineInvite, completedTransferKeys, isTransferCompleted, toggleTransferCompleted, reloadFromStore } =
     useSettlementMock();
   const [activeTab, setActiveTab] = useState<SettlementTab>('individual');
   const [balanceViewMode, setBalanceViewMode] = useState<BalanceViewMode>('room');
@@ -321,23 +289,16 @@ export default function SettlementScreen() {
   const transferSections = useMemo(() => {
     const fromRooms = roomsWithNames
       .map((room) => {
-        const { members, expenses } = mockRoomToEngine(room);
-        if (members.length === 0 || expenses.length === 0) {
+        const displayTransfers = getRoomDisplayTransfers(room, completedTransferKeys);
+        if (displayTransfers.length === 0) {
           return null;
         }
-        const balances = computeMemberBalances(members, expenses);
-        const transfers = computeSettlementTransfers(balances);
-        if (transfers.length === 0) {
-          return null;
-        }
-        const nameByMemberId = new Map(balances.map((balance) => [balance.memberId, balance.displayName]));
-        const displayTransfers = buildSettlementTransferDisplays(room.id, transfers, nameByMemberId);
         return { room, displayTransfers };
       })
       .filter((section): section is NonNullable<typeof section> => section !== null);
     const fromLoans = buildMoneyLoanTransferSections(moneyLoanSessions, moneyLoans, friendNameById);
     return [...fromRooms, ...fromLoans];
-  }, [roomsWithNames, moneyLoanSessions, moneyLoans, friendNameById]);
+  }, [roomsWithNames, completedTransferKeys, moneyLoanSessions, moneyLoans, friendNameById]);
 
   const personAggregates = useMemo(() => {
     const roomOnlySections = transferSections.filter(

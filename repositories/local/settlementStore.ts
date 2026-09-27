@@ -1,4 +1,7 @@
 import {
+  addMockSettlementMember,
+  deleteMockSettlementExpense,
+  deleteMockSettlementMember,
   getAllMockSettlementRooms,
   getSettlementCompletedTransferKeys,
   insertMockSettlementExpense,
@@ -6,6 +9,7 @@ import {
   initializeDatabase,
   setMockSettlementMemberLedgerSynced,
   setSettlementTransferCompleted,
+  updateMockSettlementExpense,
   updateMockSettlementRoomTitle,
 } from '@/db';
 import {
@@ -74,6 +78,62 @@ export const settlementStore = {
       }
     }
     return saved;
+  },
+
+  updateExpense(
+    roomId: string,
+    expense: MockSettlementExpense,
+    options?: SettlementPersistOptions
+  ): boolean {
+    initializeDatabase();
+    const ok = updateMockSettlementExpense(roomId, expense);
+    if (ok) {
+      scheduleOwnedSettlementRoomSync(roomId);
+      if (!options?.skipSharedPush) {
+        schedulePushSharedSettlementRoom(roomId);
+      }
+    }
+    return ok;
+  },
+
+  deleteExpense(roomId: string, expenseId: string, options?: SettlementPersistOptions): boolean {
+    initializeDatabase();
+    const ok = deleteMockSettlementExpense(roomId, expenseId);
+    if (ok) {
+      scheduleOwnedSettlementRoomSync(roomId);
+      if (!options?.skipSharedPush) {
+        schedulePushSharedSettlementRoom(roomId);
+      }
+    }
+    return ok;
+  },
+
+  deleteMember(roomId: string, memberId: string, options?: SettlementPersistOptions): boolean {
+    initializeDatabase();
+    const ok = deleteMockSettlementMember(roomId, memberId);
+    if (ok) {
+      scheduleOwnedSettlementRoomSync(roomId);
+      if (!options?.skipSharedPush) {
+        schedulePushSharedSettlementRoom(roomId);
+      }
+    }
+    return ok;
+  },
+
+  addMember(
+    roomId: string,
+    member: MockSettlementRoom['members'][number],
+    options?: SettlementPersistOptions
+  ): boolean {
+    initializeDatabase();
+    const ok = addMockSettlementMember(roomId, member);
+    if (ok) {
+      scheduleOwnedSettlementRoomSync(roomId);
+      if (!options?.skipSharedPush) {
+        schedulePushSharedSettlementRoom(roomId);
+      }
+    }
+    return ok;
   },
 
   setMemberLedgerSynced(roomId: string, friendId: string, ledgerSynced: boolean): boolean {

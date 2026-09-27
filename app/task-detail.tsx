@@ -373,7 +373,7 @@ export default function TaskDetailScreen() {
               ]}
               onPress={() =>
                 router.push({
-                  pathname: '/event',
+                  pathname: '/event-detail',
                   params: { eventId: linkedEvent.id },
                 })
               }

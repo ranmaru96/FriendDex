@@ -23,6 +23,8 @@ export type EpisodeListFilterState = {
   title: string;
   tag: string;
   participants: EpisodeParticipantDraft[];
+  /** 共有一覧の共有元。未保存の古い絞り込みには無い。 */
+  authorFriendId?: string;
 };
 
 export const DEFAULT_EPISODE_LIST_FILTER: EpisodeListFilterState = {
@@ -78,7 +80,8 @@ export function isEpisodeListFilterState(value: unknown): value is EpisodeListFi
     isString(candidate.title) &&
     isString(candidate.tag) &&
     Array.isArray(candidate.participants) &&
-    candidate.participants.every(isEpisodeParticipantDraft)
+    candidate.participants.every(isEpisodeParticipantDraft) &&
+    (candidate.authorFriendId == null || isString(candidate.authorFriendId))
   );
 }
 

@@ -212,12 +212,43 @@ export function buildParticipantChipDisplays(
       unique.set(key, { id: key, kind: 'group', label: value });
       return;
     }
+    if (!friendNameById.has(value)) {
+      return;
+    }
     unique.set(key, {
       id: key,
       kind: 'individual',
-      label: friendNameById.get(value) ?? value,
+      label: friendNameById.get(value) ?? '',
       friendId: value,
       photoUri: options?.friendPhotoById?.get(value) ?? null,
+    });
+  });
+  return Array.from(unique.values());
+}
+
+/** db.ts の incoming: と同じ。循環参照を避けるためこちらでは文字列だけ見る。 */
+const isIncomingSharedEpisodeId = (episodeId: string): boolean => {
+  const trimmed = episodeId.trim();
+  return trimmed.startsWith('incoming:') && trimmed.length > 'incoming:'.length;
+};
+
+/** 共有エピソードの参加者は相手の表示名。写真も頭文字も付けない。 */
+function buildIncomingParticipantNameChips(
+  entries: Array<{ kind: 'individual' | 'group'; value: string }>
+): ParticipantChipDisplay[] {
+  const unique = new Map<string, ParticipantChipDisplay>();
+  entries.forEach((entry) => {
+    if (entry.kind !== 'individual') {
+      return;
+    }
+    const label = entry.value.trim();
+    if (!label || unique.has(label)) {
+      return;
+    }
+    unique.set(label, {
+      id: `name:${label}`,
+      kind: 'individual',
+      label,
     });
   });
   return Array.from(unique.values());
@@ -231,13 +262,29 @@ export function buildParticipantChips(
     friendPhotoById?: Map<string, string | null>;
   }
 ): ParticipantChipDisplay[] {
+  if (isIncomingSharedEpisodeId(episode.id)) {
+    return buildIncomingParticipantNameChips(episode.participantEntries ?? []);
+  }
   return buildParticipantChipDisplays(episode.participantEntries ?? [], friendNameById, options);
 }
 
 export function visibilityDisplayLabels(episode: Episode, friendNameById: Map<string, string>): string[] {
-  return (episode.visibilityEntries ?? []).map((e) =>
-    e.kind === 'group' ? e.value : friendNameById.get(e.value) ?? e.value
-  );
+  const labels: string[] = [];
+  (episode.visibilityEntries ?? []).forEach((entry) => {
+    const value = entry.value.trim();
+    if (!value) {
+      return;
+    }
+    if (entry.kind === 'group') {
+      labels.push(value);
+      return;
+    }
+    if (!friendNameById.has(value)) {
+      return;
+    }
+    labels.push(friendNameById.get(value) ?? '');
+  });
+  return labels;
 }
 
 export function visibilityModeTagStyles(mode: EpisodeVisibilityMode): {

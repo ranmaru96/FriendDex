@@ -175,6 +175,16 @@ export default function TaskGroupScreen() {
     () => members.filter((task) => task.kind === 'temporary'),
     [members]
   );
+  const displayedMembers = useMemo(() => {
+    if (group?.kind !== 'temporary') {
+      return members;
+    }
+    return [...members].sort((a, b) => {
+      const aDone = a.completedAt ? 1 : 0;
+      const bDone = b.completedAt ? 1 : 0;
+      return aDone - bDone;
+    });
+  }, [group?.kind, members]);
 
   const completionDates = useMemo(() => {
     void tick;
@@ -652,7 +662,7 @@ export default function TaskGroupScreen() {
             </Text>
           ) : (
             <View style={styles.memberList}>
-              {members.map((task) => {
+              {displayedMembers.map((task) => {
                 if (task.kind === 'temporary') {
                   const completed = Boolean(task.completedAt);
                   const dueLabel = task.dueDate ? formatTaskDueDateLabel(task.dueDate) : '';

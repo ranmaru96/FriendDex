@@ -342,6 +342,25 @@ export function resolveMoneyLoanSessionTitle(title: string): string {
   return trimmed.length > 0 ? trimmed : formatLocalDateAsMoneyLoanTitle();
 }
 
+/** タイトル空欄用。同日の「2026/9/27」が使われていれば「2026/9/27-2」。 */
+export function allocateDatedMoneyLoanTitle(
+  existingTitles: Iterable<string>,
+  date: Date = new Date()
+): string {
+  const base = formatLocalDateAsMoneyLoanTitle(date);
+  const taken = new Set(
+    [...existingTitles].map((title) => title.trim().toLowerCase()).filter((title) => title.length > 0)
+  );
+  if (!taken.has(base.toLowerCase())) {
+    return base;
+  }
+  let suffix = 2;
+  while (taken.has(`${base}-${suffix}`.toLowerCase())) {
+    suffix += 1;
+  }
+  return `${base}-${suffix}`;
+}
+
 const DEFAULT_RECENT_COUNTERPARTY_LIMIT = 8;
 
 /** 貸し借り履歴から、最近登録した相手（friendId）を新しい順に返す */

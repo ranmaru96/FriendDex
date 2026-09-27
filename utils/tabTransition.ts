@@ -23,6 +23,13 @@ export function getNextTabAnimation(): TabTransitionAnimation {
   return nextTabAnimation;
 }
 
+/** 起動時の一覧→カレンダーだけ、横スライドを出さない。 */
+let suppressNextTabSlide = false;
+
+export function suppressNextTabSlideOnce(): void {
+  suppressNextTabSlide = true;
+}
+
 let nextReplaceAsPop = false;
 
 /** タブ内の階層を1つ戻す replace は pop 方向にする */
@@ -55,6 +62,10 @@ export function resolveStackAnimation(
     return override;
   }
   if (bottomTabRouteNames.has(routeName)) {
+    if (suppressNextTabSlide && routeName === 'calendar') {
+      suppressNextTabSlide = false;
+      return 'none';
+    }
     return getNextTabAnimation();
   }
   if (routeName === 'mypage') {

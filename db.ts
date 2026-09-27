@@ -830,9 +830,17 @@ export const initializeDatabase = (): void => {
       visibility_mode TEXT NOT NULL DEFAULT 'public',
       tag TEXT,
       participant_tags TEXT NOT NULL DEFAULT '[]',
-      updated_at TEXT NOT NULL
+      updated_at TEXT NOT NULL,
+      seen_updated_at TEXT
     );
   `);
+  const incomingSharedTableInfo = db.getAllSync<{ name: string }>(
+    `PRAGMA table_info(${INCOMING_SHARED_EPISODES_TABLE});`
+  );
+  const incomingSharedColumns = new Set(incomingSharedTableInfo.map((column) => column.name));
+  if (!incomingSharedColumns.has('seen_updated_at')) {
+    db.execSync(`ALTER TABLE ${INCOMING_SHARED_EPISODES_TABLE} ADD COLUMN seen_updated_at TEXT;`);
+  }
   db.execSync(
     `CREATE INDEX IF NOT EXISTS idx_${INCOMING_SHARED_EPISODES_TABLE}_author ON ${INCOMING_SHARED_EPISODES_TABLE}(author_friend_id);`
   );
@@ -1018,6 +1026,14 @@ export const initializeDatabase = (): void => {
   db.execSync(
     `CREATE INDEX IF NOT EXISTS idx_${SETTLEMENT_ROOMS_TABLE}_created_at ON ${SETTLEMENT_ROOMS_TABLE}(created_at);`
   );
+  const settlementRoomColumns = new Set(
+    db.getAllSync<{ name: string }>(`PRAGMA table_info(${SETTLEMENT_ROOMS_TABLE});`).map((column) => column.name)
+  );
+  if (!settlementRoomColumns.has('created_by_user_id')) {
+    db.execSync(
+      `ALTER TABLE ${SETTLEMENT_ROOMS_TABLE} ADD COLUMN created_by_user_id TEXT NOT NULL DEFAULT '';`
+    );
+  }
   db.execSync(`
     CREATE TABLE IF NOT EXISTS ${SETTLEMENT_MEMBERS_TABLE} (
       id TEXT PRIMARY KEY NOT NULL,
@@ -3238,6 +3254,8 @@ export type IncomingSharedEpisodeRecord = {
   tag: string | null;
   participantTags: string[];
   updatedAt: string;
+  /** 既読にした時点の updatedAt。空なら未読。相手の更新で updatedAt が変わると再び未読 */
+  seenUpdatedAt?: string | null;
 };
 
 type IncomingSharedEpisodeRow = {
@@ -3253,6 +3271,7 @@ type IncomingSharedEpisodeRow = {
   tag: string | null;
   participant_tags: string;
   updated_at: string;
+  seen_updated_at: string | null;
 };
 
 const incomingVisibilityMode = (value: string): EpisodeVisibilityMode =>
@@ -3271,7 +3290,31 @@ const incomingRowToRecord = (row: IncomingSharedEpisodeRow): IncomingSharedEpiso
   tag: row.tag,
   participantTags: fromJson(row.participant_tags ?? '[]'),
   updatedAt: row.updated_at,
+  seenUpdatedAt: row.seen_updated_at?.trim() ? row.seen_updated_at.trim() : null,
 });
+
+export const incomingSharedEpisodeIsUnread = (
+  record: Pick<IncomingSharedEpisodeRecord, 'updatedAt' | 'seenUpdatedAt'>
+): boolean => {
+  const seen = record.seenUpdatedAt?.trim() ?? '';
+  const updated = record.updatedAt.trim();
+  return seen.length === 0 || seen !== updated;
+};
+
+/** 詳細を開いた時点の内容を既読にする。同期の updated_at は上書きしない。 */
+export const markIncomingSharedEpisodeSeen = (sharedId: string): void => {
+  initializeDatabase();
+  const trimmed = sharedId.trim();
+  if (!trimmed) {
+    return;
+  }
+  db.runSync(
+    `UPDATE ${INCOMING_SHARED_EPISODES_TABLE}
+     SET seen_updated_at = updated_at
+     WHERE shared_id = ? AND (seen_updated_at IS NULL OR seen_updated_at != updated_at);`,
+    [trimmed]
+  );
+};
 
 export const incomingSharedRecordToEpisode = (record: IncomingSharedEpisodeRecord): Episode => ({
   id: toIncomingSharedEpisodeId(record.sharedId),
@@ -3287,6 +3330,7 @@ export const incomingSharedRecordToEpisode = (record: IncomingSharedEpisodeRecor
     .map((label) => ({ kind: 'individual' as const, value: label })),
   visibilityEntries: [],
   ...(record.tag?.trim() ? { tag: record.tag.trim() } : {}),
+  incomingUnread: incomingSharedEpisodeIsUnread(record),
 });
 
 export const upsertIncomingSharedEpisode = (record: IncomingSharedEpisodeRecord): void => {
@@ -4084,7 +4128,115 @@ export const getDistinctPersonalities = (): string[] => extractDistinctFromProfi
 
 export const getDistinctVisibilityGroups = (): string[] => extractDistinctVisibilityGroupsFromProfiles();
 
-export const getMergedEpisodeTagLabels = (): string[] => getMergedCommonItemLabels('episode_tag');
+const EPISODE_TAG_RECENT_KEY = 'episode_tag_recent_order';
+
+const readRecentEpisodeTagOrder = (): string[] => {
+  const raw = getAppSetting(EPISODE_TAG_RECENT_KEY);
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const labels: string[] = [];
+    parsed.forEach((item) => {
+      const normalized = normalizeEpisodeTag(typeof item === 'string' ? item : null);
+      if (normalized && !labels.includes(normalized)) {
+        labels.push(normalized);
+      }
+    });
+    return labels;
+  } catch {
+    return [];
+  }
+};
+
+const writeRecentEpisodeTagOrder = (labels: string[]): void => {
+  setAppSetting(EPISODE_TAG_RECENT_KEY, JSON.stringify(labels));
+};
+
+/** 保存で使った予定タグを先頭へ。絞り込みと編集の候補順に使う。 */
+export const rememberRecentEpisodeTag = (value: string | null | undefined): void => {
+  const normalized = normalizeEpisodeTag(value);
+  if (!normalized) {
+    return;
+  }
+  const next = [normalized, ...readRecentEpisodeTagOrder().filter((label) => label !== normalized)].slice(0, 200);
+  writeRecentEpisodeTagOrder(next);
+};
+
+const rewriteRecentEpisodeTag = (fromLabel: string, toLabel: string | null): void => {
+  const from = normalizeEpisodeTag(fromLabel);
+  if (!from) {
+    return;
+  }
+  const to = toLabel ? normalizeEpisodeTag(toLabel) : null;
+  const next: string[] = [];
+  readRecentEpisodeTagOrder().forEach((label) => {
+    if (label === from) {
+      if (to && !next.includes(to)) {
+        next.push(to);
+      }
+      return;
+    }
+    if (!next.includes(label)) {
+      next.push(label);
+    }
+  });
+  writeRecentEpisodeTagOrder(next);
+};
+
+const latestEpisodeTagContentDay = (): Map<string, string> => {
+  const latest = new Map<string, string>();
+  const consider = (tag: string | null, stamp: string | null | undefined) => {
+    if (!tag) {
+      return;
+    }
+    const day = (stamp ?? '').trim().slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      return;
+    }
+    const previous = latest.get(tag);
+    if (!previous || day > previous) {
+      latest.set(tag, day);
+    }
+  };
+  db.getAllSync<{ episode_tag: string | null; start_at: string }>(
+    `SELECT episode_tag, start_at FROM ${EVENTS_TABLE} WHERE episode_tag IS NOT NULL AND TRIM(episode_tag) != '';`
+  ).forEach((row) => {
+    consider(normalizeEpisodeTag(row.episode_tag), row.start_at);
+  });
+  db.getAllSync<{ episodes: string }>(`SELECT episodes FROM ${PROFILES_TABLE};`).forEach((row) => {
+    fromEpisodeJson(row.episodes).forEach((episode) => {
+      consider(normalizeEpisodeTag(episode.tag), episode.date);
+    });
+  });
+  return latest;
+};
+
+export const getMergedEpisodeTagLabels = (): string[] => {
+  const labels = getMergedCommonItemLabels('episode_tag');
+  const recentIndex = new Map(readRecentEpisodeTagOrder().map((label, index) => [label, index]));
+  const contentDay = latestEpisodeTagContentDay();
+  return [...labels].sort((left, right) => {
+    const leftRecent = recentIndex.get(left);
+    const rightRecent = recentIndex.get(right);
+    if (leftRecent != null && rightRecent != null) {
+      return leftRecent - rightRecent;
+    }
+    if (leftRecent != null || rightRecent != null) {
+      return leftRecent != null ? -1 : 1;
+    }
+    const leftDay = contentDay.get(left) ?? '';
+    const rightDay = contentDay.get(right) ?? '';
+    if (leftDay !== rightDay) {
+      return leftDay < rightDay ? 1 : -1;
+    }
+    return left.localeCompare(right, 'ja');
+  });
+};
 
 export const getMergedLocationTagLabels = (): string[] => getMergedCommonItemLabels('location_tag');
 
@@ -4207,6 +4359,9 @@ export const deleteCommonItemOption = (id: string): boolean => {
   }
 
   applyCommonItemLabelRewrite(target.kind, target.label, null);
+  if (target.kind === 'episode_tag') {
+    rewriteRecentEpisodeTag(target.label, null);
+  }
 
   const result = db.runSync(`DELETE FROM ${COMMON_ITEM_OPTIONS_TABLE} WHERE id = ?;`, [id]);
   return result.changes > 0;
@@ -4223,6 +4378,9 @@ export const renameCommonItemLabel = (kind: CommonItemKind, fromLabel: string, t
   }
 
   applyCommonItemLabelRewrite(kind, from, to);
+  if (kind === 'episode_tag') {
+    rewriteRecentEpisodeTag(from, to);
+  }
 
   const existingOption = db.getFirstSync<{ id: string }>(
     `SELECT id FROM ${COMMON_ITEM_OPTIONS_TABLE} WHERE kind = ? AND label = ? LIMIT 1;`,
@@ -4247,6 +4405,9 @@ export const removeCommonItemLabel = (kind: CommonItemKind, label: string): bool
   }
 
   applyCommonItemLabelRewrite(kind, normalized, null);
+  if (kind === 'episode_tag') {
+    rewriteRecentEpisodeTag(normalized, null);
+  }
 
   db.runSync(`DELETE FROM ${COMMON_ITEM_OPTIONS_TABLE} WHERE kind = ? AND label = ?;`, [kind, normalized]);
   return true;
@@ -4826,6 +4987,19 @@ export const setMoneyLoanSharedMeta = (
   return result.changes > 0;
 };
 
+/** 相手に共有していない自分用の貸し借りへ戻す。 */
+export const clearMoneyLoanSharedId = (loanId: string): boolean => {
+  const normalizedId = loanId.trim();
+  if (!normalizedId) {
+    return false;
+  }
+  const result = db.runSync(
+    `UPDATE ${MONEY_LOANS_TABLE} SET shared_id = '', incoming_from_peer = 0 WHERE id = ?;`,
+    [normalizedId]
+  );
+  return result.changes > 0;
+};
+
 export const applyIncomingSharedMoneyLoan = (input: {
   sharedId: string;
   localLoanId?: string;
@@ -5236,6 +5410,7 @@ type SettlementRoomRow = {
   id: string;
   title: string;
   created_at: string;
+  created_by_user_id?: string;
 };
 
 type SettlementMemberRow = {
@@ -5286,6 +5461,7 @@ export const getAllMockSettlementRooms = (): MockSettlementRoom[] => {
       id: roomRow.id,
       title: roomRow.title,
       createdAt: roomRow.created_at,
+      createdByUserId: roomRow.created_by_user_id ?? '',
       members: memberRows.map((row) => ({
         id: row.id,
         friendId: row.friend_id,
@@ -5301,8 +5477,8 @@ export const insertMockSettlementRoom = (room: MockSettlementRoom): void => {
   db.execSync('BEGIN IMMEDIATE;');
   try {
     db.runSync(
-      `INSERT INTO ${SETTLEMENT_ROOMS_TABLE} (id, title, created_at) VALUES (?, ?, ?);`,
-      [room.id, room.title.trim(), room.createdAt]
+      `INSERT INTO ${SETTLEMENT_ROOMS_TABLE} (id, title, created_at, created_by_user_id) VALUES (?, ?, ?, ?);`,
+      [room.id, room.title.trim(), room.createdAt, (room.createdByUserId ?? '').trim()]
     );
     room.members.forEach((member) => {
       db.runSync(
@@ -5347,6 +5523,69 @@ export const updateMockSettlementRoomTitle = (roomId: string, title: string): bo
     normalizedTitle,
     normalizedRoomId,
   ]);
+  return result.changes > 0;
+};
+
+export const setMockSettlementRoomCreatedBy = (roomId: string, createdByUserId: string): boolean => {
+  const normalizedRoomId = roomId.trim();
+  if (!normalizedRoomId) {
+    return false;
+  }
+  const result = db.runSync(
+    `UPDATE ${SETTLEMENT_ROOMS_TABLE} SET created_by_user_id = ? WHERE id = ?;`,
+    [createdByUserId.trim(), normalizedRoomId]
+  );
+  return result.changes > 0;
+};
+
+export const updateMockSettlementExpense = (
+  roomId: string,
+  expense: MockSettlementExpense
+): boolean => {
+  const normalizedRoomId = roomId.trim();
+  const expenseId = expense.id.trim();
+  if (!normalizedRoomId || !expenseId) {
+    return false;
+  }
+  const result = db.runSync(
+    `UPDATE ${SETTLEMENT_EXPENSES_TABLE}
+     SET payer_member_id = ?, title = ?, amount = ?, split_member_ids = ?
+     WHERE id = ? AND room_id = ?;`,
+    [
+      expense.payerMemberId,
+      expense.title.trim(),
+      Math.floor(expense.amount),
+      toJson(expense.splitMemberIds),
+      expenseId,
+      normalizedRoomId,
+    ]
+  );
+  return result.changes > 0;
+};
+
+export const deleteMockSettlementExpense = (roomId: string, expenseId: string): boolean => {
+  const normalizedRoomId = roomId.trim();
+  const normalizedExpenseId = expenseId.trim();
+  if (!normalizedRoomId || !normalizedExpenseId) {
+    return false;
+  }
+  const result = db.runSync(
+    `DELETE FROM ${SETTLEMENT_EXPENSES_TABLE} WHERE id = ? AND room_id = ?;`,
+    [normalizedExpenseId, normalizedRoomId]
+  );
+  return result.changes > 0;
+};
+
+export const deleteMockSettlementMember = (roomId: string, memberId: string): boolean => {
+  const normalizedRoomId = roomId.trim();
+  const normalizedMemberId = memberId.trim();
+  if (!normalizedRoomId || !normalizedMemberId) {
+    return false;
+  }
+  const result = db.runSync(
+    `DELETE FROM ${SETTLEMENT_MEMBERS_TABLE} WHERE id = ? AND room_id = ?;`,
+    [normalizedMemberId, normalizedRoomId]
+  );
   return result.changes > 0;
 };
 
@@ -5409,6 +5648,25 @@ const upsertMockSettlementMember = (roomId: string, member: MockSettlementMember
   );
 };
 
+export const addMockSettlementMember = (roomId: string, member: MockSettlementMember): boolean => {
+  const normalizedRoomId = roomId.trim();
+  if (!normalizedRoomId || !member.id.trim() || !member.friendId.trim()) {
+    return false;
+  }
+  const room = db.getFirstSync<{ id: string }>(
+    `SELECT id FROM ${SETTLEMENT_ROOMS_TABLE} WHERE id = ? LIMIT 1;`,
+    [normalizedRoomId]
+  );
+  if (!room) {
+    return false;
+  }
+  upsertMockSettlementMember(normalizedRoomId, {
+    ...member,
+    ledgerSynced: true,
+  });
+  return true;
+};
+
 export const mergeSharedSettlementRoomLocally = (room: MockSettlementRoom): void => {
   const existing = getMockSettlementRoomById(room.id);
   if (!existing) {
@@ -5435,10 +5693,37 @@ export const mergeSharedSettlementRoomLocally = (room: MockSettlementRoom): void
       upsertMockSettlementMember(room.id, member);
     }
   });
+  const incomingMemberIds = new Set(room.members.map((member) => member.id));
+  existing.members.forEach((member) => {
+    if (!incomingMemberIds.has(member.id)) {
+      deleteMockSettlementMember(room.id, member.id);
+    }
+  });
+  const incomingCreator = (room.createdByUserId ?? '').trim();
+  if (incomingCreator && incomingCreator !== (existing.createdByUserId ?? '').trim()) {
+    setMockSettlementRoomCreatedBy(room.id, incomingCreator);
+  }
   const haveExpenseIds = new Set(existing.expenses.map((expense) => expense.id));
   room.expenses.forEach((expense) => {
     if (!haveExpenseIds.has(expense.id)) {
       insertMockSettlementExpense(room.id, expense);
+      return;
+    }
+    const current = existing.expenses.find((item) => item.id === expense.id);
+    if (
+      current &&
+      (current.title !== expense.title ||
+        current.amount !== expense.amount ||
+        current.payerMemberId !== expense.payerMemberId ||
+        JSON.stringify(current.splitMemberIds) !== JSON.stringify(expense.splitMemberIds))
+    ) {
+      updateMockSettlementExpense(room.id, expense);
+    }
+  });
+  const incomingExpenseIds = new Set(room.expenses.map((expense) => expense.id));
+  existing.expenses.forEach((expense) => {
+    if (!incomingExpenseIds.has(expense.id)) {
+      deleteMockSettlementExpense(room.id, expense.id);
     }
   });
 };

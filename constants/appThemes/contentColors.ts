@@ -76,12 +76,12 @@ export const whiteContentColors: AppThemeContentColorFields = {
 /** ブラック用（ホワイト形状を保った色反転） */
 export const darkContentColors: AppThemeContentColorFields = {
   contentCard: '#1c1c1c',
-  contentBorder: 'rgba(255, 255, 255, 0.18)',
+  contentBorder: 'rgba(255, 255, 255, 0.6)',
   contentText: '#F2F2F2',
   contentTextSecondary: '#A8A8A8',
   contentPersonTagBg: '#252525',
   contentSearchArea: '#1c1c1c',
-  contentSearchFieldBorder: 'rgba(255, 255, 255, 0.28)',
+  contentSearchFieldBorder: 'rgba(255, 255, 255, 0.6)',
   contentInputBg: '#252525',
   contentPhotoInnerBorder: '#111111',
   contentPhotoPlaceholder: '#2a2a2a',

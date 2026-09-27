@@ -8,6 +8,7 @@ import {
   getEpisodePhotos,
   getEvent,
   getEventParticipants,
+  getFriendById,
   getMyself,
   insertEpisodePhoto,
 } from '@/db';
@@ -692,12 +693,16 @@ export function useEpisodeForm({
                 value: participant.value,
               }))
           ),
-        })
+        }).filter((friendId) => getFriendById(friendId) != null)
       ),
       myselfId
     );
     const visibilityEntries: EpisodeVisibilityEntry[] =
-      visibilityMode === 'limited' ? toConnectedAudienceDrafts(visibility, myselfId) : [];
+      visibilityMode === 'limited'
+        ? toConnectedAudienceDrafts(visibility, myselfId).filter(
+            (entry) => getFriendById(entry.value) != null
+          )
+        : [];
     const resolvedVisibilityMode: EpisodeVisibilityMode =
       visibilityMode === 'limited' && visibilityEntries.length === 0 ? 'private' : visibilityMode;
 
@@ -1115,20 +1120,8 @@ export function useEpisodeForm({
     setLinkedEventId(draft.linkedEventId);
     applyNewPhotoUris(draft.newPhotoUris);
     setDeletedPhotoIds(draft.deletedPhotoIds);
-    baselineRef.current = {
-      title: draft.title,
-      date: draft.date,
-      time: draft.time,
-      description: draft.description,
-      participants: participantSnapshot(draft.participants),
-      visibilityMode: nextVisibilityMode,
-      visibility: visibilitySnapshot(nextVisibility),
-      tag: draft.tag,
-      eventLinkMode: draft.eventLinkMode,
-      linkedEventId: draft.linkedEventId ?? '',
-      newPhotoUris: draft.newPhotoUris.join('\n'),
-      deletedPhotoIds: draft.deletedPhotoIds.join(','),
-    };
+    // 基準は呼び出し側の空フォーム、または保存済み内容のままにする。
+    // 復元した未保存の入力も、キャンセル時の破棄確認の対象にする。
     draftGateRef.current = 'ready';
     draftOwnsRecordRef.current = true;
   }, [applyNewPhotoUris]);

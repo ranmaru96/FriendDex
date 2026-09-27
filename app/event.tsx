@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Modal,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -21,7 +20,6 @@ import { formatEpisodeDateToYMD } from '@/components/episode/types';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
 import { FormRow } from '@/components/ui/FormRow';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
-import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import { NoteBlockEditor } from '@/components/ui/NoteBlockEditor';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
@@ -34,6 +32,7 @@ import {
   contentSwitchProps,
   contentPersonTagStyle,
   contentTagStyle,
+  contentTagTextStyle,
   contentTextStyle,
   contentDateTimePickerProps,
 } from '@/utils/contentStyleHelpers';
@@ -117,6 +116,11 @@ import { markOwnedEventDeleted, scheduleOwnedEventSync } from '@/lib/ownedEventS
 
 type PickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime' | null;
 
+function EventFieldDivider() {
+  const content = useContentColors();
+  return <View style={[styles.fieldDivider, { backgroundColor: content.contentDivider }]} />;
+}
+
 const parseRouteParam = (value: string | string[] | undefined): string => {
   if (Array.isArray(value)) {
     return value[0] ?? '';
@@ -152,19 +156,7 @@ export default function EventScreen() {
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
-  const fieldCorner = { borderRadius: 0 };
-  const tagChipRadius = kit.formFieldBorderRadius === 0 ? 0 : Radius.full;
-  /** 真っ白すぎない薄い塗り（白テーマは #F2F2F2、他は personTag 背景）。枠と＋は同色 */
-  const plusButtonFill = {
-    borderColor: content.contentTextSecondary,
-    backgroundColor:
-      appTheme?.variant === 'white' ? '#F2F2F2' : content.contentPersonTagBg,
-  };
-  const plusButtonInk = { color: content.contentTextSecondary };
-  /** ラベル列を少し狭めて記入欄を左へ広げる */
-  const formLabelWidth = 72;
-  const fieldIndent =
-    kit.formLayout === 'horizontal' ? formLabelWidth + kit.formRowGap : 0;
+  const fieldCorner = { borderRadius: Radius.sm };
   const params = useLocalSearchParams<{ eventId?: string; date?: string }>();
   const eventId = parseRouteParam(params.eventId);
   const initialDate = parseRouteParam(params.date);
@@ -821,6 +813,16 @@ export default function EventScreen() {
   }, [activePicker, endDateKey, endTime, startDateKey, startTime]);
 
   const pickerMode = activePicker === 'startTime' || activePicker === 'endTime' ? 'time' : 'date';
+  const pickerTitle =
+    activePicker === 'startDate'
+      ? '開始日'
+      : activePicker === 'endDate'
+        ? '終了日'
+        : activePicker === 'startTime'
+          ? '開始時刻'
+          : activePicker === 'endTime'
+            ? '終了時刻'
+            : '';
   const pickerBounds = useMemo(() => {
     if (allDay && activePicker === 'endDate') {
       return openRangeDatePickerBounds(parseDateKey(startDateKey), DATE_PICKER_MAX_FAR);
@@ -878,9 +880,6 @@ export default function EventScreen() {
     if (!selected || !activePicker) {
       return;
     }
-    if (Platform.OS !== 'ios') {
-      setActivePicker(null);
-    }
     switch (activePicker) {
       case 'startDate':
         applyStartDateChange(selected);
@@ -921,72 +920,47 @@ export default function EventScreen() {
             onPress={handleSave}
             disabled={isSaving}
           >
-            <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
+            <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>
+              {isEditing ? '更新' : '保存'}
+            </Text>
           </Pressable>
         }
         extraScrollHeight={140}
         scrollContentStyle={styles.scrollContent}
       >
-        <FormScreenBody gap={Spacing.md} style={{ borderRadius: 0 }}>
-        <FormScreenSection elevated style={styles.formSection}>
-          <FormRow label="タイトル" labelWidth={formLabelWidth}>
+        <FormScreenBody style={{ borderRadius: kit.formPanelBorderRadius }}>
+        <FormScreenSection style={styles.formSection}>
+          <FormRow label="タイトル" labelStyle={styles.fieldLabel}>
             <TextInput
               style={[styles.textInput, fieldCorner, contentInputStyle(content)]}
-              placeholder="予定のタイトル"
+              placeholder="入力"
               placeholderTextColor={content.contentTextSecondary}
               value={title}
               onChangeText={setTitle}
             />
           </FormRow>
+          <EventFieldDivider />
 
-          <FormRow label="タグ" labelWidth={formLabelWidth} contentLayout="compact">
-            <View style={styles.tagChipRow}>
-              <Pressable
-                style={[
-                  styles.tagChipButton,
-                  contentPersonTagStyle(content),
-                  { borderRadius: tagChipRadius },
-                ]}
-                onPress={() => {
-                  dismissKeyboardFocus();
-                  setTagModalVisible(true);
-                }}
-                accessibilityLabel="予定タグを選択"
-                accessibilityRole="button"
-              >
-                <Text
-                  style={[
-                    styles.tagChipText,
-                    episodeTag ? contentTextStyle(content) : contentMutedTextStyle(content),
-                  ]}
-                  numberOfLines={1}
-                >
-                  {episodeTag || '予定タグ'}
-                </Text>
-                <Text style={[styles.tagChipChevron, contentMutedTextStyle(content)]}>▼</Text>
-              </Pressable>
-            </View>
-          </FormRow>
-
-          <FormRow label="終日" labelWidth={formLabelWidth} contentStyle={styles.switchField}>
+          <FormRow label="終日" labelStyle={styles.fieldLabel} contentStyle={styles.switchField}>
             <Switch
               value={allDay}
               onValueChange={setAllDay}
               {...contentSwitchProps(content, allDay)}
             />
           </FormRow>
+          <EventFieldDivider />
 
-          <FormRow label={`開始${allDay ? '日' : '日時'}`} labelWidth={formLabelWidth}>
+          <FormRow label={allDay ? '開始日' : '開始'} labelStyle={styles.fieldLabel}>
             <View style={styles.dateTimeRow}>
               <Pressable
-                style={[styles.pickerButton, styles.dateButton, fieldCorner, contentInputStyle(content)]}
+                style={[styles.textInput, styles.dateTimeField, styles.dateButton, fieldCorner, contentInputStyle(content)]}
                 onPress={() => openPicker('startDate')}
               >
                 <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{startDateKey}</Text>
               </Pressable>
               {!allDay ? (
                 <Pressable
-                  style={[styles.pickerButton, styles.timeButton, fieldCorner, contentInputStyle(content)]}
+                  style={[styles.textInput, styles.dateTimeField, styles.timeButton, fieldCorner, contentInputStyle(content)]}
                   onPress={() => openPicker('startTime')}
                 >
                   <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{startTime}</Text>
@@ -994,11 +968,12 @@ export default function EventScreen() {
               ) : null}
             </View>
           </FormRow>
+          <EventFieldDivider />
 
-          <FormRow label={`終了${allDay ? '日' : '日時'}`} labelWidth={formLabelWidth}>
+          <FormRow label={allDay ? '終了日' : '終了'} labelStyle={styles.fieldLabel}>
             <View style={styles.dateTimeRow}>
               <Pressable
-                style={[styles.pickerButton, styles.dateButton, fieldCorner, contentInputStyle(content)]}
+                style={[styles.textInput, styles.dateTimeField, styles.dateButton, fieldCorner, contentInputStyle(content)]}
                 onPress={() => openPicker('endDate')}
               >
                 <Text
@@ -1013,7 +988,7 @@ export default function EventScreen() {
               </Pressable>
               {!allDay ? (
                 <Pressable
-                  style={[styles.pickerButton, styles.timeButton, fieldCorner, contentInputStyle(content)]}
+                  style={[styles.textInput, styles.dateTimeField, styles.timeButton, fieldCorner, contentInputStyle(content)]}
                   onPress={() => openPicker('endTime')}
                 >
                   <Text
@@ -1029,66 +1004,52 @@ export default function EventScreen() {
               ) : null}
             </View>
           </FormRow>
+          <EventFieldDivider />
 
-          {activePicker ? (
-            <View style={[styles.pickerWrap, { marginLeft: fieldIndent }]}>
-              <DateTimePicker
-                value={Number.isNaN(pickerValue.getTime()) ? new Date() : pickerValue}
-                mode={pickerMode}
-                display="spinner"
-                locale="ja-JP"
-                style={styles.picker}
-                {...dateTimePickerProps}
-                {...pickerBounds}
-                onChange={handlePickerChange}
-              />
-              <PickerDoneOverlay
-                style={[fieldCorner, contentTagStyle(content)]}
-                textStyle={contentTextStyle(content)}
-                onPress={() => setActivePicker(null)}
-              />
-            </View>
-          ) : null}
-
-          <FormRow
-            label="会う人"
-            labelWidth={formLabelWidth}
-            style={styles.participantsFormRow}
-          >
-            <View style={[styles.participantsTagArea, fieldCorner, contentInputStyle(content)]}>
-              <ParticipantChipList
-                chips={participantChips}
-                layout="wrap"
-                onPressProfile={handleOpenProfileDetail}
-                onRemoveChip={handleRemoveParticipantChip}
-                trailing={
-                  <Pressable
-                    accessibilityLabel="会う人を追加"
-                    style={[styles.addParticipantPlusButton, plusButtonFill]}
-                    onPress={openParticipantSelector}
-                  >
-                    <Text style={[styles.addParticipantPlusButtonText, plusButtonInk]}>
-                      ＋
-                    </Text>
-                  </Pressable>
-                }
-              />
-            </View>
-          </FormRow>
-          <FormRow label="メモ" labelWidth={formLabelWidth} contentStyle={styles.memoField}>
-            <NoteBlockEditor
-              style={[styles.textInput, styles.memoInput, fieldCorner, contentInputStyle(content)]}
-              placeholder="メモ（任意）"
-              placeholderTextColor={content.contentTextSecondary}
-              value={memo}
-              onChangeText={setMemo}
-              minHeight={96}
+          <FormRow label="会う人" labelStyle={styles.fieldLabel} style={styles.rowAlignStart}>
+            <ParticipantChipList
+              chips={participantChips}
+              layout="wrap"
+              onPressProfile={handleOpenProfileDetail}
+              onRemoveChip={handleRemoveParticipantChip}
+              trailing={
+                <Pressable
+                  accessibilityLabel="会う人を追加"
+                  style={[styles.participantAddChip, contentPersonTagStyle(content)]}
+                  onPress={openParticipantSelector}
+                >
+                  <Text style={[styles.participantAddChipText, contentTagTextStyle(content)]}>＋</Text>
+                </Pressable>
+              }
             />
           </FormRow>
-        </FormScreenSection>
+          <EventFieldDivider />
 
-        <FormScreenSection elevated style={styles.formSection}>
-          <FormRow label="通知" labelWidth={formLabelWidth} contentStyle={styles.switchField}>
+          <FormRow label="タグ" labelStyle={styles.fieldLabel} contentLayout="compact">
+            <Pressable
+              style={[styles.selectChipButton, contentPersonTagStyle(content)]}
+              onPress={() => {
+                dismissKeyboardFocus();
+                setTagModalVisible(true);
+              }}
+              accessibilityLabel="予定タグを選択"
+              accessibilityRole="button"
+            >
+              <Text
+                style={[
+                  styles.selectChipText,
+                  episodeTag ? contentTextStyle(content) : contentMutedTextStyle(content),
+                ]}
+                numberOfLines={1}
+              >
+                {episodeTag || '予定タグ'}
+              </Text>
+              <Text style={[styles.selectChipChevron, contentMutedTextStyle(content)]}>▼</Text>
+            </Pressable>
+          </FormRow>
+          <EventFieldDivider />
+
+          <FormRow label="通知" labelStyle={styles.fieldLabel} contentStyle={styles.switchField}>
             <Switch
               value={notifyEnabled}
               onValueChange={setNotifyEnabled}
@@ -1096,136 +1057,135 @@ export default function EventScreen() {
             />
           </FormRow>
           {notifyEnabled ? (
-            <FormRow
-              label="通知タイミング"
-              labelWidth={formLabelWidth}
-              labelNumberOfLines={2}
-            >
-              <Pressable
-                style={[styles.pickerButton, fieldCorner, contentInputStyle(content)]}
-                onPress={() => {
-                  dismissKeyboardFocus();
-                  setTimingModalVisible(true);
-                }}
-              >
-                <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{selectedTimingLabel}</Text>
-              </Pressable>
-            </FormRow>
+            <>
+              <EventFieldDivider />
+              <FormRow label="タイミング" labelStyle={styles.fieldLabel}>
+                <Pressable
+                  style={[styles.textInput, styles.dateTimeField, fieldCorner, contentInputStyle(content)]}
+                  onPress={() => {
+                    dismissKeyboardFocus();
+                    setTimingModalVisible(true);
+                  }}
+                >
+                  <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{selectedTimingLabel}</Text>
+                </Pressable>
+              </FormRow>
+            </>
           ) : null}
-        </FormScreenSection>
+          <EventFieldDivider />
 
-        {showLinkedTasksSection ? (
-          <FormScreenSection elevated style={styles.formSection}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.fieldLabel, contentTextStyle(content)]}>タスク</Text>
-              {canAddLinkedTask ? (
-                <Pressable
-                  accessibilityLabel="タスクを追加"
-                  style={[
-                    styles.addParticipantPlusButton,
-                    styles.sectionHeaderPlusButton,
-                    plusButtonFill,
-                  ]}
-                  onPress={handleAddLinkedTask}
-                >
-                  <Text style={[styles.addParticipantPlusButtonText, plusButtonInk]}>
-                    ＋
-                  </Text>
-                </Pressable>
-              ) : null}
-            </View>
-            {linkedTasks.length > 0 ? (
-              <View style={{ gap: 8 }}>
-                {linkedTasks.map((task) => (
+          <FormRow label="メモ" layout="vertical">
+            <NoteBlockEditor
+              style={[styles.memoInput, fieldCorner, contentInputStyle(content)]}
+              placeholder="入力"
+              placeholderTextColor={content.contentTextSecondary}
+              value={memo}
+              onChangeText={setMemo}
+              minHeight={86}
+              uncapped
+            />
+          </FormRow>
+
+          {showLinkedTasksSection ? (
+            <>
+              <EventFieldDivider />
+              <View style={styles.linkedHeader}>
+                <Text style={[styles.linkedHeaderLabel, contentTextStyle(content)]}>タスク</Text>
+                {canAddLinkedTask ? (
                   <Pressable
-                    key={task.id}
-                    style={[
-                      styles.linkedTaskRow,
-                      contentSurfaceStyle(content),
-                      { borderWidth: 1, borderRadius: 8 },
-                    ]}
-                    onPress={() => {
-                      if (savingRef.current) {
-                        return;
-                      }
-                      router.push({ pathname: '/task-edit', params: { taskId: task.id } });
-                    }}
+                    accessibilityLabel="タスクを追加"
+                    style={[styles.participantAddChip, contentPersonTagStyle(content)]}
+                    onPress={handleAddLinkedTask}
                   >
-                    <Text style={[styles.linkedTaskTitle, contentTextStyle(content)]}>{task.title}</Text>
-                    <Text style={[styles.linkedTaskMeta, contentMutedTextStyle(content)]}>
-                      {task.completedAt
-                        ? '完了'
-                        : task.dueDate
-                          ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
-                          : '期限なし'}
-                      {task.memo?.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
-                    </Text>
+                    <Text style={[styles.participantAddChipText, contentTagTextStyle(content)]}>＋</Text>
                   </Pressable>
-                ))}
+                ) : null}
               </View>
-            ) : (
-              <Text style={[styles.emptyParticipantText, contentMutedTextStyle(content)]}>
-                まだタスクがありません
-              </Text>
-            )}
-          </FormScreenSection>
-        ) : null}
+              {linkedTasks.length > 0 ? (
+                <View style={styles.linkedList}>
+                  {linkedTasks.map((task) => (
+                    <Pressable
+                      key={task.id}
+                      style={[
+                        styles.linkedTaskRow,
+                        fieldCorner,
+                        contentSurfaceStyle(content),
+                        { borderColor: content.contentBorder },
+                      ]}
+                      onPress={() => {
+                        if (savingRef.current) {
+                          return;
+                        }
+                        router.push({ pathname: '/task-edit', params: { taskId: task.id } });
+                      }}
+                    >
+                      <Text style={[styles.linkedTaskTitle, contentTextStyle(content)]}>{task.title}</Text>
+                      <Text style={[styles.linkedTaskMeta, contentMutedTextStyle(content)]}>
+                        {task.completedAt
+                          ? '完了'
+                          : task.dueDate
+                            ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
+                            : '期限なし'}
+                        {task.memo?.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : (
+                <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>まだタスクがありません</Text>
+              )}
+            </>
+          ) : null}
 
-        {showLinkedEpisodesSection ? (
-          <FormScreenSection elevated style={styles.formSection}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={[styles.fieldLabel, contentTextStyle(content)]}>エピソード</Text>
-              {canAddLinkedEpisode ? (
-                <Pressable
-                  accessibilityLabel="エピソードを追加"
-                  style={[
-                    styles.addParticipantPlusButton,
-                    styles.sectionHeaderPlusButton,
-                    plusButtonFill,
-                  ]}
-                  onPress={handleAddLinkedEpisode}
-                >
-                  <Text style={[styles.addParticipantPlusButtonText, plusButtonInk]}>
-                    ＋
-                  </Text>
-                </Pressable>
-              ) : null}
-            </View>
-            {linkedEpisodes.length > 0 ? (
-              <View style={styles.linkedEpisodeList}>
-                {linkedEpisodes.map((episode) => {
-                  const chips = buildParticipantChips(episode, friendNameById, {
-                    friendPhotoById,
-                    excludeFriendIds: myselfId ? [myselfId] : [],
-                  });
-                  return (
-                    <EpisodeListCard
-                      key={episode.id}
-                      title={episode.title}
-                      date={episode.date}
-                      episodeTag={episode.tag}
-                      chips={chips}
-                      visibilityMode={episode.visibilityMode}
-                      photoUris={episodePhotoUrisById.get(episode.id)}
-                      unfilled={episode.pendingReview === true}
-                      onPress={() => handleOpenLinkedEpisode(episode)}
-                      style={styles.linkedEpisodeCard}
-                    />
-                  );
-                })}
+          {showLinkedEpisodesSection ? (
+            <>
+              <EventFieldDivider />
+              <View style={styles.linkedHeader}>
+                <Text style={[styles.linkedHeaderLabel, contentTextStyle(content)]}>エピソード</Text>
+                {canAddLinkedEpisode ? (
+                  <Pressable
+                    accessibilityLabel="エピソードを追加"
+                    style={[styles.participantAddChip, contentPersonTagStyle(content)]}
+                    onPress={handleAddLinkedEpisode}
+                  >
+                    <Text style={[styles.participantAddChipText, contentTagTextStyle(content)]}>＋</Text>
+                  </Pressable>
+                ) : null}
               </View>
-            ) : (
-              <Text style={[styles.emptyParticipantText, contentMutedTextStyle(content)]}>
-                まだエピソードがありません
-              </Text>
-            )}
-          </FormScreenSection>
-        ) : null}
+              {linkedEpisodes.length > 0 ? (
+                <View style={styles.linkedList}>
+                  {linkedEpisodes.map((episode) => {
+                    const chips = buildParticipantChips(episode, friendNameById, {
+                      friendPhotoById,
+                      excludeFriendIds: myselfId ? [myselfId] : [],
+                    });
+                    return (
+                      <EpisodeListCard
+                        key={episode.id}
+                        title={episode.title}
+                        date={episode.date}
+                        episodeTag={episode.tag}
+                        chips={chips}
+                        visibilityMode={episode.visibilityMode}
+                        photoUris={episodePhotoUrisById.get(episode.id)}
+                        unfilled={episode.pendingReview === true}
+                        onPress={() => handleOpenLinkedEpisode(episode)}
+                        style={styles.linkedEpisodeCard}
+                      />
+                    );
+                  })}
+                </View>
+              ) : (
+                <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>
+                  まだエピソードがありません
+                </Text>
+              )}
+            </>
+          ) : null}
 
-        <FormScreenSection elevated style={[styles.formSection, styles.formActionsSection]}>
           <View style={styles.formActions}>
             <Pressable
-              style={[styles.formCancelButton, isSaving ? styles.saveButtonBusy : null]}
+              style={[styles.formCancelButton, fieldCorner, isSaving ? styles.saveButtonBusy : null]}
               onPress={leaveScreen}
               disabled={isSaving}
             >
@@ -1234,13 +1194,16 @@ export default function EventScreen() {
             <Pressable
               style={[
                 styles.formSaveButton,
+                fieldCorner,
                 contentFilledButtonStyle(content),
                 isSaving ? styles.saveButtonBusy : null,
               ]}
               onPress={handleSave}
               disabled={isSaving}
             >
-              <Text style={[styles.formSaveButtonText, contentFilledButtonTextStyle(content)]}>保存</Text>
+              <Text style={[styles.formSaveButtonText, contentFilledButtonTextStyle(content)]}>
+                {isEditing ? '更新' : '保存'}
+              </Text>
             </Pressable>
           </View>
         </FormScreenSection>
@@ -1258,6 +1221,46 @@ export default function EventScreen() {
           </Pressable>
         ) : null}
       </FormScreenTemplate>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={activePicker != null}
+        onRequestClose={() => setActivePicker(null)}
+      >
+        <View style={styles.dateTimeModalBackdrop}>
+          <Pressable
+            style={StyleSheet.absoluteFillObject}
+            onPress={() => setActivePicker(null)}
+            accessibilityLabel="閉じる"
+            accessibilityRole="button"
+          />
+          <View
+            style={[
+              styles.dateTimeModalCard,
+              { backgroundColor: content.contentCard, borderColor: content.contentBorder },
+            ]}
+          >
+            <Text style={[styles.dateTimeModalTitle, contentTextStyle(content)]}>{pickerTitle}</Text>
+            <DateTimePicker
+              value={Number.isNaN(pickerValue.getTime()) ? new Date() : pickerValue}
+              mode={pickerMode}
+              display="spinner"
+              locale="ja-JP"
+              style={styles.dateTimePicker}
+              {...dateTimePickerProps}
+              {...pickerBounds}
+              onChange={handlePickerChange}
+            />
+            <Pressable
+              style={[styles.dateTimeModalDone, fieldCorner, contentFilledButtonStyle(content)]}
+              onPress={() => setActivePicker(null)}
+            >
+              <Text style={[styles.dateTimeModalDoneText, contentFilledButtonTextStyle(content)]}>完了</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={timingModalVisible}
@@ -1314,6 +1317,7 @@ export default function EventScreen() {
         allowCustomValue
         customInputPlaceholder="新しいタグ名"
         customActionLabel="このタグを使う"
+        columns={2}
       />
 
       <Modal
@@ -1333,7 +1337,7 @@ export default function EventScreen() {
             <Text style={[styles.timingModalTitle, contentTextStyle(content)]}>
               残すタスクを選択
             </Text>
-            <Text style={[styles.emptyParticipantText, contentMutedTextStyle(content)]}>
+            <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>
               選択したタスクは予定なしの臨時へ移します。未選択は削除されます。
             </Text>
             <ScrollView style={styles.timingModalOptions}>
@@ -1433,11 +1437,8 @@ const styles = StyleSheet.create({
   formActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    flexWrap: 'wrap',
     gap: 8,
-  },
-  formActionsSection: {
-    paddingTop: Spacing.sm,
+    marginTop: 4,
   },
   formCancelButton: {
     backgroundColor: 'transparent',
@@ -1463,104 +1464,130 @@ const styles = StyleSheet.create({
     fontSize: Typography.base,
   },
   scrollContent: {
-    paddingTop: Spacing.md,
+    paddingTop: Spacing.sm,
     paddingBottom: Spacing.lg,
   },
   formSection: {
-    gap: 8,
+    gap: 0,
   },
-  participantsFormRow: {
-    alignItems: 'center',
-  },
-  participantsTagArea: {
-    borderWidth: 1,
-    minHeight: 42,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    justifyContent: 'center',
-    width: '100%',
+  fieldDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: Spacing.sm,
   },
   fieldLabel: {
-    fontSize: Typography.base,
-    fontWeight: '700',
-    color: Theme.textPrimary,
+    width: 72,
+    textAlign: 'left',
   },
-  memoField: {
-    alignSelf: 'stretch',
+  rowAlignStart: {
+    alignItems: 'flex-start',
   },
   switchField: {
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
   },
   textInput: {
-    minHeight: 42,
+    minHeight: 38,
     borderColor: Theme.inputBorder,
     borderWidth: 1,
-    borderRadius: 0,
-    backgroundColor: Theme.inputBg,
+    borderRadius: Radius.sm,
+    backgroundColor: Theme.bgSurface,
     color: Theme.inputText,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    fontSize: Typography.base,
+    paddingHorizontal: 10,
+    fontSize: 14,
+    width: '100%',
+  },
+  dateTimeField: {
+    justifyContent: 'center',
   },
   memoInput: {
-    minHeight: 96,
+    minHeight: 86,
+    textAlignVertical: 'top',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    fontSize: 14,
+    marginBottom: 8,
   },
   dateTimeRow: {
     flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  tagChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: 8,
+    width: '100%',
   },
-  tagChipButton: {
+  dateButton: {
+    flex: 1,
+    width: undefined,
+  },
+  timeButton: {
+    width: 96,
+    flex: 0,
+  },
+  pickerButtonText: {
+    fontSize: Typography.base,
+  },
+  pickerPlaceholder: {
+    fontSize: Typography.base,
+  },
+  selectChipButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     gap: 6,
     borderWidth: 1,
+    borderRadius: Radius.sm,
     paddingHorizontal: 12,
     paddingVertical: 6,
     maxWidth: '100%',
   },
-  tagChipText: {
+  selectChipText: {
     fontSize: Typography.sm,
     fontWeight: '600',
     flexShrink: 1,
   },
-  tagChipChevron: {
+  selectChipChevron: {
     fontSize: 9,
     marginTop: 1,
   },
-  pickerButton: {
-    minHeight: 42,
-    borderColor: Theme.inputBorder,
+  participantAddChip: {
+    width: 28,
+    height: 28,
     borderWidth: 1,
-    borderRadius: 0,
-    backgroundColor: Theme.inputBg,
+    borderRadius: 14,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: Spacing.md,
   },
-  dateButton: {
+  participantAddChipText: {
+    fontSize: 16,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  dateTimeModalBackdrop: {
     flex: 1,
+    backgroundColor: Theme.overlay,
+    justifyContent: 'center',
+    padding: 24,
   },
-  timeButton: {
-    width: 110,
+  dateTimeModalCard: {
+    borderWidth: 1,
+    borderRadius: Radius.md,
+    padding: 16,
   },
-  pickerButtonText: {
-    fontSize: Typography.base,
-    color: Theme.textPrimary,
+  dateTimeModalTitle: {
+    fontSize: 15,
+    fontWeight: '700',
   },
-  pickerPlaceholder: {
-    fontSize: Typography.base,
-    color: Theme.textSecondary,
+  dateTimePicker: {
+    height: 216,
+    width: '100%',
   },
-  pickerWrap: {
-    marginTop: Spacing.xs,
-  },
-  picker: {
+  dateTimeModalDone: {
     alignSelf: 'flex-end',
+    marginTop: 4,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+  },
+  dateTimeModalDoneText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   deleteLinkWrap: {
     alignSelf: 'center',
@@ -1580,6 +1607,7 @@ const styles = StyleSheet.create({
     color: '#f87171',
   },
   linkedTaskRow: {
+    borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 10,
     gap: 2,
@@ -1591,39 +1619,21 @@ const styles = StyleSheet.create({
   linkedTaskMeta: {
     fontSize: 12,
   },
-  sectionHeaderRow: {
+  linkedHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: Spacing.xs,
+    marginBottom: 8,
   },
-  addParticipantPlusButton: {
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    /** 折り返し最終行の右端へ寄せる */
-    marginLeft: 'auto',
+  linkedHeaderLabel: {
+    fontSize: 14,
+    fontWeight: '600',
   },
-  sectionHeaderPlusButton: {
-    marginLeft: 0,
+  linkedList: {
+    gap: 8,
   },
-  addParticipantPlusButtonText: {
-    color: Theme.textPrimary,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 15,
-    textAlign: 'center',
-  },
-  emptyParticipantText: {
+  emptyText: {
     fontSize: Typography.base,
-    color: Theme.textSecondary,
-  },
-  linkedEpisodeList: {
-    gap: Spacing.sm,
   },
   linkedEpisodeCard: {
     marginBottom: 0,

@@ -108,7 +108,6 @@ export default function ToolsScreen() {
           { paddingHorizontal: kit.listScreenPaddingHorizontal },
         ]}
       >
-        <Text style={[styles.screenTitle, contentTextStyle(content)]}>ツール</Text>
         {kit.toolScreenShowSubtitle ? (
           <Text style={[styles.screenSubtitle, contentMutedTextStyle(content)]}>
             便利ツールをここにまとめます
@@ -175,13 +174,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    paddingTop: Spacing.sm,
+    paddingTop: Spacing.lg,
     paddingBottom: 100,
     gap: Spacing.md,
-  },
-  screenTitle: {
-    fontSize: 20,
-    fontWeight: '800',
   },
   screenSubtitle: {
     fontSize: 13,

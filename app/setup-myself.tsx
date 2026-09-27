@@ -121,7 +121,7 @@ export default function SetupMyselfScreen() {
               confirmPrompted.current = false;
               return;
             }
-            router.replace('/');
+            router.replace('/calendar');
           },
         },
       ],
@@ -135,7 +135,7 @@ export default function SetupMyselfScreen() {
       Alert.alert('エラー', '本人の登録に失敗しました。');
       return;
     }
-    router.replace('/');
+    router.replace('/calendar');
   };
 
   const handleCreate = () => {

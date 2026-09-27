@@ -43,7 +43,12 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(() => {
     initializeDatabase();
     setVariantState(getAppThemeVariant());
-    setPatternIdState(normalizeDesignPatternId(getDesignPatternId()));
+    // コーデックスと静かな図鑑の定義は残す。選べるようにするまで適用はモノクロームだけ。
+    const storedPatternId = normalizeDesignPatternId(getDesignPatternId());
+    if (storedPatternId !== 'monochrome') {
+      setDesignPatternId('monochrome');
+    }
+    setPatternIdState('monochrome');
   }, []);
 
   useEffect(() => {
@@ -57,9 +62,10 @@ export function AppThemeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setPatternId = useCallback((next: DesignPatternId) => {
+    const applied = next === 'monochrome' ? next : 'monochrome';
     initializeDatabase();
-    setDesignPatternId(next);
-    setPatternIdState(next);
+    setDesignPatternId(applied);
+    setPatternIdState(applied);
   }, []);
 
   const rawBundle = useMemo(() => getAppThemeBundle(variant), [variant]);
