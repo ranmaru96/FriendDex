@@ -36,7 +36,7 @@ export default function AppHeader({ embedded = false }: AppHeaderProps) {
           accessibilityLabel={followAccessibility}
           hitSlop={8}
         >
-          <Ionicons name="people-circle-outline" size={26} color={headerText} />
+          <Ionicons name="person-circle-outline" size={26} color={headerText} />
           {incomingCount > 0 ? (
             <View style={styles.badge} pointerEvents="none">
               <Text style={styles.badgeText}>{badgeLabel}</Text>

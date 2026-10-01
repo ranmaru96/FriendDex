@@ -261,7 +261,7 @@ export function OptionPickerModal({
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <Pressable
-          style={StyleSheet.absoluteFillObject}
+          style={StyleSheet.absoluteFill}
           onPress={closePicker}
           accessibilityLabel="閉じる"
           accessibilityRole="button"

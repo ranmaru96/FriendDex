@@ -500,6 +500,11 @@ export default function EpisodeScreen() {
     [episodeListSource, filteredEpisodeRows]
   );
 
+  const unreadSharedCount = useMemo(
+    () => incomingEpisodeRows.filter((row) => row.episode.incomingUnread === true).length,
+    [incomingEpisodeRows]
+  );
+
   const episodeListFiltersActive =
     episodeListSource === 'shared'
       ? filterTitle.trim().length > 0 ||
@@ -821,7 +826,12 @@ export default function EpisodeScreen() {
             </View>
           ) : (
           <View ref={scrollContentRef} collapsable={false}>
-          <SearchArea style={isEdgeToEdge ? styles.searchAreaEdgeToEdge : undefined}>
+          <SearchArea
+            style={[
+              isEdgeToEdge ? styles.searchAreaEdgeToEdge : undefined,
+              kit.searchAreaShowFieldLabels ? styles.searchAreaUnreadClearance : null,
+            ]}
+          >
             <SearchAreaRow>
               <SearchAreaTextInputField
                 label="タイトル"
@@ -854,6 +864,21 @@ export default function EpisodeScreen() {
                   />
                 </>
               )}
+              <View style={styles.episodeSourceColumn}>
+                {kit.searchAreaShowFieldLabels ? (
+                  <View style={styles.episodeUnreadSlot}>
+                    {unreadSharedCount > 0 ? (
+                      <View
+                        style={styles.episodeUnreadBadge}
+                        accessibilityLabel={`未読の共有エピソード ${unreadSharedCount}`}
+                      >
+                        <Text style={styles.episodeUnreadBadgeText}>
+                          {unreadSharedCount > 99 ? '99+' : String(unreadSharedCount)}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                ) : null}
               <Pressable
                 style={[
                   styles.episodeSourceToggle,
@@ -898,6 +923,7 @@ export default function EpisodeScreen() {
                   <Text style={[styles.episodeSourceLabel, { color: content.contentText }]}>mine</Text>
                 ) : null}
               </Pressable>
+              </View>
             </SearchAreaRow>
           </SearchArea>
           <SearchAreaDivider />
@@ -1060,6 +1086,35 @@ const styles = StyleSheet.create({
     borderLeftWidth: 0,
     borderRightWidth: 0,
     borderRadius: 0,
+  },
+  /** 未読バッジがスクロール上端やヘッダー下の黒帯で切れないよう、ラベル行の上に余白を取る */
+  searchAreaUnreadClearance: {
+    paddingTop: 0,
+  },
+  episodeSourceColumn: {
+    alignItems: 'flex-end',
+  },
+  episodeUnreadSlot: {
+    height: 16,
+    marginBottom: 4,
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  episodeUnreadBadge: {
+    minWidth: 16,
+    height: 16,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: EPISODE_UNREAD_MARK_COLOR,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  episodeUnreadBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '800',
+    lineHeight: 12,
+    includeFontPadding: false,
   },
   episodeSourceToggle: {
     width: 65,

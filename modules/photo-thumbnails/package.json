@@ -1,0 +1,15 @@
+{
+  "name": "photo-thumbnails",
+  "version": "1.0.0",
+  "description": "Loads photo-library thumbnails for the episode photo picker.",
+  "license": "UNLICENSED",
+  "author": "FriendDex",
+  "homepage": "https://github.com/expo/expo",
+  "main": "src/index.tsx",
+  "types": "src/index.tsx",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

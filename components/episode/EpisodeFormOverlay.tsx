@@ -661,7 +661,7 @@ export function EpisodeFormOverlay({
       >
         <View style={styles.dateTimeModalBackdrop}>
           <Pressable
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             onPress={closeDateTimePicker}
             accessibilityLabel="閉じる"
             accessibilityRole="button"

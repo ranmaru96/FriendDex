@@ -1,8 +1,14 @@
 import Constants from 'expo-constants';
-import { requireOptionalNativeModule } from 'expo-modules-core';
+import { requireOptionalNativeModule } from 'expo';
 import { Platform } from 'react-native';
 import { GOOGLE_CALENDAR_SCOPE } from '@/constants/googleCalendar';
-import { deleteAppSetting, getAppSetting, initializeDatabase, setAppSetting } from '@/db';
+import {
+  deleteAppSetting,
+  getAppSetting,
+  GOOGLE_CALENDAR_NEEDS_REAUTH_KEY,
+  initializeDatabase,
+  setAppSetting,
+} from '@/db';
 
 const TOKEN_STORAGE_KEY = 'google_calendar_tokens';
 
@@ -155,10 +161,26 @@ export const saveGoogleTokens = async (
     expiresAt: tokens.expiresAt,
   };
   await writeStoredJson(TOKEN_STORAGE_KEY, JSON.stringify(next));
+  clearGoogleCalendarNeedsReauth();
 };
 
 export const clearGoogleTokens = async (): Promise<void> => {
   await deleteStoredJson(TOKEN_STORAGE_KEY);
+};
+
+export const isGoogleCalendarNeedsReauth = (): boolean => {
+  initializeDatabase();
+  return getAppSetting(GOOGLE_CALENDAR_NEEDS_REAUTH_KEY) === '1';
+};
+
+export const markGoogleCalendarNeedsReauth = (): void => {
+  initializeDatabase();
+  setAppSetting(GOOGLE_CALENDAR_NEEDS_REAUTH_KEY, '1');
+};
+
+export const clearGoogleCalendarNeedsReauth = (): void => {
+  initializeDatabase();
+  deleteAppSetting(GOOGLE_CALENDAR_NEEDS_REAUTH_KEY);
 };
 
 export const tokensFromAuthSession = (authentication: GoogleAuthTokenResponse): StoredGoogleTokens => {
@@ -170,17 +192,38 @@ export const tokensFromAuthSession = (authentication: GoogleAuthTokenResponse): 
   };
 };
 
-let refreshInFlight: Promise<StoredGoogleTokens | null> | null = null;
+export type GoogleAccessTokenFailure = 'missing' | 'reauth' | 'transient';
 
-const refreshGoogleTokens = async (
-  current: StoredGoogleTokens
-): Promise<StoredGoogleTokens | null> => {
+export type GoogleAccessTokenResolution =
+  | { ok: true; accessToken: string }
+  | { ok: false; failure: GoogleAccessTokenFailure };
+
+type RefreshOutcome =
+  | { ok: true; tokens: StoredGoogleTokens }
+  | { ok: false; failure: 'reauth' | 'transient' };
+
+let refreshInFlight: Promise<RefreshOutcome> | null = null;
+
+const refreshFailure = (status: number, errorCode: string): 'reauth' | 'transient' => {
+  if (
+    status === 400 ||
+    status === 401 ||
+    errorCode === 'invalid_grant' ||
+    errorCode === 'invalid_client' ||
+    errorCode === 'unauthorized_client'
+  ) {
+    return 'reauth';
+  }
+  return 'transient';
+};
+
+const refreshGoogleTokens = async (current: StoredGoogleTokens): Promise<RefreshOutcome> => {
   if (!current.refreshToken) {
-    return null;
+    return { ok: false, failure: 'reauth' };
   }
   const clientId = getPlatformGoogleClientId();
   if (!clientId) {
-    return null;
+    return { ok: false, failure: 'reauth' };
   }
   try {
     const body = new URLSearchParams({
@@ -194,7 +237,16 @@ const refreshGoogleTokens = async (
       body: body.toString(),
     });
     if (!response.ok) {
-      return null;
+      let errorCode = '';
+      try {
+        const parsed = JSON.parse(await response.text()) as { error?: string };
+        if (typeof parsed.error === 'string') {
+          errorCode = parsed.error;
+        }
+      } catch {
+        // 本文が JSON でなくても、ステータスで失効か通信失敗かを分ける
+      }
+      return { ok: false, failure: refreshFailure(response.status, errorCode) };
     }
     const json = (await response.json()) as {
       access_token?: string;
@@ -202,7 +254,7 @@ const refreshGoogleTokens = async (
       expires_in?: number;
     };
     if (typeof json.access_token !== 'string' || !json.access_token.trim()) {
-      return null;
+      return { ok: false, failure: 'transient' };
     }
     const next = tokensFromAuthSession({
       accessToken: json.access_token,
@@ -210,19 +262,24 @@ const refreshGoogleTokens = async (
       expiresIn: json.expires_in,
     });
     await saveGoogleTokens(next, current);
-    return (await loadGoogleTokens()) ?? next;
+    return { ok: true, tokens: (await loadGoogleTokens()) ?? next };
   } catch {
-    return null;
+    return { ok: false, failure: 'transient' };
   }
 };
 
-export const getValidGoogleAccessToken = async (forceRefresh = false): Promise<string | null> => {
+export const resolveGoogleAccessToken = async (
+  forceRefresh = false
+): Promise<GoogleAccessTokenResolution> => {
+  if (isGoogleCalendarNeedsReauth()) {
+    return { ok: false, failure: 'reauth' };
+  }
   const current = await loadGoogleTokens();
   if (!current) {
-    return null;
+    return { ok: false, failure: 'missing' };
   }
   if (!forceRefresh && current.expiresAt > Date.now() + 60_000) {
-    return current.accessToken;
+    return { ok: true, accessToken: current.accessToken };
   }
   if (!refreshInFlight) {
     refreshInFlight = refreshGoogleTokens(current).finally(() => {
@@ -230,7 +287,19 @@ export const getValidGoogleAccessToken = async (forceRefresh = false): Promise<s
     });
   }
   const refreshed = await refreshInFlight;
-  return refreshed?.accessToken ?? (forceRefresh ? null : current.accessToken);
+  if (refreshed.ok) {
+    clearGoogleCalendarNeedsReauth();
+    return { ok: true, accessToken: refreshed.tokens.accessToken };
+  }
+  if (refreshed.failure === 'reauth') {
+    markGoogleCalendarNeedsReauth();
+  }
+  return { ok: false, failure: refreshed.failure };
+};
+
+export const getValidGoogleAccessToken = async (forceRefresh = false): Promise<string | null> => {
+  const resolved = await resolveGoogleAccessToken(forceRefresh);
+  return resolved.ok ? resolved.accessToken : null;
 };
 
 export const hasGoogleTokens = async (): Promise<boolean> => {

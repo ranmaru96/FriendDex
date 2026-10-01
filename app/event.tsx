@@ -109,6 +109,8 @@ import {
 } from '../utils/eventEpisodeBidirectionalSync';
 import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
 import {
+  holdGoogleCalendarDelete,
+  releaseGoogleCalendarDelete,
   scheduleGoogleCalendarDelete,
   scheduleGoogleCalendarPush,
 } from '@/utils/googleCalendarSync';
@@ -443,8 +445,10 @@ export default function EventScreen() {
     const existing = getEvent(eventId);
     await cancelEventNotification(existing?.notificationId);
     const googleEventId = existing?.googleEventId ?? null;
+    holdGoogleCalendarDelete(googleEventId);
     const ok = deleteEvent(eventId);
     if (!ok) {
+      releaseGoogleCalendarDelete(googleEventId);
       unlockScreen();
       Alert.alert('エラー', '予定の削除に失敗しました。');
       return;
@@ -1049,29 +1053,29 @@ export default function EventScreen() {
           </FormRow>
           <EventFieldDivider />
 
-          <FormRow label="通知" labelStyle={styles.fieldLabel} contentStyle={styles.switchField}>
+          <FormRow label="通知" labelStyle={styles.fieldLabel} contentStyle={styles.notifyRow}>
             <Switch
               value={notifyEnabled}
               onValueChange={setNotifyEnabled}
               {...contentSwitchProps(content, notifyEnabled)}
             />
+            {notifyEnabled ? (
+              <Pressable
+                style={[styles.selectChipButton, contentPersonTagStyle(content)]}
+                onPress={() => {
+                  dismissKeyboardFocus();
+                  setTimingModalVisible(true);
+                }}
+                accessibilityLabel={`通知タイミング ${selectedTimingLabel}`}
+                accessibilityRole="button"
+              >
+                <Text style={[styles.selectChipText, contentTextStyle(content)]} numberOfLines={1}>
+                  {selectedTimingLabel}
+                </Text>
+                <Text style={[styles.selectChipChevron, contentMutedTextStyle(content)]}>▼</Text>
+              </Pressable>
+            ) : null}
           </FormRow>
-          {notifyEnabled ? (
-            <>
-              <EventFieldDivider />
-              <FormRow label="タイミング" labelStyle={styles.fieldLabel}>
-                <Pressable
-                  style={[styles.textInput, styles.dateTimeField, fieldCorner, contentInputStyle(content)]}
-                  onPress={() => {
-                    dismissKeyboardFocus();
-                    setTimingModalVisible(true);
-                  }}
-                >
-                  <Text style={[styles.pickerButtonText, contentTextStyle(content)]}>{selectedTimingLabel}</Text>
-                </Pressable>
-              </FormRow>
-            </>
-          ) : null}
           <EventFieldDivider />
 
           <FormRow label="メモ" layout="vertical">
@@ -1089,7 +1093,7 @@ export default function EventScreen() {
           {showLinkedTasksSection ? (
             <>
               <EventFieldDivider />
-              <View style={styles.linkedHeader}>
+              <View style={[styles.linkedHeader, styles.linkedHeaderNearLabel]}>
                 <Text style={[styles.linkedHeaderLabel, contentTextStyle(content)]}>タスク</Text>
                 {canAddLinkedTask ? (
                   <Pressable
@@ -1230,7 +1234,7 @@ export default function EventScreen() {
       >
         <View style={styles.dateTimeModalBackdrop}>
           <Pressable
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             onPress={() => setActivePicker(null)}
             accessibilityLabel="閉じる"
             accessibilityRole="button"
@@ -1484,6 +1488,12 @@ const styles = StyleSheet.create({
   switchField: {
     alignItems: 'flex-start',
   },
+  notifyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    gap: 10,
+  },
   textInput: {
     minHeight: 38,
     borderColor: Theme.inputBorder,
@@ -1624,6 +1634,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: 8,
+  },
+  linkedHeaderNearLabel: {
+    justifyContent: 'flex-start',
+    gap: 8,
   },
   linkedHeaderLabel: {
     fontSize: 14,

@@ -12,11 +12,11 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import * as Sharing from 'expo-sharing';
 import QRCode from 'react-native-qrcode-skia';
 import Svg, { Circle, Path } from 'react-native-svg';
-import ViewShot from 'react-native-view-shot';
+import ViewShot, { type ViewShotRef } from 'react-native-view-shot';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
 import { useSubScreenHeaderStyles } from '@/components/screen/subScreenHeaderStyles';
 import { useAppTheme } from '@/contexts/AppThemeContext';
@@ -126,7 +126,7 @@ export default function MyProfileQrScreen() {
   const { colors: appTheme } = useAppTheme();
   const content = useContentColors();
   const headerStyles = useSubScreenHeaderStyles();
-  const cardShotRef = useRef<ViewShot>(null);
+  const cardShotRef = useRef<ViewShotRef>(null);
   const { session } = useAuthSession();
   const authUserId = session?.user.id?.trim() ?? '';
   const [profile, setProfile] = useState<Profile | null>(null);

@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { usesOffsetChrome } from '@/constants/designPatterns';
 import { OffsetCard } from '@/components/ui/OffsetCard';
+import { SettingsSectionLabel, SETTINGS_CONTENT_LEFT } from '@/components/screen/SettingsSectionLabel';
 import { Radius, Theme, Typography } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { useAuthSession } from '@/contexts/AuthSessionContext';
@@ -151,32 +152,46 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
     }
   };
 
+  const signedIn = session?.user != null;
+
   const form = (
-    <View style={styles.body}>
-      {session?.user ? (
+    <View style={[styles.body, signedIn ? styles.bodyCompact : null]}>
+      {signedIn ? (
         <>
-          <Text style={[styles.status, contentTextStyle(content)]}>
-            ログイン中{'\n'}
-            {session.user.email ?? session.user.id}
+          <Text style={[styles.status, contentTextStyle(content)]} numberOfLines={1}>
+            ログイン中　{session.user.email ?? session.user.id}
           </Text>
-          <Pressable
-            style={[styles.button, contentFilledButtonStyle(content), busy && styles.buttonDisabled]}
-            onPress={() => void runSignOut()}
-            disabled={busy}
-          >
-            {busy ? (
-              <ActivityIndicator color={content.contentCard} />
-            ) : (
-              <Text style={[styles.buttonText, contentFilledButtonTextStyle(content)]}>ログアウト</Text>
-            )}
-          </Pressable>
-          <Pressable
-            style={[styles.secondaryButton, { borderColor: content.contentBorder }, busy && styles.buttonDisabled]}
-            onPress={() => void runRestore()}
-            disabled={busy}
-          >
-            <Text style={[styles.secondaryButtonText, contentMutedTextStyle(content)]}>サーバーから復元</Text>
-          </Pressable>
+          <View style={styles.signedInActions}>
+            <Pressable
+              style={[
+                styles.compactButton,
+                styles.compactSecondary,
+                { borderColor: content.contentBorder },
+                busy && styles.buttonDisabled,
+              ]}
+              onPress={() => void runRestore()}
+              disabled={busy}
+            >
+              <Text style={[styles.compactButtonText, contentMutedTextStyle(content)]}>サーバーから復元</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.compactButton,
+                contentFilledButtonStyle(content),
+                busy && styles.buttonDisabled,
+              ]}
+              onPress={() => void runSignOut()}
+              disabled={busy}
+              accessibilityRole="button"
+              accessibilityLabel="ログアウト"
+            >
+              {busy ? (
+                <ActivityIndicator color={content.contentCard} />
+              ) : (
+                <Text style={[styles.compactButtonText, contentFilledButtonTextStyle(content)]}>ログアウト</Text>
+              )}
+            </Pressable>
+          </View>
         </>
       ) : (
         <>
@@ -242,22 +257,18 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
   );
 
   const group = isCodex ? (
-    <OffsetCard style={{ marginHorizontal: 16 }}>{body}</OffsetCard>
+    <OffsetCard style={styles.contentInset}>{body}</OffsetCard>
   ) : (
     <View style={[styles.group, themed.group]}>{body}</View>
   );
 
   return (
     <>
-      <Text
-        style={[
-          styles.sectionHeader,
-          themed.sectionHeader,
-          isMonochrome && { color: colors.onScreenText },
-        ]}
-      >
-        アカウント
-      </Text>
+      <SettingsSectionLabel
+        icon="person-circle-outline"
+        label="アカウント"
+        color={isMonochrome ? colors.onScreenText : Theme.textSecondary}
+      />
       {group}
       <Pressable
         style={[styles.previewButton, { borderColor: content.contentBorder }]}
@@ -275,36 +286,35 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
 }
 
 const styles = StyleSheet.create({
-  sectionHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    fontSize: Typography.base,
-    fontWeight: '600',
-    color: Theme.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  contentInset: {
+    marginLeft: SETTINGS_CONTENT_LEFT,
+    marginRight: 16,
   },
   group: {
-    marginHorizontal: 16,
+    marginLeft: SETTINGS_CONTENT_LEFT,
+    marginRight: 16,
     borderRadius: Radius.md,
     overflow: 'hidden',
   },
   row: {
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 12,
   },
   emptyText: {
     fontSize: 15,
   },
   body: {
     paddingHorizontal: 16,
-    paddingVertical: 14,
+    paddingVertical: 10,
     gap: 10,
   },
+  bodyCompact: {
+    paddingVertical: 10,
+    gap: 8,
+  },
   status: {
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    lineHeight: 18,
   },
   input: {
     borderWidth: 1,
@@ -331,6 +341,25 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
   },
+  signedInActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  compactButton: {
+    flex: 1,
+    borderRadius: Radius.md,
+    minHeight: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  compactSecondary: {
+    borderWidth: 1,
+  },
+  compactButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+  },
   secondaryButton: {
     borderWidth: 1,
     borderRadius: Radius.md,
@@ -345,7 +374,8 @@ const styles = StyleSheet.create({
   },
   previewButton: {
     marginTop: 12,
-    marginHorizontal: 16,
+    marginLeft: SETTINGS_CONTENT_LEFT,
+    marginRight: 16,
     borderWidth: 1,
     borderRadius: Radius.md,
     minHeight: 44,
@@ -355,7 +385,8 @@ const styles = StyleSheet.create({
   },
   hint: {
     marginTop: 12,
-    marginHorizontal: 16,
+    marginLeft: SETTINGS_CONTENT_LEFT,
+    marginRight: 16,
     fontSize: Typography.base,
     color: Theme.textSecondary,
     lineHeight: 18,

@@ -7,12 +7,16 @@ import {
   Text,
   View,
 } from 'react-native';
-import { FRIENDEX_GOOGLE_CALENDAR_SUMMARY } from '@/constants/googleCalendar';
+import {
+  FRIENDEX_GOOGLE_CALENDAR_SUMMARY,
+  GOOGLE_CALENDAR_REAUTH_MESSAGE,
+} from '@/constants/googleCalendar';
 import { Theme } from '@/constants/theme';
 import {
   GOOGLE_CALENDAR_AUTH_SCOPES,
   getGoogleClientIds,
   getGoogleNativeRedirectUri,
+  loadGoogleTokens,
   saveGoogleTokens,
   tokensFromAuthSession,
 } from '@/lib/googleAuth';
@@ -21,7 +25,9 @@ import {
   completeGoogleCalendarConnect,
   disconnectGoogleCalendar,
   getGoogleCalendarConnectionSnapshot,
+  probeGoogleCalendarAuth,
   pushAllLocalEventsToGoogleCalendar,
+  type GoogleCalendarPushResult,
 } from '@/utils/googleCalendarSync';
 import { requireOnline } from '@/lib/networkReachability';
 
@@ -40,6 +46,18 @@ export type GoogleCalendarSettingsThemed = {
   rowLabel: object | null;
   group: object | null;
   separator: object | null;
+};
+
+const describePushResult = (result: GoogleCalendarPushResult): string => {
+  if (result.blocked === 'auth') {
+    return GOOGLE_CALENDAR_REAUTH_MESSAGE;
+  }
+  if (result.blocked === 'disconnected') {
+    return 'Google アカウントを接続してから再送信してください。';
+  }
+  return `Google カレンダーへ ${result.pushed}件送りました。${
+    result.failed > 0 ? `\n失敗: ${result.failed}件` : ''
+  }`;
 };
 
 const formatSyncAt = (iso: string | null): string | null => {
@@ -100,7 +118,16 @@ function GoogleCalendarConnectControlsInner({
   }, []);
 
   useEffect(() => {
-    reloadSnapshot();
+    let cancelled = false;
+    void (async () => {
+      await probeGoogleCalendarAuth();
+      if (!cancelled) {
+        reloadSnapshot();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [reloadSnapshot]);
 
   useEffect(() => {
@@ -120,7 +147,11 @@ function GoogleCalendarConnectControlsInner({
       const { email, result } = await completeGoogleCalendarConnect();
       reloadSnapshot();
       const failedNote =
-        result.failed > 0 ? `\n送信に失敗した予定: ${result.failed}件` : '';
+        result.blocked === 'auth'
+          ? `\n${GOOGLE_CALENDAR_REAUTH_MESSAGE}`
+          : result.failed > 0
+            ? `\n送信に失敗した予定: ${result.failed}件`
+            : '';
       Alert.alert(
         '接続しました',
         `${FRIENDEX_GOOGLE_CALENDAR_SUMMARY} カレンダーへ既存の予定を送りました（${result.pushed}件）${failedNote}${
@@ -159,12 +190,15 @@ function GoogleCalendarConnectControlsInner({
     }
 
     void (async () => {
-      await saveGoogleTokens(tokensFromAuthSession(response.authentication!));
+      const previous = await loadGoogleTokens();
+      await saveGoogleTokens(tokensFromAuthSession(response.authentication!), previous);
       await finishConnect();
     })();
   }, [finishConnect, response]);
 
-  const connected = Boolean(snapshot.calendarId);
+  const linked = Boolean(snapshot.calendarId);
+  const showReauth = linked && snapshot.needsReauth;
+  const connected = linked && !snapshot.needsReauth;
   const lastSyncLabel = formatSyncAt(snapshot.lastSyncAt);
 
   const handleConnect = async () => {
@@ -225,10 +259,8 @@ function GoogleCalendarConnectControlsInner({
         const result = await pushAllLocalEventsToGoogleCalendar();
         reloadSnapshot();
         Alert.alert(
-          '送信しました',
-          `Google カレンダーへ ${result.pushed}件送りました。${
-            result.failed > 0 ? `\n失敗: ${result.failed}件` : ''
-          }`
+          result.blocked === 'auth' ? '再接続が必要' : result.blocked === 'disconnected' ? '未接続' : '送信しました',
+          describePushResult(result)
         );
       } catch (error) {
         Alert.alert(
@@ -244,7 +276,32 @@ function GoogleCalendarConnectControlsInner({
 
   return (
     <>
-      {connected ? (
+      {showReauth ? (
+        <>
+          <View style={styles.row}>
+            <View style={styles.rowText}>
+              <Text style={[styles.rowLabel, styles.destructive, themed.rowLabel]}>再接続が必要</Text>
+              <Text style={[styles.rowMeta, themed.hint]}>
+                {snapshot.email ?? `${FRIENDEX_GOOGLE_CALENDAR_SUMMARY} カレンダー`}
+              </Text>
+            </View>
+            {busy ? <ActivityIndicator /> : null}
+          </View>
+          <View style={[styles.separator, themed.separator]} />
+          <Pressable
+            style={styles.row}
+            onPress={() => void handleConnect()}
+            disabled={!request || busy}
+          >
+            <Text style={[styles.rowLabel, themed.rowLabel]}>再接続</Text>
+            {busy ? <ActivityIndicator /> : <Text style={[styles.rowChevron, themed.hint]}>›</Text>}
+          </Pressable>
+          <View style={[styles.separator, themed.separator]} />
+          <Pressable style={styles.row} onPress={handleDisconnect} disabled={busy}>
+            <Text style={[styles.rowLabel, styles.destructive, themed.rowLabel]}>接続を解除</Text>
+          </Pressable>
+        </>
+      ) : connected ? (
         <>
           <View style={styles.row}>
             <View style={styles.rowText}>
@@ -265,7 +322,11 @@ function GoogleCalendarConnectControlsInner({
           </Pressable>
         </>
       ) : (
-        <Pressable style={styles.row} onPress={() => void handleConnect()} disabled={!request || busy}>
+        <Pressable
+          style={[styles.row, styles.connectRow]}
+          onPress={() => void handleConnect()}
+          disabled={!request || busy}
+        >
           <Text style={[styles.rowLabel, themed.rowLabel]}>Google アカウントを接続</Text>
           {busy ? <ActivityIndicator /> : <Text style={[styles.rowChevron, themed.hint]}>›</Text>}
         </Pressable>
@@ -273,7 +334,8 @@ function GoogleCalendarConnectControlsInner({
       {lastSyncLabel ? (
         <Text style={[styles.inlineHint, themed.hint]}>最終送信: {lastSyncLabel}</Text>
       ) : null}
-      {snapshot.lastError ? (
+      {snapshot.lastError &&
+      !(showReauth && snapshot.lastError === GOOGLE_CALENDAR_REAUTH_MESSAGE) ? (
         <Text style={[styles.inlineHint, styles.errorHint]}>{snapshot.lastError}</Text>
       ) : null}
     </>
@@ -287,6 +349,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingVertical: 16,
+  },
+  /** 設定の「完了済み臨時タスクの保持期間」行（padding 8 + 欄の高さ 32）に合わせる */
+  connectRow: {
+    paddingVertical: 8,
+    minHeight: 48,
   },
   rowText: {
     flex: 1,

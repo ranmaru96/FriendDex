@@ -1,5 +1,5 @@
 ---
-description: 本番EASを浪費しない。日常確認は npm run start:dev。ビルド提案時は消費有無とプロファイルを明示する。
+description: 本番EASを浪費しない。日常確認は npm run start:dev。実装の途中で development を提案しない。ビルド提案時は消費有無とプロファイルを明示する。
 alwaysApply: true
 ---
 
@@ -21,10 +21,16 @@ alwaysApply: true
 
 development ビルドは Dev Client の作り直し用。production より優先して回さない。preview は原則使わない。
 
+development も「いま回せるか」ではなく「この先もう一回必要にならないか」で判断する。
+同じ作業の続き・未実装が残っているなら提案しない。まとめて入れてから1回にする。
+ユーザーが「今ビルドして」と明示したときだけ、途中でも出してよい。
+
 ```text
 ❌ BAD: New Architecture を切って production の eas build を1回回せば分かる
+❌ BAD: ネイティブ変更の途中で development を1回回して確認しよう
 ✅ GOOD: app.config.js と Reanimated の制約を突き合わせ、start:dev で足りるか判断する。
          足りないときだけ、development か production かと消費有無を明示する
+✅ GOOD: 残作業を先に聞き、続くならビルドは保留。全部入ってから development 1回
 ```
 
 ## 提案時の明示

@@ -1855,7 +1855,15 @@ export default function TasksScreen() {
         }}
         onLayout={(event) => {
           listViewportHeightRef.current = event.nativeEvent.layout.height;
-          listScrollRef.current?.measureInWindow((_x, y) => {
+          (
+            listScrollRef.current as
+              | (ScrollView & {
+                  measureInWindow: (
+                    callback: (x: number, y: number, width: number, height: number) => void
+                  ) => void;
+                })
+              | null
+          )?.measureInWindow((_x, y) => {
             listWindowYRef.current = y;
           });
         }}
@@ -2094,7 +2102,7 @@ export default function TasksScreen() {
           onRequestClose={() => setHelpVisible(false)}
         >
           <View style={styles.helpOverlay}>
-            <Pressable style={StyleSheet.absoluteFillObject} onPress={() => setHelpVisible(false)} />
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setHelpVisible(false)} />
             {isCodex ? (
               <OffsetCard contentStyle={{ padding: 18, gap: 12 }}>
                 <Text style={[styles.helpTitle, contentTextStyle(content)]}>タスクの使い方</Text>

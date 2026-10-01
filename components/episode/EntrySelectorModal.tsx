@@ -928,11 +928,11 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   selectorBackdropFill: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
   },
   selectorBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   selectorCard: {
     backgroundColor: Theme.bgSurface,
@@ -1066,13 +1066,13 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   createOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 20,
     elevation: 20,
     justifyContent: 'center',
   },
   createBackdrop: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
   },
   createKeyboard: {

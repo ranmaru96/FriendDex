@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View, type ReactNode, type StyleProp, type ViewStyle } from 'react-native';
+import { useState, type ReactNode } from 'react';
+import { Image, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { EpisodeCardTitle, EPISODE_DETAIL_SIDE_INSET } from '@/components/episode/EpisodeCardTitle';
 import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';

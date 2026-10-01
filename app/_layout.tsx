@@ -3,7 +3,7 @@ import { Stack, usePathname, useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as Sentry from '@sentry/react-native';
 import { useEffect, useState } from 'react';
-import { InteractionManager, Pressable, StyleSheet, View } from 'react-native';
+import { InteractionManager, Pressable, StyleSheet, View, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -39,6 +39,11 @@ import { useTabStackBackHandler } from '@/hooks/useTabStackBackHandler';
 import { useTabStackSync } from '@/hooks/useTabStackSync';
 import { getMyselfSetupPhase, initializeDatabase, ensureDatabaseOpened } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
+import { requestTodayScheduleWidgetSync } from '@/utils/todayScheduleWidget';
+import '@/widgets/MemoryWidget';
+import '@/widgets/RecordWidget';
+import '@/widgets/TodayScheduleWidget';
+import '@/widgets/UpcomingPeopleWidget';
 import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
 
 const BOTTOM_TAB_ROUTE_NAMES = new Set([
@@ -57,6 +62,21 @@ const isListIndexPath = (pathname: string): boolean =>
 
 function PastEventConversionScheduler() {
   usePastEventConversionSchedule();
+  return null;
+}
+
+function TodayScheduleWidgetSync() {
+  useEffect(() => {
+    requestTodayScheduleWidgetSync();
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        requestTodayScheduleWidgetSync();
+      }
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, []);
   return null;
 }
 
@@ -289,7 +309,7 @@ function AppShell() {
           coveringLaunchList) ? (
           <View
             pointerEvents="auto"
-            style={[StyleSheet.absoluteFillObject, { backgroundColor: colors.screenBackground }]}
+            style={[StyleSheet.absoluteFill, { backgroundColor: colors.screenBackground }]}
           />
         ) : null}
       </View>
@@ -311,6 +331,7 @@ function AppProviders() {
                 <SettlementMockProvider>
                   <EventNotificationHandler />
                   <PastEventConversionScheduler />
+                  <TodayScheduleWidgetSync />
                   <NoteFormatAccessoryProvider>
                     <AppShell />
                   </NoteFormatAccessoryProvider>

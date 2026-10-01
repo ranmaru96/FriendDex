@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert } from 'react-native';
-import * as MediaLibrary from 'expo-media-library';
+import * as MediaLibrary from 'expo-media-library/legacy';
 import { PHOTO_LIMITS } from '@/constants';
 import {
   deleteEpisodePhoto,
@@ -45,6 +45,7 @@ import {
   writeEpisodeDraft,
   type EpisodeDraft,
 } from '@/utils/episodeDraft';
+import { searchEventsForEpisodeLink } from '@/utils/eventEpisodeSync';
 import { getRecentTogetherFriendIdsFromPastEvents } from '@/utils/eventRecencyHelpers';
 import {
   getCachedAcceptedPeerIds,
@@ -101,6 +102,31 @@ type EpisodeFormSnapshot = {
   deletedPhotoIds: string;
 };
 
+/** 新規フォーム。予定が1件ならそれを入れ、複数なら既存予定、0件なら予定なし。 */
+const resolveNewEpisodeEventLink = (): {
+  mode: EpisodeEventLinkMode;
+  linkedEventId: string;
+  date: string | null;
+} => {
+  const hits = searchEventsForEpisodeLink('', { limit: 2 });
+  if (hits.length === 0) {
+    return { mode: 'none', linkedEventId: '', date: null };
+  }
+  if (hits.length > 1) {
+    return { mode: 'existing', linkedEventId: '', date: null };
+  }
+  const event = hits[0].event;
+  const today = formatDateKey(new Date());
+  const keys = getLocalDateKeysForEvent(event).filter((key) => key <= today);
+  let date: string | null = null;
+  if (keys.length === 1) {
+    date = keys[0];
+  } else if (keys.length > 1) {
+    date = keys.includes(today) ? today : keys[0];
+  }
+  return { mode: 'existing', linkedEventId: event.id, date };
+};
+
 const participantSnapshot = (participants: { participantType: string; value: string }[]) =>
   participants.map((participant) => `${participant.participantType}:${participant.value}`).join('\n');
 
@@ -124,17 +150,20 @@ const toConnectedAudienceDrafts = (
   return individuals.filter((entry) => isPersonCardLockedByAcceptedConnection(entry.value));
 };
 
-const blankEpisodeFormSnapshot = (dateValue: string): EpisodeFormSnapshot => ({
+const blankEpisodeFormSnapshot = (
+  dateValue: string,
+  eventLink: ReturnType<typeof resolveNewEpisodeEventLink> = resolveNewEpisodeEventLink()
+): EpisodeFormSnapshot => ({
   title: '',
-  date: dateValue,
+  date: eventLink.date ?? dateValue,
   time: '',
   description: '',
   participants: '',
   visibilityMode: 'private',
   visibility: '',
   tag: '',
-  eventLinkMode: 'create_new',
-  linkedEventId: '',
+  eventLinkMode: eventLink.mode,
+  linkedEventId: eventLink.linkedEventId,
   newPhotoUris: '',
   deletedPhotoIds: '',
 });
@@ -208,7 +237,7 @@ export function useEpisodeForm({
   const [photoEditIndex, setPhotoEditIndex] = useState(0);
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<number[]>([]);
   const [linkedEventId, setLinkedEventId] = useState<string | null>(null);
-  const [eventLinkMode, setEventLinkModeState] = useState<EpisodeEventLinkMode>('create_new');
+  const [eventLinkMode, setEventLinkModeState] = useState<EpisodeEventLinkMode>('none');
   /** 開いた直後の入力。ここから変わっていなければ、閉じる確認は出さない。 */
   const baselineRef = useRef(blankEpisodeFormSnapshot(''));
   const isDirtyRef = useRef(false);
@@ -287,7 +316,8 @@ export function useEpisodeForm({
   }, []);
 
   const reset = useCallback(() => {
-    const initialDate = formatEpisodeDateToYMD(new Date());
+    const eventLink = resolveNewEpisodeEventLink();
+    const initialDate = eventLink.date ?? formatEpisodeDateToYMD(new Date());
     draftSuppressRef.current = false;
     committedPhotoUrisRef.current.clear();
     setFormError('');
@@ -313,14 +343,14 @@ export function useEpisodeForm({
     setPhotoResolving(false);
     setDismissedPhotoAssetIds([]);
     setDeletedPhotoIds([]);
-    setLinkedEventId(null);
-    setEventLinkModeState('create_new');
+    setLinkedEventId(eventLink.linkedEventId || null);
+    setEventLinkModeState(eventLink.mode);
     setTag('');
     setSelectorVisible(false);
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
     setSelectorExperienceFilter('');
-    baselineRef.current = blankEpisodeFormSnapshot(initialDate);
+    baselineRef.current = blankEpisodeFormSnapshot(initialDate, eventLink);
   }, [applyNewPhotoUris]);
 
   const excludeSelfId = useMemo(() => getMyself(), [friends, hiddenParticipantIds]);

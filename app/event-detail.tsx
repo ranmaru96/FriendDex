@@ -210,14 +210,11 @@ export default function EventDetailScreen() {
                 {formatEventScheduleLabel(event)}
               </Text>
             </View>
-            <View
-              style={[styles.iconRow, participantChips.length === 0 ? styles.iconRowCenter : null]}
-              accessibilityLabel="会う人"
-            >
-              <View style={[styles.mark, participantChips.length > 0 ? styles.markChips : null]}>
-                <Ionicons name="people-outline" size={18} color={content.contentTextSecondary} />
-              </View>
-              {participantChips.length > 0 ? (
+            {participantChips.length > 0 ? (
+              <View style={styles.iconRow} accessibilityLabel="会う人">
+                <View style={[styles.mark, styles.markChips]}>
+                  <Ionicons name="people-outline" size={18} color={content.contentTextSecondary} />
+                </View>
                 <View style={styles.iconBody}>
                   <ParticipantChipList
                     chips={participantChips}
@@ -227,10 +224,8 @@ export default function EventDetailScreen() {
                     }
                   />
                 </View>
-              ) : (
-                <Text style={[styles.iconText, contentMutedTextStyle(content)]}>なし</Text>
-              )}
-            </View>
+              </View>
+            ) : null}
           </PanelSection>
 
           {hasMemo ? (
@@ -243,7 +238,7 @@ export default function EventDetailScreen() {
                   </View>
                   <View style={styles.iconBody}>
                     <NoteBlockView
-                      value={event.memo}
+                      value={event.memo ?? ''}
                       textStyle={[styles.memoText, contentTextStyle(content)]}
                     />
                   </View>
@@ -252,56 +247,53 @@ export default function EventDetailScreen() {
             </>
           ) : null}
 
-          <SectionDivider />
-          <PanelSection style={styles.section}>
-            <View style={[styles.iconRow, styles.iconRowCenter]} accessibilityLabel="通知">
-              <View style={styles.mark}>
-                <Ionicons
-                  name={event.notifyEnabled ? 'notifications-outline' : 'notifications-off-outline'}
-                  size={18}
-                  color={content.contentTextSecondary}
-                />
-              </View>
-              <Text style={[styles.iconText, contentTextStyle(content)]}>{notifyLabel}</Text>
-            </View>
-          </PanelSection>
-
-          <SectionDivider />
-          <PanelSection style={styles.section}>
-            <View
-              style={[styles.iconRow, linkedTasks.length === 0 ? styles.iconRowCenter : null]}
-              accessibilityLabel="タスク"
-            >
-              <View style={[styles.mark, linkedTasks.length > 0 ? styles.markText : null]}>
-                <Ionicons name="checkbox-outline" size={18} color={content.contentTextSecondary} />
-              </View>
-              {linkedTasks.length > 0 ? (
-                <View style={styles.iconBody}>
-                  {linkedTasks.map((task) => (
-                    <Pressable
-                      key={task.id}
-                      style={[styles.taskRow, contentSurfaceStyle(content), { borderColor: content.contentBorder }]}
-                      onPress={() => router.push({ pathname: '/task-detail', params: { taskId: task.id } })}
-                      accessibilityRole="button"
-                      accessibilityLabel={task.title || 'タスク'}
-                    >
-                      <Text style={[styles.taskTitle, contentTextStyle(content)]}>{task.title || '無題'}</Text>
-                      <Text style={[styles.taskMeta, contentMutedTextStyle(content)]}>
-                        {task.completedAt
-                          ? '完了'
-                          : task.dueDate
-                            ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
-                            : '期限なし'}
-                        {task.memo?.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
-                      </Text>
-                    </Pressable>
-                  ))}
+          {event.notifyEnabled ? (
+            <>
+              <SectionDivider />
+              <PanelSection style={styles.section}>
+                <View style={[styles.iconRow, styles.iconRowCenter]} accessibilityLabel="通知">
+                  <View style={styles.mark}>
+                    <Ionicons name="notifications-outline" size={18} color={content.contentTextSecondary} />
+                  </View>
+                  <Text style={[styles.iconText, contentTextStyle(content)]}>{notifyLabel}</Text>
                 </View>
-              ) : (
-                <Text style={[styles.iconText, contentMutedTextStyle(content)]}>まだタスクがありません</Text>
-              )}
-            </View>
-          </PanelSection>
+              </PanelSection>
+            </>
+          ) : null}
+
+          {linkedTasks.length > 0 ? (
+            <>
+              <SectionDivider />
+              <PanelSection style={styles.section}>
+                <View style={styles.iconRow} accessibilityLabel="タスク">
+                  <View style={[styles.mark, styles.markText]}>
+                    <Ionicons name="checkbox-outline" size={18} color={content.contentTextSecondary} />
+                  </View>
+                  <View style={styles.iconBody}>
+                    {linkedTasks.map((task) => (
+                      <Pressable
+                        key={task.id}
+                        style={[styles.taskRow, contentSurfaceStyle(content), { borderColor: content.contentBorder }]}
+                        onPress={() => router.push({ pathname: '/task-detail', params: { taskId: task.id } })}
+                        accessibilityRole="button"
+                        accessibilityLabel={task.title || 'タスク'}
+                      >
+                        <Text style={[styles.taskTitle, contentTextStyle(content)]}>{task.title || '無題'}</Text>
+                        <Text style={[styles.taskMeta, contentMutedTextStyle(content)]}>
+                          {task.completedAt
+                            ? '完了'
+                            : task.dueDate
+                              ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
+                              : '期限なし'}
+                          {task.memo?.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              </PanelSection>
+            </>
+          ) : null}
 
           <SectionDivider />
           <PanelSection style={styles.section}>

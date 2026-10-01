@@ -234,7 +234,7 @@ function collectEventsInWeek(week: ScheduleGridDay[], events: Event[]): Event[] 
     if (start !== 0) {
       return start;
     }
-    const longerFirst = right.endAt.localeCompare(left.endAt);
+    const longerFirst = (right.endAt ?? right.startAt).localeCompare(left.endAt ?? left.startAt);
     if (longerFirst !== 0) {
       return longerFirst;
     }

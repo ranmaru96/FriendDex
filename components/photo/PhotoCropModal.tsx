@@ -548,7 +548,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
   },
   embedded: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     zIndex: 30,
   },
   topBar: {
@@ -591,7 +591,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   gestureLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -603,7 +603,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   maskLayer: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   maskBar: {
     position: 'absolute',
@@ -678,7 +678,7 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
   },
   busyOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(15, 23, 42, 0.45)',
     alignItems: 'center',
     justifyContent: 'center',

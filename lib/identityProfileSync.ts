@@ -362,7 +362,11 @@ export async function claimAndFetchIdentityProfile(
     : null;
   const resolved = readError ? fallback : { data: row, error: readError };
   if (!resolved || resolved.error) {
-    return { payload: null, skipped: false, errorMessage: resolved?.error?.message ?? readError.message };
+    return {
+      payload: null,
+      skipped: false,
+      errorMessage: resolved?.error?.message ?? readError?.message ?? 'プロフィールを取得できませんでした',
+    };
   }
   if (!resolved.data?.id) {
     return { payload: null, skipped: true, errorMessage: null };

@@ -780,7 +780,7 @@ const styles = StyleSheet.create({
     paddingVertical: 48,
   },
   lightboxBackdropPress: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
   },
   lightboxImage: {
     width: '100%',

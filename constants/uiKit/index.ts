@@ -79,8 +79,8 @@ export const EPISODE_LIST_PHOTO_LAYOUT_OPTIONS: {
   value: EpisodeListPhotoLayout;
   label: string;
 }[] = [
-  { value: 'compactTwoSideBySide', label: 'コンパクト（1〜2枚・タイトル+日付行）' },
-  { value: 'tallOne', label: '縦長1枚（参加者行まで）' },
+  { value: 'tallOne', label: '1枚・縦幅3行分' },
+  { value: 'compactTwoSideBySide', label: '2枚・縦幅2行分' },
 ];
 
 export function normalizeEpisodeListPhotoLayout(

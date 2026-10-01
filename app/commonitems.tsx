@@ -556,7 +556,7 @@ export default function CommonItemsScreen() {
       >
         <View style={styles.infoOverlay}>
           <Pressable
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             onPress={() => setInfoVisible(false)}
             accessibilityLabel="閉じる"
           />

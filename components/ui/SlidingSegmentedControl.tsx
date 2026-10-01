@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { Radius, Typography } from '@/constants/theme';
+import { useAppTheme } from '@/contexts/AppThemeContext';
 import { contentInputStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
+
+const RAISED_PAD = 3;
 
 type SlidingSegment<T extends string> = {
   value: T;
@@ -16,6 +19,8 @@ type SlidingSegmentedControlProps<T extends string> = {
   onChange: (value: T) => void;
   /** 縦幅を約8割にする */
   compact?: boolean;
+  /** エピソード画面右上の切り替えと同じ、浮いたつまみ */
+  raised?: boolean;
 };
 
 export function SlidingSegmentedControl<T extends string>({
@@ -23,11 +28,15 @@ export function SlidingSegmentedControl<T extends string>({
   value,
   onChange,
   compact = false,
+  raised = false,
 }: SlidingSegmentedControlProps<T>) {
   const content = useContentColors();
+  const { variant } = useAppTheme();
+  const knobIsBlack = variant === 'black';
   const [trackWidth, setTrackWidth] = useState(0);
   const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
-  const segmentWidth = options.length > 0 && trackWidth > 0 ? trackWidth / options.length : 0;
+  const innerWidth = raised ? Math.max(0, trackWidth - RAISED_PAD * 2) : trackWidth;
+  const segmentWidth = options.length > 0 && innerWidth > 0 ? innerWidth / options.length : 0;
   const offset = useSharedValue(0);
 
   useEffect(() => {
@@ -40,20 +49,42 @@ export function SlidingSegmentedControl<T extends string>({
 
   return (
     <View
-      style={[styles.track, compact ? styles.trackCompact : null, contentInputStyle(content), { borderColor: content.contentBorder }]}
+      style={[
+        styles.track,
+        compact ? styles.trackCompact : null,
+        raised ? styles.trackRaised : null,
+        raised
+          ? { backgroundColor: content.contentSwitchTrackOff }
+          : contentInputStyle(content),
+        raised ? null : { borderColor: content.contentBorder },
+      ]}
       onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
     >
       {segmentWidth > 0 ? (
         <Animated.View
           pointerEvents="none"
           style={[
-            styles.indicator,
-            { width: segmentWidth, backgroundColor: content.contentText },
+            raised ? styles.raisedKnob : styles.indicator,
+            { width: segmentWidth },
+            raised
+              ? {
+                  backgroundColor: knobIsBlack ? '#111111' : content.contentSwitchThumbOff,
+                  borderColor: content.contentBorder,
+                  ...(knobIsBlack
+                    ? {
+                        shadowColor: '#FFFFFF',
+                        shadowOpacity: 0.35,
+                      }
+                    : null),
+                }
+              : { backgroundColor: content.contentText },
             indicatorStyle,
           ]}
         />
       ) : null}
-      {options.slice(1).map((option, index) => (
+      {raised
+        ? null
+        : options.slice(1).map((option, index) => (
         <View
           key={`divider-${option.value}`}
           pointerEvents="none"
@@ -73,7 +104,7 @@ export function SlidingSegmentedControl<T extends string>({
           return (
             <Pressable
               key={option.value}
-              style={[styles.segment, compact ? styles.segmentCompact : null]}
+              style={[styles.segment, compact ? styles.segmentCompact : null, raised ? styles.segmentRaised : null]}
               onPress={() => onChange(option.value)}
               accessibilityRole="button"
               accessibilityState={{ selected }}
@@ -82,7 +113,11 @@ export function SlidingSegmentedControl<T extends string>({
                 style={[
                   styles.label,
                   contentTextStyle(content),
-                  selected ? { color: content.contentCard } : null,
+                  raised
+                    ? { color: selected ? (knobIsBlack ? '#FFFFFF' : '#111111') : content.contentText }
+                    : selected
+                      ? { color: content.contentCard }
+                      : null,
                 ]}
                 numberOfLines={1}
               >
@@ -108,11 +143,31 @@ const styles = StyleSheet.create({
   trackCompact: {
     minHeight: 32,
   },
+  trackRaised: {
+    borderWidth: 0,
+    borderRadius: 16,
+    minHeight: 32,
+    padding: RAISED_PAD,
+    overflow: 'visible',
+  },
   indicator: {
     position: 'absolute',
     top: 0,
     bottom: 0,
     left: 0,
+  },
+  raisedKnob: {
+    position: 'absolute',
+    top: RAISED_PAD,
+    bottom: RAISED_PAD,
+    left: RAISED_PAD,
+    borderRadius: 13,
+    borderWidth: StyleSheet.hairlineWidth,
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.16,
+    shadowRadius: 2,
+    elevation: 2,
   },
   divider: {
     position: 'absolute',
@@ -136,6 +191,9 @@ const styles = StyleSheet.create({
   },
   segmentCompact: {
     paddingVertical: 6,
+  },
+  segmentRaised: {
+    paddingVertical: 4,
   },
   label: {
     fontSize: Typography.sm,

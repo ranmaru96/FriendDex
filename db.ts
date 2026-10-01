@@ -1902,6 +1902,7 @@ export const restoreEventIfMissing = (input: RestoreEventInput): boolean => {
       addEventParticipant(eventId, profile.id);
     }
   });
+  notifyTodayScheduleWidget();
   return true;
 };
 
@@ -2311,6 +2312,8 @@ export const GOOGLE_CALENDAR_ID_KEY = 'google_calendar_id';
 export const GOOGLE_CALENDAR_EMAIL_KEY = 'google_account_email';
 export const GOOGLE_CALENDAR_LAST_SYNC_AT_KEY = 'google_calendar_last_sync_at';
 export const GOOGLE_CALENDAR_LAST_ERROR_KEY = 'google_calendar_last_error';
+export const GOOGLE_CALENDAR_NEEDS_REAUTH_KEY = 'google_calendar_needs_reauth';
+export const PENDING_GOOGLE_CALENDAR_SYNC_KEY = 'pending_google_calendar_sync';
 export const BOUND_AUTH_USER_ID_KEY = 'bound_auth_user_id';
 export const PENDING_OWNED_DELETES_KEY = 'pending_owned_deletes';
 export const PENDING_SHARED_EPISODE_UNPUBLISH_KEY = 'pending_shared_episode_unpublish';
@@ -4574,6 +4577,16 @@ const normalizeEventInput = (
   locationTag: normalizeEpisodeTag(input.locationTag),
 });
 
+const notifyTodayScheduleWidget = (): void => {
+  queueMicrotask(() => {
+    void import('@/utils/todayScheduleWidget')
+      .then((mod) => {
+        mod.requestTodayScheduleWidgetSync();
+      })
+      .catch(() => undefined);
+  });
+};
+
 export const createEvent = (input: EventInput): Event | null => {
   const normalized = normalizeEventInput(input);
   if (!normalized.title || !normalized.startAt) {
@@ -4604,6 +4617,7 @@ export const createEvent = (input: EventInput): Event | null => {
     ]
   );
 
+  notifyTodayScheduleWidget();
   return {
     id,
     ...normalized,
@@ -4709,6 +4723,9 @@ export const updateEvent = (eventId: string, input: EventInput): boolean => {
       normalizedEventId,
     ]
   );
+  if (result.changes > 0) {
+    notifyTodayScheduleWidget();
+  }
   return result.changes > 0;
 };
 
@@ -4752,6 +4769,9 @@ export const deleteEvent = (eventId: string): boolean => {
     db.runSync(`DELETE FROM ${EVENT_PARTICIPANTS_TABLE} WHERE event_id = ?;`, [normalizedEventId]);
     const result = db.runSync(`DELETE FROM ${EVENTS_TABLE} WHERE id = ?;`, [normalizedEventId]);
     db.execSync('COMMIT;');
+    if (result.changes > 0) {
+      notifyTodayScheduleWidget();
+    }
     return result.changes > 0;
   } catch {
     db.execSync('ROLLBACK;');
@@ -6224,6 +6244,7 @@ export const createTaskGroup = (input: TaskGroupInput): TaskGroup | null => {
       group.updatedAt,
     ]
   );
+  notifyTodayScheduleWidget();
   return group;
 };
 
@@ -6287,7 +6308,11 @@ export const updateTaskGroup = (groupId: string, input: TaskGroupInput): boolean
     ]
   );
   // 同一内容の再保存でも changes=0 になり得るので、行が残っていれば成功扱い
-  return result.changes > 0 || getTaskGroup(normalizedId) != null;
+  const saved = result.changes > 0 || getTaskGroup(normalizedId) != null;
+  if (saved) {
+    notifyTodayScheduleWidget();
+  }
+  return saved;
 };
 
 /** グループ削除。所属タスクはグループなしに戻す（タスク自体は残す） */
@@ -6304,6 +6329,9 @@ export const deleteTaskGroup = (groupId: string): boolean => {
     );
     const result = db.runSync(`DELETE FROM ${TASK_GROUPS_TABLE} WHERE id = ?;`, [normalizedId]);
     db.execSync('COMMIT;');
+    if (result.changes > 0) {
+      notifyTodayScheduleWidget();
+    }
     return result.changes > 0;
   } catch {
     db.execSync('ROLLBACK;');
@@ -6376,6 +6404,7 @@ export const createTask = (input: TaskInput): Task | null => {
       task.updatedAt,
     ]
   );
+  notifyTodayScheduleWidget();
   return task;
 };
 
@@ -6441,6 +6470,9 @@ export const updateTask = (taskId: string, input: TaskInput): boolean => {
       normalizedId,
     ]
   );
+  if (result.changes > 0) {
+    notifyTodayScheduleWidget();
+  }
   return result.changes > 0;
 };
 
@@ -6470,6 +6502,9 @@ export const setTaskGroupId = (taskId: string, groupId: string | null): boolean 
       ? [nextGroupId, 0, null, null, nowIso(), normalizedId]
       : [nextGroupId, task.remindEnabled ? 1 : 0, task.remindDaysBefore, task.remindTime, nowIso(), normalizedId]
   );
+  if (result.changes > 0) {
+    notifyTodayScheduleWidget();
+  }
   return result.changes > 0;
 };
 
@@ -6483,6 +6518,9 @@ export const deleteTask = (taskId: string): boolean => {
     db.runSync(`DELETE FROM ${TASK_COMPLETIONS_TABLE} WHERE task_id = ?;`, [normalizedId]);
     const result = db.runSync(`DELETE FROM ${TASKS_TABLE} WHERE id = ?;`, [normalizedId]);
     db.execSync('COMMIT;');
+    if (result.changes > 0) {
+      notifyTodayScheduleWidget();
+    }
     return result.changes > 0;
   } catch {
     db.execSync('ROLLBACK;');
@@ -6504,6 +6542,9 @@ export const deleteTasksByIds = (taskIds: string[]): number => {
       deleted += result.changes;
     });
     db.execSync('COMMIT;');
+    if (deleted > 0) {
+      notifyTodayScheduleWidget();
+    }
     return deleted;
   } catch {
     db.execSync('ROLLBACK;');
@@ -6547,6 +6588,9 @@ export const completeTemporaryTask = (taskId: string): boolean => {
      WHERE id = ? AND kind = 'temporary' AND completed_at IS NULL;`,
     [timestamp, timestamp, normalizedId]
   );
+  if (result.changes > 0) {
+    notifyTodayScheduleWidget();
+  }
   return result.changes > 0;
 };
 
@@ -6561,6 +6605,9 @@ export const reopenTemporaryTask = (taskId: string): boolean => {
      WHERE id = ? AND kind = 'temporary';`,
     [nowIso(), normalizedId]
   );
+  if (result.changes > 0) {
+    notifyTodayScheduleWidget();
+  }
   return result.changes > 0;
 };
 
@@ -6697,10 +6744,13 @@ export const setRecurringDoneOn = (task: Task, ymd: string, done: boolean): bool
   if (task.kind !== 'recurring') {
     return false;
   }
-  if (task.trackCompletions) {
-    return setRecurringTaskCompletion(task.id, ymd, done);
+  const changed = task.trackCompletions
+    ? setRecurringTaskCompletion(task.id, ymd, done)
+    : setTaskSoftDoneOn(task.id, ymd, done);
+  if (changed) {
+    notifyTodayScheduleWidget();
   }
-  return setTaskSoftDoneOn(task.id, ymd, done);
+  return changed;
 };
 
 export const purgeExpiredCompletedTemporaryTasks = (): number => {

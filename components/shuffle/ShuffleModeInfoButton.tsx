@@ -85,7 +85,7 @@ export function ShuffleModeInfoButton({
       >
         <View style={styles.overlay}>
           <Pressable
-            style={StyleSheet.absoluteFillObject}
+            style={StyleSheet.absoluteFill}
             onPress={() => setVisible(false)}
             accessibilityLabel="閉じる"
           />

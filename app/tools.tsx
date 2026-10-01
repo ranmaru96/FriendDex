@@ -211,12 +211,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
   openingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   openingOverlayDim: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     opacity: 0.55,
   },
 });

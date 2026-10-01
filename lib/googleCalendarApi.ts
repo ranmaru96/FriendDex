@@ -1,18 +1,38 @@
 import {
   FRIENDEX_GOOGLE_CALENDAR_SUMMARY,
   GOOGLE_CALENDAR_EVENT_ID_PROPERTY,
+  GOOGLE_CALENDAR_REAUTH_MESSAGE,
+  GOOGLE_CALENDAR_TRANSIENT_MESSAGE,
 } from '@/constants/googleCalendar';
-import { getValidGoogleAccessToken } from '@/lib/googleAuth';
+import {
+  getValidGoogleAccessToken,
+  markGoogleCalendarNeedsReauth,
+  resolveGoogleAccessToken,
+} from '@/lib/googleAuth';
 
 const CALENDAR_API = 'https://www.googleapis.com/calendar/v3';
 
+export type GoogleCalendarFailure = 'reauth' | 'transient' | 'permanent';
+
+const failureForStatus = (status: number): GoogleCalendarFailure => {
+  if (status === 401) {
+    return 'reauth';
+  }
+  if (status === 408 || status === 429 || status === 0 || status >= 500) {
+    return 'transient';
+  }
+  return 'permanent';
+};
+
 export class GoogleCalendarApiError extends Error {
   status: number;
+  failure: GoogleCalendarFailure;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, failure?: GoogleCalendarFailure) {
     super(message);
     this.name = 'GoogleCalendarApiError';
     this.status = status;
+    this.failure = failure ?? failureForStatus(status);
   }
 }
 
@@ -69,29 +89,57 @@ const parseErrorMessage = async (response: Response): Promise<string> => {
   return `Google カレンダー API エラー (${response.status})`;
 };
 
+const throwIfNotOk = async (response: Response): Promise<void> => {
+  if (response.ok) {
+    return;
+  }
+  if (response.status === 401) {
+    markGoogleCalendarNeedsReauth();
+    throw new GoogleCalendarApiError(401, GOOGLE_CALENDAR_REAUTH_MESSAGE, 'reauth');
+  }
+  throw new GoogleCalendarApiError(response.status, await parseErrorMessage(response));
+};
+
 const calendarFetch = async (
   path: string,
   init: RequestInit = {},
   retried = false
 ): Promise<Response> => {
-  const accessToken = await getValidGoogleAccessToken();
-  if (!accessToken) {
-    throw new GoogleCalendarApiError(401, 'Google カレンダーに再接続してください');
+  const resolved = await resolveGoogleAccessToken(false);
+  if (!resolved.ok) {
+    if (resolved.failure === 'transient') {
+      throw new GoogleCalendarApiError(0, GOOGLE_CALENDAR_TRANSIENT_MESSAGE, 'transient');
+    }
+    if (resolved.failure === 'reauth') {
+      throw new GoogleCalendarApiError(401, GOOGLE_CALENDAR_REAUTH_MESSAGE, 'reauth');
+    }
+    throw new GoogleCalendarApiError(401, GOOGLE_CALENDAR_REAUTH_MESSAGE, 'permanent');
   }
 
-  const response = await fetch(`${CALENDAR_API}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: 'application/json',
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init.headers ?? {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${CALENDAR_API}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${resolved.accessToken}`,
+        Accept: 'application/json',
+        ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(init.headers ?? {}),
+      },
+    });
+  } catch {
+    throw new GoogleCalendarApiError(0, GOOGLE_CALENDAR_TRANSIENT_MESSAGE, 'transient');
+  }
 
   if (response.status === 401 && !retried) {
-    await getValidGoogleAccessToken(true);
-    return calendarFetch(path, init, true);
+    const refreshed = await resolveGoogleAccessToken(true);
+    if (refreshed.ok) {
+      return calendarFetch(path, init, true);
+    }
+    if (refreshed.failure === 'transient') {
+      throw new GoogleCalendarApiError(0, GOOGLE_CALENDAR_TRANSIENT_MESSAGE, 'transient');
+    }
+    throw new GoogleCalendarApiError(401, GOOGLE_CALENDAR_REAUTH_MESSAGE, 'reauth');
   }
 
   return response;
@@ -100,7 +148,7 @@ const calendarFetch = async (
 const calendarJson = async <T>(path: string, init?: RequestInit): Promise<T> => {
   const response = await calendarFetch(path, init);
   if (!response.ok) {
-    throw new GoogleCalendarApiError(response.status, await parseErrorMessage(response));
+    await throwIfNotOk(response);
   }
   if (response.status === 204) {
     return undefined as T;
@@ -144,7 +192,7 @@ export const getGoogleCalendar = async (calendarId: string): Promise<{ id: strin
     return null;
   }
   if (!response.ok) {
-    throw new GoogleCalendarApiError(response.status, await parseErrorMessage(response));
+    await throwIfNotOk(response);
   }
   return (await response.json()) as { id: string; summary?: string };
 };
@@ -229,7 +277,7 @@ export const deleteGoogleCalendarEventRemote = async (
     return;
   }
   if (!response.ok) {
-    throw new GoogleCalendarApiError(response.status, await parseErrorMessage(response));
+    await throwIfNotOk(response);
   }
 };
 

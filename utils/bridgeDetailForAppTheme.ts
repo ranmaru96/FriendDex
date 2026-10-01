@@ -212,7 +212,7 @@ export function bridgeDetailBundleForAppTheme(
     next = bundle;
   }
 
-  if (usesOffsetChrome(pattern?.id)) {
+  if (pattern && usesOffsetChrome(pattern.id)) {
     return {
       ...next,
       colors: overlayCodexDetail(next.colors, pattern),

@@ -3,6 +3,7 @@ import { FRIENDEX_GOOGLE_CALENDAR_SUMMARY } from '@/constants/googleCalendar';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { usesOffsetChrome } from '@/constants/designPatterns';
 import { OffsetCard } from '@/components/ui/OffsetCard';
+import { SettingsSectionLabel, SETTINGS_CONTENT_LEFT } from '@/components/screen/SettingsSectionLabel';
 import { Radius, Theme, Typography } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 import { isGoogleCalendarAuthConfigured } from '@/lib/googleAuth';
@@ -46,22 +47,18 @@ export function GoogleCalendarSettingsSection({ themed }: { themed: ThemedStyles
   );
 
   const group = isCodex ? (
-    <OffsetCard style={{ marginHorizontal: 16 }}>{body}</OffsetCard>
+    <OffsetCard style={styles.contentInset}>{body}</OffsetCard>
   ) : (
     <View style={[styles.group, themed.group]}>{body}</View>
   );
 
   return (
     <>
-      <Text
-        style={[
-          styles.sectionHeader,
-          themed.sectionHeader,
-          isMonochrome && { color: colors.onScreenText },
-        ]}
-      >
-        Google カレンダー
-      </Text>
+      <SettingsSectionLabel
+        icon="calendar-outline"
+        label="Googleカレンダー連携"
+        color={isMonochrome ? colors.onScreenText : Theme.textSecondary}
+      />
       {group}
       <Text style={[styles.hint, themed.hint]}>
         {!nativeReady
@@ -75,18 +72,13 @@ export function GoogleCalendarSettingsSection({ themed }: { themed: ThemedStyles
 }
 
 const styles = StyleSheet.create({
-  sectionHeader: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    fontSize: Typography.base,
-    fontWeight: '600',
-    color: Theme.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  contentInset: {
+    marginLeft: SETTINGS_CONTENT_LEFT,
+    marginRight: 16,
   },
   group: {
-    marginHorizontal: 16,
+    marginLeft: SETTINGS_CONTENT_LEFT,
+    marginRight: 16,
     borderRadius: Radius.md,
     backgroundColor: Theme.bgSurface,
     borderWidth: StyleSheet.hairlineWidth,
@@ -98,7 +90,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 8,
   },
   emptyText: {
     fontSize: 15,
@@ -106,7 +98,8 @@ const styles = StyleSheet.create({
   },
   hint: {
     marginTop: 12,
-    marginHorizontal: 16,
+    marginLeft: SETTINGS_CONTENT_LEFT,
+    marginRight: 16,
     fontSize: Typography.base,
     color: Theme.textSecondary,
     lineHeight: 18,

@@ -68,14 +68,13 @@ export function useSearchAreaStyles() {
         paddingHorizontal: Spacing.sm,
         paddingVertical: kit.searchAreaShowFieldLabels ? 6 : Spacing.sm,
         fontSize: Typography.base,
-        minHeight: kit.searchAreaShowFieldLabels ? 34 : 38,
+        height: kit.searchAreaShowFieldLabels ? 34 : 38,
       },
       textInputActive: {
         borderColor: content.contentText,
         backgroundColor: fieldBg,
       },
       selectButton: {
-        flex: 1,
         backgroundColor: fieldBg,
         borderColor: content.contentSearchFieldBorder,
         borderWidth: BorderWidth.input,
@@ -85,7 +84,7 @@ export function useSearchAreaStyles() {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        minHeight: kit.searchAreaShowFieldLabels ? 34 : 38,
+        height: kit.searchAreaShowFieldLabels ? 34 : 38,
       },
       selectButtonActive: {
         borderColor: content.contentText,

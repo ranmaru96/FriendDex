@@ -11,6 +11,7 @@ import {
 import { AppState } from 'react-native';
 import { useAuthSession } from '@/contexts/AuthSessionContext';
 import { flushOwnedPersonEpisodeCalendar } from '@/lib/flushOwnedWorkingCopy';
+import { flushPendingGoogleCalendarQueue } from '@/utils/googleCalendarSync';
 import {
   isNetworkReachable,
   probeSupabaseReachable,
@@ -48,7 +49,11 @@ export function NetworkReachabilityProvider({ children }: { children: ReactNode 
     }
     setOnline(next);
     previousOnlineRef.current = next;
-    if (next && !wasOnline && sessionRef.current && !flushingRef.current) {
+    if (!next || wasOnline) {
+      return;
+    }
+    void flushPendingGoogleCalendarQueue();
+    if (sessionRef.current && !flushingRef.current) {
       flushingRef.current = true;
       void flushOwnedPersonEpisodeCalendar().finally(() => {
         flushingRef.current = false;
@@ -65,11 +70,22 @@ export function NetworkReachabilityProvider({ children }: { children: ReactNode 
     applyOnline(next);
   }, [applyOnline, configured]);
 
+  const flushGoogleQueueIfOnline = useCallback(() => {
+    if (AppState.currentState !== 'active' || !isNetworkReachable()) {
+      return;
+    }
+    void flushPendingGoogleCalendarQueue();
+  }, []);
+
   useEffect(() => {
-    void refresh();
+    void refresh().finally(() => {
+      flushGoogleQueueIfOnline();
+    });
     const appSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        void refresh();
+        void refresh().finally(() => {
+          flushGoogleQueueIfOnline();
+        });
       }
     });
     const timer = configured
@@ -85,7 +101,7 @@ export function NetworkReachabilityProvider({ children }: { children: ReactNode 
         clearInterval(timer);
       }
     };
-  }, [configured, refresh]);
+  }, [configured, flushGoogleQueueIfOnline, refresh]);
 
   const value = useMemo(
     () => ({

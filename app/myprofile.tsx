@@ -45,7 +45,7 @@ type PublicFieldKey =
 type FormFieldKey = Exclude<PublicFieldKey, 'name'>;
 
 type FieldConfig = {
-  key: FormFieldKey;
+  key: Exclude<FormFieldKey, 'photo'>;
   label: string;
   keyboardType?: 'default' | 'numeric';
 };
@@ -60,7 +60,7 @@ const FIELD_CONFIGS: FieldConfig[] = [
   { key: 'mbti', label: 'MBTI' },
 ];
 
-type MyProfileForm = Record<FormFieldKey, string> & {
+type MyProfileForm = Record<Exclude<FormFieldKey, 'photo'>, string> & {
   familyName: string;
   givenName: string;
 };

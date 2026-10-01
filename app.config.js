@@ -39,6 +39,15 @@ const googleUrlSchemes = [
 
 const appSchemes = [getScheme(), ...googleUrlSchemes];
 
+const widgetFamilies = [
+  "systemSmall",
+  "systemMedium",
+  "systemLarge",
+  "accessoryCircular",
+  "accessoryRectangular",
+  "accessoryInline",
+];
+
 export default {
   expo: {
     name: getAppName(),
@@ -72,7 +81,6 @@ export default {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#ffffff"
       },
-      edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       ...(googleUrlSchemes.length > 0
         ? {
@@ -96,6 +104,68 @@ export default {
       ],
       "expo-sqlite",
       "expo-router",
+      [
+        "expo-widgets",
+        {
+          bundleIdentifier: `${getUniqueIdentifier()}.widgets`,
+          groupIdentifier: `group.${getUniqueIdentifier()}`,
+          widgets: [
+            {
+              name: "TodayScheduleWidget",
+              displayName: "今日の予定",
+              description: "今日の予定を表示します",
+              ios: {
+                supportedFamilies: widgetFamilies,
+                contentMarginsDisabled: true,
+                configuration: {
+                  title: "表示内容",
+                  description: "ウィジェットに表示する内容を選びます",
+                  parameters: {
+                    content: {
+                      title: "表示内容",
+                      type: "enum",
+                      default: "schedule",
+                      values: [
+                        { name: "予定", value: "schedule" },
+                        { name: "タスク", value: "tasks" },
+                        { name: "予定とタスク", value: "both" },
+                        { name: "予備", value: "reserve" },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+            {
+              name: "MemoryWidget",
+              displayName: "思い出",
+              description: "思い出を表示します",
+              ios: {
+                supportedFamilies: widgetFamilies,
+                contentMarginsDisabled: true,
+              },
+            },
+            {
+              name: "UpcomingPeopleWidget",
+              displayName: "近々会う人",
+              description: "近々会う人を表示します",
+              ios: {
+                supportedFamilies: widgetFamilies,
+                contentMarginsDisabled: true,
+              },
+            },
+            {
+              name: "RecordWidget",
+              displayName: "記録",
+              description: "エピソードを素早く記録できます",
+              ios: {
+                supportedFamilies: widgetFamilies,
+                contentMarginsDisabled: true,
+              },
+            },
+          ],
+        },
+      ],
       "@react-native-community/datetimepicker",
       "expo-font",
       [

@@ -1,6 +1,7 @@
 import {
   GOOGLE_CALENDAR_EVENT_ID_PROPERTY,
   FRIENDEX_GOOGLE_CALENDAR_SUMMARY,
+  GOOGLE_CALENDAR_REAUTH_MESSAGE,
 } from '@/constants/googleCalendar';
 import {
   clearAllEventGoogleEventIds,
@@ -19,10 +20,22 @@ import {
 } from '@/db';
 import { scheduleOwnedEventSync } from '@/lib/ownedEventSync';
 import {
+  clearGoogleCalendarNeedsReauth,
   clearGoogleTokens,
   hasGoogleTokens,
+  isGoogleCalendarNeedsReauth,
+  markGoogleCalendarNeedsReauth,
+  resolveGoogleAccessToken,
   revokeGoogleAccess,
 } from '@/lib/googleAuth';
+import {
+  clearPendingGoogleCalendarSync,
+  dequeuePendingGoogleDelete,
+  dequeuePendingGoogleUpsert,
+  enqueuePendingGoogleDelete,
+  enqueuePendingGoogleUpsert,
+  loadPendingGoogleCalendarSync,
+} from '@/lib/pendingGoogleCalendarSync';
 import {
   createFriendDexGoogleCalendar,
   deleteGoogleCalendarEventRemote,
@@ -42,7 +55,13 @@ import { toEventParticipantDisplays } from '@/utils/eventParticipantHelpers';
 export type GoogleCalendarPushResult = {
   pushed: number;
   failed: number;
+  blocked?: 'auth' | 'disconnected';
 };
+
+type PushOutcome = 'sent' | 'absent' | 'auth' | 'transient' | 'permanent';
+type DeleteFlush = 'ok' | 'auth' | 'paused';
+
+const AUTH_ERROR_LEFTOVER = /oauth|authentication credential|invalid authentication/i;
 
 const addOneDayToDateKey = (dateKey: string): string => {
   const date = parseDateKey(dateKey);
@@ -69,6 +88,7 @@ export const getGoogleCalendarConnectionSnapshot = (): {
   calendarId: string | null;
   lastSyncAt: string | null;
   lastError: string | null;
+  needsReauth: boolean;
 } => {
   initializeDatabase();
   return {
@@ -76,8 +96,27 @@ export const getGoogleCalendarConnectionSnapshot = (): {
     calendarId: getAppSetting(GOOGLE_CALENDAR_ID_KEY),
     lastSyncAt: getAppSetting(GOOGLE_CALENDAR_LAST_SYNC_AT_KEY),
     lastError: getAppSetting(GOOGLE_CALENDAR_LAST_ERROR_KEY),
+    needsReauth: isGoogleCalendarNeedsReauth(),
   };
 };
+
+const failureOf = (error: unknown): 'reauth' | 'transient' | 'permanent' => {
+  if (error instanceof GoogleCalendarApiError) {
+    return error.failure;
+  }
+  if (error instanceof TypeError) {
+    return 'transient';
+  }
+  return 'permanent';
+};
+
+const noteAuthFailure = (): void => {
+  markGoogleCalendarNeedsReauth();
+  setLastError(GOOGLE_CALENDAR_REAUTH_MESSAGE);
+};
+
+const messageOf = (error: unknown, fallback: string): string =>
+  error instanceof Error && error.message ? error.message : fallback;
 
 const buildReminders = (event: Event): GoogleCalendarEventBody['reminders'] => {
   if (!event.notifyEnabled || !event.notifyAt) {
@@ -183,15 +222,45 @@ const persistGoogleEventId = (eventId: string, googleEventId: string): void => {
   scheduleOwnedEventSync(eventId);
 };
 
-export const pushLocalEventToGoogleCalendar = async (eventId: string): Promise<boolean> => {
+const markPushSuccess = (eventId: string): void => {
+  dequeuePendingGoogleUpsert(eventId);
+  clearGoogleCalendarNeedsReauth();
+  setLastError(null);
+  setLastSyncAt();
+};
+
+const recordPushFailure = (eventId: string, error: unknown): 'auth' | 'transient' | 'permanent' => {
+  const failure = failureOf(error);
+  if (failure === 'reauth') {
+    enqueuePendingGoogleUpsert(eventId);
+    noteAuthFailure();
+    return 'auth';
+  }
+  if (failure === 'transient') {
+    enqueuePendingGoogleUpsert(eventId);
+    setLastError(messageOf(error, 'Google カレンダーへの送信に失敗しました'));
+    return 'transient';
+  }
+  setLastError(messageOf(error, 'Google カレンダーへの送信に失敗しました'));
+  return 'permanent';
+};
+
+const pushLocalEventOutcome = async (eventId: string): Promise<PushOutcome> => {
   if (!(await hasGoogleTokens())) {
-    return false;
+    return 'permanent';
   }
 
   initializeDatabase();
   const event = getEvent(eventId);
   if (!event) {
-    return false;
+    dequeuePendingGoogleUpsert(eventId);
+    return 'absent';
+  }
+
+  if (isGoogleCalendarNeedsReauth()) {
+    enqueuePendingGoogleUpsert(eventId);
+    setLastError(GOOGLE_CALENDAR_REAUTH_MESSAGE);
+    return 'auth';
   }
 
   try {
@@ -207,9 +276,8 @@ export const pushLocalEventToGoogleCalendar = async (eventId: string): Promise<b
       try {
         await updateGoogleCalendarEvent(calendarId, googleEventId, body);
         persistGoogleEventId(event.id, googleEventId);
-        setLastError(null);
-        setLastSyncAt();
-        return true;
+        markPushSuccess(event.id);
+        return 'sent';
       } catch (error) {
         const missing =
           error instanceof GoogleCalendarApiError && (error.status === 404 || error.status === 410);
@@ -221,14 +289,57 @@ export const pushLocalEventToGoogleCalendar = async (eventId: string): Promise<b
 
     const createdId = await insertGoogleCalendarEvent(calendarId, body);
     persistGoogleEventId(event.id, createdId);
-    setLastError(null);
-    setLastSyncAt();
-    return true;
+    markPushSuccess(event.id);
+    return 'sent';
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Google カレンダーへの送信に失敗しました';
-    setLastError(message);
-    return false;
+    return recordPushFailure(eventId, error);
   }
+};
+
+export const pushLocalEventToGoogleCalendar = async (eventId: string): Promise<boolean> =>
+  (await pushLocalEventOutcome(eventId)) === 'sent';
+
+export const holdGoogleCalendarDelete = (googleEventId: string | null | undefined): void => {
+  const remoteId = googleEventId?.trim();
+  if (!remoteId) {
+    return;
+  }
+  initializeDatabase();
+  const calendarId = getAppSetting(GOOGLE_CALENDAR_ID_KEY)?.trim();
+  if (!calendarId) {
+    return;
+  }
+  enqueuePendingGoogleDelete({ calendarId, googleEventId: remoteId });
+};
+
+export const releaseGoogleCalendarDelete = (googleEventId: string | null | undefined): void => {
+  const remoteId = googleEventId?.trim();
+  if (!remoteId) {
+    return;
+  }
+  dequeuePendingGoogleDelete(remoteId);
+};
+
+const localEventStillUsesGoogleId = (googleEventId: string): boolean => {
+  initializeDatabase();
+  return getAllEvents().some((event) => event.googleEventId === googleEventId);
+};
+
+const calendarIdForQueuedDelete = (googleEventId: string): string | null => {
+  const pending = loadPendingGoogleCalendarSync().deletes.find(
+    (entry) => entry.googleEventId === googleEventId
+  );
+  return pending?.calendarId ?? getAppSetting(GOOGLE_CALENDAR_ID_KEY);
+};
+
+const recordDeleteFailure = (error: unknown): 'reauth' | 'transient' | 'permanent' => {
+  const failure = failureOf(error);
+  if (failure === 'reauth') {
+    noteAuthFailure();
+    return failure;
+  }
+  setLastError(messageOf(error, 'Google カレンダーからの削除に失敗しました'));
+  return failure;
 };
 
 export const deleteLocalEventFromGoogleCalendar = async (
@@ -238,20 +349,106 @@ export const deleteLocalEventFromGoogleCalendar = async (
   if (!remoteId) {
     return;
   }
+  if (localEventStillUsesGoogleId(remoteId)) {
+    dequeuePendingGoogleDelete(remoteId);
+    return;
+  }
+  holdGoogleCalendarDelete(remoteId);
   if (!(await hasGoogleTokens())) {
     return;
   }
+  if (isGoogleCalendarNeedsReauth()) {
+    setLastError(GOOGLE_CALENDAR_REAUTH_MESSAGE);
+    return;
+  }
   initializeDatabase();
-  const calendarId = getAppSetting(GOOGLE_CALENDAR_ID_KEY);
+  const calendarId = calendarIdForQueuedDelete(remoteId);
   if (!calendarId) {
     return;
   }
   try {
     await deleteGoogleCalendarEventRemote(calendarId, remoteId);
+    dequeuePendingGoogleDelete(remoteId);
+    clearGoogleCalendarNeedsReauth();
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Google カレンダーからの削除に失敗しました';
-    setLastError(message);
+    recordDeleteFailure(error);
   }
+};
+
+const flushPendingGoogleCalendarDeletes = async (): Promise<DeleteFlush> => {
+  if (!(await hasGoogleTokens()) || isGoogleCalendarNeedsReauth()) {
+    return isGoogleCalendarNeedsReauth() ? 'auth' : 'ok';
+  }
+  const pending = loadPendingGoogleCalendarSync();
+  let paused = false;
+  for (const item of pending.deletes) {
+    if (isGoogleCalendarNeedsReauth()) {
+      return 'auth';
+    }
+    if (localEventStillUsesGoogleId(item.googleEventId)) {
+      dequeuePendingGoogleDelete(item.googleEventId);
+      continue;
+    }
+    try {
+      await deleteGoogleCalendarEventRemote(item.calendarId, item.googleEventId);
+      dequeuePendingGoogleDelete(item.googleEventId);
+      clearGoogleCalendarNeedsReauth();
+    } catch (error) {
+      const failure = recordDeleteFailure(error);
+      if (failure === 'reauth') {
+        return 'auth';
+      }
+      if (failure === 'transient') {
+        return 'paused';
+      }
+      paused = true;
+    }
+  }
+  return paused ? 'paused' : 'ok';
+};
+
+let googleQueueFlushInFlight: Promise<void> | null = null;
+
+const flushPendingGoogleCalendarQueueNow = async (): Promise<void> => {
+  initializeDatabase();
+  const pending = loadPendingGoogleCalendarSync();
+  for (const eventId of pending.upserts) {
+    if (!getEvent(eventId)) {
+      dequeuePendingGoogleUpsert(eventId);
+    }
+  }
+  const upserts = pending.upserts.filter((eventId) => Boolean(getEvent(eventId)));
+  if (upserts.length === 0 && pending.deletes.length === 0) {
+    return;
+  }
+  if (isGoogleCalendarNeedsReauth() || !(await hasGoogleTokens())) {
+    return;
+  }
+
+  let pauseRemaining = false;
+  for (const eventId of upserts) {
+    if (isGoogleCalendarNeedsReauth()) {
+      pauseRemaining = true;
+      break;
+    }
+    const outcome = await pushLocalEventOutcome(eventId);
+    if (outcome === 'auth' || outcome === 'transient') {
+      pauseRemaining = true;
+      break;
+    }
+  }
+  if (!pauseRemaining && !isGoogleCalendarNeedsReauth()) {
+    await flushPendingGoogleCalendarDeletes();
+  }
+};
+
+export const flushPendingGoogleCalendarQueue = (): Promise<void> => {
+  if (!googleQueueFlushInFlight) {
+    googleQueueFlushInFlight = flushPendingGoogleCalendarQueueNow().finally(() => {
+      googleQueueFlushInFlight = null;
+    });
+  }
+  return googleQueueFlushInFlight;
 };
 
 export const scheduleGoogleCalendarPush = (eventId: string): void => {
@@ -259,26 +456,87 @@ export const scheduleGoogleCalendarPush = (eventId: string): void => {
 };
 
 export const scheduleGoogleCalendarDelete = (googleEventId: string | null | undefined): void => {
+  holdGoogleCalendarDelete(googleEventId);
   void deleteLocalEventFromGoogleCalendar(googleEventId);
 };
 
 export const pushAllLocalEventsToGoogleCalendar = async (): Promise<GoogleCalendarPushResult> => {
+  if (!(await hasGoogleTokens())) {
+    return { pushed: 0, failed: 0, blocked: 'disconnected' };
+  }
   initializeDatabase();
+  for (const eventId of loadPendingGoogleCalendarSync().upserts) {
+    if (!getEvent(eventId)) {
+      dequeuePendingGoogleUpsert(eventId);
+    }
+  }
+  if (isGoogleCalendarNeedsReauth()) {
+    setLastError(GOOGLE_CALENDAR_REAUTH_MESSAGE);
+    return { pushed: 0, failed: 0, blocked: 'auth' };
+  }
+
   const events = getAllEvents();
   let pushed = 0;
   let failed = 0;
+  let pauseRemaining = false;
   for (const event of events) {
-    const ok = await pushLocalEventToGoogleCalendar(event.id);
-    if (ok) {
+    if (isGoogleCalendarNeedsReauth()) {
+      pauseRemaining = true;
+      break;
+    }
+    const outcome = await pushLocalEventOutcome(event.id);
+    if (outcome === 'sent') {
       pushed += 1;
-    } else {
-      failed += 1;
+      continue;
+    }
+    if (outcome === 'absent') {
+      continue;
+    }
+    failed += 1;
+    if (outcome === 'auth' || outcome === 'transient') {
+      pauseRemaining = true;
+      break;
     }
   }
-  if (failed === 0) {
+
+  let deleteFlush: DeleteFlush = 'ok';
+  if (!pauseRemaining && !isGoogleCalendarNeedsReauth()) {
+    deleteFlush = await flushPendingGoogleCalendarDeletes();
+  }
+  const blocked = isGoogleCalendarNeedsReauth() ? ('auth' as const) : undefined;
+  if (deleteFlush === 'paused' && !blocked) {
+    failed += loadPendingGoogleCalendarSync().deletes.length;
+  }
+  if (failed === 0 && deleteFlush === 'ok' && !blocked) {
     setLastError(null);
   }
-  return { pushed, failed };
+  return { pushed, failed, blocked };
+};
+
+export const probeGoogleCalendarAuth = async (): Promise<void> => {
+  initializeDatabase();
+  if (!getAppSetting(GOOGLE_CALENDAR_ID_KEY)) {
+    return;
+  }
+  if (isGoogleCalendarNeedsReauth()) {
+    setLastError(GOOGLE_CALENDAR_REAUTH_MESSAGE);
+    return;
+  }
+  if (!(await hasGoogleTokens())) {
+    noteAuthFailure();
+    return;
+  }
+  const resolved = await resolveGoogleAccessToken(false);
+  if (!resolved.ok) {
+    if (resolved.failure === 'reauth') {
+      setLastError(GOOGLE_CALENDAR_REAUTH_MESSAGE);
+    }
+    return;
+  }
+  const lastError = getAppSetting(GOOGLE_CALENDAR_LAST_ERROR_KEY);
+  if (lastError && AUTH_ERROR_LEFTOVER.test(lastError)) {
+    setLastError(null);
+  }
 };
 
 export const completeGoogleCalendarConnect = async (): Promise<{
@@ -292,6 +550,7 @@ export const completeGoogleCalendarConnect = async (): Promise<{
   if (email && previousEmail && previousEmail !== email) {
     clearAllEventGoogleEventIds();
     deleteAppSetting(GOOGLE_CALENDAR_ID_KEY);
+    clearPendingGoogleCalendarSync();
   }
   if (email) {
     setAppSetting(GOOGLE_CALENDAR_EMAIL_KEY, email);
@@ -314,4 +573,5 @@ export const disconnectGoogleCalendar = async (): Promise<void> => {
   deleteAppSetting(GOOGLE_CALENDAR_EMAIL_KEY);
   deleteAppSetting(GOOGLE_CALENDAR_LAST_ERROR_KEY);
   deleteAppSetting(GOOGLE_CALENDAR_LAST_SYNC_AT_KEY);
+  clearGoogleCalendarNeedsReauth();
 };

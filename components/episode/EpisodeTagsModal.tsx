@@ -255,7 +255,7 @@ export function EpisodeTagsModal({ visible, onClose, onTagsChanged }: EpisodeTag
         {infoVisible ? (
           <View style={styles.nestedOverlay} pointerEvents="box-none">
             <Pressable
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
               onPress={() => setInfoVisible(false)}
               accessibilityLabel="閉じる"
             />
@@ -281,7 +281,7 @@ export function EpisodeTagsModal({ visible, onClose, onTagsChanged }: EpisodeTag
         {editorVisible ? (
           <View style={styles.nestedOverlay} pointerEvents="box-none">
             <Pressable
-              style={StyleSheet.absoluteFillObject}
+              style={StyleSheet.absoluteFill}
               onPress={() => {
                 dismissKeyboardFocus();
                 setEditorVisible(false);
@@ -451,7 +451,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   nestedOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(15, 23, 42, 0.5)',
     justifyContent: 'center',
     paddingHorizontal: 16,
