@@ -1,16 +1,17 @@
 import '../sentry';
 import { Stack, usePathname, useRouter } from 'expo-router';
-import * as Notifications from 'expo-notifications';
 import * as Sentry from '@sentry/react-native';
 import { useEffect, useState } from 'react';
 import { InteractionManager, Pressable, StyleSheet, View, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AppHeader from '../AppHeader';
 import BottomNav from '../components/BottomNav';
+import { LaunchSplash } from '../components/screen/LaunchSplash';
 import { ScreenTopBar } from '../components/screen/ScreenTopBar';
 import { SharedHeaderFrame } from '../components/screen/SharedHeaderFrame';
+import { PendingEpisodeReviewHost } from '../components/episode/PendingEpisodeReviewHost';
 import { AppThemeProvider, useAppTheme } from '../contexts/AppThemeContext';
 import { NoteFormatAccessoryProvider } from '@/contexts/NoteFormatAccessoryContext';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
@@ -33,32 +34,71 @@ import {
 import {
   peekNextReplaceAsPop,
   resolveStackAnimation,
-  suppressNextTabSlideOnce,
 } from '../utils/tabTransition';
+import { openAfterAuthGate, resetAuthGateNavigation } from '@/utils/navigationRestore';
+import {
+  installNavigationTapLock,
+  noteTapNavigationTransitionEnd,
+  noteTapNavigationTransitionStart,
+  useNavigationTapLock,
+} from '@/utils/navigationTapLock';
 import { useTabStackBackHandler } from '@/hooks/useTabStackBackHandler';
 import { useTabStackSync } from '@/hooks/useTabStackSync';
 import { getMyselfSetupPhase, initializeDatabase, ensureDatabaseOpened } from '../db';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
-import { requestTodayScheduleWidgetSync } from '@/utils/todayScheduleWidget';
+import {
+  absorbWidgetTaskChecks,
+  listenForTodayScheduleWidgetToggles,
+  requestTodayScheduleWidgetSync,
+} from '@/utils/todayScheduleWidget';
 import '@/widgets/MemoryWidget';
 import '@/widgets/RecordWidget';
 import '@/widgets/TodayScheduleWidget';
 import '@/widgets/UpcomingPeopleWidget';
 import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
 
+installNavigationTapLock();
+
+const navigationTapLockListeners = {
+  transitionStart: () => {
+    noteTapNavigationTransitionStart();
+  },
+  transitionEnd: (event: { data?: { closing?: boolean } }) => {
+    noteTapNavigationTransitionEnd(event.data?.closing === true);
+  },
+};
+
 const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'index',
   'calendar',
+  'people',
   'episode',
   'tools',
   'tasks',
 ]);
 
-/** プロセスが生きているあいだは、起動時のカレンダー誘導を繰り返さない。 */
-let launchRouteChosen = false;
+function stackRoutePath(routeName: string): string {
+  return routeName.startsWith('/') ? routeName : `/${routeName}`;
+}
 
-const isListIndexPath = (pathname: string): boolean =>
-  pathname === '/' || pathname === '/index';
+/** シェルのヘッダーをこの画面の上に重ねて出すか。AppShellHeader と同じ条件。 */
+function routeShowsShellHeader(path: string): boolean {
+  if (path.includes('/detail')) {
+    return true;
+  }
+  if (!shouldHideHeader(path)) {
+    return true;
+  }
+  return shouldKeepSharedHeaderFrame(path);
+}
+
+function estimateShellHeaderHeight(topInset: number): number {
+  return topInset + 44 + 2;
+}
+
+function estimateShellNavHeight(bottomInset: number): number {
+  return 8 + 12 + 22 + 3 + 12 + (bottomInset / 2 + 8) + 2;
+}
 
 function PastEventConversionScheduler() {
   usePastEventConversionSchedule();
@@ -67,10 +107,16 @@ function PastEventConversionScheduler() {
 
 function TodayScheduleWidgetSync() {
   useEffect(() => {
-    requestTodayScheduleWidgetSync();
+    listenForTodayScheduleWidgetToggles();
+    const sync = () => {
+      void absorbWidgetTaskChecks().finally(() => {
+        requestTodayScheduleWidgetSync();
+      });
+    };
+    sync();
     const subscription = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
-        requestTodayScheduleWidgetSync();
+        sync();
       }
     });
     return () => {
@@ -180,8 +226,11 @@ function AppShellHeader() {
 function AppShell() {
   const pathname = usePathname();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const suppressBottomNav = useSuppressBottomNav();
   const { colors } = useAppTheme();
+  const [headerHeight, setHeaderHeight] = useState(() => estimateShellHeaderHeight(insets.top));
+  const [navHeight, setNavHeight] = useState(() => estimateShellNavHeight(insets.bottom));
   const { configured, session, ready: authReady } = useAuthSession();
   const [setupPhase, setSetupPhase] = useState(() => {
     try {
@@ -202,25 +251,16 @@ function AppShell() {
   const onSetupRoute = pathname.includes('setup-myself');
   const onLoginRoute = pathname.includes('login');
   const loggedOut = configured && !session;
-  const [holdLaunchList, setHoldLaunchList] = useState(() => !launchRouteChosen);
-  const coveringLaunchList =
-    holdLaunchList &&
-    authReady &&
-    !loggedOut &&
-    !needsSetup &&
-    !onSetupRoute &&
-    !onLoginRoute &&
-    isListIndexPath(pathname);
   const hideBottomNav =
     shouldHideBottomNav(pathname) ||
     suppressBottomNav ||
     needsSetup ||
     onSetupRoute ||
     onLoginRoute ||
-    loggedOut ||
-    coveringLaunchList;
-  const activeTab = getActiveTab(pathname);
+    loggedOut;
   useTabStackSync();
+  const activeTab = getActiveTab(pathname);
+  const [gateOpened, setGateOpened] = useState(false);
   useTabStackBackHandler(!hideBottomNav && !needsSetup && !onSetupRoute && !onLoginRoute);
 
   useEffect(() => {
@@ -236,6 +276,8 @@ function AppShell() {
     const onLogin = pathname.includes('login');
 
     if (loggedOut) {
+      resetAuthGateNavigation();
+      setGateOpened(false);
       if (!onLogin) {
         router.replace('/login');
       }
@@ -243,25 +285,8 @@ function AppShell() {
     }
 
     if (!setupNeeded) {
-      if (onLogin || onSetup) {
-        launchRouteChosen = true;
-        setHoldLaunchList(false);
-        router.replace('/calendar');
-        return;
-      }
-      if (!launchRouteChosen) {
-        launchRouteChosen = true;
-        if (isListIndexPath(pathname) && !Notifications.getLastNotificationResponse()) {
-          suppressNextTabSlideOnce();
-          router.replace('/calendar');
-          return;
-        }
-        setHoldLaunchList(false);
-        return;
-      }
-      if (!isListIndexPath(pathname)) {
-        setHoldLaunchList(false);
-      }
+      openAfterAuthGate(pathname);
+      setGateOpened(true);
       return;
     }
 
@@ -289,13 +314,42 @@ function AppShell() {
     }
   }, [authReady, configured, pathname, router, session]);
 
+  const shellHidesHeader = loggedOut || needsSetup;
+  const shellHidesNav =
+    suppressBottomNav || needsSetup || onSetupRoute || onLoginRoute || loggedOut;
+  const showShellHeader = !shellHidesHeader && routeShowsShellHeader(pathname);
+  const rememberChromeHeight = (current: number, next: number) =>
+    next > 0 && next !== current ? next : current;
+
   return (
     <View style={[styles.shell, { backgroundColor: colors.screenBackground }]}>
-      {loggedOut || needsSetup ? null : <AppShellHeader />}
       <View style={styles.content}>
         <Stack
+          screenListeners={navigationTapLockListeners}
+          screenLayout={({ route, children }) => {
+            const path = stackRoutePath(route.name);
+            const paddingTop =
+              shellHidesHeader || !routeShowsShellHeader(path) ? 0 : headerHeight;
+            const paddingBottom =
+              shellHidesNav || shouldHideBottomNav(path) ? 0 : navHeight;
+            return (
+              <View
+                style={[
+                  styles.screenInset,
+                  {
+                    paddingTop,
+                    paddingBottom,
+                    backgroundColor: colors.screenBackground,
+                  },
+                ]}
+              >
+                <View style={styles.screenFrame}>{children}</View>
+              </View>
+            );
+          }}
           screenOptions={({ route }) => ({
             headerShown: false,
+            contentStyle: { backgroundColor: colors.screenBackground },
             animation: resolveStackAnimation(route.name, BOTTOM_TAB_ROUTE_NAMES),
             /** replace でも push と同じ方向で入る（pop だと向きが反転する） */
             animationTypeForReplace: peekNextReplaceAsPop() ? 'pop' : 'push',
@@ -306,15 +360,56 @@ function AppShell() {
         {(!authReady ||
           (loggedOut && !onLoginRoute) ||
           (needsSetup && !onLoginRoute && !onSetupRoute) ||
-          coveringLaunchList) ? (
-          <View
-            pointerEvents="auto"
-            style={[StyleSheet.absoluteFill, { backgroundColor: colors.screenBackground }]}
-          />
+          (!loggedOut && !needsSetup && !gateOpened)) ? (
+          <View pointerEvents="auto" style={StyleSheet.absoluteFill}>
+            <LaunchSplash />
+          </View>
         ) : null}
       </View>
-      {!hideBottomNav && <BottomNav active={activeTab} />}
+      {showShellHeader ? (
+        <View
+          pointerEvents="box-none"
+          style={styles.headerOverlay}
+          onLayout={(event) => {
+            const next = Math.round(event.nativeEvent.layout.height);
+            setHeaderHeight((current) => rememberChromeHeight(current, next));
+          }}
+        >
+          <AppShellHeader />
+        </View>
+      ) : null}
+      {!hideBottomNav ? (
+        <View
+          pointerEvents="box-none"
+          style={styles.navOverlay}
+          onLayout={(event) => {
+            const next = Math.round(event.nativeEvent.layout.height);
+            setNavHeight((current) => rememberChromeHeight(current, next));
+          }}
+        >
+          <BottomNav active={activeTab} />
+        </View>
+      ) : null}
+      <PendingEpisodeReviewHost
+        enabled={authReady && !loggedOut && !needsSetup && !onLoginRoute && !onSetupRoute}
+      />
+      <NavigationTapShield />
     </View>
+  );
+}
+
+function NavigationTapShield() {
+  const locked = useNavigationTapLock();
+  if (!locked) {
+    return null;
+  }
+  return (
+    <View
+      pointerEvents="auto"
+      style={[StyleSheet.absoluteFill, styles.tapShield]}
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    />
   );
 }
 
@@ -378,7 +473,7 @@ function RootLayout() {
     return (
       <GestureHandlerRootView style={styles.root}>
         <SafeAreaProvider>
-          <View style={[styles.root, styles.launchSplash]} />
+          <LaunchSplash />
         </SafeAreaProvider>
       </GestureHandlerRootView>
     );
@@ -398,15 +493,37 @@ export default Sentry.wrap(RootLayout);
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-  },
-  launchSplash: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#000000',
   },
   shell: {
     flex: 1,
   },
   content: {
     flex: 1,
+  },
+  screenInset: {
+    flex: 1,
+  },
+  /** 絶対配置の基準。padding の内側なのでフォームのバーがシェルヘッダーに隠れない */
+  screenFrame: {
+    flex: 1,
+  },
+  headerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 2,
+  },
+  navOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 2,
+  },
+  tapShield: {
+    zIndex: 50,
   },
   adjacentHit: {
     width: 28,

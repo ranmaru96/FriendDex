@@ -13,6 +13,13 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useKeepFormDraft } from '@/hooks/useKeepFormDraft';
+import {
+  deletePersonFormDraft,
+  personDraftKey,
+  readPersonFormDraft,
+  serializePersonForm,
+} from '@/utils/personFormDraft';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
@@ -458,6 +465,7 @@ export default function EditScreen() {
     publicFields?: string;
     photoUri?: string;
     fromFollow?: string;
+    draft?: string;
   }>();
 
   const friendId = useMemo(() => {
@@ -473,6 +481,10 @@ export default function EditScreen() {
   const savingRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   const [form, setForm] = useState<FriendInput>(EMPTY_FORM);
+  const [draftBaseline, setDraftBaseline] = useState<string | null>(null);
+  const claimPersonDraftRef = useRef<() => void>(() => {});
+  const stopPersonDraftRef = useRef<() => void>(() => {});
+  const flushPersonDraftRef = useRef<() => void>(() => {});
   const [showBirthdayPicker, setShowBirthdayPicker] = useState(false);
   useDismissPickerOnKeyboardShow(showBirthdayPicker, () => setShowBirthdayPicker(false));
   const [nameSaveAttempted, setNameSaveAttempted] = useState(false);
@@ -503,58 +515,88 @@ export default function EditScreen() {
     setExperienceSuggestions(getMergedCommonItemLabels('experience'));
     setLikeSuggestions(getMergedCommonItemLabels('like'));
     setDislikeSuggestions(getMergedCommonItemLabels('dislike'));
+    let next: FriendInput = EMPTY_FORM;
     if (!friendId) {
       if (fromScan) {
         const pending = getPendingQrImportPayload();
         if (pending) {
-          setForm({
+          next = {
             ...EMPTY_FORM,
             ...buildFriendInputFromQrPayload(pending),
-          });
-        } else {
-          setForm(EMPTY_FORM);
+          };
         }
-      } else {
-        setForm(EMPTY_FORM);
       }
-      return;
+    } else {
+      const friend = getFriendById(friendId);
+      if (!friend) {
+        Alert.alert('エラー', '編集対象の人物データが見つかりません。');
+        router.back();
+        return;
+      }
+      savedPhotoUriRef.current = friend.photoUri;
+      next = {
+        name: friend.name,
+        familyName: friend.familyName,
+        givenName: friend.givenName,
+        nickname: friend.nickname,
+        origin: friend.origin,
+        residence: friend.residence,
+        mbti: friend.mbti,
+        birthday: friend.birthday,
+        height: friend.height,
+        weight: friend.weight,
+        category: friend.category,
+        description: friend.description,
+        photoUri: friend.photoUri,
+        affiliations: friend.affiliations.length > 0 ? friend.affiliations : [],
+        personalities: friend.personalities.length > 0 ? friend.personalities : [],
+        experiences: friend.experiences.length > 0 ? friend.experiences : [],
+        traits: friend.traits.length > 0 ? friend.traits : [],
+        notes: friend.notes ?? [],
+        likes: friend.likes.length > 0 ? friend.likes : [],
+        dislikes: friend.dislikes.length > 0 ? friend.dislikes : [],
+        episodes: friend.episodes,
+        sayings: friend.sayings,
+      };
     }
-    const friend = getFriendById(friendId);
-    if (!friend) {
-      Alert.alert('エラー', '編集対象の人物データが見つかりません。');
-      router.back();
-      return;
+    const loadedBody = serializePersonForm(next);
+    setDraftBaseline(loadedBody);
+    const restoreDraft = getParam(params.draft) === '1';
+    if (restoreDraft) {
+      const stored = readPersonFormDraft(friendId || null);
+      if (stored && friendId && stored.base !== loadedBody) {
+        deletePersonFormDraft(friendId);
+      } else if (stored) {
+        next = {
+          ...next,
+          ...stored.fields,
+          mbti: stored.fields.mbti as FriendInput['mbti'],
+          episodes: next.episodes,
+          sayings: next.sayings,
+        };
+        claimPersonDraftRef.current();
+      }
     }
-    savedPhotoUriRef.current = friend.photoUri;
-    setForm({
-      name: friend.name,
-      familyName: friend.familyName,
-      givenName: friend.givenName,
-      nickname: friend.nickname,
-      origin: friend.origin,
-      residence: friend.residence,
-      mbti: friend.mbti,
-      birthday: friend.birthday,
-      height: friend.height,
-      weight: friend.weight,
-      category: friend.category,
-      description: friend.description,
-      photoUri: friend.photoUri,
-      affiliations: friend.affiliations.length > 0 ? friend.affiliations : [],
-      personalities: friend.personalities.length > 0 ? friend.personalities : [],
-      experiences: friend.experiences.length > 0 ? friend.experiences : [],
-      traits: friend.traits.length > 0 ? friend.traits : [],
-      notes: friend.notes ?? [],
-      likes: friend.likes.length > 0 ? friend.likes : [],
-      dislikes: friend.dislikes.length > 0 ? friend.dislikes : [],
-      episodes: friend.episodes,
-      sayings: friend.sayings,
-    });
-  }, [friendId, fromScan, router]);
+    setForm(next);
+  }, [friendId, fromScan, params.draft, router]);
+
+  const personDraftSnapshot = useMemo(() => serializePersonForm(form), [form]);
+  const personDraftKeep = useKeepFormDraft(
+    draftBaseline != null,
+    personDraftKey(friendId || null),
+    personDraftSnapshot,
+    draftBaseline
+  );
+  claimPersonDraftRef.current = personDraftKeep.claim;
+  stopPersonDraftRef.current = personDraftKeep.stopKeeping;
+  flushPersonDraftRef.current = personDraftKeep.flush;
 
   useFocusEffect(
     useCallback(() => {
       loadFriend();
+      return () => {
+        flushPersonDraftRef.current();
+      };
     }, [loadFriend])
   );
 
@@ -661,6 +703,8 @@ export default function EditScreen() {
     };
 
     const finishSave = (targetId: string, message = '人物データを登録しました。') => {
+      stopPersonDraftRef.current();
+      deletePersonFormDraft(friendId || null);
       scheduleFriendProfileSync(targetId);
       Alert.alert('保存完了', message, [
         { text: 'OK', onPress: () => router.replace({ pathname: '/detail', params: { id: targetId } }) },

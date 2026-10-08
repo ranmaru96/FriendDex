@@ -1083,6 +1083,13 @@ export function createDetailStyles(c: DetailThemeColors) {
     backgroundColor: c.traitAccentLine,
     borderRadius: 1,
   },
+  memoKindIconCol: {
+    width: 22,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
   sayingQuoteBody: {
     flex: 1,
     paddingLeft: 10,
@@ -1097,6 +1104,83 @@ export function createDetailStyles(c: DetailThemeColors) {
     fontSize: 10,
     color: c.quoteDateText,
     marginTop: 4,
+  },
+  memoMetaRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  memoComposerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minWidth: 0,
+  },
+  memoComposerDate: {
+    flexShrink: 1,
+    minWidth: 0,
+    height: 22,
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+    borderWidth: 1,
+    borderColor: c.inputBorder,
+    borderRadius: 6,
+    backgroundColor: c.inputBg,
+  },
+  memoComposerDateText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: c.inputText,
+  },
+  memoComposerDatePlaceholder: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: c.inputPlaceholder,
+  },
+  memoComposerTag: {
+    height: 22,
+    justifyContent: 'center',
+  },
+  memoComposerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginLeft: 'auto',
+    flexShrink: 0,
+  },
+  memoComposerButton: {
+    width: 52,
+  },
+  memoTag: {
+    borderWidth: 1,
+    borderColor: c.btnGhostBorder,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  memoTagOn: {
+    backgroundColor: c.textPrimary,
+    borderColor: c.textPrimary,
+  },
+  memoTagText: {
+    fontSize: 11,
+    color: c.btnGhostText,
+    fontWeight: '600',
+  },
+  memoTagTextOn: {
+    color: c.card,
+  },
+  memoTagStaticText: {
+    fontSize: 11,
+    color: c.quoteDateText,
+    fontWeight: '600',
+  },
+  memoBodyText: {
+    fontSize: Typography.base,
+    color: c.traitText,
+    lineHeight: 20,
   },
   modalBackdrop: {
     flex: 1,

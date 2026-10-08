@@ -1,13 +1,14 @@
+import { CALENDAR_ROOT, PEOPLE_ROOT, isCalendarTabRoot, isPeopleTabRoot } from '@/utils/tabRoots';
 import {
   getActiveTab,
   shouldHideBottomNav,
   type BottomNavTabKey,
 } from '@/utils/bottomNavVisibility';
 
-export const TAB_ROOT_ROUTES: Record<BottomNavTabKey, '/' | '/calendar' | '/episode' | '/tools' | '/tasks'> =
+export const TAB_ROOT_ROUTES: Record<BottomNavTabKey, '/' | '/people' | '/episode' | '/tools' | '/tasks'> =
   {
-    home: '/',
-    calendar: '/calendar',
+    home: PEOPLE_ROOT,
+    calendar: CALENDAR_ROOT,
     episode: '/episode',
     tools: '/tools',
     tasks: '/tasks',
@@ -27,6 +28,30 @@ let currentPathname = '/';
 
 export function setTabStackPathname(pathname: string): void {
   currentPathname = pathname;
+}
+
+export function snapshotTabStacks(): Record<BottomNavTabKey, string[]> {
+  return {
+    home: [...stacks.home],
+    calendar: [...stacks.calendar],
+    episode: [...stacks.episode],
+    tools: [...stacks.tools],
+    tasks: [...stacks.tasks],
+  };
+}
+
+export function restoreTabStacks(next: Partial<Record<BottomNavTabKey, string[]>>): void {
+  (Object.keys(stacks) as BottomNavTabKey[]).forEach((tab) => {
+    const incoming = next[tab];
+    if (!incoming || incoming.length === 0) {
+      return;
+    }
+    const hrefs = incoming.filter((href) => typeof href === 'string' && href.startsWith('/'));
+    if (hrefs.length === 0) {
+      return;
+    }
+    stacks[tab] = hrefs.slice(0, 8);
+  });
 }
 
 export function getTabStackPathname(): string {
@@ -79,11 +104,21 @@ export function normalizeTabHref(globalHref: string): string {
 }
 
 export function isTabRootPath(pathname: string, tab: BottomNavTabKey): boolean {
+  if (tab === 'calendar') {
+    return isCalendarTabRoot(pathname);
+  }
   if (tab === 'home') {
-    return pathname === '/' || pathname === '/index';
+    return isPeopleTabRoot(pathname);
   }
   return pathname === TAB_ROOT_ROUTES[tab];
 }
+
+const isTabDrillInPath = (pathname: string): boolean =>
+  pathname.includes('task-detail') ||
+  pathname.includes('task-group') ||
+  pathname.includes('task-edit') ||
+  pathname.includes('/edit') ||
+  (pathname.includes('/event') && !pathname.includes('event-detail'));
 
 export function shouldRememberTabRoute(
   pathname: string,
@@ -92,15 +127,21 @@ export function shouldRememberTabRoute(
   if (!tab) {
     return false;
   }
-  if (shouldHideBottomNav(pathname)) {
-    return false;
-  }
   if (
     pathname.includes('setup-myself') ||
     pathname.includes('/appsettings') ||
     pathname.includes('login') ||
-    pathname.includes('auth-preview')
+    pathname.includes('auth-preview') ||
+    pathname.includes('launch-preview') ||
+    pathname.includes('mypage') ||
+    pathname.includes('/scan') ||
+    pathname.includes('qr-import') ||
+    pathname.includes('myprofile') ||
+    pathname.includes('commonitems')
   ) {
+    return false;
+  }
+  if (shouldHideBottomNav(pathname) && !isTabDrillInPath(pathname)) {
     return false;
   }
   return true;

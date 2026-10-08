@@ -34,6 +34,7 @@ import { getAllProfiles, getMyself, initializeDatabase } from '../db';
 import { Profile } from '../types';
 import { useAuthSession } from '@/contexts/AuthSessionContext';
 import { requireOnline } from '@/lib/networkReachability';
+import { withRequiredPublicFields } from '@/utils/qrScanHelpers';
 
 const QR_SIZE = 280;
 const ICON_SIZE = 56;
@@ -70,7 +71,7 @@ const resolveMyselfProfileId = (profiles: Profile[], myselfFriendId: string | nu
 
 const buildQrData = (profile: Profile, authUserId: string): QrPayload => ({
   userId: authUserId,
-  publicFields: [...(profile.publicFields ?? [])],
+  publicFields: withRequiredPublicFields(profile.publicFields),
 });
 
 type FriendDexIconProps = {
@@ -147,15 +148,14 @@ export default function MyProfileQrScreen() {
     }, [loadProfile])
   );
 
-  const publicFields = profile?.publicFields ?? [];
-  const hasPublicFields = publicFields.length > 0;
+  const publicFields = profile ? withRequiredPublicFields(profile.publicFields) : [];
 
   const qrData = useMemo(() => {
-    if (!profile || !hasPublicFields || !authUserId) {
+    if (!profile || !authUserId) {
       return null;
     }
     return buildQrData(profile, authUserId);
-  }, [authUserId, profile, hasPublicFields]);
+  }, [authUserId, profile]);
 
   const qrValue = useMemo(() => (qrData ? JSON.stringify(qrData) : ''), [qrData]);
 
@@ -272,20 +272,6 @@ export default function MyProfileQrScreen() {
             <Text style={[styles.emptyMessage, contentMutedTextStyle(content)]}>
               ログイン中のみ QR を表示します。
             </Text>
-          </View>
-        ) : !hasPublicFields ? (
-          <View style={styles.emptyContainer}>
-            <Text style={[styles.emptyMessage, contentMutedTextStyle(content)]}>
-              公開する項目がありません。{'\n'}マイプロフィール画面で設定してください。
-            </Text>
-            <Pressable
-              style={[styles.primaryButton, contentFilledButtonStyle(content)]}
-              onPress={() => router.push('/myprofile')}
-            >
-              <Text style={[styles.primaryButtonText, contentFilledButtonTextStyle(content)]}>
-                マイプロフィールを編集
-              </Text>
-            </Pressable>
           </View>
         ) : (
           <>

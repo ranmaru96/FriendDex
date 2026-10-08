@@ -1,5 +1,5 @@
-import HomeScreen from '../HomeScreen';
+import CalendarScreen from '../CalendarScreen';
 
 export default function IndexRoute() {
-  return <HomeScreen />;
+  return <CalendarScreen />;
 }

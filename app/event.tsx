@@ -44,6 +44,15 @@ import {
   openRangeDatePickerBounds,
 } from '@/utils/datePickerBounds';
 import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
+import { useKeepFormDraft } from '@/hooks/useKeepFormDraft';
+import {
+  buildNewEventForm,
+  buildSavedEventForm,
+  deleteEventFormDraft,
+  eventDraftKey,
+  readEventFormDraft,
+  serializeEventForm,
+} from '@/utils/eventFormDraft';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
@@ -159,7 +168,7 @@ export default function EventScreen() {
   const appTheme = useAppThemeOptional();
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const fieldCorner = { borderRadius: Radius.sm };
-  const params = useLocalSearchParams<{ eventId?: string; date?: string }>();
+  const params = useLocalSearchParams<{ eventId?: string; date?: string; draft?: string }>();
   const eventId = parseRouteParam(params.eventId);
   const initialDate = parseRouteParam(params.date);
   const isEditing = eventId.length > 0;
@@ -174,6 +183,9 @@ export default function EventScreen() {
   const previousStartRef = useRef<Date | null>(null);
   const savingRef = useRef(false);
   const allowLeaveRef = useRef(false);
+  const claimEventDraftRef = useRef<() => void>(() => {});
+  const stopEventDraftRef = useRef<() => void>(() => {});
+  const flushEventDraftRef = useRef<() => void>(() => {});
   const [isSaving, setIsSaving] = useState(false);
 
   const unlockScreen = () => {
@@ -192,6 +204,8 @@ export default function EventScreen() {
 
   const finishAndLeave = () => {
     allowLeaveRef.current = true;
+    stopEventDraftRef.current();
+    deleteEventFormDraft(isEditing ? eventId : null);
     router.back();
   };
 
@@ -216,6 +230,7 @@ export default function EventScreen() {
   const [activePicker, setActivePicker] = useState<PickerTarget>(null);
   useDismissPickerOnKeyboardShow(activePicker != null, () => setActivePicker(null));
   const [isReady, setIsReady] = useState(false);
+  const [draftBaseline, setDraftBaseline] = useState<string | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
@@ -337,6 +352,30 @@ export default function EventScreen() {
       setLinkedEpisodes([]);
       setLinkedTasks([]);
       setEpisodePhotoUrisById(new Map());
+      const loaded = buildNewEventForm(initialDate);
+      const loadedBody = serializeEventForm(loaded);
+      setDraftBaseline(loadedBody);
+      if (params.draft === '1') {
+        const stored = readEventFormDraft(null);
+        if (stored) {
+          const fields = stored.fields;
+          setTitle(fields.title);
+          setMemo(fields.memo);
+          setEpisodeTag(fields.episodeTag);
+          setAllDay(fields.allDay);
+          setStartDateKey(fields.startDateKey);
+          setEndDateKey(fields.endDateKey);
+          setStartTime(fields.startTime);
+          setEndTime(fields.endTime);
+          setParticipantEntries(fields.participants);
+          setNotifyEnabled(fields.notifyEnabled);
+          setNotifyTimingPreset(fields.notifyTimingPreset);
+          previousStartRef.current = fields.allDay
+            ? parseDateKey(fields.startDateKey)
+            : combineLocalDateTime(fields.startDateKey, fields.startTime);
+          claimEventDraftRef.current();
+        }
+      }
       setIsReady(true);
       return;
     }
@@ -403,8 +442,76 @@ export default function EventScreen() {
     setLinkedEpisodes(episodes);
     setEpisodePhotoUrisById(getEpisodeListPhotoUrisMap(episodes.map((episode) => episode.id)));
     setLinkedTasks(getTasksByEventId(eventId));
+    const loaded = buildSavedEventForm(event, '');
+    const loadedBody = serializeEventForm(loaded);
+    setDraftBaseline(loadedBody);
+    if (params.draft === '1') {
+      const stored = readEventFormDraft(eventId);
+      if (stored && stored.base !== loadedBody) {
+        deleteEventFormDraft(eventId);
+      } else if (stored) {
+        const fields = stored.fields;
+        setTitle(fields.title);
+        setMemo(fields.memo);
+        setEpisodeTag(fields.episodeTag);
+        setAllDay(fields.allDay);
+        setStartDateKey(fields.startDateKey);
+        setEndDateKey(fields.endDateKey);
+        setStartTime(fields.startTime);
+        setEndTime(fields.endTime);
+        setParticipantEntries(fields.participants);
+        setNotifyEnabled(fields.notifyEnabled);
+        setNotifyTimingPreset(fields.notifyTimingPreset);
+        previousStartRef.current = fields.allDay
+          ? parseDateKey(fields.startDateKey)
+          : combineLocalDateTime(fields.startDateKey, fields.startTime);
+        claimEventDraftRef.current();
+      }
+    }
     setIsReady(true);
-  }, [eventId, initialDate, isEditing, router]);
+  }, [eventId, initialDate, isEditing, params.draft, router]);
+
+  const eventDraftSnapshot = useMemo(
+    () =>
+      serializeEventForm({
+        title,
+        memo,
+        episodeTag,
+        allDay,
+        startDateKey,
+        endDateKey,
+        startTime,
+        endTime,
+        participants: participantEntries,
+        notifyEnabled,
+        notifyTimingPreset,
+        initialDate: isEditing ? '' : initialDate,
+      }),
+    [
+      allDay,
+      endDateKey,
+      endTime,
+      episodeTag,
+      initialDate,
+      isEditing,
+      memo,
+      notifyEnabled,
+      notifyTimingPreset,
+      participantEntries,
+      startDateKey,
+      startTime,
+      title,
+    ]
+  );
+  const eventDraftKeep = useKeepFormDraft(
+    isReady && draftBaseline != null,
+    eventDraftKey(isEditing ? eventId : null),
+    eventDraftSnapshot,
+    draftBaseline
+  );
+  claimEventDraftRef.current = eventDraftKeep.claim;
+  stopEventDraftRef.current = eventDraftKeep.stopKeeping;
+  flushEventDraftRef.current = eventDraftKeep.flush;
 
   const reloadLinkedEpisodes = useCallback(() => {
     if (!isEditing) {
@@ -456,6 +563,8 @@ export default function EventScreen() {
     scheduleGoogleCalendarDelete(googleEventId);
     void markOwnedEventDeleted(eventId);
     allowLeaveRef.current = true;
+    stopEventDraftRef.current();
+    deleteEventFormDraft(eventId);
     router.back();
   }, [eventId, router]);
 
@@ -538,6 +647,9 @@ export default function EventScreen() {
 
   useEffect(() => {
     loadEvent();
+    return () => {
+      flushEventDraftRef.current();
+    };
   }, [loadEvent]);
 
   const screenTitle = isEditing ? '予定を編集' : '予定を追加';
@@ -941,6 +1053,7 @@ export default function EventScreen() {
               placeholderTextColor={content.contentTextSecondary}
               value={title}
               onChangeText={setTitle}
+              autoFocus={!isEditing}
             />
           </FormRow>
           <EventFieldDivider />

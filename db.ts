@@ -28,6 +28,7 @@ import {
   ShufflePool,
   PendingReviewEpisodeRef,
   Profile,
+  ProfileMemo,
   Saying,
   Task,
   TaskCompletion,
@@ -67,6 +68,7 @@ import { buildDefaultShufflePoolLabel, buildShuffleMemberSetKey, normalizeShuffl
 import { retentionToCutoffIso } from './utils/taskHelpers';
 import { mergeFriendInputWithPublicFields } from './utils/qrScanHelpers';
 import { resolvePersonNameParts } from './utils/personName';
+import { foldProfileMemos, readStoredProfileMemos } from './utils/profileMemos';
 import { normalizeDesignPatternId, type DesignPatternId } from '@/constants/designPatterns';
 import type {
   MockSettlementExpense,
@@ -272,7 +274,7 @@ export const ensureDatabaseOpened = (): void => {
   didOpenDatabase = true;
 };
 
-const toJson = (value: string[]) => JSON.stringify(value ?? []);
+const toJson = (value: unknown) => JSON.stringify(value ?? []);
 const toEpisodeJson = (value: Episode[]) => JSON.stringify(value ?? []);
 const toSayingJson = (value: Saying[]) => JSON.stringify(value ?? []);
 
@@ -421,6 +423,7 @@ const sanitizeEpisode = (value: unknown): Episode | null => {
     date: raw.date,
     ...(time ? { time } : {}),
     description: raw.description,
+    privateMemo: typeof raw.privateMemo === 'string' ? raw.privateMemo : '',
     authorFriendId: typeof raw.authorFriendId === 'string' ? raw.authorFriendId : '',
     visibilityMode: sanitizeVisibilityMode(raw.visibilityMode),
     participantEntries: Array.from(entryMap.values()),
@@ -504,6 +507,27 @@ const syncPersonNameForFriend = (
   );
 };
 
+const migrateProfileMemos = (): void => {
+  const rows = db.getAllSync<Pick<ProfileRow, 'id' | 'notes' | 'traits' | 'sayings'>>(
+    `SELECT id, notes, traits, sayings FROM ${PROFILES_TABLE};`
+  );
+  const timestamp = nowIso();
+  rows.forEach((row) => {
+    const folded = foldProfileMemos({
+      notesRaw: row.notes,
+      traits: fromJson(row.traits),
+      sayings: fromSayingJson(row.sayings),
+    });
+    if (!folded.changed) {
+      return;
+    }
+    db.runSync(
+      `UPDATE ${PROFILES_TABLE} SET notes = ?, traits = '[]', sayings = '[]', updatedAt = ? WHERE id = ?;`,
+      [JSON.stringify(folded.memos), timestamp, row.id]
+    );
+  });
+};
+
 const backfillPersonNameParts = (): void => {
   const rows = db.getAllSync<Pick<ProfileRow, 'id' | 'name' | 'familyName' | 'givenName'>>(
     `SELECT id, name, familyName, givenName FROM ${PROFILES_TABLE}
@@ -545,7 +569,7 @@ const rowToProfile = (row: ProfileRow): Profile => {
     personalities: fromJson(row.personalities),
     experiences: fromJson(row.experiences),
     traits: fromJson(row.traits),
-    notes: fromJson(row.notes ?? '[]'),
+    notes: readStoredProfileMemos(row.notes),
     likes: fromJson(row.likes),
     dislikes: fromJson(row.dislikes),
     episodes: fromEpisodeJson(row.episodes),
@@ -675,7 +699,7 @@ const defaultProfileRowToFriend = (row: ProfileRow): Friend => {
     personalities: fromJson(row.personalities),
     experiences: fromJson(row.experiences),
     traits: fromJson(row.traits),
-    notes: fromJson(row.notes ?? '[]'),
+    notes: readStoredProfileMemos(row.notes),
     likes: fromJson(row.likes),
     dislikes: fromJson(row.dislikes),
     episodes: fromEpisodeJson(row.episodes),
@@ -1454,6 +1478,7 @@ const commonTableInfo = db.getAllSync<{ name: string }>(`PRAGMA table_info(${COM
   }
 
   backfillPersonNameParts();
+  migrateProfileMemos();
 
   purgeExpiredCompletedTemporaryTasks();
   try {
@@ -1736,7 +1761,7 @@ export type RestorePersonCardInput = {
   personalities: string[];
   experiences: string[];
   traits: string[];
-  notes: string[];
+  notes: ProfileMemo[];
   likes: string[];
   dislikes: string[];
   sayings: Saying[];
@@ -1922,6 +1947,7 @@ export type RestoreEpisodeInput = {
   pendingReviewDismissed: boolean;
   tag: string | null;
   locationTag: string | null;
+  privateMemo?: string;
 };
 
 /** 同じエピソード ID が無いときだけ入れる。既存の本文は触らない。 */
@@ -1950,6 +1976,7 @@ export const restoreEpisodeIfMissing = (input: RestoreEpisodeInput): boolean => 
     date: input.date,
     ...(time ? { time } : {}),
     description: input.description,
+    privateMemo: input.privateMemo ?? '',
     authorFriendId,
     visibilityMode,
     participantEntries,
@@ -2015,16 +2042,6 @@ export const findFriendByAuthUserId = (authUserId: string): Friend | null => {
   }
   const baseFriend = defaultProfileRowToFriend(row);
   return applyDefaultProfileToFriend(baseFriend, getEffectiveProfile(baseFriend.id));
-};
-
-export const getQrScannedFriends = (): Friend[] => {
-  const rows = db.getAllSync<ProfileRow>(
-    `SELECT * FROM ${PROFILES_TABLE} WHERE isDefault = 1 AND importSource = 'qr_scan' ORDER BY scannedAt DESC, name COLLATE NOCASE ASC;`
-  );
-  return rows.map((row) => {
-    const baseFriend = defaultProfileRowToFriend(row);
-    return applyDefaultProfileToFriend(baseFriend, getEffectiveProfile(baseFriend.id));
-  });
 };
 
 export const getQrUserIdOwnerFriendId = (scannedUserId: string): string | null => {
@@ -2433,6 +2450,17 @@ export const setCompletedTaskRetention = (retention: CompletedTaskRetention): vo
   setAppSetting(COMPLETED_TASK_RETENTION_KEY, retention);
 };
 
+export const WIDGET_SHOW_RECURRING_TASKS_KEY = 'widget_show_recurring_tasks';
+
+/** 未設定は表示する。今日の予定ウィジェットだけに効く。 */
+export const getWidgetShowRecurringTasks = (): boolean => {
+  return getAppSetting(WIDGET_SHOW_RECURRING_TASKS_KEY) !== '0';
+};
+
+export const setWidgetShowRecurringTasks = (show: boolean): void => {
+  setAppSetting(WIDGET_SHOW_RECURRING_TASKS_KEY, show ? '1' : '0');
+};
+
 export const setMyself = (friendId: string | null): boolean => {
   if (friendId === null) {
     if (isMyselfLocked()) {
@@ -2795,6 +2823,7 @@ export const createEpisode = (input: EpisodeInput): Episode | null => {
     date: input.date,
     ...(time ? { time } : {}),
     description: input.description,
+    privateMemo: input.privateMemo ?? '',
     authorFriendId: myselfId,
     visibilityMode,
     participantEntries,
@@ -2881,6 +2910,8 @@ export const updateEpisode = (authorFriendId: string, episodeId: string, input: 
     date: input.date,
     ...(time ? { time } : {}),
     description: input.description,
+    privateMemo:
+      input.privateMemo !== undefined ? input.privateMemo : (previousEpisode.privateMemo ?? ''),
     authorFriendId: previousEpisode.authorFriendId,
     visibilityMode,
     participantEntries,
@@ -3569,10 +3600,13 @@ export const createSayings = (friendId: string, items: Array<{ text: string; dat
     return [];
   }
 
-  const next = [...friend.sayings, ...additions];
+  const next = [
+    ...friend.notes,
+    ...additions.map((item) => ({ ...item, tags: ['says'] as ProfileMemo['tags'] })),
+  ];
   db.runSync(
-    `UPDATE ${PROFILES_TABLE} SET sayings = ?, updatedAt = ? WHERE friendId = ? AND isDefault = 1;`,
-    [toSayingJson(next), nowIso(), friendId]
+    `UPDATE ${PROFILES_TABLE} SET notes = ?, sayings = '[]', updatedAt = ? WHERE friendId = ? AND isDefault = 1;`,
+    [toJson(next), nowIso(), friendId]
   );
   return additions;
 };
@@ -3589,13 +3623,13 @@ export const updateSaying = (friendId: string, sayingId: string, input: { text: 
   }
 
   let changed = false;
-  const next = friend.sayings.map((saying) => {
-    if (saying.id !== sayingId) {
-      return saying;
+  const next = friend.notes.map((memo) => {
+    if (memo.id !== sayingId) {
+      return memo;
     }
     changed = true;
     return {
-      ...saying,
+      ...memo,
       text: targetText,
       date: targetDate,
     };
@@ -3605,8 +3639,8 @@ export const updateSaying = (friendId: string, sayingId: string, input: { text: 
   }
 
   db.runSync(
-    `UPDATE ${PROFILES_TABLE} SET sayings = ?, updatedAt = ? WHERE friendId = ? AND isDefault = 1;`,
-    [toSayingJson(next), nowIso(), friendId]
+    `UPDATE ${PROFILES_TABLE} SET notes = ?, updatedAt = ? WHERE friendId = ? AND isDefault = 1;`,
+    [toJson(next), nowIso(), friendId]
   );
   return true;
 };
@@ -3616,13 +3650,13 @@ export const deleteSaying = (friendId: string, sayingId: string): boolean => {
   if (!friend) {
     return false;
   }
-  const next = friend.sayings.filter((saying) => saying.id !== sayingId);
-  if (next.length === friend.sayings.length) {
+  const next = friend.notes.filter((memo) => memo.id !== sayingId);
+  if (next.length === friend.notes.length) {
     return false;
   }
   db.runSync(
-    `UPDATE ${PROFILES_TABLE} SET sayings = ?, updatedAt = ? WHERE friendId = ? AND isDefault = 1;`,
-    [toSayingJson(next), nowIso(), friendId]
+    `UPDATE ${PROFILES_TABLE} SET notes = ?, updatedAt = ? WHERE friendId = ? AND isDefault = 1;`,
+    [toJson(next), nowIso(), friendId]
   );
   return true;
 };
@@ -5912,6 +5946,7 @@ export const importBackupPayload = (payload: FriendDexBackup): void => {
     db.execSync('COMMIT;');
     reconcileAllGroupOptionMembers();
     backfillPersonNameParts();
+  migrateProfileMemos();
   } catch (error) {
     db.execSync('ROLLBACK;');
     throw error;

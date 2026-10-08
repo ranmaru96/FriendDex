@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import type { Profile, Saying } from '@/types';
+import type { Profile, ProfileMemo, Saying } from '@/types';
 import {
   getAllFriends,
   getDefaultProfile,
@@ -44,7 +44,7 @@ type OwnedPersonCardRow = {
   personalities: string[];
   experiences: string[];
   traits: string[];
-  notes: string[];
+  notes: ProfileMemo[];
   likes: string[];
   dislikes: string[];
   sayings: OwnedSayingRow[];
@@ -112,7 +112,7 @@ const profileToRow = (
   personalities: toStringList(profile.personalities),
   experiences: toStringList(profile.experiences),
   traits: toStringList(profile.traits),
-  notes: toStringList(profile.notes),
+  notes: profile.notes ?? [],
   likes: toStringList(profile.likes),
   dislikes: toStringList(profile.dislikes),
   sayings: toSayingRows(profile.sayings),

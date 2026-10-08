@@ -788,11 +788,14 @@ const styles = StyleSheet.create({
     maxWidth: '42%',
     marginLeft: 'auto',
   },
+  /** 詳細：行の余りでは伸ばさない。幅は予定タイトルの文字幅 */
   photoRightMetaEventPressableExpanded: {
     maxWidth: '100%',
-    flexGrow: 1,
+    flexGrow: 0,
     flexShrink: 1,
     minWidth: 0,
+    marginLeft: 0,
+    alignSelf: 'flex-start',
   },
   classicMetaEventPressable: {
     flexShrink: 1,

@@ -60,6 +60,7 @@ function SelectField({ label, value, options, onValueChange }: SelectFieldProps)
         options={options}
         onValueChange={onValueChange}
         onClose={() => setVisible(false)}
+        columns={2}
       />
     </View>
   );

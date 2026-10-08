@@ -65,38 +65,6 @@ function clampCoverTranslate(value: number, displayed: number, frame: number) {
   return Math.min(limit, Math.max(-limit, value));
 }
 
-function PreviewStill({
-  draft,
-  frameWidth,
-  frameHeight,
-  cropWidth,
-  cropHeight,
-}: {
-  draft: CropDraft;
-  frameWidth: number;
-  frameHeight: number;
-  cropWidth: number;
-  cropHeight: number;
-}) {
-  const ratio = frameWidth / cropWidth;
-  const baseScale = Math.max(cropWidth / draft.width, cropHeight / draft.height);
-  const displayScale = baseScale * draft.scale * ratio;
-  return (
-    <Image
-      source={{ uri: draft.workingUri }}
-      style={{
-        width: draft.width * displayScale,
-        height: draft.height * displayScale,
-        transform: [
-          { translateX: draft.translateX * ratio },
-          { translateY: draft.translateY * ratio },
-        ],
-      }}
-      resizeMode="stretch"
-    />
-  );
-}
-
 export function PhotoCropModal({
   visible,
   uri,
@@ -127,6 +95,7 @@ export function PhotoCropModal({
   const cropWidthSv = useSharedValue(1);
   const cropHeightSv = useSharedValue(1);
   const draftsRef = useRef<Map<string, CropDraft>>(new Map());
+  const loadTokenRef = useRef(0);
   const previewsRef = useRef(previews);
   const activePreviewIndexRef = useRef(activePreviewIndex);
   previewsRef.current = previews;
@@ -150,6 +119,7 @@ export function PhotoCropModal({
   }, [scale, startScale, startX, startY, translateX, translateY]);
 
   useEffect(() => {
+    const token = ++loadTokenRef.current;
     if (!visible || !uri) {
       setWorkingUri(null);
       setImageSize(null);
@@ -161,7 +131,7 @@ export function PhotoCropModal({
 
     setError('');
     setBusy(false);
-    const previewId = previewsRef.current[activePreviewIndexRef.current]?.id;
+    const previewId = previewsRef.current[activePreviewIndexRef.current]?.id ?? null;
     const draft = previewId ? draftsRef.current.get(previewId) : undefined;
     if (draft) {
       setWorkingUri(draft.workingUri);
@@ -184,18 +154,27 @@ export function PhotoCropModal({
       scale.value = draft.scale;
       return;
     }
+    setImageSize(null);
     setWorkingUri(uri);
     resetTransform();
     Image.getSize(
       uri,
       (width, height) => {
+        if (token !== loadTokenRef.current) {
+          return;
+        }
         setImageSize({ width, height });
         imageWidth.value = width;
         imageHeight.value = height;
         const nextBase = Math.max(cropWidth / width, cropHeight / height);
         baseScaleSv.value = nextBase;
       },
-      () => setError('画像サイズの取得に失敗しました。')
+      () => {
+        if (token !== loadTokenRef.current) {
+          return;
+        }
+        setError('画像サイズの取得に失敗しました。');
+      }
     );
   }, [
     baseScaleSv,
@@ -278,19 +257,6 @@ export function PhotoCropModal({
       scale: scale.value,
     });
   }, [imageSize, scale, translateX, translateY, workingUri]);
-
-  const activePreviewStyle = useAnimatedStyle(() => {
-    const ratio = PREVIEW_WIDTH / cropWidthSv.value;
-    const displayScale = baseScaleSv.value * scale.value * ratio;
-    return {
-      width: imageWidth.value * displayScale,
-      height: imageHeight.value * displayScale,
-      transform: [
-        { translateX: translateX.value * ratio },
-        { translateY: translateY.value * ratio },
-      ],
-    };
-  });
 
   const handleSelectPreview = (index: number) => {
     if (!onSelectPreview || index === activePreviewIndex || busy) {
@@ -427,7 +393,7 @@ export function PhotoCropModal({
                 <GestureDetector gesture={composedGesture}>
                   <View style={styles.gestureLayer}>
                     <Animated.View style={[styles.imageWrap, imageStyle]}>
-                      <Image source={{ uri: workingUri }} style={styles.image} resizeMode="stretch" />
+                      <Image key={workingUri} source={{ uri: workingUri }} style={styles.image} resizeMode="stretch" />
                     </Animated.View>
                   </View>
                 </GestureDetector>
@@ -479,7 +445,6 @@ export function PhotoCropModal({
             <View style={styles.previewRow}>
               {previews.map((preview, index) => {
                 const active = index === activePreviewIndex;
-                const draft = draftsRef.current.get(preview.id);
                 const frameStyle = { width: PREVIEW_WIDTH, height: previewHeight };
                 return (
                   <Pressable
@@ -489,28 +454,14 @@ export function PhotoCropModal({
                     disabled={busy}
                   >
                     <View style={[styles.previewFrame, frameStyle, active ? styles.previewFrameActive : null]}>
-                      {active && workingUri && imageSize ? (
-                        <Animated.View style={activePreviewStyle}>
-                          <Image source={{ uri: workingUri }} style={styles.previewImage} resizeMode="stretch" />
-                        </Animated.View>
-                      ) : draft ? (
-                        <PreviewStill
-                          draft={draft}
-                          frameWidth={PREVIEW_WIDTH}
-                          frameHeight={previewHeight}
-                          cropWidth={cropWidth}
-                          cropHeight={cropHeight}
-                        />
-                      ) : (
-                        <ExpoImage
-                          source={{ uri: preview.uri }}
-                          style={styles.previewImage}
-                          contentFit="cover"
-                          recyclingKey={preview.id}
-                          cachePolicy="memory-disk"
-                          allowDownscaling
-                        />
-                      )}
+                      <ExpoImage
+                        source={{ uri: preview.uri }}
+                        style={styles.previewImage}
+                        contentFit="cover"
+                        recyclingKey={preview.id}
+                        cachePolicy="memory-disk"
+                        allowDownscaling
+                      />
                     </View>
                     <Text style={[styles.previewIndex, active ? styles.previewIndexActive : null]}>
                       {index + 1}

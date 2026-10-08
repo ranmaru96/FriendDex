@@ -44,10 +44,18 @@ export function normalizeRemindTime(value: string | null | undefined): string | 
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
-export function formatRemindTimeLabel(value: string | null | undefined): string {
+export function remindHour(value: string | null | undefined): number {
   const normalized = normalizeRemindTime(value) ?? DEFAULT_REMIND_TIME;
-  const [hours, minutes] = normalized.split(':');
-  return `${Number(hours)}:${minutes}`;
+  return Number(normalized.split(':')[0]);
+}
+
+export function remindTimeFromHour(hour: number): string {
+  const clamped = Math.min(23, Math.max(0, Math.floor(hour)));
+  return `${String(clamped).padStart(2, '0')}:00`;
+}
+
+export function formatRemindHourLabel(value: string | null | undefined): string {
+  return `${remindHour(value)}時`;
 }
 
 export function formatRemindDaysLabel(days: number): string {
@@ -55,46 +63,6 @@ export function formatRemindDaysLabel(days: number): string {
     return '当日';
   }
   return `${days}日前`;
-}
-
-export function remindTimeToDate(time: string, base = new Date()): Date {
-  const normalized = normalizeRemindTime(time) ?? DEFAULT_REMIND_TIME;
-  const [hours, minutes] = normalized.split(':').map(Number);
-  const next = new Date(base);
-  next.setHours(hours, minutes, 0, 0);
-  return next;
-}
-
-export function dateToRemindTime(date: Date): string {
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
-}
-
-/** 今より前の分は使わない（秒は切り上げ） */
-export function earliestRemindTimeDate(now = new Date()): Date {
-  const next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes(), 0, 0);
-  if (now.getSeconds() > 0 || now.getMilliseconds() > 0) {
-    next.setMinutes(next.getMinutes() + 1);
-  }
-  return next;
-}
-
-export function clampRemindTimeToNow(time: string | null | undefined, now = new Date()): string {
-  const min = earliestRemindTimeDate(now);
-  const picked = remindTimeToDate(time || DEFAULT_REMIND_TIME, now);
-  if (picked.getTime() < min.getTime()) {
-    return dateToRemindTime(min);
-  }
-  return normalizeRemindTime(time) ?? DEFAULT_REMIND_TIME;
-}
-
-/** iOS の時刻スピナーが固まるのを防ぐため、min/max を両方渡す */
-export function remindTimePickerBounds(now = new Date()): { minimumDate: Date; maximumDate: Date } {
-  const minimumDate = earliestRemindTimeDate(now);
-  let maximumDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-  if (maximumDate.getTime() < minimumDate.getTime()) {
-    maximumDate = new Date(minimumDate.getTime() + 60 * 1000);
-  }
-  return { minimumDate, maximumDate };
 }
 
 const atRemindTime = (ymd: string, time: string): Date => {

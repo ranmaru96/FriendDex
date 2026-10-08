@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -15,6 +15,8 @@ import {
   reopenTemporaryTask,
   updateTask,
 } from '../db';
+import { buildTaskBaseline, deleteTaskFormDraft, readTaskFormDraft, serializeTaskForm } from '@/utils/taskFormDraft';
+import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import type { Event, Task, TaskCompletion, TaskGroup, TaskInput } from '../types';
 import {
   calculateScheduledStreak,
@@ -120,6 +122,47 @@ export default function TaskDetailScreen() {
     useCallback(() => {
       reload();
     }, [reload])
+  );
+
+  const taskEditDraftPromptLock = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (!taskId || taskEditDraftPromptLock.current) {
+        return;
+      }
+      const loaded = getTask(taskId);
+      const stored = readTaskFormDraft(taskId);
+      if (!loaded || !stored) {
+        return;
+      }
+      const loadedBody = serializeTaskForm(
+        buildTaskBaseline({
+          task: loaded,
+          presetEventId: '',
+          presetGroupId: '',
+          presetKind: null,
+          linkedEvent: null,
+        })
+      );
+      if (stored.base !== loadedBody) {
+        deleteTaskFormDraft(taskId);
+        return;
+      }
+      taskEditDraftPromptLock.current = true;
+      promptFormDraftRestore({
+        onRestore: () => {
+          taskEditDraftPromptLock.current = false;
+          router.push({ pathname: '/task-edit', params: { taskId, draft: '1' } });
+        },
+        onDecline: () => {
+          taskEditDraftPromptLock.current = false;
+          deleteTaskFormDraft(taskId);
+        },
+        onDismiss: () => {
+          taskEditDraftPromptLock.current = false;
+        },
+      });
+    }, [router, taskId])
   );
 
   const completionDates = useMemo(

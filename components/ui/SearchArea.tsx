@@ -39,6 +39,7 @@ type SearchAreaSelectFieldProps = {
   options: { label: string; value: string }[];
   onValueChange: (value: string) => void;
   style?: StyleProp<ViewStyle>;
+  columns?: 1 | 2 | 4 | 6;
 };
 
 type SearchAreaTextInputFieldProps = TextInputProps & {
@@ -141,6 +142,7 @@ export function SearchAreaSelectField({
   options,
   onValueChange,
   style,
+  columns = 2,
 }: SearchAreaSelectFieldProps) {
   const [visible, setVisible] = useState(false);
   const displayText = useMemo(() => {
@@ -164,6 +166,7 @@ export function SearchAreaSelectField({
         options={options}
         onValueChange={onValueChange}
         onClose={() => setVisible(false)}
+        columns={columns}
       />
     </>
   );

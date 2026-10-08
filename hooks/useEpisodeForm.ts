@@ -37,7 +37,7 @@ import {
   parseDateKey,
 } from '@/utils/eventHelpers';
 import { profileIdsToFriendIds } from '@/utils/eventParticipantHelpers';
-import { deletePersistedImages } from '@/utils/persistImageFile';
+import { deletePersistedImages, persistImageFile } from '@/utils/persistImageFile';
 import {
   deleteEpisodeDraft,
   forgetEpisodeDraft,
@@ -67,6 +67,7 @@ export type EpisodeSavePayload = {
   /** HH:mm。未設定は null */
   time: string | null;
   description: string;
+  privateMemo: string;
   visibilityMode: EpisodeVisibilityMode;
   participantEntries: EpisodeParticipant[];
   visibilityEntries: EpisodeVisibilityEntry[];
@@ -92,6 +93,7 @@ type EpisodeFormSnapshot = {
   date: string;
   time: string;
   description: string;
+  privateMemo: string;
   participants: string;
   visibilityMode: EpisodeVisibilityMode;
   visibility: string;
@@ -158,6 +160,7 @@ const blankEpisodeFormSnapshot = (
   date: eventLink.date ?? dateValue,
   time: '',
   description: '',
+  privateMemo: '',
   participants: '',
   visibilityMode: 'private',
   visibility: '',
@@ -177,12 +180,15 @@ export function useEpisodeForm({
   implicitParticipantEntries = [],
 }: UseEpisodeFormOptions) {
   const [editingEpisodeId, setEditingEpisodeId] = useState<string | null>(null);
+  /** 予定から作る新規はタイトルが埋まっているので、開いた直後のフォーカスはしない。 */
+  const [skipInitialTitleFocus, setSkipInitialTitleFocus] = useState(false);
   const [title, setTitleState] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [description, setDescription] = useState('');
+  const [privateMemo, setPrivateMemo] = useState('');
   const [participants, setParticipants] = useState<EpisodeParticipantDraft[]>([]);
   const [visibilityMode, setVisibilityMode] = useState<EpisodeVisibilityMode>('private');
   const [visibility, setVisibility] = useState<EpisodeVisibilityDraft[]>([]);
@@ -235,6 +241,8 @@ export function useEpisodeForm({
   const sessionCropsRef = useRef<(string | null)[]>([]);
   const [photoEditPreviews, setPhotoEditPreviews] = useState<{ id: string; uri: string }[]>([]);
   const [photoEditIndex, setPhotoEditIndex] = useState(0);
+  /** 編集中の元画像。iOS の一時ファイルを写真ごとにコピーしたもの。 */
+  const editSourcesRef = useRef<Map<string, string>>(new Map());
   const [deletedPhotoIds, setDeletedPhotoIds] = useState<number[]>([]);
   const [linkedEventId, setLinkedEventId] = useState<string | null>(null);
   const [eventLinkMode, setEventLinkModeState] = useState<EpisodeEventLinkMode>('none');
@@ -322,12 +330,14 @@ export function useEpisodeForm({
     committedPhotoUrisRef.current.clear();
     setFormError('');
     setEditingEpisodeId(null);
+    setSkipInitialTitleFocus(false);
     setTitle('');
     setDate(initialDate);
     setTime('');
     setShowDatePicker(false);
     setShowTimePicker(false);
     setDescription('');
+    setPrivateMemo('');
     setParticipants([]);
     setVisibilityMode('private');
     setVisibility([]);
@@ -591,6 +601,7 @@ export function useEpisodeForm({
         value: entry.value,
       }));
       setEditingEpisodeId(episode.id);
+      setSkipInitialTitleFocus(false);
       setTitle(episode.title);
       const eventId = episode.eventId?.trim() || null;
       const nextEventLinkMode: EpisodeEventLinkMode = eventId ? 'existing' : 'none';
@@ -615,6 +626,7 @@ export function useEpisodeForm({
       setDate(nextDate);
       setTime(nextTime);
       setDescription(episode.description);
+      setPrivateMemo(episode.privateMemo ?? '');
       setParticipants(participantDrafts);
       setVisibilityMode(episode.visibilityMode);
       setVisibility(nextVisibility);
@@ -631,6 +643,7 @@ export function useEpisodeForm({
         date: nextDate,
         time: nextTime,
         description: episode.description,
+        privateMemo: episode.privateMemo ?? '',
         participants: participantSnapshot(participantDrafts),
         visibilityMode: episode.visibilityMode,
         visibility: visibilitySnapshot(nextVisibility),
@@ -652,6 +665,7 @@ export function useEpisodeForm({
         return false;
       }
       reset();
+      setSkipInitialTitleFocus(true);
       setLinkedEventId(normalized);
       setEventLinkModeState('existing');
       setTitle(event.title);
@@ -664,6 +678,7 @@ export function useEpisodeForm({
       setTime(nextTime);
       setTag(nextTag);
       setDescription('');
+      setPrivateMemo('');
       const myselfId = getMyself();
       const hidden = hiddenIdSet(hiddenParticipantIds);
       const friendIds = profileIdsToFriendIds(
@@ -679,6 +694,7 @@ export function useEpisodeForm({
         date: nextDate,
         time: nextTime,
         description: '',
+        privateMemo: '',
         participants: participantSnapshot(nextParticipants),
         visibilityMode: 'private',
         visibility: '',
@@ -749,6 +765,7 @@ export function useEpisodeForm({
       date: normalizedDate,
       time: normalizeEpisodeTime(time),
       description: description.trim(),
+      privateMemo: privateMemo.trim(),
       visibilityMode: resolvedVisibilityMode,
       participantEntries,
       visibilityEntries,
@@ -760,6 +777,7 @@ export function useEpisodeForm({
   }, [
     date,
     description,
+    privateMemo,
     eventLinkMode,
     implicitParticipantEntries,
     linkedEventId,
@@ -810,9 +828,20 @@ export function useEpisodeForm({
     PHOTO_LIMITS.free - visibleExistingPhotos.length - newPhotoUris.length
   );
 
+  const releaseEditSources = useCallback(() => {
+    const uris = [...editSourcesRef.current.values()];
+    editSourcesRef.current.clear();
+    deletePersistedImages(uris);
+  }, []);
+
   const showNextQueuedPhoto = useCallback(async (assetId: string) => {
     editTokenRef.current += 1;
     const token = editTokenRef.current;
+    const cached = editSourcesRef.current.get(assetId);
+    if (cached) {
+      setPhotoCropUri(cached);
+      return;
+    }
     setPhotoResolving(true);
     try {
       const info = await MediaLibrary.getAssetInfoAsync(assetId, {
@@ -828,7 +857,15 @@ export function useEpisodeForm({
         Alert.alert('写真を読み込めませんでした', '別の写真を選んでください。');
         return;
       }
-      setPhotoCropUri(uri);
+      const copied = await persistImageFile(uri);
+      if (token !== editTokenRef.current) {
+        if (copied !== uri) {
+          deletePersistedImages([copied]);
+        }
+        return;
+      }
+      editSourcesRef.current.set(assetId, copied);
+      setPhotoCropUri(copied);
     } catch {
       if (token !== editTokenRef.current) {
         return;
@@ -851,25 +888,27 @@ export function useEpisodeForm({
     editTokenRef.current += 1;
     editQueueRef.current = [];
     photoEditIndexRef.current = 0;
+    releaseEditSources();
     setPhotoEditPreviews([]);
     setPhotoEditIndex(0);
     setPhotoCropUri(null);
     setPhotoResolving(false);
     setDismissedPhotoAssetIds([]);
     setPhotoLibraryVisible(true);
-  }, [isPhotoLimitReached]);
+  }, [isPhotoLimitReached, releaseEditSources]);
 
   const closePhotoLibrary = useCallback(() => {
     editTokenRef.current += 1;
     editQueueRef.current = [];
     photoEditIndexRef.current = 0;
+    releaseEditSources();
     setPhotoEditPreviews([]);
     setPhotoEditIndex(0);
     setPhotoCropUri(null);
     setPhotoResolving(false);
     setDismissedPhotoAssetIds([]);
     setPhotoLibraryVisible(false);
-  }, []);
+  }, [releaseEditSources]);
 
   const beginPhotoEdits = useCallback(
     (assets: { id: string; uri: string }[]) => {
@@ -882,6 +921,7 @@ export function useEpisodeForm({
         return;
       }
       editTokenRef.current += 1;
+      releaseEditSources();
       editQueueRef.current = queue.map((asset) => asset.id);
       photoEditIndexRef.current = 0;
       sessionBaseUrisRef.current = [...newPhotoUrisRef.current];
@@ -890,18 +930,19 @@ export function useEpisodeForm({
       setPhotoEditIndex(0);
       void showNextQueuedPhoto(queue[0].id);
     },
-    [showNextQueuedPhoto, visibleExistingPhotos.length]
+    [releaseEditSources, showNextQueuedPhoto, visibleExistingPhotos.length]
   );
 
   const cancelPhotoCrop = useCallback(() => {
     editTokenRef.current += 1;
     editQueueRef.current = [];
     photoEditIndexRef.current = 0;
+    releaseEditSources();
     setPhotoEditPreviews([]);
     setPhotoEditIndex(0);
     setPhotoCropUri(null);
     setPhotoResolving(false);
-  }, []);
+  }, [releaseEditSources]);
 
   const applySessionCrops = useCallback(() => {
     applyNewPhotoUris([
@@ -947,6 +988,7 @@ export function useEpisodeForm({
         photoEditIndexRef.current = 0;
         sessionBaseUrisRef.current = [];
         sessionCropsRef.current = [];
+        releaseEditSources();
         setPhotoEditPreviews([]);
         setPhotoEditIndex(0);
         setPhotoCropUri(null);
@@ -959,7 +1001,7 @@ export function useEpisodeForm({
       setPhotoEditIndex(nextIndex);
       void showNextQueuedPhoto(editQueueRef.current[nextIndex]);
     },
-    [applySessionCrops, showNextQueuedPhoto]
+    [applySessionCrops, releaseEditSources, showNextQueuedPhoto]
   );
 
   const removeExistingPhoto = useCallback((photoId: number) => {
@@ -1003,6 +1045,7 @@ export function useEpisodeForm({
     date,
     time,
     description,
+    privateMemo,
     participants: participantSnapshot(participants),
     visibilityMode,
     visibility: visibilitySnapshot(visibility),
@@ -1020,6 +1063,7 @@ export function useEpisodeForm({
     date,
     time,
     description,
+    privateMemo,
     participants,
     visibilityMode,
     visibility,
@@ -1035,6 +1079,7 @@ export function useEpisodeForm({
     date,
     time,
     description,
+    privateMemo,
     participants,
     visibilityMode,
     visibility,
@@ -1055,6 +1100,7 @@ export function useEpisodeForm({
       date: fields.date,
       time: fields.time,
       description: fields.description,
+      privateMemo: fields.privateMemo,
       participants: participantSnapshot(fields.participants),
       visibilityMode: fields.visibilityMode,
       visibility: visibilitySnapshot(fields.visibility),
@@ -1091,6 +1137,7 @@ export function useEpisodeForm({
       date: fields.date,
       time: fields.time,
       description: fields.description,
+      privateMemo: fields.privateMemo,
       baseDescription: draftBaseDescriptionRef.current,
       participants: fields.participants,
       visibilityMode: fields.visibilityMode,
@@ -1137,6 +1184,7 @@ export function useEpisodeForm({
     setDate(draft.date);
     setTime(draft.time);
     setDescription(draft.description);
+    setPrivateMemo(draft.privateMemo ?? '');
     setParticipants(draft.participants);
     const nextVisibility = toConnectedAudienceDrafts(draft.visibility, getMyself());
     const nextVisibilityMode =
@@ -1274,6 +1322,7 @@ export function useEpisodeForm({
     date,
     time,
     description,
+    privateMemo,
     participants,
     visibilityMode,
     visibility,
@@ -1284,6 +1333,7 @@ export function useEpisodeForm({
 
   return {
     editingEpisodeId,
+    skipInitialTitleFocus,
     setEditingEpisodeId,
     linkedEventId,
     setLinkedEventId,
@@ -1310,6 +1360,8 @@ export function useEpisodeForm({
     setShowTimePicker,
     description,
     setDescription,
+    privateMemo,
+    setPrivateMemo,
     participants,
     visibilityMode,
     setVisibilityMode,

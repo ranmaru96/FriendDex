@@ -505,23 +505,10 @@ export default function EpisodeScreen() {
     [incomingEpisodeRows]
   );
 
-  const episodeListFiltersActive =
-    episodeListSource === 'shared'
-      ? filterTitle.trim().length > 0 ||
-        (filterAuthorId.length > 0 && friendNameById.has(filterAuthorId))
-      : filterTitle.trim().length > 0 ||
-        filterTag.trim().length > 0 ||
-        filterParticipantEntries.length > 0;
-
   const scrollToPendingEpisode = useCallback(() => {
     const episodeId = pendingScrollEpisodeIdRef.current;
     const content = scrollContentRef.current;
     if (!episodeId || !content) {
-      return;
-    }
-    if (episodeListFiltersActive) {
-      rememberedScrollEpisodeId = null;
-      pendingScrollEpisodeIdRef.current = null;
       return;
     }
     const card = episodeCardRefs.current.get(episodeId);
@@ -540,7 +527,7 @@ export default function EpisodeScreen() {
       },
       () => {}
     );
-  }, [episodeListFiltersActive]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -705,10 +692,8 @@ export default function EpisodeScreen() {
 
     const finish = async (savedId: string, isEdit: boolean) => {
       episodeForm.persistPhotos(savedId, isEdit);
-      if (!episodeListFiltersActive) {
-        rememberedScrollEpisodeId = savedId;
-        pendingScrollEpisodeIdRef.current = savedId;
-      }
+      rememberedScrollEpisodeId = savedId;
+      pendingScrollEpisodeIdRef.current = savedId;
       try {
         await afterEpisodeSavedLocally(savedId);
       } finally {
@@ -752,11 +737,9 @@ export default function EpisodeScreen() {
     const authorId = resolveEpisodeRecordOwnerId(row.episode, row.recordOwnerId);
     const canManage = canManageEpisode(row.episode, row.recordOwnerId, myselfId);
     const openDetail = () => {
-      if (!episodeListFiltersActive) {
-        rememberedEpisodeListSource = episodeListSource;
-        rememberedScrollEpisodeId = row.episode.id;
-        pendingScrollEpisodeIdRef.current = row.episode.id;
-      }
+      rememberedEpisodeListSource = episodeListSource;
+      rememberedScrollEpisodeId = row.episode.id;
+      pendingScrollEpisodeIdRef.current = row.episode.id;
       router.push({
         pathname: '/episode-detail',
         params: { episodeId: row.episode.id, ownerId: authorId },

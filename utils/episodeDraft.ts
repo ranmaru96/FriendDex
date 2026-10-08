@@ -11,6 +11,8 @@ export type EpisodeDraft = {
   date: string;
   time: string;
   description: string;
+  /** 公開しない控え。古い下書きには無い */
+  privateMemo?: string;
   /** 下書きを取り始めた時点の、保存済み説明。詳細画面で説明が変わっていたら使わない。 */
   baseDescription: string;
   participants: EpisodeParticipantDraft[];
@@ -56,6 +58,7 @@ export const isEpisodeDraft = (value: unknown): value is EpisodeDraft => {
     isString(candidate.date) &&
     isString(candidate.time) &&
     isString(candidate.description) &&
+    (candidate.privateMemo === undefined || isString(candidate.privateMemo)) &&
     isString(candidate.baseDescription) &&
     Array.isArray(candidate.participants) &&
     candidate.participants.every(isParticipant) &&

@@ -30,6 +30,7 @@ import { getAllProfiles, getMyself, initializeDatabase, updateProfile } from '..
 import { scheduleFriendProfileSync } from '@/lib/identityProfileSync';
 import { MBTIType, Profile } from '../types';
 import { isPersonNameValid, resolvePersonNameParts } from '@/utils/personName';
+import { withRequiredPublicFields } from '@/utils/qrScanHelpers';
 
 type PublicFieldKey =
   | 'name'
@@ -140,7 +141,7 @@ export default function MyProfileScreen() {
 
     setProfileId(profile.id);
     setForm(profileToForm(profile));
-    setPublicFields(profile.publicFields ?? []);
+    setPublicFields(withRequiredPublicFields(profile.publicFields));
     setHasProfile(true);
     setIsReady(true);
   }, []);
@@ -157,7 +158,7 @@ export default function MyProfileScreen() {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
 
-  const togglePublicField = (key: PublicFieldKey, enabled: boolean) => {
+  const togglePublicField = (key: FieldConfig['key'], enabled: boolean) => {
     setPublicFields((prev) => {
       if (enabled) {
         return prev.includes(key) ? prev : [...prev, key];
@@ -194,7 +195,7 @@ export default function MyProfileScreen() {
       origin: form.origin.trim(),
       residence: form.residence.trim(),
       mbti: form.mbti.trim() as MBTIType,
-      publicFields,
+      publicFields: withRequiredPublicFields(publicFields),
     });
 
     if (!ok) {
@@ -260,24 +261,13 @@ export default function MyProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={[styles.sectionHint, contentMutedTextStyle(content)]}>
-          各項目の右側スイッチで公開する項目を選べます。写真は人物カード側で設定します
+          名前と写真は常に公開されます。写真は人物カードで設定します。それ以外は右側のスイッチで公開を選べます。
         </Text>
 
         {usesOffsetChrome(patternId) ? (
         <OffsetCard style={{ marginBottom: Spacing.lg }} contentStyle={{ overflow: 'hidden' }}>
         <View style={[styles.formGroup, { borderWidth: 0, borderRadius: 0, marginBottom: 0 }]}>
           <View style={styles.fieldRow}>
-            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>名前を公開</Text>
-            <View style={styles.fieldInputSpacer} />
-            <Switch
-              value={publicFieldSet.has('name')}
-              onValueChange={(enabled) => togglePublicField('name', enabled)}
-              {...contentSwitchProps(content, publicFieldSet.has('name'))}
-              accessibilityLabel="名前を公開"
-            />
-          </View>
-          <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
-          <View style={styles.fieldRow}>
             <Text style={[styles.fieldLabel, contentTextStyle(content)]}>苗字</Text>
             <TextInput
               value={form.familyName}
@@ -321,35 +311,11 @@ export default function MyProfileScreen() {
               </View>
             </View>
           ))}
-          <View>
-            <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
-            <View style={styles.fieldRow}>
-              <Text style={[styles.fieldLabel, contentTextStyle(content)]}>写真</Text>
-              <View style={styles.fieldInputSpacer} />
-              <Switch
-                value={publicFieldSet.has('photo')}
-                onValueChange={(enabled) => togglePublicField('photo', enabled)}
-                {...contentSwitchProps(content, publicFieldSet.has('photo'))}
-                accessibilityLabel="写真を公開"
-              />
-            </View>
-          </View>
         </View>
         </OffsetCard>
         ) : (
         <View style={[styles.formGroup, contentSurfaceStyle(content)]}>
           <View style={styles.fieldRow}>
-            <Text style={[styles.fieldLabel, contentTextStyle(content)]}>名前を公開</Text>
-            <View style={styles.fieldInputSpacer} />
-            <Switch
-              value={publicFieldSet.has('name')}
-              onValueChange={(enabled) => togglePublicField('name', enabled)}
-              {...contentSwitchProps(content, publicFieldSet.has('name'))}
-              accessibilityLabel="名前を公開"
-            />
-          </View>
-          <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
-          <View style={styles.fieldRow}>
             <Text style={[styles.fieldLabel, contentTextStyle(content)]}>苗字</Text>
             <TextInput
               value={form.familyName}
@@ -393,19 +359,6 @@ export default function MyProfileScreen() {
               </View>
             </View>
           ))}
-          <View>
-            <View style={[styles.separator, { backgroundColor: content.contentDivider }]} />
-            <View style={styles.fieldRow}>
-              <Text style={[styles.fieldLabel, contentTextStyle(content)]}>写真</Text>
-              <View style={styles.fieldInputSpacer} />
-              <Switch
-                value={publicFieldSet.has('photo')}
-                onValueChange={(enabled) => togglePublicField('photo', enabled)}
-                {...contentSwitchProps(content, publicFieldSet.has('photo'))}
-                accessibilityLabel="写真を公開"
-              />
-            </View>
-          </View>
         </View>
         )}
 
@@ -475,9 +428,6 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.xs,
     fontSize: Typography.base,
     color: Theme.textPrimary,
-  },
-  fieldInputSpacer: {
-    flex: 1,
   },
   separator: {
     height: StyleSheet.hairlineWidth,

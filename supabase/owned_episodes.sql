@@ -11,6 +11,7 @@ create table if not exists public.owned_episodes (
   date text not null default '',
   time text,
   description text not null default '',
+  private_memo text not null default '',
   visibility_mode text not null default 'private',
   participant_entries jsonb not null default '[]'::jsonb,
   visibility_entries jsonb not null default '[]'::jsonb,
@@ -25,6 +26,9 @@ create table if not exists public.owned_episodes (
   sync_version integer not null default 1,
   unique (owner_id, local_episode_id)
 );
+
+alter table public.owned_episodes
+  add column if not exists private_memo text not null default '';
 
 create index if not exists owned_episodes_owner_id_idx
   on public.owned_episodes (owner_id);

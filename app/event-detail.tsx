@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { deleteEventFormDraft, readEventFormDraft, savedEventBaselineBody } from '@/utils/eventFormDraft';
+import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import { Ionicons } from '@expo/vector-icons';
 import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
 import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
@@ -116,6 +118,39 @@ export default function EventDetailScreen() {
     useCallback(() => {
       loadData();
     }, [loadData])
+  );
+
+  const eventEditDraftPromptLock = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      const id = eventId.trim();
+      if (!id || eventEditDraftPromptLock.current) {
+        return;
+      }
+      const loadedBody = savedEventBaselineBody(id);
+      const stored = readEventFormDraft(id);
+      if (!loadedBody || !stored) {
+        return;
+      }
+      if (stored.base !== loadedBody) {
+        deleteEventFormDraft(id);
+        return;
+      }
+      eventEditDraftPromptLock.current = true;
+      promptFormDraftRestore({
+        onRestore: () => {
+          eventEditDraftPromptLock.current = false;
+          router.push({ pathname: '/event', params: { eventId: id, draft: '1' } });
+        },
+        onDecline: () => {
+          eventEditDraftPromptLock.current = false;
+          deleteEventFormDraft(id);
+        },
+        onDismiss: () => {
+          eventEditDraftPromptLock.current = false;
+        },
+      });
+    }, [eventId, router])
   );
 
   const friendNameById = useMemo(() => buildFriendNameById(friends), [friends]);

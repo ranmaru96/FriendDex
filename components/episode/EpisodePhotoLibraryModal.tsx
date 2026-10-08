@@ -15,14 +15,34 @@ import {
 } from 'react-native';
 import * as MediaLibrary from 'expo-media-library/legacy';
 import { PhotoLibraryThumb, preparePhotoThumbnails } from '@/modules/photo-thumbnails/src';
+import {
+  claimEpisodePhotoPrefetch,
+  peekEpisodePhotoPrefetch,
+  type EpisodePhotoPrefetch,
+} from '@/utils/episodePhotoPrefetch';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Radius, Spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 
-const FIRST_PAGE_SIZE = 80;
 const NEXT_PAGE_SIZE = 400;
+/** 上へ足す枚数。一度に足しすぎると、見えている日付の描画が追いつかない。 */
+const NEWER_CHUNK_SIZE = 80;
+/** 開いた直後に、対象日より新しい側へ足す最大枚数。続きは先頭付近まで来てから。 */
+const NEWER_INITIAL_MAX = 400;
+/** 先頭から何行以内なら、新しい側の続きを足すか。 */
+const NEWER_NEAR_TOP_ROWS = 6;
+/** ページ境界で重なりうる id だけ見る。全件の照合はしない。 */
+const NEWER_BOUNDARY_IDS = 64;
+/** チャンクを反映したあと、次を足すまでの間隔。操作中はさらに待つ。 */
+const CHUNK_GAP_MS = 250;
+/** ドラッグ終了後、慣性開始が来なければ操作中を解く。 */
+const USER_BUSY_RELEASE_MS = 80;
+/** busy のままイベントが来なければ操作中を解く。 */
+const USER_BUSY_STALE_MS = 3000;
+/** waitForIdle が busy / スクラブ待ちする上限。 */
+const WAIT_FOR_IDLE_BUSY_MAX_MS = 2000;
 const COLUMNS = 4;
 const SCRUBBER_HIT = 16;
 const SCRUBBER_THUMB = 44;
@@ -66,6 +86,8 @@ type EpisodePhotoLibraryModalProps = {
   /** 調整が終わってエピソードに入った写真。チェックから外す。 */
   dismissedAssetIds: string[];
   preparing: boolean;
+  /** エピソードの日付。YYYY-MM-DD。空や当日は最新の写真から開く。 */
+  anchorDate: string;
   onClose: () => void;
   onRegister: (assets: { id: string; uri: string }[]) => void;
   children?: ReactNode;
@@ -81,6 +103,78 @@ function formatAssetDate(creationTime: number): string {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+function appendUnique(current: MediaLibrary.Asset[], incoming: MediaLibrary.Asset[]): MediaLibrary.Asset[] {
+  if (incoming.length === 0) {
+    return current;
+  }
+  const seen = new Set(current.map((asset) => asset.id));
+  const extra = incoming.filter((asset) => !seen.has(asset.id));
+  if (extra.length === 0) {
+    return current;
+  }
+  return [...current, ...extra];
+}
+
+/** 一覧の組み直しとスクロール位置の維持が描画に追いついてから、次のページを取る。 */
+function settleFrame(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** 描画の合間を空け、スクロールやスクラブのあいだはチャンクを足さない。 */
+async function waitForIdle(
+  generation: number,
+  generationRef: { current: number },
+  userBusyRef: { current: boolean },
+  scrubbingRef: { current: boolean },
+): Promise<void> {
+  await settleFrame();
+  await delay(CHUNK_GAP_MS);
+  const busyStartedAt = Date.now();
+  while (generationRef.current === generation && (userBusyRef.current || scrubbingRef.current)) {
+    if (Date.now() - busyStartedAt >= WAIT_FOR_IDLE_BUSY_MAX_MS) {
+      break;
+    }
+    await delay(150);
+  }
+}
+
+/** 取得ページの先頭と、直前チャンクの境界だけを見る。createdAfter と createdBefore は範囲が重ならない。 */
+function appendNewerPending(
+  pending: MediaLibrary.Asset[],
+  head: MediaLibrary.Asset[],
+  incoming: MediaLibrary.Asset[],
+): void {
+  if (incoming.length === 0) {
+    return;
+  }
+  const seen = new Set<string>();
+  if (pending.length > 0) {
+    const start = Math.max(0, pending.length - NEWER_BOUNDARY_IDS);
+    for (let index = start; index < pending.length; index += 1) {
+      seen.add(pending[index].id);
+    }
+  } else {
+    const count = Math.min(NEWER_BOUNDARY_IDS, head.length);
+    for (let index = 0; index < count; index += 1) {
+      seen.add(head[index].id);
+    }
+  }
+  for (const asset of incoming) {
+    if (seen.has(asset.id)) {
+      continue;
+    }
+    seen.add(asset.id);
+    pending.push(asset);
+  }
+}
 function thumbnailIdsAround(
   assets: MediaLibrary.Asset[],
   topIndex: number,
@@ -104,6 +198,7 @@ export function EpisodePhotoLibraryModal({
   registeredCount,
   dismissedAssetIds,
   preparing,
+  anchorDate,
   onClose,
   onRegister,
   children,
@@ -133,11 +228,28 @@ export function EpisodePhotoLibraryModal({
   const trackHeightRef = useRef(0);
   const pendingScrubOffsetRef = useRef<number | null>(null);
   const lastScrubOffsetRef = useRef(0);
+  const currentOffsetRef = useRef(0);
+  const pendingScrollAdjustRef = useRef(0);
+  const pinToTopRef = useRef(false);
+  const correctingScrollRef = useRef(false);
   const scrubScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prepareTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPrepareOffsetRef = useRef<number | null>(null);
   const lastPrepareKeyRef = useRef('');
   const thumbPixelSizeRef = useRef(1);
+  const headRef = useRef<MediaLibrary.Asset[]>([]);
+  const tailRef = useRef<MediaLibrary.Asset[]>([]);
+  const newerCursorRef = useRef<string | undefined>(undefined);
+  const newerHasNextRef = useRef(false);
+  const newerPendingRef = useRef<MediaLibrary.Asset[]>([]);
+  const newerLoadingRef = useRef(false);
+  const newerBeforeMsRef = useRef(0);
+  const newerGenerationRef = useRef(0);
+  const loadMoreNewerRef = useRef<(generation: number) => Promise<void>>(async () => {});
+  const requestNewerIfNearTopRef = useRef<() => void>(() => {});
+  const userBusyRef = useRef(false);
+  const userBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const userBusyStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ratioSv = useSharedValue(0);
   const scrubbingSv = useSharedValue(0);
   const trackHeightSv = useSharedValue(0);
@@ -147,44 +259,273 @@ export function EpisodePhotoLibraryModal({
   paddingBottomRef.current = insets.bottom + 24;
   thumbPixelSizeRef.current = Math.max(1, Math.round(cellSize * PixelRatio.get()));
 
-  const loadAll = useCallback(async (generation: number) => {
-    setLoading(true);
-    let cursor: string | undefined;
-    let first = true;
+  const loadLibrary = useCallback(async (generation: number) => {
+    const publish = () => {
+      if (generationRef.current !== generation) {
+        return;
+      }
+      const next = [...headRef.current, ...tailRef.current];
+      assetsRef.current = next;
+      setAssets(next);
+    };
+    const showTopDate = (list: MediaLibrary.Asset[]) => {
+      const top = list[0];
+      setTopDateLabel(top ? formatAssetDate(top.creationTime) : null);
+    };
+
+    headRef.current = [];
+    tailRef.current = [];
+    newerCursorRef.current = undefined;
+    newerHasNextRef.current = false;
+    newerPendingRef.current = [];
+    newerLoadingRef.current = false;
+    newerBeforeMsRef.current = 0;
+    newerGenerationRef.current = generation;
+    pendingScrollAdjustRef.current = 0;
+    pinToTopRef.current = false;
+    correctingScrollRef.current = false;
+    currentOffsetRef.current = 0;
+    lastScrubOffsetRef.current = 0;
+    const peeked = peekEpisodePhotoPrefetch(anchorDate);
+    if (peeked && peeked.assets.length > 0) {
+      tailRef.current = peeked.assets;
+      publish();
+      setLoading(false);
+      showTopDate(peeked.assets);
+    } else {
+      setAssets([]);
+      assetsRef.current = [];
+      setTopDateLabel(null);
+      setLoading(true);
+    }
+
+    let seeded: EpisodePhotoPrefetch;
     try {
-      while (generationRef.current === generation) {
+      seeded = await claimEpisodePhotoPrefetch(anchorDate);
+    } catch {
+      if (generationRef.current === generation) {
+        setLoading(false);
+      }
+      return;
+    }
+    if (generationRef.current !== generation) {
+      return;
+    }
+    if (!seeded.granted) {
+      setLoading(false);
+      return;
+    }
+    if (tailRef.current.length === 0) {
+      tailRef.current = seeded.assets;
+      publish();
+      setLoading(false);
+      showTopDate(seeded.assets);
+    }
+    newerBeforeMsRef.current = seeded.beforeMs;
+
+    const flushChunk = (force: boolean) => {
+      if (generationRef.current !== generation) {
+        return false;
+      }
+      const pending = newerPendingRef.current;
+      const leftover = pending.length % COLUMNS;
+      const aligned = pending.length - leftover;
+      const count = force
+        ? pending.length <= COLUMNS
+          ? pending.length
+          : Math.min(NEWER_CHUNK_SIZE, aligned)
+        : pending.length >= NEWER_CHUNK_SIZE
+          ? NEWER_CHUNK_SIZE
+          : 0;
+      if (count === 0) {
+        return false;
+      }
+      const stride = rowStrideRef.current;
+      const isRemainder = count % COLUMNS !== 0;
+      if (isRemainder) {
+        // 端数は先頭付近だけで出す。列ずれ補正はせず、先頭に固定する。
+        if (stride > 0 && currentOffsetRef.current >= stride) {
+          return false;
+        }
+        const chunk = pending.slice(0, count);
+        newerPendingRef.current = pending.slice(count);
+        chunk.reverse();
+        headRef.current = [...chunk, ...headRef.current];
+        pinToTopRef.current = true;
+        pendingScrollAdjustRef.current = 0;
+        publish();
+        return true;
+      }
+      const chunk = pending.slice(0, count);
+      newerPendingRef.current = pending.slice(count);
+      chunk.reverse();
+      headRef.current = [...chunk, ...headRef.current];
+      if (stride > 0) {
+        pendingScrollAdjustRef.current += (count / COLUMNS) * stride;
+      }
+      publish();
+      return true;
+    };
+
+    const fetchNewerPage = async () => {
+      const page = await MediaLibrary.getAssetsAsync({
+        first: NEXT_PAGE_SIZE,
+        after: newerCursorRef.current,
+        mediaType: MediaLibrary.MediaType.photo,
+        sortBy: [[MediaLibrary.SortBy.creationTime, true]],
+        createdAfter: newerBeforeMsRef.current,
+      });
+      if (generationRef.current !== generation) {
+        return false;
+      }
+      appendNewerPending(newerPendingRef.current, headRef.current, page.assets);
+      newerHasNextRef.current = page.hasNextPage && Boolean(page.endCursor);
+      newerCursorRef.current = page.endCursor;
+      return true;
+    };
+
+    const pumpNewer = async (maxHead: number, pauseBeforeFirstChunk: boolean) => {
+      let pause = pauseBeforeFirstChunk;
+      while (generationRef.current === generation && headRef.current.length < maxHead) {
+        const needFetch = newerPendingRef.current.length < NEWER_CHUNK_SIZE && newerHasNextRef.current;
+        if (!needFetch && newerPendingRef.current.length === 0) {
+          break;
+        }
+        if (pause) {
+          await waitForIdle(generation, generationRef, userBusyRef, scrubbingRef);
+          if (generationRef.current !== generation) {
+            return;
+          }
+        }
+        if (newerPendingRef.current.length < NEWER_CHUNK_SIZE && newerHasNextRef.current) {
+          const fetched = await fetchNewerPage();
+          if (!fetched || generationRef.current !== generation) {
+            return;
+          }
+        }
+        if (headRef.current.length >= maxHead) {
+          break;
+        }
+        const exhausted = !newerHasNextRef.current;
+        if (!flushChunk(exhausted)) {
+          break;
+        }
+        pause = true;
+        if (headRef.current.length >= maxHead) {
+          break;
+        }
+      }
+      if (generationRef.current === generation && !newerHasNextRef.current) {
+        while (generationRef.current === generation && newerPendingRef.current.length > 0) {
+          if (pause) {
+            await waitForIdle(generation, generationRef, userBusyRef, scrubbingRef);
+            if (generationRef.current !== generation) {
+              return;
+            }
+          }
+          if (!flushChunk(true)) {
+            break;
+          }
+          pause = true;
+        }
+      }
+    };
+
+    const loadOlder = async () => {
+      let cursor = seeded.endCursor;
+      let hasNext = seeded.hasNextPage;
+      while (generationRef.current === generation && hasNext && cursor) {
         const page = await MediaLibrary.getAssetsAsync({
-          first: first ? FIRST_PAGE_SIZE : NEXT_PAGE_SIZE,
+          first: NEXT_PAGE_SIZE,
           after: cursor,
           mediaType: MediaLibrary.MediaType.photo,
           sortBy: [MediaLibrary.SortBy.creationTime],
+          createdBefore: seeded.beforeMs,
         });
         if (generationRef.current !== generation) {
           return;
         }
-        setAssets((prev) => (first ? page.assets : [...prev, ...page.assets]));
-        if (first) {
-          setLoading(false);
-          const newest = page.assets[0];
-          setTopDateLabel(newest ? formatAssetDate(newest.creationTime) : null);
-        }
-        first = false;
-        if (!page.hasNextPage || !page.endCursor) {
-          return;
-        }
+        tailRef.current = appendUnique(tailRef.current, page.assets);
+        publish();
+        hasNext = page.hasNextPage;
         cursor = page.endCursor;
+        if (hasNext) {
+          await waitForIdle(generation, generationRef, userBusyRef, scrubbingRef);
+          if (generationRef.current !== generation) {
+            return;
+          }
+        }
       }
+    };
+
+    const loadNewer = async () => {
+      if (seeded.isToday) {
+        return;
+      }
+      // 該当日を描いてから、その直後の写真を上へ足す。新しい順のままだと今日側から入り、
+      // 位置を戻すスクロールが見えていない範囲へ飛んで画面が空になる。
+      newerHasNextRef.current = true;
+      newerLoadingRef.current = true;
+      try {
+        await pumpNewer(NEWER_INITIAL_MAX, true);
+      } finally {
+        newerLoadingRef.current = false;
+      }
+    };
+
+    const loadMoreNewer = async (requestedGeneration: number) => {
+      if (requestedGeneration === 0 || generationRef.current !== requestedGeneration) {
+        return;
+      }
+      if (newerLoadingRef.current) {
+        return;
+      }
+      if (!newerHasNextRef.current && newerPendingRef.current.length === 0) {
+        return;
+      }
+      newerLoadingRef.current = true;
+      try {
+        const maxHead = headRef.current.length + NEWER_INITIAL_MAX;
+        await pumpNewer(maxHead, false);
+      } catch {
+        // 続きは次に先頭付近へ来たときに取り直す。
+      } finally {
+        newerLoadingRef.current = false;
+      }
+      if (generationRef.current === requestedGeneration) {
+        requestNewerIfNearTopRef.current();
+      }
+    };
+    loadMoreNewerRef.current = loadMoreNewer;
+
+    let failed = false;
+    try {
+      await loadNewer();
     } catch {
-      if (generationRef.current === generation && first) {
-        setAssets([]);
-        setTopDateLabel(null);
-      }
-    } finally {
-      if (generationRef.current === generation) {
-        setLoading(false);
-      }
+      failed = true;
     }
-  }, []);
+    if (generationRef.current !== generation) {
+      return;
+    }
+    try {
+      await loadOlder();
+    } catch {
+      failed = true;
+    }
+    if (
+      failed &&
+      generationRef.current === generation &&
+      tailRef.current.length === 0 &&
+      headRef.current.length === 0
+    ) {
+      setAssets([]);
+      assetsRef.current = [];
+      setTopDateLabel(null);
+    }
+    if (generationRef.current === generation) {
+      setLoading(false);
+    }
+  }, [anchorDate]);
 
   const reload = useCallback(async () => {
     const generation = generationRef.current + 1;
@@ -194,16 +535,29 @@ export function EpisodePhotoLibraryModal({
       return;
     }
     setAccessPrivileges(permission.accessPrivileges);
-    setAssets([]);
-    setTopDateLabel(null);
     ratioSv.value = 0;
     lastPrepareKeyRef.current = '';
+    lastScrubOffsetRef.current = 0;
+    currentOffsetRef.current = 0;
+    pendingScrollAdjustRef.current = 0;
+    pinToTopRef.current = false;
+    correctingScrollRef.current = false;
     if (!permission.granted) {
+      headRef.current = [];
+      tailRef.current = [];
+      newerCursorRef.current = undefined;
+      newerHasNextRef.current = false;
+      newerPendingRef.current = [];
+      newerLoadingRef.current = false;
+      newerGenerationRef.current = 0;
+      assetsRef.current = [];
+      setAssets([]);
+      setTopDateLabel(null);
       setLoading(false);
       return;
     }
-    await loadAll(generation);
-  }, [loadAll]);
+    await loadLibrary(generation);
+  }, [loadLibrary]);
 
   useEffect(() => {
     if (!visible) {
@@ -217,7 +571,24 @@ export function EpisodePhotoLibraryModal({
         clearTimeout(prepareTimerRef.current);
         prepareTimerRef.current = null;
       }
+      if (userBusyTimerRef.current != null) {
+        clearTimeout(userBusyTimerRef.current);
+        userBusyTimerRef.current = null;
+      }
+      if (userBusyStaleTimerRef.current != null) {
+        clearTimeout(userBusyStaleTimerRef.current);
+        userBusyStaleTimerRef.current = null;
+      }
+      userBusyRef.current = false;
       scrubbingRef.current = false;
+      newerHasNextRef.current = false;
+      newerPendingRef.current = [];
+      newerLoadingRef.current = false;
+      newerGenerationRef.current = 0;
+      pendingScrollAdjustRef.current = 0;
+      pinToTopRef.current = false;
+      correctingScrollRef.current = false;
+      currentOffsetRef.current = 0;
       return;
     }
     void reload();
@@ -269,7 +640,27 @@ export function EpisodePhotoLibraryModal({
 
   const scrollListTo = useCallback((offset: number) => {
     listRef.current?.scrollToOffset({ offset, animated: false });
+    currentOffsetRef.current = offset;
+    lastScrubOffsetRef.current = offset;
   }, []);
+
+  const applyPendingScrollAdjust = useCallback(() => {
+    if (pinToTopRef.current) {
+      pinToTopRef.current = false;
+      pendingScrollAdjustRef.current = 0;
+      correctingScrollRef.current = true;
+      scrollListTo(0);
+      return;
+    }
+    const delta = pendingScrollAdjustRef.current;
+    if (delta <= 0) {
+      return;
+    }
+    pendingScrollAdjustRef.current = 0;
+    const next = currentOffsetRef.current + delta;
+    correctingScrollRef.current = true;
+    scrollListTo(next);
+  }, [scrollListTo]);
 
   const flushPrepare = useCallback(() => {
     const offset = pendingPrepareOffsetRef.current;
@@ -281,7 +672,7 @@ export function EpisodePhotoLibraryModal({
     const stride = rowStrideRef.current;
     const topIndex = topIndexForOffset(offset, list.length, stride, viewport, paddingBottomRef.current);
     const ids = thumbnailIdsAround(list, topIndex, viewport, stride);
-    const key = `${ids[0] ?? ''}:${ids.length}:${list.length}`;
+    const key = `${ids[0] ?? ''}:${ids.length}`;
     if (key === lastPrepareKeyRef.current) {
       return;
     }
@@ -311,7 +702,7 @@ export function EpisodePhotoLibraryModal({
       }
       return;
     }
-    schedulePrepare(0);
+    schedulePrepare(lastScrubOffsetRef.current);
   }, [assets.length === 0, schedulePrepare, visible]);
 
   const showDateAtOffset = useCallback(
@@ -381,6 +772,70 @@ export function EpisodePhotoLibraryModal({
     [scrollListTo, showDateAtOffset]
   );
 
+  const requestNewerIfNearTop = useCallback(() => {
+    if (scrubbingRef.current) {
+      return;
+    }
+    const stride = rowStrideRef.current;
+    if (stride <= 0 || currentOffsetRef.current >= stride * NEWER_NEAR_TOP_ROWS) {
+      return;
+    }
+    const pendingCount = newerPendingRef.current.length;
+    const canFetchMore = newerHasNextRef.current;
+    const canFlushChunk = pendingCount >= NEWER_CHUNK_SIZE;
+    const canFlushRemainder = pendingCount > 0 && !canFetchMore && currentOffsetRef.current < stride;
+    if (!canFetchMore && !canFlushChunk && !canFlushRemainder) {
+      return;
+    }
+    void loadMoreNewerRef.current(newerGenerationRef.current);
+  }, []);
+  requestNewerIfNearTopRef.current = requestNewerIfNearTop;
+
+  const armUserBusyStale = useCallback(() => {
+    if (userBusyStaleTimerRef.current != null) {
+      clearTimeout(userBusyStaleTimerRef.current);
+    }
+    userBusyStaleTimerRef.current = setTimeout(() => {
+      userBusyStaleTimerRef.current = null;
+      userBusyRef.current = false;
+    }, USER_BUSY_STALE_MS);
+  }, []);
+
+  const markUserBusy = useCallback(() => {
+    if (userBusyTimerRef.current != null) {
+      clearTimeout(userBusyTimerRef.current);
+      userBusyTimerRef.current = null;
+    }
+    userBusyRef.current = true;
+    armUserBusyStale();
+  }, [armUserBusyStale]);
+
+  const releaseUserBusySoon = useCallback(() => {
+    if (userBusyTimerRef.current != null) {
+      clearTimeout(userBusyTimerRef.current);
+    }
+    userBusyTimerRef.current = setTimeout(() => {
+      userBusyTimerRef.current = null;
+      if (userBusyStaleTimerRef.current != null) {
+        clearTimeout(userBusyStaleTimerRef.current);
+        userBusyStaleTimerRef.current = null;
+      }
+      userBusyRef.current = false;
+    }, USER_BUSY_RELEASE_MS);
+  }, []);
+
+  const markUserIdle = useCallback(() => {
+    if (userBusyTimerRef.current != null) {
+      clearTimeout(userBusyTimerRef.current);
+      userBusyTimerRef.current = null;
+    }
+    if (userBusyStaleTimerRef.current != null) {
+      clearTimeout(userBusyStaleTimerRef.current);
+      userBusyStaleTimerRef.current = null;
+    }
+    userBusyRef.current = false;
+  }, []);
+
   const endScrub = useCallback(() => {
     if (scrubScrollTimerRef.current != null) {
       clearTimeout(scrubScrollTimerRef.current);
@@ -394,7 +849,8 @@ export function EpisodePhotoLibraryModal({
     }
     scrubbingRef.current = false;
     setScrubbing(false);
-  }, [scrollListTo]);
+    requestNewerIfNearTop();
+  }, [requestNewerIfNearTop, scrollListTo]);
 
   const scrubGesture = useMemo(
     () =>
@@ -427,6 +883,19 @@ export function EpisodePhotoLibraryModal({
       const offset = event.nativeEvent.contentOffset.y;
       const viewport = event.nativeEvent.layoutMeasurement.height;
       viewportHeightRef.current = viewport;
+      currentOffsetRef.current = offset;
+      lastScrubOffsetRef.current = offset;
+      if (correctingScrollRef.current) {
+        correctingScrollRef.current = false;
+        const { maxOffset } = libraryScrollMetrics(
+          assetsRef.current.length,
+          rowStrideRef.current,
+          viewport,
+          paddingBottomRef.current,
+        );
+        ratioSv.value = maxOffset <= 0 ? 0 : Math.min(1, Math.max(0, offset / maxOffset));
+        return;
+      }
       if (scrubbingRef.current) {
         return;
       }
@@ -438,10 +907,10 @@ export function EpisodePhotoLibraryModal({
         paddingBottomRef.current,
       );
       const ratio = maxOffset <= 0 ? 0 : Math.min(1, Math.max(0, offset / maxOffset));
-      lastScrubOffsetRef.current = offset;
       ratioSv.value = ratio;
+      requestNewerIfNearTop();
     },
-    [ratioSv, showDateAtOffset]
+    [ratioSv, requestNewerIfNearTop, showDateAtOffset]
   );
 
   const orderById = useMemo(() => {
@@ -576,9 +1045,16 @@ export function EpisodePhotoLibraryModal({
               scrollEventThrottle={32}
               getItemLayout={getItemLayout}
               onScroll={onScroll}
+              onScrollBeginDrag={markUserBusy}
+              onScrollEndDrag={releaseUserBusySoon}
+              onMomentumScrollBegin={markUserBusy}
+              onMomentumScrollEnd={markUserIdle}
+              onContentSizeChange={() => {
+                applyPendingScrollAdjust();
+              }}
               onLayout={(event) => {
                 viewportHeightRef.current = event.nativeEvent.layout.height;
-                schedulePrepare(lastScrubOffsetRef.current);
+                schedulePrepare(currentOffsetRef.current);
               }}
               contentContainerStyle={listContentStyle}
               renderItem={renderPhoto}
@@ -752,7 +1228,7 @@ const styles = StyleSheet.create({
   badge: {
     position: 'absolute',
     top: 6,
-    right: 6,
+    left: 6,
     width: 24,
     height: 24,
     borderRadius: Radius.full,

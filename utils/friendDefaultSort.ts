@@ -8,6 +8,7 @@ import type { Event, Friend } from '@/types';
 import { formatDateKey, getAllDayDateKeysFromEvent, parseDateKey } from '@/utils/eventHelpers';
 import { profileIdsToFriendIds } from '@/utils/eventParticipantHelpers';
 import { computeProfileCompleteness } from '@/utils/profileCompleteness';
+import { countHabitSayingMemos } from '@/utils/profileMemos';
 import {
   readDailyFriendOrderCache,
   writeDailyFriendOrderCache,
@@ -32,7 +33,7 @@ function compareDateKeysDesc(left: string, right: string): number {
 }
 
 function habitSayingCount(friend: Friend): number {
-  return (friend.traits?.length ?? 0) + (friend.sayings?.length ?? 0);
+  return countHabitSayingMemos(friend.notes);
 }
 
 function episodeCount(friend: Friend): number {

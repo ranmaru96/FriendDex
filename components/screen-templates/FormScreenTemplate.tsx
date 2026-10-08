@@ -84,10 +84,15 @@ export function FormScreenTemplate({
         )
       ) : null}
 
-      <View ref={frameRef} style={styles.body} collapsable={false} onLayout={syncOverlap}>
-        <View style={[styles.body, { paddingBottom: bodyKeyboardPad }]}>
+      <View
+        ref={frameRef}
+        style={[styles.body, { backgroundColor: kit.screenBackground }]}
+        collapsable={false}
+        onLayout={syncOverlap}
+      >
+        <View style={[styles.body, { paddingBottom: bodyKeyboardPad, backgroundColor: kit.screenBackground }]}>
           <KeyboardAwareScrollView
-            style={styles.scroll}
+            style={[styles.scroll, { backgroundColor: kit.screenBackground }]}
             contentContainerStyle={[
               styles.scrollContent,
               { paddingHorizontal: kit.screenPaddingHorizontal, paddingBottom: Spacing.lg },

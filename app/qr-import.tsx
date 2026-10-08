@@ -49,6 +49,7 @@ import {
   getPublicFieldLabels,
   qrPayloadToRouteParams,
   routeParamsToQrPayload,
+  withRequiredPublicFields,
   sortFriendsByQrNameMatch,
   type QrScanPayload,
 } from '@/utils/qrScanHelpers';
@@ -245,8 +246,9 @@ export default function QrImportScreen() {
           return;
         }
         if (result.payload) {
-          const allowed =
-            qrPayload.publicFields.length > 0 ? qrPayload.publicFields : result.payload.publicFields;
+          const allowed = withRequiredPublicFields(
+            qrPayload.publicFields.length > 0 ? qrPayload.publicFields : result.payload.publicFields
+          );
           setPayload(filterPayloadByPublicFields(result.payload, allowed));
           setHydrateReady(true);
           return;

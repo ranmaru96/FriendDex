@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Radius, Theme } from '@/constants/theme';
+import { withAlpha } from '@/utils/colorHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
 
@@ -34,7 +35,7 @@ type OptionPickerModalProps = {
   customInputPlaceholder?: string;
   customActionLabel?: string;
   /** 候補の列数。未指定は1列 */
-  columns?: 1 | 2;
+  columns?: 1 | 2 | 4 | 6;
   /** chips のとき候補を折り返して並べる */
   layout?: 'list' | 'chips';
 };
@@ -77,6 +78,8 @@ export function OptionPickerModal({
     onValueChange(normalizedCustomValue);
     closePicker();
   };
+
+  const optionFrameColor = withAlpha(content.contentText, 0.16);
 
   const modalStyles = useMemo(
     () =>
@@ -135,7 +138,7 @@ export function OptionPickerModal({
           marginHorizontal: -3,
         },
         optionCell: {
-          width: '50%',
+          width: `${100 / columns}%`,
           paddingHorizontal: 3,
           paddingVertical: 3,
         },
@@ -144,7 +147,7 @@ export function OptionPickerModal({
           paddingHorizontal: 10,
           borderRadius: 8,
           borderWidth: 1,
-          borderColor: content.contentBorder,
+          borderColor: optionFrameColor,
           backgroundColor: content.contentPersonTagBg,
         },
         optionGridItemSelected: {
@@ -163,7 +166,7 @@ export function OptionPickerModal({
         },
         chip: {
           borderWidth: 1,
-          borderColor: content.contentBorder,
+          borderColor: optionFrameColor,
           backgroundColor: content.contentPersonTagBg,
           borderRadius: Radius.full,
           paddingHorizontal: 12,
@@ -191,6 +194,9 @@ export function OptionPickerModal({
           paddingHorizontal: 8,
           borderRadius: 8,
         },
+        clearOption: {
+          alignSelf: 'flex-start',
+        },
         optionSelected: {
           backgroundColor: content.contentInputBg,
           borderWidth: 1,
@@ -204,7 +210,8 @@ export function OptionPickerModal({
         clearOptionDivider: {
           height: StyleSheet.hairlineWidth,
           backgroundColor: content.contentBorder,
-          marginVertical: 2,
+          marginTop: 10,
+          marginBottom: 12,
         },
         optionText: {
           fontSize: 15,
@@ -251,7 +258,7 @@ export function OptionPickerModal({
           fontWeight: '700',
         },
       }),
-    [content]
+    [columns, content, optionFrameColor]
   );
 
   return (
@@ -350,7 +357,11 @@ export function OptionPickerModal({
             {clearLabel != null ? (
               <>
                 <Pressable
-                  style={[modalStyles.option, !value ? modalStyles.optionSelected : null]}
+                  style={[
+                    modalStyles.optionGridItem,
+                    modalStyles.clearOption,
+                    !value ? modalStyles.optionGridItemSelected : null,
+                  ]}
                   onPress={() => {
                     onValueChange('');
                     closePicker();
@@ -361,7 +372,7 @@ export function OptionPickerModal({
                 <View style={modalStyles.clearOptionDivider} />
               </>
             ) : null}
-            {columns === 2 ? (
+            {columns > 1 ? (
               <View style={modalStyles.optionGrid}>
                 {options.map((option) => (
                   <View key={option.value} style={modalStyles.optionCell}>

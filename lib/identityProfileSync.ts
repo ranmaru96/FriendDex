@@ -1,13 +1,14 @@
-import type { Profile, Saying } from '@/types';
+import type { Profile, ProfileMemo, Saying } from '@/types';
 import {
   getDefaultProfile,
   getResolvedMyselfId,
   initializeDatabase,
+  updateProfile,
 } from '@/db';
 import { getSupabaseClient } from '@/lib/supabase';
 import { downloadIdentityPhoto, syncIdentityPhotoUpload } from '@/lib/identityPhotoStorage';
 import { upsertOwnedPersonCard } from '@/lib/ownedPersonCardSync';
-import type { QrScanPayload } from '@/utils/qrScanHelpers';
+import { withRequiredPublicFields, type QrScanPayload } from '@/utils/qrScanHelpers';
 
 export type IdentityProfileUpsertResult = {
   skipped: boolean;
@@ -54,7 +55,7 @@ type IdentityProfileRow = IdentityProfilePublicRow & {
   personalities: string[];
   experiences: string[];
   traits: string[];
-  notes: string[];
+  notes: ProfileMemo[];
   likes: string[];
   dislikes: string[];
   sayings: IdentitySayingRow[];
@@ -169,6 +170,30 @@ const toOptionalInt = (value: number | null | undefined): number | null => {
   return Math.round(value);
 };
 
+const rememberRequiredPublicFields = (profile: Profile): void => {
+  const publicFields = withRequiredPublicFields(profile.publicFields);
+  const current = profile.publicFields ?? [];
+  if (
+    publicFields.length === current.length &&
+    publicFields.every((key, index) => key === current[index])
+  ) {
+    return;
+  }
+  updateProfile(profile.id, {
+    name: profile.name,
+    familyName: profile.familyName,
+    givenName: profile.givenName,
+    nickname: profile.nickname,
+    birthday: profile.birthday,
+    height: profile.height,
+    weight: profile.weight,
+    origin: profile.origin,
+    residence: profile.residence,
+    mbti: profile.mbti,
+    publicFields,
+  });
+};
+
 const profileToRow = (profile: Profile, authUserId: string, syncVersion: number): IdentityProfileRow => ({
   id: authUserId,
   display_name: profile.name ?? '',
@@ -181,14 +206,14 @@ const profileToRow = (profile: Profile, authUserId: string, syncVersion: number)
   origin: profile.origin ?? '',
   residence: profile.residence ?? '',
   mbti: profile.mbti ?? '',
-  public_fields: Array.isArray(profile.publicFields) ? profile.publicFields : [],
+  public_fields: withRequiredPublicFields(profile.publicFields),
   category: profile.category ?? '',
   description: profile.description ?? '',
   affiliations: toStringList(profile.affiliations),
   personalities: toStringList(profile.personalities),
   experiences: toStringList(profile.experiences),
   traits: toStringList(profile.traits),
-  notes: toStringList(profile.notes),
+  notes: profile.notes ?? [],
   likes: toStringList(profile.likes),
   dislikes: toStringList(profile.dislikes),
   sayings: toSayingRows(profile.sayings),
@@ -253,6 +278,8 @@ export async function upsertMyselfIdentityProfile(): Promise<IdentityProfileUpse
     }
   }
 
+  rememberRequiredPublicFields(profile);
+
   const photoPath = await syncIdentityPhotoUpload(
     supabase,
     authUserId,
@@ -307,6 +334,38 @@ export function scheduleFriendProfileSync(friendId: string): void {
       console.warn('friend profile sync failed', result.errorMessage);
     }
   });
+}
+
+let requiredPublicFieldsSyncInFlight = false;
+
+/** 名前・写真が未公開の本人カードだけ、起動中に一度サーバーへ送る。 */
+export function scheduleRequiredIdentityPublicFieldsSync(): void {
+  if (requiredPublicFieldsSyncInFlight) {
+    return;
+  }
+  initializeDatabase();
+  const myselfId = getResolvedMyselfId();
+  if (!myselfId) {
+    return;
+  }
+  const profile = getDefaultProfile(myselfId);
+  if (!profile) {
+    return;
+  }
+  const fields = profile.publicFields ?? [];
+  if (fields.includes('name') && fields.includes('photo')) {
+    return;
+  }
+  requiredPublicFieldsSyncInFlight = true;
+  void syncFriendProfileToServer(myselfId)
+    .then((result) => {
+      if (result.errorMessage) {
+        console.warn('required identity public fields sync failed', result.errorMessage);
+      }
+    })
+    .finally(() => {
+      requiredPublicFieldsSyncInFlight = false;
+    });
 }
 
 /** ログイン中なら grant を作り、相手の公開カードを取る。失敗時は payload null（呼び出し側が QR 埋め込み値へ戻す） */
@@ -371,14 +430,17 @@ export async function claimAndFetchIdentityProfile(
   if (!resolved.data?.id) {
     return { payload: null, skipped: true, errorMessage: null };
   }
-  const publicFields = parsePublicFields(resolved.data.public_fields);
+  const publicFields = withRequiredPublicFields(parsePublicFields(resolved.data.public_fields));
   let photoUri: string | undefined;
   const photoPath = readPhotoPath(resolved.data as Record<string, unknown>);
-  if (publicFields.includes('photo') && photoPath) {
+  if (photoPath) {
     photoUri = (await downloadIdentityPhoto(supabase, photoPath)) ?? undefined;
   }
   return {
-    payload: rowToQrPayload({ ...resolved.data, photoUri }),
+    payload: {
+      ...rowToQrPayload({ ...resolved.data, photoUri }),
+      publicFields,
+    },
     skipped: false,
     errorMessage: null,
   };

@@ -11,6 +11,7 @@ import {
 import { AppState } from 'react-native';
 import { useAuthSession } from '@/contexts/AuthSessionContext';
 import { flushOwnedPersonEpisodeCalendar } from '@/lib/flushOwnedWorkingCopy';
+import { scheduleRequiredIdentityPublicFieldsSync } from '@/lib/identityProfileSync';
 import { flushPendingGoogleCalendarQueue } from '@/utils/googleCalendarSync';
 import {
   isNetworkReachable,
@@ -78,13 +79,26 @@ export function NetworkReachabilityProvider({ children }: { children: ReactNode 
   }, []);
 
   useEffect(() => {
+    if (!session || !online) {
+      return;
+    }
+    scheduleRequiredIdentityPublicFieldsSync();
+  }, [online, session]);
+
+  useEffect(() => {
     void refresh().finally(() => {
       flushGoogleQueueIfOnline();
+      if (sessionRef.current && isNetworkReachable()) {
+        scheduleRequiredIdentityPublicFieldsSync();
+      }
     });
     const appSub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         void refresh().finally(() => {
           flushGoogleQueueIfOnline();
+          if (sessionRef.current && isNetworkReachable()) {
+            scheduleRequiredIdentityPublicFieldsSync();
+          }
         });
       }
     });

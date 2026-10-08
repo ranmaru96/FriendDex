@@ -75,6 +75,7 @@ const buildEpisodeInputFromEpisode = (episode: Episode, eventId: string): Episod
     date: resolveDateForLinkedEvent(episode.date, normalizedEventId),
     time: episode.time ?? null,
     description: episode.description,
+    privateMemo: episode.privateMemo ?? '',
     visibilityMode: episode.visibilityMode,
     participantEntries: episode.participantEntries,
     visibilityEntries: episode.visibilityEntries,

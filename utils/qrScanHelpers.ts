@@ -15,6 +15,19 @@ export const QR_PUBLIC_FIELD_KEYS = [
 
 export type QrPublicFieldKey = (typeof QR_PUBLIC_FIELD_KEYS)[number];
 
+/** コネクト先に必ず渡す項目。公開設定ではオフにできない。 */
+export const REQUIRED_PUBLIC_FIELD_KEYS = ['name', 'photo'] as const satisfies readonly QrPublicFieldKey[];
+
+export const withRequiredPublicFields = (fields: readonly string[] | null | undefined): string[] => {
+  const next = (fields ?? []).filter((item) => typeof item === 'string' && item.length > 0);
+  for (const key of REQUIRED_PUBLIC_FIELD_KEYS) {
+    if (!next.includes(key)) {
+      next.push(key);
+    }
+  }
+  return next;
+};
+
 export type QrScanPayload = {
   userId: string;
   publicFields: string[];
@@ -315,13 +328,3 @@ export const sortFriendsByQrNameMatch = <T extends Friend>(
     if (delta !== 0) return delta;
     return a.name.localeCompare(b.name, 'ja', { sensitivity: 'base' });
   });
-
-export const formatScannedAtLabel = (scannedAt: string): string => {
-  if (!scannedAt.trim()) return '-';
-  const date = new Date(scannedAt);
-  if (Number.isNaN(date.getTime())) return '-';
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}/${m}/${d}`;
-};

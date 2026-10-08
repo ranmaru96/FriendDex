@@ -8,6 +8,8 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { deletePersonFormDraft, readPersonFormDraft } from '@/utils/personFormDraft';
+import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import { Theme } from '@/constants/theme';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { FriendHomeCard, formatFriendBirthdayBadge } from '@/components/friend/FriendHomeCard';
@@ -21,7 +23,6 @@ import {
 import { ListScreenTemplate } from '@/components/screen-templates';
 import { AddCircleButton } from '@/components/AddCircleButton';
 import { CircleIconButton } from '@/components/CircleIconButton';
-import { PendingEpisodeReviewModal } from '@/components/episode/PendingEpisodeReviewModal';
 import { useContentColors } from '@/utils/useContentColors';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 
@@ -31,7 +32,6 @@ import {
   getDistinctAffiliations,
   getDistinctExperiences,
   getMyself,
-  getPendingReviewEpisodes,
   initializeDatabase,
   isMyselfLocked,
   searchFriends,
@@ -42,7 +42,7 @@ import {
   homeFilterToSearchFilters,
   isHomeFilterState,
 } from '@/utils/persistedFilterTypes';
-import { Friend, FriendSearchFilters, MBTI_TYPES, PendingReviewEpisodeRef } from './types';
+import { Friend, FriendSearchFilters, MBTI_TYPES } from './types';
 import { sortFriendsByDefaultOrder } from '@/utils/friendDefaultSort';
 import { isPersonCardLockedByAcceptedConnection } from '@/lib/connectionSync';
 import { requireOnline } from '@/lib/networkReachability';
@@ -61,9 +61,9 @@ function loadHomeFriends(filters: FriendSearchFilters): Friend[] {
   return sortFriendsByDefaultOrder(results);
 }
 
-const birthMonthOptions: Option[] = Array.from({ length: 12 }, (_, index) => ({
-  label: String(index + 1),
-  value: String(index + 1),
+const birthMonthOptions: Option[] = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3].map((month) => ({
+  label: String(month),
+  value: String(month),
 }));
 
 const toOptions = (values: string[]): Option[] => values.map((value) => ({ label: value, value }));
@@ -90,38 +90,13 @@ export default function HomeScreen() {
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [myselfId, setMyselfId] = useState<string | null>(null);
-  const [pendingReviewItems, setPendingReviewItems] = useState<PendingReviewEpisodeRef[]>([]);
-  const [reviewModalVisible, setReviewModalVisible] = useState(false);
-
-  const reloadPendingReviews = useCallback(() => {
-    const pending = getPendingReviewEpisodes();
-    setPendingReviewItems(pending);
-    setReviewModalVisible(pending.length > 0);
-  }, []);
-
-  const handleWritePendingEpisode = useCallback(
-    (item: PendingReviewEpisodeRef) => {
-      setReviewModalVisible(false);
-      const ownerId = item.episode.authorFriendId.trim() || item.friendId;
-      router.push({
-        pathname: '/episode-detail',
-        params: {
-          episodeId: item.episode.id,
-          ownerId,
-          edit: '1',
-        },
-      });
-    },
-    [router]
-  );
 
   const loadInitialData = useCallback(() => {
     initializeDatabase();
     setAffiliationOptions(toOptions(getDistinctAffiliations()));
     setExperienceOptions(toOptions(getDistinctExperiences()));
     setMyselfId(getMyself());
-    reloadPendingReviews();
-  }, [reloadPendingReviews]);
+  }, []);
 
   const filters = useMemo(() => homeFilterToSearchFilters(homeFilter), [homeFilter]);
 
@@ -138,6 +113,33 @@ export default function HomeScreen() {
       loadInitialData();
       setFriends(loadHomeFriends(filtersRef.current));
     }, [loadInitialData])
+  );
+
+  const personDraftPromptLock = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (personDraftPromptLock.current) {
+        return;
+      }
+      const stored = readPersonFormDraft(null);
+      if (!stored) {
+        return;
+      }
+      personDraftPromptLock.current = true;
+      promptFormDraftRestore({
+        onRestore: () => {
+          personDraftPromptLock.current = false;
+          router.push({ pathname: '/edit', params: { draft: '1' } });
+        },
+        onDecline: () => {
+          personDraftPromptLock.current = false;
+          deletePersonFormDraft(null);
+        },
+        onDismiss: () => {
+          personDraftPromptLock.current = false;
+        },
+      });
+    }, [router])
   );
 
   const showBirthdayBadges = Boolean(
@@ -289,12 +291,14 @@ export default function HomeScreen() {
                   value={homeFilter.mbti}
                   options={mbtiOptions}
                   onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, mbti: value }))}
+                  columns={4}
                 />
                 <SearchAreaSelectField
                   label="誕生月"
                   value={homeFilter.birthMonth}
                   options={birthMonthOptions}
                   onValueChange={(value) => setHomeFilter((prev) => ({ ...prev, birthMonth: value }))}
+                  columns={6}
                 />
               </SearchAreaRow>
             </SearchArea>
@@ -320,13 +324,6 @@ export default function HomeScreen() {
         numColumns={3}
         columnWrapperStyle={[styles.column, { marginBottom: cardGap, gap: cardGap }]}
         ListEmptyComponent={<Text style={styles.emptyText}>人物データがありません</Text>}
-      />
-
-      <PendingEpisodeReviewModal
-        visible={reviewModalVisible}
-        items={pendingReviewItems}
-        onChanged={reloadPendingReviews}
-        onWrite={handleWritePendingEpisode}
       />
     </ListScreenTemplate>
   );

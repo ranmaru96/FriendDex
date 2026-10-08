@@ -11,7 +11,7 @@ const MemoryWidgetView = (props: MemoryWidgetProps) => {
   'widget';
   const label = props.label || '思い出';
   return (
-    <VStack alignment="leading" modifiers={[padding({ all: 12 })]}>
+    <VStack alignment="leading" modifiers={[padding({ all: 2 })]}>
       <Text modifiers={[font({ size: 15, weight: 'semibold' })]}>{label}</Text>
     </VStack>
   );

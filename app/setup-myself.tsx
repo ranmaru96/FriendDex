@@ -8,7 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { FormRow } from '@/components/ui/FormRow';
 import { FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
@@ -34,6 +34,7 @@ import {
 } from '../db';
 import type { Friend, FriendInput } from '../types';
 import { Theme, Radius, Spacing } from '@/constants/theme';
+import { openAfterAuthGate } from '@/utils/navigationRestore';
 
 const EMPTY_FRIEND: FriendInput = {
   name: '',
@@ -60,6 +61,7 @@ const EMPTY_FRIEND: FriendInput = {
 
 export default function SetupMyselfScreen() {
   const router = useRouter();
+  const pathname = usePathname();
   const content = useContentColors();
   const [phase, setPhase] = useState<MyselfSetupPhase>('register');
   const [showRegister, setShowRegister] = useState(false);
@@ -121,13 +123,13 @@ export default function SetupMyselfScreen() {
               confirmPrompted.current = false;
               return;
             }
-            router.replace('/calendar');
+            openAfterAuthGate(pathname);
           },
         },
       ],
       { cancelable: false }
     );
-  }, [phase, currentMyself, router]);
+  }, [currentMyself, pathname, phase, router]);
 
   const finishWithFriendId = (friendId: string) => {
     initializeDatabase();
@@ -135,7 +137,7 @@ export default function SetupMyselfScreen() {
       Alert.alert('エラー', '本人の登録に失敗しました。');
       return;
     }
-    router.replace('/calendar');
+    openAfterAuthGate(pathname);
   };
 
   const handleCreate = () => {

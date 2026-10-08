@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import type { Session } from '@supabase/supabase-js';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import type { AuthChangeEvent, Session } from '@supabase/supabase-js';
 import { initializeDatabase } from '@/db';
 import {
   DEVICE_BIND_MISMATCH_MESSAGE,
@@ -31,45 +31,74 @@ export function AuthSessionProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(!configured);
   const [deviceBindError, setDeviceBindError] = useState<string | null>(null);
   const clearDeviceBindError = useCallback(() => setDeviceBindError(null), []);
+  const sessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
     if (!configured) {
+      sessionRef.current = null;
       setSession(null);
       setReady(true);
       return;
     }
     const supabase = getSupabaseClient();
     if (!supabase) {
+      sessionRef.current = null;
       setSession(null);
       setReady(true);
       return;
     }
-    const applySession = (nextSession: Session | null) => {
+    const applySession = (nextSession: Session | null, clear: boolean) => {
       initializeDatabase();
       const authUserId = nextSession?.user.id?.trim() ?? '';
       if (!authUserId) {
+        if (!clear) {
+          return;
+        }
+        sessionRef.current = null;
         setSession(null);
         return;
       }
       if (!isAuthUserAllowedOnThisDevice(authUserId)) {
+        sessionRef.current = null;
         setSession(null);
         setDeviceBindError(DEVICE_BIND_MISMATCH_MESSAGE);
         void discardForeignAuthSession();
         return;
       }
       void adoptAuthUserOnThisDevice(authUserId);
+      sessionRef.current = nextSession;
       setSession(nextSession);
     };
     let cancelled = false;
-    void supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) {
-        applySession(data.session ?? null);
-        setReady(true);
+    const { data } = supabase.auth.onAuthStateChange((event: AuthChangeEvent, nextSession) => {
+      if (cancelled) {
+        return;
       }
-    });
-    const { data } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      applySession(nextSession);
-      setReady(true);
+      if (event === 'SIGNED_OUT') {
+        applySession(null, true);
+        setReady(true);
+        return;
+      }
+      if (nextSession?.user?.id) {
+        applySession(nextSession, false);
+        setReady(true);
+        return;
+      }
+      if (event !== 'INITIAL_SESSION') {
+        setReady(true);
+        return;
+      }
+      void supabase.auth.getSession().then(({ data: sessionData }) => {
+        if (cancelled) {
+          return;
+        }
+        if (sessionData.session?.user?.id) {
+          applySession(sessionData.session, false);
+        } else if (!sessionRef.current) {
+          applySession(null, true);
+        }
+        setReady(true);
+      });
     });
     return () => {
       cancelled = true;

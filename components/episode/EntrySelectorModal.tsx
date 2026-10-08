@@ -225,6 +225,7 @@ function SelectorFilterField({
         options={options}
         onValueChange={onValueChange}
         onClose={() => setVisible(false)}
+        columns={2}
       />
     </View>
   );

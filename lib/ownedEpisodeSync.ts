@@ -26,6 +26,7 @@ type OwnedEpisodeRow = {
   date: string;
   time: string | null;
   description: string;
+  private_memo: string;
   visibility_mode: string;
   participant_entries: EpisodeParticipant[];
   visibility_entries: EpisodeVisibilityEntry[];
@@ -39,6 +40,9 @@ type OwnedEpisodeRow = {
   deleted_at: null;
   sync_version: number;
 };
+
+const isUnknownColumnError = (message: string): boolean =>
+  /schema cache/i.test(message) || /could not find the/i.test(message) || /does not exist/i.test(message);
 
 const collectUniqueEpisodes = (): Episode[] => {
   const byId = new Map<string, Episode>();
@@ -106,6 +110,7 @@ export async function upsertOwnedEpisode(episodeId: string): Promise<OwnedEpisod
     date: episode.date ?? '',
     time: episode.time?.trim() ? episode.time : null,
     description: episode.description ?? '',
+    private_memo: episode.privateMemo ?? '',
     visibility_mode: episode.visibilityMode ?? 'private',
     participant_entries: Array.isArray(episode.participantEntries) ? episode.participantEntries : [],
     visibility_entries: Array.isArray(episode.visibilityEntries) ? episode.visibilityEntries : [],
@@ -123,7 +128,15 @@ export async function upsertOwnedEpisode(episodeId: string): Promise<OwnedEpisod
   const { error: upsertError } = await supabase
     .from('owned_episodes')
     .upsert(row, { onConflict: 'owner_id,local_episode_id' });
-  if (upsertError) {
+  if (upsertError && isUnknownColumnError(upsertError.message)) {
+    const { private_memo: _privateMemo, ...withoutPrivateMemo } = row;
+    const { error: fallbackError } = await supabase
+      .from('owned_episodes')
+      .upsert(withoutPrivateMemo, { onConflict: 'owner_id,local_episode_id' });
+    if (fallbackError) {
+      return { skipped: false, errorMessage: fallbackError.message };
+    }
+  } else if (upsertError) {
     return { skipped: false, errorMessage: upsertError.message };
   }
 

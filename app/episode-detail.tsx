@@ -14,7 +14,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { readUsableEpisodeDraft } from '@/utils/episodeDraft';
 import { Ionicons } from '@expo/vector-icons';
-import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
+import { Theme, Radius, Spacing } from '@/constants/theme';
 import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
 import { EPISODE_DETAIL_SIDE_INSET } from '@/components/episode/EpisodeCardTitle';
 import { EpisodeByline } from '@/components/episode/EpisodeByline';
@@ -76,12 +76,13 @@ const PHOTO_GAP = 6;
 /** 2枚以上のとき、右端に次の写真を覗かせる幅 */
 const PHOTO_PEEK = 28;
 
-function episodeToInput(episode: Episode, description: string): EpisodeInput {
+function episodeToInput(episode: Episode, description: string, privateMemo?: string): EpisodeInput {
   return {
     title: episode.title,
     date: episode.date,
     time: episode.time,
     description,
+    privateMemo: privateMemo !== undefined ? privateMemo : (episode.privateMemo ?? ''),
     visibilityMode: episode.visibilityMode,
     participantEntries: episode.participantEntries,
     visibilityEntries: episode.visibilityEntries,
@@ -301,6 +302,7 @@ export default function EpisodeDetailScreen() {
   );
   const photoFrameHeight = useMemo(() => (photoFrameWidth * 3) / 4, [photoFrameWidth]);
   const hasDescription = Boolean(episode && noteBlocksHaveContent(episode.description));
+  const hasPrivateMemo = Boolean(episode && noteBlocksHaveContent(episode.privateMemo ?? ''));
   const hasPhotos = photos.length > 0;
 
   const renderPhotoFrame = (photo: EpisodePhoto, index: number) => (
@@ -464,6 +466,26 @@ export default function EpisodeDetailScreen() {
     [canManage, episode, myselfId]
   );
 
+  const handlePrivateMemoChange = useCallback(
+    (next: string) => {
+      if (!episode || !myselfId || !canManage) {
+        return;
+      }
+      const updated = updateEpisode(
+        myselfId,
+        episode.id,
+        episodeToInput(episode, episode.description, next)
+      );
+      if (!updated) {
+        Alert.alert('エラー', '非公開メモの更新に失敗しました。');
+        return;
+      }
+      setEpisode({ ...episode, privateMemo: next });
+      scheduleOwnedEpisodeSync(episode.id);
+    },
+    [canManage, episode, myselfId]
+  );
+
   const handleDelete = () => {
     Alert.alert('確認', '本当に削除しますか？', [
       { text: 'キャンセル', style: 'cancel' },
@@ -594,17 +616,23 @@ export default function EpisodeDetailScreen() {
                 </>
               ) : null}
 
-              {canManage ? (
+              {canManage && hasPrivateMemo ? (
               <>
-              <SectionDivider style={sectionDividerStyle} />
               <PanelSection style={styles.detailSection}>
                 <View style={styles.memoInset}>
-                  <Text style={[styles.privateMemoLabel, contentTextStyle(content)]}>非公開メモ</Text>
-                  <Text style={[styles.privateMemoPlaceholder, contentMutedTextStyle(content)]}>
-                    非公開メモ（近日実装予定）
-                  </Text>
+                  <View style={styles.privateMemoRule}>
+                    <View style={[styles.privateMemoRuleLine, { backgroundColor: content.contentDivider }]} />
+                    <Text style={[styles.privateMemoLabel, contentMutedTextStyle(content)]}>非公開メモ</Text>
+                    <View style={[styles.privateMemoRuleLine, { backgroundColor: content.contentDivider }]} />
+                  </View>
+                  <NoteBlockView
+                    value={episode.privateMemo ?? ''}
+                    textStyle={[styles.descriptionText, contentTextStyle(content)]}
+                    onChangeValue={handlePrivateMemoChange}
+                  />
                 </View>
               </PanelSection>
+              <SectionDivider style={sectionDividerStyle} />
               </>
               ) : null}
 
@@ -744,15 +772,19 @@ const styles = StyleSheet.create({
     height: '100%',
     backgroundColor: Theme.textPrimary,
   },
-  privateMemoLabel: {
-    fontSize: Typography.base,
-    fontWeight: '700',
-    color: '#475569',
+  privateMemoRule: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
     marginBottom: 8,
   },
-  privateMemoPlaceholder: {
-    fontSize: 14,
-    color: '#94a3b8',
+  privateMemoRuleLine: {
+    flex: 1,
+    height: 1,
+  },
+  privateMemoLabel: {
+    fontSize: 13,
+    fontWeight: '500',
   },
   deleteLinkWrap: {
     alignSelf: 'center',

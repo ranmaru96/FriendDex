@@ -98,8 +98,6 @@ const BLACK_TAB_COLORS: Record<string, string> = {
   情報: '#6b9eef',
   ステータス: '#e0c04a',
   エピソード: '#f0954a',
-  習性: '#5bc47a',
-  彼曰く: '#ef6b6b',
   メモ: '#a88aef',
 };
 

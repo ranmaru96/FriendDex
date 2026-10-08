@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { deleteTaskFormDraft, readTaskFormDraft } from '@/utils/taskFormDraft';
+import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -22,6 +24,7 @@ import Animated, {
 import { OffsetCard, OptionalOffsetCard } from '@/components/ui/OffsetCard';
 import { usesOffsetChrome } from '@/constants/designPatterns';
 import { AddCircleButton } from '@/components/AddCircleButton';
+import { CircleIconButton } from '@/components/CircleIconButton';
 import { ListScreenTemplate } from '@/components/screen-templates';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
@@ -746,6 +749,42 @@ export default function TasksScreen() {
     }, [reload])
   );
 
+  const taskDraftPromptLock = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      if (taskDraftPromptLock.current) {
+        return;
+      }
+      const stored = readTaskFormDraft(null);
+      if (!stored) {
+        return;
+      }
+      taskDraftPromptLock.current = true;
+      const fields = stored.fields;
+      promptFormDraftRestore({
+        onRestore: () => {
+          taskDraftPromptLock.current = false;
+          router.push({
+            pathname: '/task-edit',
+            params: {
+              draft: '1',
+              ...(fields.presetEventId ? { eventId: fields.presetEventId } : {}),
+              ...(fields.presetGroupId ? { groupId: fields.presetGroupId } : {}),
+              ...(fields.presetKind ? { kind: fields.presetKind } : {}),
+            },
+          });
+        },
+        onDecline: () => {
+          taskDraftPromptLock.current = false;
+          deleteTaskFormDraft(null);
+        },
+        onDismiss: () => {
+          taskDraftPromptLock.current = false;
+        },
+      });
+    }, [router])
+  );
+
   const recurringGroups = useMemo(
     () => groups.filter((group) => group.kind === 'recurring'),
     [groups]
@@ -1191,6 +1230,7 @@ export default function TasksScreen() {
       completed?: boolean;
       showEdit?: boolean;
       onEdit?: () => void;
+      onAdd?: () => void;
       emptyHint?: string;
     },
     memberNodes: ReactNode
@@ -1201,6 +1241,7 @@ export default function TasksScreen() {
     const expanded = options.expanded !== false;
     const showMembers = expanded && members.length > 0;
     const showEdit = options.showEdit === true && options.onEdit != null;
+    const showAdd = options.onAdd != null && !options.completed;
     const instanceKey = groupInstanceKey(bucketId, options.keySuffix);
     const emptyHint = options.emptyHint ?? 'ドロップで追加';
     const groupCard = (
@@ -1272,6 +1313,14 @@ export default function TasksScreen() {
               </Text>
             ) : null}
           </View>
+          {showAdd ? (
+            <AddCircleButton
+              size={28}
+              onPress={options.onAdd}
+              accessibilityLabel={`${title}にタスクを追加`}
+              style={styles.catalogGroupAdd}
+            />
+          ) : null}
           {showEdit ? (
             <Pressable
               style={[styles.catalogGroupEditButton, { borderColor: content.contentBorder }]}
@@ -1329,6 +1378,14 @@ export default function TasksScreen() {
         ...options,
         showEdit: true,
         onEdit: () => openGroupScreen(group),
+        onAdd: options.completed
+          ? undefined
+          : () => {
+              router.push({
+                pathname: '/task-edit',
+                params: { kind: group.kind, groupId: group.id },
+              });
+            },
       },
       memberNodes
     );
@@ -1741,18 +1798,6 @@ export default function TasksScreen() {
           >
             <Ionicons name="information-circle-outline" size={26} color={content.contentText} />
           </Pressable>
-          {isLibrary ? (
-            <AddCircleButton
-              style={styles.fab}
-              onPress={() =>
-                router.push({
-                  pathname: '/task-edit',
-                  params: { kind: segment === 'temporary' ? 'temporary' : 'recurring' },
-                })
-              }
-              accessibilityLabel="タスクを追加"
-            />
-          ) : null}
         </>
       }
     >
@@ -1772,16 +1817,19 @@ export default function TasksScreen() {
                 {formatTasksTodayLabel(new Date())}のタスク
               </Text>
             </View>
-            <Pressable
-              style={[styles.todayEditButton, contentFilledButtonStyle(content)]}
-              onPress={() => setSegment('recurring')}
-              accessibilityRole="button"
-              accessibilityLabel="タスクの追加・編集"
-            >
-              <Text style={[styles.todayEditButtonText, contentFilledButtonTextStyle(content)]}>
-                タスクの追加・編集
-              </Text>
-            </Pressable>
+            <View style={styles.todayHeaderActions}>
+              <CircleIconButton
+                icon="list-outline"
+                onPress={() => setSegment('temporary')}
+                accessibilityLabel="すべてのタスク"
+              />
+              <AddCircleButton
+                onPress={() =>
+                  router.push({ pathname: '/task-edit', params: { kind: 'temporary' } })
+                }
+                accessibilityLabel="タスクを追加"
+              />
+            </View>
           </View>
         ) : (
           <View style={styles.libraryBar}>
@@ -1794,6 +1842,12 @@ export default function TasksScreen() {
             >
               <Ionicons name="chevron-back" size={22} color={content.contentText} />
             </Pressable>
+            <Text
+              style={[styles.libraryTitle, contentTextStyle(content)]}
+              numberOfLines={1}
+            >
+              全てのタスク
+            </Text>
             <View
               style={[
                 styles.librarySegment,
@@ -1833,6 +1887,15 @@ export default function TasksScreen() {
                 );
               })}
             </View>
+            <AddCircleButton
+              onPress={() =>
+                router.push({
+                  pathname: '/task-edit',
+                  params: { kind: segment === 'temporary' ? 'temporary' : 'recurring' },
+                })
+              }
+              accessibilityLabel="タスクを追加"
+            />
           </View>
         )}
         <View
@@ -2108,12 +2171,12 @@ export default function TasksScreen() {
                 <Text style={[styles.helpTitle, contentTextStyle(content)]}>タスクの使い方</Text>
                 <Text style={[styles.helpBody, contentMutedTextStyle(content)]}>
                   ・普段の確認・チェックは「今日やる事」で行います。{'\n'}
-                  ・右上の「タスクの追加・編集」から定期・臨時を切り替え、追加や並び替えができます。{'\n'}
+                  ・右上の＋でタスクを追加します。初期は臨時です。一覧アイコンですべてのタスクを開き、定期・臨時の切り替えや並び替えができます。{'\n'}
                   ・今日やる事は要対応 / 自由対応 / 未完了 / 完了済みに分かれます。{'\n'}
                   ・要対応は「期限が今日以前の臨時タスク」と「今日必須の定期タスク」です。{'\n'}
                   ・必須は周期の対象日、自由は周期なし（記録のみ）です。{'\n'}
                   ・グループにも周期を付けられ、メンバー必須との OR でグループ必須になります。{'\n'}
-                  ・編集画面のグループ枠をタップすると、名前や周期を編集できます。{'\n'}
+                  ・グループの＋で、そのグループにタスクを追加できます。名前や周期は「編集」から変えられます。{'\n'}
                   ・編集画面はチェックなしの一覧です。項目を長押しし、グループへドロップすると所属を変えられます。未所属の箱へドロップするとグループから外れます。
                 </Text>
                 <Pressable style={styles.helpClose} onPress={() => setHelpVisible(false)}>
@@ -2125,12 +2188,12 @@ export default function TasksScreen() {
               <Text style={[styles.helpTitle, contentTextStyle(content)]}>タスクの使い方</Text>
               <Text style={[styles.helpBody, contentMutedTextStyle(content)]}>
                 ・普段の確認・チェックは「今日やる事」で行います。{'\n'}
-                ・右上の「タスクの追加・編集」から定期・臨時を切り替え、追加や並び替えができます。{'\n'}
+                ・右上の＋でタスクを追加します。初期は臨時です。一覧アイコンですべてのタスクを開き、定期・臨時の切り替えや並び替えができます。{'\n'}
                 ・今日やる事は要対応 / 自由対応 / 未完了 / 完了済みに分かれます。{'\n'}
                 ・要対応は「期限が今日以前の臨時タスク」と「今日必須の定期タスク」です。{'\n'}
                 ・必須は周期の対象日、自由は周期なし（記録のみ）です。{'\n'}
                 ・グループにも周期を付けられ、メンバー必須との OR でグループ必須になります。{'\n'}
-                ・編集画面のグループ枠をタップすると、名前や周期を編集できます。{'\n'}
+                ・グループの＋で、そのグループにタスクを追加できます。名前や周期は「編集」から変えられます。{'\n'}
                 ・編集画面はチェックなしの一覧です。項目を長押しし、グループへドロップすると所属を変えられます。未所属の箱へドロップするとグループから外れます。
               </Text>
               <Pressable style={styles.helpClose} onPress={() => setHelpVisible(false)}>
@@ -2204,11 +2267,6 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     gap: 12,
   },
-  fab: {
-    position: 'absolute',
-    right: 14,
-    bottom: 8,
-  },
   infoButton: {
     position: 'absolute',
     left: 14,
@@ -2248,21 +2306,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     flexShrink: 0,
   },
-  todayEditButton: {
+  todayHeaderActions: {
     marginLeft: 'auto',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-  },
-  todayEditButtonText: {
-    fontSize: 12,
-    fontWeight: '700',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   libraryBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  libraryTitle: {
+    flex: 1,
+    fontSize: 20,
+    fontWeight: '800',
+    minWidth: 0,
   },
   libraryBackBtn: {
     width: 32,
@@ -2272,7 +2331,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   librarySegment: {
-    flex: 1,
+    width: '25%',
+    flexGrow: 0,
+    flexShrink: 0,
     flexDirection: 'row',
     alignItems: 'center',
     borderWidth: 1,
@@ -2305,6 +2366,9 @@ const styles = StyleSheet.create({
   catalogGroupTitle: {
     fontSize: 16,
     fontWeight: '700',
+  },
+  catalogGroupAdd: {
+    marginRight: 6,
   },
   catalogGroupEditButton: {
     marginRight: 14,

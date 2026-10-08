@@ -57,6 +57,8 @@ export type Episode = {
   /** 出来事の時刻（HH:mm）。任意。未設定時は省略または null */
   time?: string | null;
   description: string;
+  /** 公開しても相手に渡さない文章。未設定時は空 */
+  privateMemo?: string;
   authorFriendId: string;
   visibilityMode: EpisodeVisibilityMode;
   participantEntries: EpisodeParticipant[];
@@ -130,6 +132,18 @@ export type Saying = {
   id: string;
   text: string;
   date: string;
+};
+
+export const PROFILE_MEMO_TAGS = ['habit', 'says'] as const;
+
+export type ProfileMemoTag = (typeof PROFILE_MEMO_TAGS)[number];
+
+/** 習性・メモ・彼曰くをまとめた1件 */
+export type ProfileMemo = {
+  id: string;
+  text: string;
+  date: string;
+  tags: ProfileMemoTag[];
 };
 
 export type MoneyLoanDirection = 'lent' | 'borrowed';
@@ -215,7 +229,7 @@ export type Profile = {
   personalities: string[];
   experiences: string[];
   traits: string[];
-  notes: string[];
+  notes: ProfileMemo[];
   likes: string[];
   dislikes: string[];
   episodes: Episode[];
@@ -254,7 +268,7 @@ export type Friend = {
   personalities: string[];
   experiences: string[];
   traits: string[];
-  notes: string[];
+  notes: ProfileMemo[];
   likes: string[];
   dislikes: string[];
   episodes: Episode[];

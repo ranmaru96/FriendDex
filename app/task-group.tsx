@@ -45,7 +45,7 @@ import {
 } from '@/utils/taskGroupHelpers';
 import { TaskRemindFields } from '@/components/task/TaskRemindFields';
 import { requestNotificationPermissionOnFirstCreate } from '@/utils/eventNotifications';
-import { DEFAULT_REMIND_TIME, clampRemindTimeToNow, syncTaskReminders } from '@/utils/taskNotifications';
+import { DEFAULT_REMIND_TIME, syncTaskReminders } from '@/utils/taskNotifications';
 import { useContentColors } from '@/utils/useContentColors';
 import {
   contentFilledButtonStyle,
@@ -234,7 +234,7 @@ export default function TaskGroupScreen() {
       recurrenceUnit: group.recurrenceUnit,
       recurrenceConfig: group.recurrenceConfig,
       remindEnabled: enabled,
-      remindTime: enabled ? clampRemindTimeToNow(time || DEFAULT_REMIND_TIME) : null,
+      remindTime: enabled ? time.trim() || DEFAULT_REMIND_TIME : null,
     });
     const loaded = getTaskGroup(group.id);
     if (loaded) {
@@ -636,7 +636,7 @@ export default function TaskGroupScreen() {
               onEnabledChange={(value) =>
                 persistGroupRemind(
                   value,
-                  clampRemindTimeToNow(group.remindTime ?? DEFAULT_REMIND_TIME)
+                  group.remindTime ?? DEFAULT_REMIND_TIME
                 )
               }
               onDaysBeforeChange={() => undefined}

@@ -48,6 +48,8 @@ const widgetFamilies = [
   "accessoryInline",
 ];
 
+const todayScheduleFamilies = widgetFamilies.filter((family) => family !== "systemLarge");
+
 export default {
   expo: {
     name: getAppName(),
@@ -59,9 +61,9 @@ export default {
     newArchEnabled: true,
     scheme: appSchemes.length === 1 ? appSchemes[0] : appSchemes,
     splash: {
-      image: "./assets/splash-icon.png",
+      image: "./assets/splash-friend-dex.png",
       resizeMode: "contain",
-      backgroundColor: "#ffffff"
+      backgroundColor: "#000000"
     },
     ios: {
       bundleIdentifier: getUniqueIdentifier(),
@@ -115,25 +117,8 @@ export default {
               displayName: "今日の予定",
               description: "今日の予定を表示します",
               ios: {
-                supportedFamilies: widgetFamilies,
+                supportedFamilies: todayScheduleFamilies,
                 contentMarginsDisabled: true,
-                configuration: {
-                  title: "表示内容",
-                  description: "ウィジェットに表示する内容を選びます",
-                  parameters: {
-                    content: {
-                      title: "表示内容",
-                      type: "enum",
-                      default: "schedule",
-                      values: [
-                        { name: "予定", value: "schedule" },
-                        { name: "タスク", value: "tasks" },
-                        { name: "予定とタスク", value: "both" },
-                        { name: "予備", value: "reserve" },
-                      ],
-                    },
-                  },
-                },
               },
             },
             {

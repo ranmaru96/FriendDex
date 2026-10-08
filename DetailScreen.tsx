@@ -18,6 +18,8 @@ import {
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { deletePersonFormDraft, readPersonFormDraft, serializePersonFriend } from '@/utils/personFormDraft';
+import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
@@ -45,6 +47,7 @@ import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { usesOffsetChrome } from '@/constants/designPatterns';
 import { useAppTheme } from './contexts/AppThemeContext';
 import { createDetailStyles } from './utils/detailStyles';
+import { getMbtiTagColors } from '@/utils/mbtiTagColors';
 import { bridgeDetailBundleForAppTheme } from '@/utils/bridgeDetailForAppTheme';
 import { useContentColors } from '@/utils/useContentColors';
 import { dismissKeyboardFocus } from '@/utils/dismissKeyboardFocus';
@@ -53,6 +56,11 @@ import { contentDateTimePickerProps } from '@/utils/contentStyleHelpers';
 import { useKeyboardBottomInset } from '@/utils/useKeyboardBottomInset';
 import { deletePersistedImages } from '@/utils/persistImageFile';
 import { computeProfileCompleteness } from '@/utils/profileCompleteness';
+import {
+  countHabitSayingMemos,
+  createProfileMemo,
+  PROFILE_MEMO_TAG_LABEL,
+} from '@/utils/profileMemos';
 import {
   friendHasBothPhotos,
   resolveFriendDisplayPhotoUri,
@@ -63,8 +71,6 @@ import {
 } from '@/utils/friendDefaultSort';
 import {
   createEpisode,
-  createSayings,
-  deleteSaying,
   deleteEpisode,
   getDistinctAffiliations,
   getDistinctExperiences,
@@ -83,7 +89,6 @@ import {
   setFriendPhotoSource,
   updateFriend,
   updateEpisode,
-  updateSaying,
 } from './db';
 import { scheduleFriendProfileSync } from '@/lib/identityProfileSync';
 import { scheduleOwnedEpisodeDelete } from '@/lib/ownedEpisodeSync';
@@ -93,7 +98,8 @@ import {
   Episode,
   Friend,
   Profile,
-  Saying,
+  ProfileMemo,
+  ProfileMemoTag,
 } from './types';
 import {
   buildParticipantChips,
@@ -126,37 +132,16 @@ import { registerSavedEpisodeTag } from './utils/episodeTagMaster';
 
 const DETAIL_SLIDE_MS = 260;
 
-const NOTE_TAB_COPY = {
-  習性: {
-    label: 'habit（習性）',
-    body: 'この人の癖や口癖、習慣',
-    placeholder: '癖や口癖、習慣',
-    empty: '登録済みの習性はありません。',
-    emptyNone: 'この人の癖や口癖、習慣はまだありません。',
-    emptyMiss: '該当する習性はありません。',
-    required: '習性を入力してください。',
-  },
-  メモ: {
-    label: 'note（メモ）',
-    body: 'この人に関するその他の情報',
-    placeholder: 'メモ',
-    empty: '登録済みのメモはありません。',
-    emptyNone: 'この人に関するその他の情報はまだありません。',
-    emptyMiss: '該当するメモはありません。',
-    required: 'メモを入力してください。',
-  },
-  彼曰く: {
-    label: 'says（彼曰く）',
-    body: 'この人の言っていたこと',
-    placeholder: '言っていたこと',
-    empty: '登録済みの彼曰くはありません。',
-    emptyNone: 'この人の言っていたことはまだありません。',
-    emptyMiss: '該当する彼曰くはありません。',
-    required: '本文を入力してください。',
-  },
-} as const;
+const MEMO_TAG_OPTIONS: ProfileMemoTag[] = ['habit', 'says'];
 
-type NoteTabCopyKey = keyof typeof NOTE_TAB_COPY;
+const MEMO_KIND_ICON = {
+  note: { name: 'notebook', color: '#8b5fd4' },
+  habit: { name: 'cat', color: '#3a9d5a' },
+  says: { name: 'comment-account-outline', color: '#d44a4a' },
+} as const satisfies Record<
+  'note' | ProfileMemoTag,
+  { name: ComponentProps<typeof MaterialCommunityIcons>['name']; color: string }
+>;
 
 const episodeIsIncomingShared = (episode: Episode): boolean =>
   parseIncomingSharedEpisodeId(episode.id) != null;
@@ -309,8 +294,8 @@ const buildAdjacentSlideSnapshot = (
   return {
     friend,
     activeTab,
-    habitCount: options?.habitCount ?? friend.traits.length,
-    sayingCount: friend.sayings.length,
+    habitCount: options?.habitCount ?? countHabitSayingMemos(friend.notes),
+    sayingCount: 0,
     sinceYear: options?.sinceYear ?? getEpisodeSinceYear(friend),
     recentMeetingLabel:
       options?.recentMeetingLabel ??
@@ -485,6 +470,21 @@ function getHeroPhotoChrome(
         : null,
     media: null as ImageStyle | null,
   };
+}
+
+function HeroMbtiTag({
+  mbti,
+  styles,
+}: {
+  mbti: string;
+  styles: ReturnType<typeof createDetailStyles>;
+}) {
+  const colors = getMbtiTagColors(mbti);
+  return (
+    <View style={[styles.heroTagMbti, colors ? { backgroundColor: colors.backgroundColor } : null]}>
+      <Text style={[styles.heroTagMbtiText, colors ? { color: colors.color } : null]}>{mbti}</Text>
+    </View>
+  );
 }
 
 function DetailAdjacentSlidePanel({
@@ -702,14 +702,9 @@ function DetailAdjacentSlidePanel({
                     <Text style={styles.heroName} numberOfLines={2}>
                       {friend.name}
                     </Text>
-                    {friend.nickname.trim() || friend.importSource === 'qr_scan' ? (
+                    {friend.nickname.trim() ? (
                       <View style={styles.heroNicknameRow}>
-                        {friend.nickname.trim() ? (
-                          <Text style={styles.heroNickname}>{friend.nickname}</Text>
-                        ) : null}
-                        {friend.importSource === 'qr_scan' ? (
-                          <Ionicons name="qr-code-outline" size={14} color={c.textMuted} />
-                        ) : null}
+                        <Text style={styles.heroNickname}>{friend.nickname}</Text>
                       </View>
                     ) : null}
                   </View>
@@ -731,11 +726,7 @@ function DetailAdjacentSlidePanel({
                 ) : null}
                 {friend.mbti || birthdayLabel || friend.category.trim() ? (
                   <View style={styles.heroTagRow}>
-                    {friend.mbti ? (
-                      <View style={styles.heroTagMbti}>
-                        <Text style={styles.heroTagMbtiText}>{friend.mbti}</Text>
-                      </View>
-                    ) : null}
+                    {friend.mbti ? <HeroMbtiTag mbti={friend.mbti} styles={styles} /> : null}
                     {birthdayLabel ? (
                       <View style={styles.heroTagBirthday}>
                         <Text style={styles.heroTagBirthdayText}>{birthdayLabel}</Text>
@@ -901,17 +892,14 @@ export default function DetailScreen() {
   const [episodeScrollTargetId, setEpisodeScrollTargetId] = useState<string | null>(null);
   const episodeScrollRetryRef = useRef(0);
   const detailScrollOffsetRef = useRef(0);
-  const [habitNotes, setHabitNotes] = useState<string[]>([]);
-  const [memoNotes, setMemoNotes] = useState<string[]>([]);
-  const [noteSearchByTab, setNoteSearchByTab] = useState<Record<NoteTabCopyKey, string>>({
-    習性: '',
-    メモ: '',
-    彼曰く: '',
-  });
-  const [isHabitFormVisible, setIsHabitFormVisible] = useState(false);
-  const [editingHabitIndex, setEditingHabitIndex] = useState<number | null>(null);
-  const [habitText, setHabitText] = useState('');
-  const [habitFormError, setHabitFormError] = useState('');
+  const [profileMemos, setProfileMemos] = useState<ProfileMemo[]>([]);
+  const [memoSearch, setMemoSearch] = useState('');
+  const [isMemoFormVisible, setIsMemoFormVisible] = useState(false);
+  const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
+  const [memoText, setMemoText] = useState('');
+  const [memoDate, setMemoDate] = useState('');
+  const [memoTags, setMemoTags] = useState<ProfileMemoTag[]>([]);
+  const [memoFormError, setMemoFormError] = useState('');
   const [allFriends, setAllFriends] = useState<Friend[]>([]);
   const [filterSelectorVisible, setFilterSelectorVisible] = useState(false);
   const [filterSelectorTab, setFilterSelectorTab] = useState<'individual' | 'group'>('individual');
@@ -931,39 +919,24 @@ export default function DetailScreen() {
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [episodeTagOptions, setEpisodeTagOptions] = useState<Option[]>([]);
-  const [isSayingFormVisible, setIsSayingFormVisible] = useState(false);
-  const [editingSayingId, setEditingSayingId] = useState<string | null>(null);
-  const [sayingText, setSayingText] = useState('');
-  const [sayingDate, setSayingDate] = useState('');
-  const [sayingFormError, setSayingFormError] = useState('');
-  const [showSayingDatePicker, setShowSayingDatePicker] = useState(false);
+  const [showMemoDatePicker, setShowMemoDatePicker] = useState(false);
   const [noteComposerFocused, setNoteComposerFocused] = useState(false);
   const noteComposerRef = useRef<View>(null);
-  useDismissPickerOnKeyboardShow(showSayingDatePicker, () => setShowSayingDatePicker(false));
+  useDismissPickerOnKeyboardShow(showMemoDatePicker, () => setShowMemoDatePicker(false));
 
-  const closeHabitForm = () => {
+  const closeMemoForm = () => {
     dismissKeyboardFocus();
     setNoteComposerFocused(false);
-    setIsHabitFormVisible(false);
-    setEditingHabitIndex(null);
-    setHabitText('');
-    setHabitFormError('');
+    setIsMemoFormVisible(false);
+    setEditingMemoId(null);
+    setMemoText('');
+    setMemoDate('');
+    setMemoTags([]);
+    setMemoFormError('');
+    setShowMemoDatePicker(false);
   };
 
-  const closeSayingForm = () => {
-    dismissKeyboardFocus();
-    setNoteComposerFocused(false);
-    setIsSayingFormVisible(false);
-    setEditingSayingId(null);
-    setSayingText('');
-    setSayingDate('');
-    setSayingFormError('');
-    setShowSayingDatePicker(false);
-  };
-
-  const noteComposerOpen =
-    ((activeTab === '習性' || activeTab === 'メモ') && isHabitFormVisible) ||
-    (activeTab === '彼曰く' && isSayingFormVisible);
+  const noteComposerOpen = activeTab === 'メモ' && isMemoFormVisible;
   const setSuppressBottomNav = sharedHeaderApi?.setSuppressBottomNav;
 
   useEffect(() => {
@@ -1009,6 +982,10 @@ export default function DetailScreen() {
 
   useEffect(() => {
     const raw = Array.isArray(params.tab) ? params.tab[0] : params.tab;
+    if (raw === '習性' || raw === '彼曰く') {
+      setActiveTab('メモ');
+      return;
+    }
     if (raw && (DETAIL_TAB_KEYS as readonly string[]).includes(raw)) {
       setActiveTab(raw as DetailTabKey);
     }
@@ -1090,6 +1067,39 @@ export default function DetailScreen() {
     }, [reloadDetailDesign])
   );
 
+  const personEditDraftPromptLock = useRef(false);
+  useFocusEffect(
+    useCallback(() => {
+      const id = friendId.trim();
+      if (!id || personEditDraftPromptLock.current) {
+        return;
+      }
+      const loaded = getFriendById(id);
+      const stored = readPersonFormDraft(id);
+      if (!loaded || !stored) {
+        return;
+      }
+      if (stored.base !== serializePersonFriend(loaded)) {
+        deletePersonFormDraft(id);
+        return;
+      }
+      personEditDraftPromptLock.current = true;
+      promptFormDraftRestore({
+        onRestore: () => {
+          personEditDraftPromptLock.current = false;
+          router.push({ pathname: '/edit', params: { id, draft: '1' } });
+        },
+        onDecline: () => {
+          personEditDraftPromptLock.current = false;
+          deletePersonFormDraft(id);
+        },
+        onDismiss: () => {
+          personEditDraftPromptLock.current = false;
+        },
+      });
+    }, [friendId, router])
+  );
+
   const navigateHome = useCallback(() => {
     popCurrentTabScreen();
   }, []);
@@ -1130,9 +1140,7 @@ export default function DetailScreen() {
     setProfiles(loadedProfiles);
     setMyselfId(currentMyselfId);
     setProfileImageStatus(loaded && resolveFriendDisplayPhotoUri(loaded) ? 'pending' : 'none');
-    const loadedTraits = loaded?.traits ?? [];
-    setHabitNotes(loadedTraits);
-    setMemoNotes(loaded?.notes ?? []);
+    setProfileMemos(loaded?.notes ?? []);
     setAllFriends(getAllFriendsInDefaultOrder());
     setAffiliationOptions(getDistinctAffiliations().map((v) => ({ label: v, value: v })));
     setExperienceOptions(getDistinctExperiences().map((v) => ({ label: v, value: v })));
@@ -1195,20 +1203,17 @@ export default function DetailScreen() {
     dismissKeyboardFocus();
     setNoteComposerFocused(false);
     setActiveTab('エピソード');
-    setIsHabitFormVisible(false);
-    setEditingHabitIndex(null);
-    setHabitText('');
-    setHabitFormError('');
+    setIsMemoFormVisible(false);
+    setEditingMemoId(null);
+    setMemoText('');
+    setMemoDate('');
+    setMemoTags([]);
+    setMemoFormError('');
     setIsEpisodeFormVisible(false);
     setFilterSelectorVisible(false);
     episodeForm.flushDraft();
     episodeForm.reset();
-    setIsSayingFormVisible(false);
-    setEditingSayingId(null);
-    setSayingText('');
-    setSayingDate('');
-    setSayingFormError('');
-    setShowSayingDatePicker(false);
+    setShowMemoDatePicker(false);
   }, [friendId, episodeForm.flushDraft, episodeForm.reset]);
 
   const friendNameById = useMemo(() => {
@@ -1319,15 +1324,14 @@ export default function DetailScreen() {
   }, [episodeScrollTargetId, filteredEpisodes, isEpisodeTab, personEpisodeFiltersActive]);
 
 
-  const sortedSayings = useMemo(() => {
-    if (!friend) return [];
-    return [...friend.sayings].sort((a, b) => {
+  const sortedMemos = useMemo(() => {
+    return [...profileMemos].sort((a, b) => {
       if (!a.date && !b.date) return 0;
       if (!a.date) return -1;
       if (!b.date) return 1;
       return b.date.localeCompare(a.date);
     });
-  }, [friend]);
+  }, [profileMemos]);
 
   const heroBirthdayLabel = useMemo(() => {
     if (!friend?.birthday.trim()) {
@@ -1390,7 +1394,6 @@ export default function DetailScreen() {
       pendingCommitTargetIdRef.current = targetId;
       setAdjacentTransition({
         outgoing: buildAdjacentSlideSnapshot(friend, activeTab, {
-          habitCount: habitNotes.length,
           sinceYear,
           englishRecentMeeting: recentMeetingEnglish,
           showRecentMeeting: friend.id !== myselfId,
@@ -1410,7 +1413,6 @@ export default function DetailScreen() {
       activeTab,
       friend,
       friendNameById,
-      habitNotes.length,
       recentMeetingEnglish,
       myselfId,
       profileImageStatus,
@@ -1573,84 +1575,17 @@ export default function DetailScreen() {
     scheduleFriendProfileSync(id);
   };
 
-  const handleSaveSayings = () => {
-    const text = sayingText.trim();
-    const date = sayingDate.trim();
-    if (!text) {
-      setSayingFormError(NOTE_TAB_COPY.彼曰く.required);
-      return;
-    }
-    if (editingSayingId) {
-      const updated = updateSaying(friendId, editingSayingId, { text, date });
-      if (!updated) {
-        setSayingFormError('彼曰くの更新に失敗しました。');
-        return;
-      }
-    } else {
-      const created = createSayings(friendId, [{ text, date }]);
-      if (created.length === 0) {
-        setSayingFormError('彼曰くの登録に失敗しました。');
-        return;
-      }
-    }
-
-    setSayingFormError('');
-    closeSayingForm();
-    loadFriend();
-    notifyMyselfSync(friendId);
-  };
-
-  const startCreateSaying = () => {
-    setSayingFormError('');
-    setEditingSayingId(null);
-    setSayingText('');
-    setSayingDate('');
-    setIsSayingFormVisible(true);
-  };
-
-  const startEditSaying = (saying: Saying) => {
-    setSayingFormError('');
-    setEditingSayingId(saying.id);
-    setSayingText(saying.text);
-    setSayingDate(saying.date);
-    setIsSayingFormVisible(true);
-  };
-
-  const handleDeleteSaying = (sayingId: string) => {
-    Alert.alert('確認', '本当に削除しますか？', [
-      { text: 'キャンセル', style: 'cancel' },
-      {
-        text: '削除',
-        style: 'destructive',
-        onPress: () => {
-          const deleted = deleteSaying(friendId, sayingId);
-          if (!deleted) {
-            setSayingFormError('彼曰くの削除に失敗しました。');
-            return;
-          }
-          if (editingSayingId === sayingId) {
-            setIsSayingFormVisible(false);
-            setEditingSayingId(null);
-            setSayingText('');
-            setSayingDate('');
-          }
-          loadFriend();
-          notifyMyselfSync(friendId);
-        },
-      },
-    ]);
-  };
-
-  const persistFriendArrays = (patch: { traits?: string[]; notes?: string[] }) => {
+  const persistMemos = (nextMemos: ProfileMemo[]) => {
     if (!friend) {
-      return;
+      return false;
     }
-    const normalizedTraits = (patch.traits ?? friend.traits)
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
-    const normalizedNotes = (patch.notes ?? friend.notes ?? [])
-      .map((item) => item.trim())
-      .filter((item) => item.length > 0);
+    const normalized = nextMemos
+      .map((memo) => ({
+        ...memo,
+        text: memo.text.trim(),
+        date: memo.date.trim(),
+      }))
+      .filter((memo) => memo.text.length > 0);
     const success = updateFriend(friend.id, {
       name: friend.name,
       familyName: friend.familyName,
@@ -1668,29 +1603,92 @@ export default function DetailScreen() {
       affiliations: friend.affiliations,
       personalities: friend.personalities,
       experiences: friend.experiences,
-      traits: normalizedTraits,
-      notes: normalizedNotes,
+      traits: friend.traits,
+      notes: normalized,
       likes: friend.likes,
       dislikes: friend.dislikes,
       episodes: friend.episodes,
       sayings: friend.sayings,
     });
-    if (success) {
-      setHabitNotes(normalizedTraits);
-      setMemoNotes(normalizedNotes);
-      setFriend((prev) =>
-        prev ? { ...prev, traits: normalizedTraits, notes: normalizedNotes } : prev
-      );
-      notifyMyselfSync(friend.id);
+    if (!success) {
+      return false;
     }
+    setProfileMemos(normalized);
+    setFriend((prev) => (prev ? { ...prev, notes: normalized } : prev));
+    notifyMyselfSync(friend.id);
+    return true;
   };
 
-  const persistTraits = (nextTraits: string[]) => {
-    persistFriendArrays({ traits: nextTraits });
+  const toggleMemoTag = (tag: ProfileMemoTag) => {
+    setMemoTags((prev) => (prev[0] === tag ? [] : [tag]));
   };
 
-  const persistNotes = (nextNotes: string[]) => {
-    persistFriendArrays({ notes: nextNotes });
+  const startCreateMemo = () => {
+    setMemoFormError('');
+    setEditingMemoId(null);
+    setMemoText('');
+    setMemoDate('');
+    setMemoTags([]);
+    setShowMemoDatePicker(false);
+    setIsMemoFormVisible(true);
+  };
+
+  const startEditMemo = (memo: ProfileMemo) => {
+    setMemoFormError('');
+    setEditingMemoId(memo.id);
+    setMemoText(memo.text);
+    setMemoDate(memo.date);
+    setMemoTags(memo.tags.slice(0, 1));
+    setShowMemoDatePicker(false);
+    setIsMemoFormVisible(true);
+  };
+
+  const handleSaveMemo = () => {
+    const text = memoText.trim();
+    if (!text) {
+      setMemoFormError('メモを入力してください。');
+      return;
+    }
+    const next = [...profileMemos];
+    if (editingMemoId) {
+      const index = next.findIndex((memo) => memo.id === editingMemoId);
+      if (index < 0) {
+        setMemoFormError('メモの更新に失敗しました。');
+        return;
+      }
+      next[index] = {
+        ...next[index],
+        text,
+        date: memoDate.trim(),
+        tags: memoTags,
+      };
+    } else {
+      next.push(createProfileMemo({ text, date: memoDate, tags: memoTags }));
+    }
+    if (!persistMemos(next)) {
+      setMemoFormError('メモの保存に失敗しました。');
+      return;
+    }
+    closeMemoForm();
+  };
+
+  const handleDeleteMemo = (memoId: string) => {
+    Alert.alert('確認', '本当に削除しますか？', [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '削除',
+        style: 'destructive',
+        onPress: () => {
+          if (!persistMemos(profileMemos.filter((memo) => memo.id !== memoId))) {
+            setMemoFormError('メモの削除に失敗しました。');
+            return;
+          }
+          if (editingMemoId === memoId) {
+            closeMemoForm();
+          }
+        },
+      },
+    ]);
   };
 
   const persistHeroPhoto = (nextPhotoUri: string | null) => {
@@ -1781,105 +1779,13 @@ export default function DetailScreen() {
     setProfileImageStatus('pending');
   };
 
-  const activeNoteItems = activeTab === 'メモ' ? memoNotes : habitNotes;
-  const activeNoteTabKey: NoteTabCopyKey = activeTab === 'メモ' ? 'メモ' : '習性';
-  const visibleNoteItems = useMemo(() => {
-    const items = activeNoteItems.map((text, index) => ({ text, index }));
-    return items.filter((item) => textMatchesQuery(item.text, noteSearchByTab[activeNoteTabKey]));
-  }, [activeNoteItems, activeNoteTabKey, noteSearchByTab]);
-  const visibleSayings = useMemo(() => {
-    return sortedSayings.filter((saying) =>
-      textMatchesQuery(`${saying.text} ${saying.date}`, noteSearchByTab.彼曰く)
-    );
-  }, [noteSearchByTab, sortedSayings]);
-
-  const startCreateHabit = () => {
-    setIsHabitFormVisible(true);
-    setEditingHabitIndex(null);
-    setHabitText('');
-    setHabitFormError('');
-  };
-
-  const startEditHabit = (index: number) => {
-    setIsHabitFormVisible(true);
-    setEditingHabitIndex(index);
-    setHabitText(activeNoteItems[index] ?? '');
-    setHabitFormError('');
-  };
-
-  const handleSaveHabit = () => {
-    const text = habitText.trim();
-    if (!text) {
-      setHabitFormError(
-        activeTab === 'メモ' ? NOTE_TAB_COPY.メモ.required : NOTE_TAB_COPY.習性.required
-      );
-      return;
-    }
-    const next = [...activeNoteItems];
-    if (editingHabitIndex === null) {
-      next.push(text);
-    } else {
-      next[editingHabitIndex] = text;
-    }
-    if (activeTab === 'メモ') {
-      setMemoNotes(next);
-      persistNotes(next);
-    } else {
-      setHabitNotes(next);
-      persistTraits(next);
-    }
-    closeHabitForm();
-  };
-
-  const handleDeleteHabit = (index: number) => {
-    Alert.alert('確認', '本当に削除しますか？', [
-      { text: 'キャンセル', style: 'cancel' },
-      {
-        text: '削除',
-        style: 'destructive',
-        onPress: () => {
-          const next = activeNoteItems.filter((_, itemIndex) => itemIndex !== index);
-          if (activeTab === 'メモ') {
-            setMemoNotes(next);
-            persistNotes(next);
-          } else {
-            setHabitNotes(next);
-            persistTraits(next);
-          }
-          if (editingHabitIndex === index) {
-            setIsHabitFormVisible(false);
-            setEditingHabitIndex(null);
-            setHabitText('');
-            setHabitFormError('');
-          }
-        },
-      },
-    ]);
-  };
-
-  const renderNoteTabHeader = (
-    tabKey: NoteTabCopyKey,
-    isOpen: boolean,
-    addLabel: string,
-    onAddPress: () => void
-  ) => (
-    <View style={styles.episodeToolbarRow}>
-      <TextInput
-        style={[styles.episodeFilterField, styles.episodeTitleFilterField]}
-        placeholder="検索"
-        placeholderTextColor={c.inputPlaceholder}
-        value={noteSearchByTab[tabKey]}
-        onChangeText={(value) =>
-          setNoteSearchByTab((prev) => ({ ...prev, [tabKey]: value }))
-        }
-        returnKeyType="search"
-        blurOnSubmit
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <DetailTabAddButton isOpen={isOpen} addLabel={addLabel} onPress={onAddPress} />
-    </View>
-  );
+  const visibleMemos = useMemo(() => {
+    const query = memoSearch.trim();
+    return sortedMemos.filter((memo) => {
+      const tagLabel = memo.tags.map((tag) => PROFILE_MEMO_TAG_LABEL[tag]).join(' ');
+      return textMatchesQuery(`${memo.text} ${memo.date} ${tagLabel}`, query);
+    });
+  }, [memoSearch, sortedMemos]);
 
   const resetEpisodeForm = () => {
     episodeForm.reset();
@@ -2655,14 +2561,9 @@ export default function DetailScreen() {
                   <Text style={styles.heroName} numberOfLines={2}>
                     {friend.name}
                   </Text>
-                  {(friend.nickname.trim() || friend.importSource === 'qr_scan') ? (
+                  {friend.nickname.trim() ? (
                     <View style={styles.heroNicknameRow}>
-                      {friend.nickname.trim() ? (
-                        <Text style={styles.heroNickname}>{friend.nickname}</Text>
-                      ) : null}
-                      {friend.importSource === 'qr_scan' ? (
-                        <Ionicons name="qr-code-outline" size={14} color={c.textMuted} />
-                      ) : null}
+                      <Text style={styles.heroNickname}>{friend.nickname}</Text>
                     </View>
                   ) : null}
                 </View>
@@ -2735,11 +2636,7 @@ export default function DetailScreen() {
               ) : null}
               {friend.mbti || heroBirthdayLabel || friend.category.trim() ? (
                 <View style={styles.heroTagRow}>
-                  {friend.mbti ? (
-                    <View style={styles.heroTagMbti}>
-                      <Text style={styles.heroTagMbtiText}>{friend.mbti}</Text>
-                    </View>
-                  ) : null}
+                  {friend.mbti ? <HeroMbtiTag mbti={friend.mbti} styles={styles} /> : null}
                   {heroBirthdayLabel ? (
                     <View style={styles.heroTagBirthday}>
                       <Text style={styles.heroTagBirthdayText}>{heroBirthdayLabel}</Text>
@@ -2769,7 +2666,7 @@ export default function DetailScreen() {
             <View style={styles.heroStatCell}>
               <Text style={styles.heroStatLabel}>habits + says</Text>
               <View style={styles.heroStatValueRow}>
-                <Text style={styles.heroStatValue}>{habitNotes.length + sortedSayings.length}</Text>
+                <Text style={styles.heroStatValue}>{countHabitSayingMemos(friend.notes)}</Text>
                 <Text style={styles.heroStatUnit}>件</Text>
               </View>
             </View>
@@ -2816,7 +2713,7 @@ export default function DetailScreen() {
               onTabPress={(key) => {
                 dismissKeyboardFocus();
                 if (key !== activeTab) {
-                  closeHabitForm();
+                  closeMemoForm();
                 }
                 setActiveTab(key);
               }}
@@ -2842,7 +2739,7 @@ export default function DetailScreen() {
                     onPress={() => {
                       dismissKeyboardFocus();
                       if (tab.key !== activeTab) {
-                        closeHabitForm();
+                        closeMemoForm();
                       }
                       setActiveTab(tab.key);
                     }}
@@ -2990,148 +2887,97 @@ export default function DetailScreen() {
             </OptionalOffsetCard>
           )}
 
-          {(activeTab === '習性' || activeTab === 'メモ') && (
+          {activeTab === 'メモ' && (
             <View
               style={[
                 styles.noteTabContentFrame,
-                isHabitFormVisible ? styles.noteTabPaneWithForm : null,
+                isMemoFormVisible ? styles.noteTabPaneWithForm : null,
               ]}
             >
-            {renderNoteTabHeader(
-              activeNoteTabKey,
-              isHabitFormVisible && editingHabitIndex === null,
-              activeTab === 'メモ' ? 'メモを追加' : '習性を追加',
-              () => {
-                if (isHabitFormVisible && editingHabitIndex === null) {
-                  closeHabitForm();
-                } else {
-                  startCreateHabit();
-                }
-              }
-            )}
+            <View style={styles.episodeToolbarRow}>
+              <TextInput
+                style={[styles.episodeFilterField, styles.episodeTitleFilterField]}
+                placeholder="検索"
+                placeholderTextColor={c.inputPlaceholder}
+                value={memoSearch}
+                onChangeText={setMemoSearch}
+                returnKeyType="search"
+                blurOnSubmit
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <DetailTabAddButton
+                isOpen={isMemoFormVisible && editingMemoId === null}
+                addLabel="メモを追加"
+                onPress={() => {
+                  if (isMemoFormVisible && editingMemoId === null) {
+                    closeMemoForm();
+                  } else {
+                    startCreateMemo();
+                  }
+                }}
+              />
+            </View>
 
-            {isHabitFormVisible ? (
+            {isMemoFormVisible ? (
               <View ref={noteComposerRef} style={styles.sayingFormCard}>
                 <TextInput
                   style={styles.sayingTextInput}
-                  placeholder={
-                    activeTab === 'メモ'
-                      ? NOTE_TAB_COPY.メモ.placeholder
-                      : NOTE_TAB_COPY.習性.placeholder
-                  }
+                  placeholder="メモ"
                   placeholderTextColor={c.inputPlaceholder}
                   multiline
-                  value={habitText}
-                  onChangeText={setHabitText}
+                  value={memoText}
+                  onChangeText={setMemoText}
                   onFocus={() => setNoteComposerFocused(true)}
                   onBlur={() => setNoteComposerFocused(false)}
                 />
-                {habitFormError ? <Text style={styles.episodeErrorText}>{habitFormError}</Text> : null}
-                <View style={styles.noteComposerActions}>
-                  <View style={styles.noteComposerBtnWrap}>
-                    <Pressable style={styles.noteComposerGhost} onPress={closeHabitForm}>
+                <View style={styles.memoComposerRow}>
+                  <Pressable
+                    style={styles.memoComposerDate}
+                    onPress={() => {
+                      dismissKeyboardFocus();
+                      if (!memoDate) {
+                        setMemoDate(formatDateToYMD(new Date()));
+                      }
+                      setShowMemoDatePicker(true);
+                    }}
+                  >
+                    <Text
+                      numberOfLines={1}
+                      style={memoDate ? styles.memoComposerDateText : styles.memoComposerDatePlaceholder}
+                    >
+                      {memoDate || 'yyyy-mm-dd'}
+                    </Text>
+                  </Pressable>
+                  {MEMO_TAG_OPTIONS.map((tag) => {
+                    const selected = memoTags.includes(tag);
+                    return (
+                      <Pressable
+                        key={tag}
+                        style={[styles.memoTag, styles.memoComposerTag, selected ? styles.memoTagOn : null]}
+                        onPress={() => toggleMemoTag(tag)}
+                      >
+                        <Text style={[styles.memoTagText, selected ? styles.memoTagTextOn : null]}>
+                          {PROFILE_MEMO_TAG_LABEL[tag]}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                  <View style={styles.memoComposerActions}>
+                    <Pressable style={[styles.noteComposerGhost, styles.memoComposerButton]} onPress={closeMemoForm}>
                       <Text style={styles.noteComposerGhostText}>閉じる</Text>
                     </Pressable>
-                  </View>
-                  <View style={styles.noteComposerBtnWrap}>
-                    <Pressable style={styles.noteComposerPrimary} onPress={handleSaveHabit}>
+                    <Pressable style={[styles.noteComposerPrimary, styles.memoComposerButton]} onPress={handleSaveMemo}>
                       <Text style={styles.noteComposerPrimaryText}>
-                        {editingHabitIndex != null ? '更新' : '登録'}
+                        {editingMemoId ? '更新' : '登録'}
                       </Text>
                     </Pressable>
                   </View>
                 </View>
-              </View>
-            ) : null}
-
-            {visibleNoteItems.length === 0 ? (
-              <Text style={styles.emptyEpisodeText}>
-                {activeNoteItems.length === 0
-                  ? NOTE_TAB_COPY[activeNoteTabKey].emptyNone
-                  : NOTE_TAB_COPY[activeNoteTabKey].emptyMiss}
-              </Text>
-            ) : (
-              <View style={isCodex ? { gap: kit.episodeListCardGap } : undefined}>
-              {visibleNoteItems.map((item) => (
-                <OptionalOffsetCard key={`${activeTab}-${item.index}`} enabled={isCodex}>
-                <Pressable
-                  style={[
-                    styles.habitCard,
-                    isCodex
-                      ? {
-                          borderWidth: 0,
-                          backgroundColor: 'transparent',
-                          borderRadius: 0,
-                          marginBottom: 0,
-                        }
-                      : null,
-                  ]}
-                  onPress={() => startEditHabit(item.index)}
-                  onLongPress={() => handleDeleteHabit(item.index)}
-                  delayLongPress={300}
-                >
-                  <View style={styles.habitCardAccent} />
-                  <Text style={styles.habitCardText}>
-                    {item.text}
-                  </Text>
-                </Pressable>
-                </OptionalOffsetCard>
-              ))}
-              </View>
-            )}
-            </View>
-          )}
-
-          {activeTab === '彼曰く' && (
-            <View
-              style={[
-                styles.noteTabContentFrame,
-                isSayingFormVisible ? styles.noteTabPaneWithForm : null,
-              ]}
-            >
-            {renderNoteTabHeader(
-              '彼曰く',
-              isSayingFormVisible && !editingSayingId,
-              '彼曰くを追加',
-              () => {
-                if (isSayingFormVisible && !editingSayingId) {
-                  closeSayingForm();
-                } else {
-                  startCreateSaying();
-                }
-              }
-            )}
-
-            {isSayingFormVisible ? (
-              <View ref={noteComposerRef} style={styles.sayingFormCard}>
-                <TextInput
-                  style={styles.sayingTextInput}
-                  placeholder={NOTE_TAB_COPY.彼曰く.placeholder}
-                  placeholderTextColor={c.inputPlaceholder}
-                  multiline
-                  value={sayingText}
-                  onChangeText={setSayingText}
-                  onFocus={() => setNoteComposerFocused(true)}
-                  onBlur={() => setNoteComposerFocused(false)}
-                />
-                <Pressable
-                  style={styles.sayingDateInput}
-                  onPress={() => {
-                    dismissKeyboardFocus();
-                    if (!sayingDate) {
-                      setSayingDate(formatDateToYMD(new Date()));
-                    }
-                    setShowSayingDatePicker(true);
-                  }}
-                >
-                  <Text style={sayingDate ? styles.episodeDateText : styles.episodeDatePlaceholder}>
-                    {sayingDate || '日付（任意）'}
-                  </Text>
-                </Pressable>
-                {showSayingDatePicker ? (
+                {showMemoDatePicker ? (
                   <View style={styles.datePickerWrap}>
                     <DateTimePicker
-                      value={parseDateString(sayingDate)}
+                      value={parseDateString(memoDate)}
                       mode="date"
                       display="spinner"
                       locale="ja-JP"
@@ -3139,47 +2985,29 @@ export default function DetailScreen() {
                       {...dateTimePickerProps}
                       {...pastOrTodayDatePickerBounds()}
                       onChange={(_event: DateTimePickerEvent, selected?: Date) => {
-                        if (Platform.OS !== 'ios') setShowSayingDatePicker(false);
-                        if (selected) setSayingDate(formatDateToYMD(selected));
+                        if (Platform.OS !== 'ios') setShowMemoDatePicker(false);
+                        if (selected) setMemoDate(formatDateToYMD(selected));
                       }}
                     />
                     <PickerDoneOverlay
                       style={styles.datePickerDone}
                       textStyle={styles.datePickerDoneText}
-                      onPress={() => setShowSayingDatePicker(false)}
+                      onPress={() => setShowMemoDatePicker(false)}
                     />
                   </View>
                 ) : null}
-                {sayingFormError ? (
-                  <Text style={styles.episodeErrorText}>{sayingFormError}</Text>
-                ) : null}
-                <View style={styles.noteComposerActions}>
-                  <View style={styles.noteComposerBtnWrap}>
-                    <Pressable style={styles.noteComposerGhost} onPress={closeSayingForm}>
-                      <Text style={styles.noteComposerGhostText}>閉じる</Text>
-                    </Pressable>
-                  </View>
-                  <View style={styles.noteComposerBtnWrap}>
-                    <Pressable style={styles.noteComposerPrimary} onPress={handleSaveSayings}>
-                      <Text style={styles.noteComposerPrimaryText}>
-                        {editingSayingId ? '更新' : '登録'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
+                {memoFormError ? <Text style={styles.episodeErrorText}>{memoFormError}</Text> : null}
               </View>
             ) : null}
 
-            {visibleSayings.length === 0 ? (
+            {visibleMemos.length === 0 ? (
               <Text style={styles.emptyEpisodeText}>
-                {sortedSayings.length === 0
-                  ? NOTE_TAB_COPY.彼曰く.emptyNone
-                  : NOTE_TAB_COPY.彼曰く.emptyMiss}
+                {profileMemos.length === 0 ? 'メモはまだありません。' : '該当するメモはありません。'}
               </Text>
             ) : (
               <View style={isCodex ? { gap: kit.episodeListCardGap } : undefined}>
-              {visibleSayings.map((saying: Saying) => (
-                <OptionalOffsetCard key={saying.id} enabled={isCodex}>
+              {visibleMemos.map((memo) => (
+                <OptionalOffsetCard key={memo.id} enabled={isCodex}>
                 <Pressable
                   style={[
                     styles.sayingQuoteCard,
@@ -3192,14 +3020,23 @@ export default function DetailScreen() {
                         }
                       : null,
                   ]}
-                  onPress={() => startEditSaying(saying)}
-                  onLongPress={() => handleDeleteSaying(saying.id)}
+                  onPress={() => startEditMemo(memo)}
+                  onLongPress={() => handleDeleteMemo(memo.id)}
                   delayLongPress={300}
                 >
-                  <View style={styles.sayingQuoteAccent} />
+                  <View style={styles.memoKindIconCol}>
+                    {(memo.tags.length > 0 ? memo.tags : (['note'] as const)).map((kind) => (
+                      <MaterialCommunityIcons
+                        key={kind}
+                        name={MEMO_KIND_ICON[kind].name}
+                        size={16}
+                        color={MEMO_KIND_ICON[kind].color}
+                      />
+                    ))}
+                  </View>
                   <View style={styles.sayingQuoteBody}>
-                    <Text style={styles.sayingQuoteText}>{saying.text}</Text>
-                    {saying.date ? <Text style={styles.sayingQuoteDate}>{saying.date}</Text> : null}
+                    <Text style={styles.memoBodyText}>{memo.text}</Text>
+                    {memo.date ? <Text style={styles.sayingQuoteDate}>{memo.date}</Text> : null}
                   </View>
                 </Pressable>
                 </OptionalOffsetCard>

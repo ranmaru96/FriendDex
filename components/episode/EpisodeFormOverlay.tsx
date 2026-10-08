@@ -53,6 +53,7 @@ import { EpisodeEventLinkField } from '@/components/episode/EpisodeEventLinkFiel
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { PhotoCropModal, EPISODE_PHOTO_ASPECT } from '@/components/photo/PhotoCropModal';
 import { EpisodePhotoLibraryModal } from '@/components/episode/EpisodePhotoLibraryModal';
+import { beginEpisodePhotoPrefetch, cancelEpisodePhotoPrefetch } from '@/utils/episodePhotoPrefetch';
 import { SlidingSegmentedControl } from '@/components/ui/SlidingSegmentedControl';
 import type { useEpisodeForm } from '@/hooks/useEpisodeForm';
 import type { Friend } from '@/types';
@@ -229,6 +230,16 @@ export function EpisodeFormOverlay({
     });
     return () => subscription.remove();
   }, [requestClose, visible]);
+  useEffect(() => {
+    if (!visible) {
+      cancelEpisodePhotoPrefetch();
+      return;
+    }
+    beginEpisodePhotoPrefetch(form.date);
+    return () => {
+      cancelEpisodePhotoPrefetch();
+    };
+  }, [form.date, visible]);
   const draftSessionStartedRef = useRef(false);
   useEffect(() => {
     if (!visible) {
@@ -358,6 +369,7 @@ export function EpisodeFormOverlay({
               <FormRow label="タイトル" labelStyle={styles.episodeFieldLabel} error={form.formErrorField === 'title'}>
                 <TextInput
                   ref={titleInputRef}
+                  autoFocus={!form.editingEpisodeId && !form.skipInitialTitleFocus}
                   style={[styles.episodeInput, fieldCorner, contentInputStyle(content)]}
                   placeholder="入力"
                   placeholderTextColor={content.contentTextSecondary}
@@ -625,6 +637,17 @@ export function EpisodeFormOverlay({
                   uncapped
                 />
               </FormRow>
+              <FormRow label="非公開メモ" layout="vertical">
+                <NoteBlockEditor
+                  style={[styles.episodeDescriptionInput, fieldCorner, contentInputStyle(content)]}
+                  placeholder="公開時に送らない文章"
+                  placeholderTextColor={content.contentTextSecondary}
+                  value={form.privateMemo}
+                  onChangeText={form.setPrivateMemo}
+                  minHeight={86}
+                  uncapped
+                />
+              </FormRow>
               <View style={styles.formActions}>
                 <Pressable
                   style={[styles.formCancelButton, fieldCorner, saving ? styles.saveButtonBusy : null]}
@@ -751,6 +774,7 @@ export function EpisodeFormOverlay({
         registeredCount={form.visibleExistingPhotos.length + form.newPhotoUris.length}
         dismissedAssetIds={form.dismissedPhotoAssetIds}
         preparing={form.photoResolving}
+        anchorDate={form.date}
         onClose={form.closePhotoLibrary}
         onRegister={form.beginPhotoEdits}
       >

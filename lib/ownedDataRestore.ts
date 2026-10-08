@@ -1,4 +1,5 @@
 import { MBTI_TYPES, type EpisodeParticipant, type EpisodeVisibilityEntry, type MBTIType, type Saying } from '@/types';
+import { foldProfileMemos } from '@/utils/profileMemos';
 import {
   deleteProfileById,
   forceSetMyselfForRestore,
@@ -65,6 +66,13 @@ const toSayingRows = (value: unknown): Saying[] => {
       date: typeof item.date === 'string' ? item.date : '',
     }));
 };
+
+const memosFromServerCard = (notes: unknown, traits: unknown, sayings: unknown) =>
+  foldProfileMemos({
+    notesRaw: JSON.stringify(notes ?? []),
+    traits: toStringList(traits),
+    sayings: toSayingRows(sayings),
+  }).memos;
 
 const toMbti = (value: unknown): MBTIType => {
   const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -195,6 +203,7 @@ type OwnedEpisodeRestoreRow = {
   date: string;
   time: string | null;
   description: string;
+  private_memo?: string | null;
   visibility_mode: string;
   participant_entries: unknown;
   visibility_entries: unknown;
@@ -265,11 +274,11 @@ async function restoreMyself(
     affiliations: toStringList(row.affiliations),
     personalities: toStringList(row.personalities),
     experiences: toStringList(row.experiences),
-    traits: toStringList(row.traits),
-    notes: toStringList(row.notes),
+    traits: [],
+    notes: memosFromServerCard(row.notes, row.traits, row.sayings),
     likes: toStringList(row.likes),
     dislikes: toStringList(row.dislikes),
-    sayings: toSayingRows(row.sayings),
+    sayings: [],
     importSource: 'manual',
     scannedUserId: '',
     scannedAt: '',
@@ -336,11 +345,11 @@ async function restorePersonCards(ownerId: string): Promise<{ count: number; err
       affiliations: toStringList(raw.affiliations),
       personalities: toStringList(raw.personalities),
       experiences: toStringList(raw.experiences),
-      traits: toStringList(raw.traits),
-      notes: toStringList(raw.notes),
+      traits: [],
+      notes: memosFromServerCard(raw.notes, raw.traits, raw.sayings),
       likes: toStringList(raw.likes),
       dislikes: toStringList(raw.dislikes),
-      sayings: toSayingRows(raw.sayings),
+      sayings: [],
       importSource: raw.import_source === 'qr_scan' || linked ? 'qr_scan' : 'manual',
       scannedUserId: linked,
       scannedAt: raw.scanned_at ?? '',
@@ -431,18 +440,34 @@ async function restoreEvents(ownerId: string): Promise<{ count: number; errorMes
   return { count, errorMessage: null };
 }
 
+const OWNED_EPISODE_SELECT =
+  'local_episode_id, author_friend_id, title, date, time, description, private_memo, visibility_mode, participant_entries, visibility_entries, local_event_id, is_auto_generated, pending_review, pending_review_dismissed, tag, location_tag';
+const OWNED_EPISODE_SELECT_FALLBACK =
+  'local_episode_id, author_friend_id, title, date, time, description, visibility_mode, participant_entries, visibility_entries, local_event_id, is_auto_generated, pending_review, pending_review_dismissed, tag, location_tag';
+
 async function restoreEpisodes(ownerId: string): Promise<{ count: number; errorMessage: string | null }> {
   const supabase = getSupabaseClient();
   if (!supabase) {
     return { count: 0, errorMessage: null };
   }
-  const { data: episodeRows, error: episodesError } = await supabase
+  const primaryQuery = await supabase
     .from('owned_episodes')
-    .select(
-      'local_episode_id, author_friend_id, title, date, time, description, visibility_mode, participant_entries, visibility_entries, local_event_id, is_auto_generated, pending_review, pending_review_dismissed, tag, location_tag'
-    )
+    .select(OWNED_EPISODE_SELECT)
     .eq('owner_id', ownerId)
     .is('deleted_at', null);
+  let episodeRows: OwnedEpisodeRestoreRow[] | null = null;
+  let episodesError: { message: string } | null = primaryQuery.error;
+  if (primaryQuery.error && isUnknownColumnError(primaryQuery.error.message)) {
+    const fallbackQuery = await supabase
+      .from('owned_episodes')
+      .select(OWNED_EPISODE_SELECT_FALLBACK)
+      .eq('owner_id', ownerId)
+      .is('deleted_at', null);
+    episodeRows = (fallbackQuery.data ?? null) as OwnedEpisodeRestoreRow[] | null;
+    episodesError = fallbackQuery.error;
+  } else {
+    episodeRows = (primaryQuery.data ?? null) as OwnedEpisodeRestoreRow[] | null;
+  }
   if (episodesError) {
     return { count: 0, errorMessage: episodesError.message };
   }
@@ -479,6 +504,7 @@ async function restoreEpisodes(ownerId: string): Promise<{ count: number; errorM
       date: raw.date ?? '',
       time: raw.time,
       description: raw.description ?? '',
+      privateMemo: raw.private_memo ?? '',
       authorFriendId: raw.author_friend_id ?? '',
       visibilityMode:
         raw.visibility_mode === 'public' || raw.visibility_mode === 'limited' || raw.visibility_mode === 'private'

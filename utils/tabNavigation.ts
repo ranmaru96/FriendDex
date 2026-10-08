@@ -1,5 +1,6 @@
 import { router, type Href } from 'expo-router';
 import { getActiveTab, type BottomNavTabKey } from '@/utils/bottomNavVisibility';
+import { markEpisodeDetailTabSwitch } from '@/utils/episodeDetailHost';
 import { setNextReplaceAsPop } from '@/utils/tabTransition';
 import {
   TAB_ROOT_ROUTES,
@@ -35,6 +36,7 @@ export function switchBottomTab(to: BottomNavTabKey, currentPathname: string): v
     router.replace(TAB_ROOT_ROUTES[to]);
     return;
   }
+  markEpisodeDetailTabSwitch(to);
   router.replace(toHref(getTabLeaf(to)));
 }
 

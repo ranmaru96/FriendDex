@@ -1,2 +1,6 @@
 import './sentry';
-import 'expo-router/entry';
+import { SplashScreen } from 'expo-router';
+
+void SplashScreen.preventAutoHideAsync();
+
+require('expo-router/entry');

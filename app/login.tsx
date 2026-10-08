@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
-import { useRouter } from 'expo-router';
+import { usePathname, useRouter } from 'expo-router';
 import { AuthGateView, type AuthIntent } from '@/components/auth/AuthGateView';
 import { useAuthSession } from '@/contexts/AuthSessionContext';
 import { getMyselfSetupPhase, initializeDatabase } from '@/db';
@@ -9,9 +9,11 @@ import { runOwnedLoginSideEffects } from '@/lib/ownedLoginSync';
 import { signInWithAppleAccount, signInWithGoogleAccount, type SocialProvider } from '@/lib/socialAuth';
 import { signInWithEmail, signUpWithEmail } from '@/lib/supabase';
 import { requireOnline } from '@/lib/networkReachability';
+import { openAfterAuthGate } from '@/utils/navigationRestore';
 
 export default function LoginScreen() {
   const router = useRouter();
+  const pathname = usePathname();
   const { configured, session, ready, deviceBindError, clearDeviceBindError } = useAuthSession();
   const [busy, setBusy] = useState(false);
   const [busyLabel, setBusyLabel] = useState('読み込み中');
@@ -32,7 +34,7 @@ export default function LoginScreen() {
       } else if (syncError) {
         Alert.alert('ログインしました', `サーバー反映に失敗しました。\n${syncError}`);
       }
-      router.replace('/calendar');
+      openAfterAuthGate(pathname);
       return true;
     }
     if (restore?.errorMessage) {
@@ -40,7 +42,7 @@ export default function LoginScreen() {
     }
     router.replace('/setup-myself');
     return true;
-  }, [router]);
+  }, [pathname, router]);
 
   useEffect(() => {
     if (!deviceBindError || busy) {
@@ -60,14 +62,10 @@ export default function LoginScreen() {
     }
     initializeDatabase();
     if (handledSessionId.current === sessionId) {
-      if (busy) {
-        return;
-      }
-      router.replace(getMyselfSetupPhase() === 'ready' ? '/calendar' : '/setup-myself');
       return;
     }
     if (getMyselfSetupPhase() === 'ready') {
-      router.replace('/calendar');
+      handledSessionId.current = sessionId;
       return;
     }
     if (busy) {
@@ -83,7 +81,7 @@ export default function LoginScreen() {
       .finally(() => {
         setBusy(false);
       });
-  }, [busy, configured, finishAfterSession, ready, router, session]);
+  }, [busy, configured, finishAfterSession, ready, session]);
 
   const runAuth = async (mode: AuthIntent, email: string, password: string) => {
     if (!requireOnline()) {

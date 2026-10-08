@@ -1,3 +1,6 @@
+import { getEpisodeDetailHostTab, isEpisodeDetailPath } from '@/utils/episodeDetailHost';
+import { isCalendarTabRoot, isPeopleTabRoot } from '@/utils/tabRoots';
+
 export const BOTTOM_NAV_SCROLL_CLEARANCE = 100;
 
 export type BottomNavTabKey = 'home' | 'calendar' | 'episode' | 'tools' | 'tasks';
@@ -17,9 +20,7 @@ const HIDE_HEADER_PATHS = [
   'relationship-map',
   'your-answer',
   'wishlist',
-  'follows',
   'mypage',
-  'friends',
   'task-edit',
   'task-detail',
   'task-group',
@@ -28,6 +29,7 @@ const HIDE_HEADER_PATHS = [
   'setup-myself',
   'login',
   'auth-preview',
+  'launch-preview',
 ];
 
 const HIDE_BOTTOM_NAV_PATHS = [
@@ -37,9 +39,7 @@ const HIDE_BOTTOM_NAV_PATHS = [
   'myprofile-qr',
   'scan',
   'qr-import',
-  'follows',
   'mypage',
-  'friends',
   'task-edit',
   'task-detail',
   'task-group',
@@ -47,6 +47,7 @@ const HIDE_BOTTOM_NAV_PATHS = [
   'setup-myself',
   'login',
   'auth-preview',
+  'launch-preview',
 ];
 
 export function shouldHideHeader(pathname: string): boolean {
@@ -75,8 +76,10 @@ export function getBottomNavScrollClearance(pathname: string): number {
 export function getActiveTab(pathname: string): BottomNavTabKey | null {
   /** 設定などは下部タブを出すが、どのタブ上でもない（タップで各タブへ移れる） */
   if (pathname.includes('/appsettings')) return null;
-  if (pathname.includes('/calendar')) return 'calendar';
-  if (pathname.includes('/event')) return 'calendar';
+  if (isEpisodeDetailPath(pathname)) {
+    return getEpisodeDetailHostTab() ?? 'episode';
+  }
+  if (isCalendarTabRoot(pathname) || pathname.includes('/event')) return 'calendar';
   if (
     pathname.includes('/shuffle') ||
     pathname.includes('/settlement') ||
@@ -97,6 +100,6 @@ export function getActiveTab(pathname: string): BottomNavTabKey | null {
   ) {
     return 'tasks';
   }
-  if (pathname.includes('/detail')) return 'home';
+  if (isPeopleTabRoot(pathname) || pathname.includes('/detail')) return 'home';
   return 'home';
 }

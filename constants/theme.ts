@@ -219,8 +219,6 @@ export const DetailTabColors = {
   情報: Palette.accent,
   ステータス: Palette.accent,
   エピソード: Palette.accent,
-  習性: Palette.accent,
-  彼曰く: Palette.accent,
   メモ: Palette.accent,
 } as const;
 

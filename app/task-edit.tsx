@@ -1,4 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useKeepFormDraft } from '@/hooks/useKeepFormDraft';
+import {
+  buildTaskBaseline,
+  deleteTaskFormDraft,
+  readTaskFormDraft,
+  serializeTaskForm,
+  taskDraftKey,
+} from '@/utils/taskFormDraft';
 import {
   Alert,
   Platform,
@@ -10,8 +18,11 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { Radius, Spacing, Typography } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
   FormScreenBody,
   FormScreenSection,
@@ -52,7 +63,6 @@ import {
   TaskRecurrenceConfig,
   WEEKDAY_OPTIONS,
   formatRecurrenceLabel,
-  formatTaskDueDateLabel,
   resolveMonthNths,
   resolveMonthWeekdays,
 } from '@/utils/taskHelpers';
@@ -86,9 +96,13 @@ import { TaskRemindFields } from '@/components/task/TaskRemindFields';
 import { requestNotificationPermissionOnFirstCreate } from '@/utils/eventNotifications';
 import {
   DEFAULT_REMIND_TIME,
-  clampRemindTimeToNow,
   syncTaskReminders,
 } from '@/utils/taskNotifications';
+
+function TaskFieldDivider() {
+  const content = useContentColors();
+  return <View style={[styles.fieldDivider, { backgroundColor: content.contentDivider }]} />;
+}
 
 const GROUP_NONE = '';
 const GROUP_NEW = '__new__';
@@ -98,6 +112,18 @@ function eventStartDateKey(event: Event): string {
     return getAllDayDateKeysFromEvent(event).startDateKey;
   }
   return formatDateKey(new Date(event.startAt));
+}
+
+const DUE_QUICK_OPTIONS = [
+  { days: 0, label: '今日' },
+  { days: 1, label: '明日' },
+  { days: 2, label: '明後日' },
+] as const;
+
+function dueDateKeyFromToday(days: number): string {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return formatDateKey(date);
 }
 
 function formatCompletionHistoryDate(ymd: string): string {
@@ -111,6 +137,7 @@ function formatCompletionHistoryDate(ymd: string): string {
 export default function TaskEditScreen() {
   const router = useRouter();
   const content = useContentColors();
+  const kit = useUiKit();
   const appTheme = useAppThemeOptional();
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const [formScrollEnabled, setRollScrolling] = useRollScrollLock();
@@ -119,6 +146,7 @@ export default function TaskEditScreen() {
     eventId?: string;
     kind?: string;
     groupId?: string;
+    draft?: string;
   }>();
   const taskId = typeof params.taskId === 'string' ? params.taskId : '';
   const presetEventId = typeof params.eventId === 'string' ? params.eventId : '';
@@ -174,6 +202,10 @@ export default function TaskEditScreen() {
   const [remindDaysBefore, setRemindDaysBefore] = useState(0);
   const [remindTime, setRemindTime] = useState(DEFAULT_REMIND_TIME);
   const [ready, setReady] = useState(false);
+  const [draftBaseline, setDraftBaseline] = useState<string | null>(null);
+  const claimTaskDraftRef = useRef<() => void>(() => {});
+  const stopTaskDraftRef = useRef<() => void>(() => {});
+  const flushTaskDraftRef = useRef<() => void>(() => {});
   const savingRef = useRef(false);
   const [isSaving, setIsSaving] = useState(false);
   const unlockSave = () => {
@@ -265,9 +297,123 @@ export default function TaskEditScreen() {
         setRemindTime(DEFAULT_REMIND_TIME);
         setCompletions([]);
       }
+      const loadedTask = taskId ? getTask(taskId) : null;
+      const loaded = buildTaskBaseline({
+        task: loadedTask,
+        presetEventId,
+        presetGroupId,
+        presetKind,
+        linkedEvent: presetEventId ? getEvent(presetEventId) : null,
+      });
+      const loadedBody = serializeTaskForm(loaded);
+      setDraftBaseline(loadedBody);
+      if (params.draft === '1') {
+        const stored = readTaskFormDraft(taskId || null);
+        if (stored && taskId && stored.base !== loadedBody) {
+          deleteTaskFormDraft(taskId);
+        } else if (stored) {
+          const fields = stored.fields;
+          setKind(fields.kind);
+          setTitle(fields.title);
+          setMemo(fields.memo);
+          setPace(fields.pace);
+          setUnit(fields.unit);
+          setWeekdaysUnspecified(fields.weekdaysUnspecified);
+          setWeekdays(fields.weekdays);
+          setWeekStartsOn(fields.weekStartsOn);
+          setMonthDay(fields.monthDay);
+          setMonthMode(fields.monthMode);
+          setMonthNths(fields.monthNths);
+          setMonthWeekdays(fields.monthWeekdays);
+          setYearMonth(fields.yearMonth);
+          setYearDay(fields.yearDay);
+          setDueDate(fields.dueDate);
+          setEventLinkMode(fields.eventLinkMode);
+          setEventId(fields.eventId);
+          setGroupSelect(fields.groupSelect);
+          setNewGroupTitle(fields.newGroupTitle);
+          setTrackCompletions(fields.trackCompletions);
+          setRemindEnabled(fields.remindEnabled);
+          setRemindDaysBefore(fields.remindDaysBefore);
+          setRemindTime(fields.remindTime);
+          claimTaskDraftRef.current();
+        }
+      }
       setReady(true);
-    }, [presetEventId, presetGroupId, presetKind, router, taskId])
+      return () => {
+        flushTaskDraftRef.current();
+      };
+    }, [params.draft, presetEventId, presetGroupId, presetKind, router, taskId])
   );
+
+  const taskDraftSnapshot = useMemo(
+    () =>
+      serializeTaskForm({
+        kind,
+        title,
+        memo,
+        pace,
+        unit,
+        weekdaysUnspecified,
+        weekdays,
+        weekStartsOn,
+        monthDay,
+        monthMode,
+        monthNths,
+        monthWeekdays,
+        yearMonth,
+        yearDay,
+        dueDate,
+        eventLinkMode,
+        eventId,
+        groupSelect,
+        newGroupTitle,
+        trackCompletions,
+        remindEnabled,
+        remindDaysBefore,
+        remindTime,
+        presetEventId,
+        presetGroupId,
+        presetKind: presetKind ?? '',
+      }),
+    [
+      dueDate,
+      eventId,
+      eventLinkMode,
+      groupSelect,
+      kind,
+      memo,
+      monthDay,
+      monthMode,
+      monthNths,
+      monthWeekdays,
+      newGroupTitle,
+      pace,
+      presetEventId,
+      presetGroupId,
+      presetKind,
+      remindDaysBefore,
+      remindEnabled,
+      remindTime,
+      title,
+      trackCompletions,
+      unit,
+      weekStartsOn,
+      weekdays,
+      weekdaysUnspecified,
+      yearDay,
+      yearMonth,
+    ]
+  );
+  const taskDraftKeep = useKeepFormDraft(
+    ready && draftBaseline != null,
+    taskDraftKey(taskId || null),
+    taskDraftSnapshot,
+    draftBaseline
+  );
+  claimTaskDraftRef.current = taskDraftKeep.claim;
+  stopTaskDraftRef.current = taskDraftKeep.stopKeeping;
+  flushTaskDraftRef.current = taskDraftKeep.flush;
 
   const buildConfig = (): TaskRecurrenceConfig => {
     if (unit === 'week') {
@@ -430,7 +576,7 @@ export default function TaskEditScreen() {
       trackCompletions: effectiveKind === 'recurring' ? nextTrack : true,
       remindEnabled: nextRemindEnabled,
       remindDaysBefore: nextRemindEnabled && effectiveKind === 'temporary' ? remindDaysBefore : null,
-      remindTime: nextRemindEnabled ? clampRemindTimeToNow(remindTime || DEFAULT_REMIND_TIME) : null,
+      remindTime: nextRemindEnabled ? remindTime.trim() || DEFAULT_REMIND_TIME : null,
     };
 
     if (isEditing && initialTrackCompletions && !nextTrack && effectiveKind === 'recurring') {
@@ -458,6 +604,8 @@ export default function TaskEditScreen() {
       }
       await syncTaskReminders();
     })();
+    stopTaskDraftRef.current();
+    deleteTaskFormDraft(taskId || null);
     router.back();
   };
 
@@ -549,6 +697,8 @@ export default function TaskEditScreen() {
     savingRef.current = true;
     deleteTask(taskId);
     void syncTaskReminders();
+    stopTaskDraftRef.current();
+    deleteTaskFormDraft(taskId || null);
     router.back();
   };
 
@@ -659,7 +809,7 @@ export default function TaskEditScreen() {
   };
 
   if (!ready) {
-    return null;
+    return <View style={[styles.loadingScreen, { backgroundColor: kit.screenBackground }]} />;
   }
 
   return (
@@ -669,32 +819,39 @@ export default function TaskEditScreen() {
       backDisabled={isSaving}
       scrollEnabled={formScrollEnabled}
       right={
-        <Pressable onPress={handleSave} disabled={isSaving} hitSlop={8}>
-          <Text style={[styles.saveText, contentTextStyle(content), isSaving ? styles.saveTextBusy : null]}>保存</Text>
+        <Pressable
+          style={[styles.saveButton, contentFilledButtonStyle(content), isSaving ? styles.saveTextBusy : null]}
+          onPress={handleSave}
+          disabled={isSaving}
+        >
+          <Text style={[styles.saveText, contentFilledButtonTextStyle(content)]}>保存</Text>
         </Pressable>
       }
     >
       <RollScrollLockProvider setRollScrolling={setRollScrolling}>
-      <FormScreenBody>
-        <FormScreenSection>
-          <FormRow label="タイトル">
-            <View style={styles.titleRow}>
-              <TextInput
-                style={[styles.input, styles.titleInput, contentInputStyle(content)]}
-                value={title}
-                onChangeText={setTitle}
-                placeholder="タスク内容"
-                placeholderTextColor={content.contentTextSecondary}
-                accessibilityLabel="タイトル"
-              />
-              <View
-                style={[
-                  styles.kindSegment,
-                  contentSurfaceStyle(content),
-                  { borderColor: content.contentBorder },
-                  lockedToEvent ? styles.kindSegmentLocked : null,
-                ]}
-              >
+      <FormScreenBody style={{ borderRadius: kit.formPanelBorderRadius }}>
+        <FormScreenSection style={styles.formSection}>
+          <FormRow label="タイトル" labelStyle={styles.fieldLabel}>
+            <TextInput
+              style={[styles.input, contentInputStyle(content)]}
+              value={title}
+              onChangeText={setTitle}
+              autoFocus={!isEditing}
+              placeholder="入力"
+              placeholderTextColor={content.contentTextSecondary}
+              accessibilityLabel="タイトル"
+            />
+          </FormRow>
+          <TaskFieldDivider />
+          <FormRow label="種別" labelStyle={styles.fieldLabel} contentStyle={styles.kindField}>
+            <View
+              style={[
+                styles.kindSegment,
+                contentSurfaceStyle(content),
+                { borderColor: content.contentBorder },
+                lockedToEvent ? styles.kindSegmentLocked : null,
+              ]}
+            >
                 {(
                   [
                     { key: 'recurring' as const, label: '定期' },
@@ -750,13 +907,10 @@ export default function TaskEditScreen() {
                     </Pressable>
                   );
                 })}
-              </View>
             </View>
           </FormRow>
-        </FormScreenSection>
-
-        <FormScreenSection>
-          <FormRow label="グループ">
+          <TaskFieldDivider />
+          <FormRow label="グループ" labelStyle={styles.fieldLabel}>
             <Pressable
               style={[styles.pickerButton, contentInputStyle(content)]}
               onPress={() => {
@@ -776,7 +930,9 @@ export default function TaskEditScreen() {
             </Pressable>
           </FormRow>
           {groupSelect === GROUP_NEW ? (
-            <FormRow label="グループ名">
+            <>
+            <TaskFieldDivider />
+            <FormRow label="グループ名" labelStyle={styles.fieldLabel}>
               <TextInput
                 style={[styles.input, contentInputStyle(content)]}
                 value={newGroupTitle}
@@ -785,18 +941,13 @@ export default function TaskEditScreen() {
                 placeholderTextColor={content.contentTextSecondary}
               />
             </FormRow>
+            </>
           ) : null}
-          <Text style={[styles.hint, contentMutedTextStyle(content)]}>
-            {kind === 'recurring'
-              ? 'くくり用です。中のどれかを実行するとグループもその日「実施」になります'
-              : 'くくり用です。臨時タスクをまとめて表示できます'}
-          </Text>
-        </FormScreenSection>
 
         {kind === 'recurring' ? (
           <>
-            <FormScreenSection>
-              <FormRow label="実施を記録">
+            <TaskFieldDivider />
+              <FormRow label="実施を記録" labelStyle={styles.fieldLabel}>
                 <View style={styles.trackRow}>
                   <Switch
                     value={trackCompletions}
@@ -805,13 +956,8 @@ export default function TaskEditScreen() {
                   />
                 </View>
               </FormRow>
-              <Text style={[styles.hint, contentMutedTextStyle(content)]}>
-                オフにすると連続・ドット・履歴を残しません。チェックは今日の見た目だけ変わります。
-              </Text>
-            </FormScreenSection>
-
-            <FormScreenSection>
-              <Text style={[styles.label, contentTextStyle(content)]}>ペース</Text>
+            <TaskFieldDivider />
+            <FormRow label="ペース" labelStyle={styles.fieldLabel} style={styles.rowAlignStart}>
               <View style={styles.chipRow}>
                 {(
                   [
@@ -834,25 +980,15 @@ export default function TaskEditScreen() {
                       }
                     }}
                   >
-                    <Text style={contentTextStyle(content)}>{item.label}</Text>
+                    <Text style={[styles.chipText, contentTextStyle(content)]}>{item.label}</Text>
                   </Pressable>
                 ))}
               </View>
-              {pace === 'unpaced' ? (
-                <Text style={[styles.hint, contentMutedTextStyle(content)]}>
-                  やった日だけ記録します（1日1回まで）。
-                </Text>
-              ) : null}
-            </FormScreenSection>
+            </FormRow>
 
-            {groupSelect !== GROUP_NONE ? (
-              <FormScreenSection>
-                <Text style={[styles.hint, contentMutedTextStyle(content), { marginTop: 0 }]}>
-                  リマインドはグループの設定が使われます。グループに入れると、このタスク側の時刻設定は解除されます。
-                </Text>
-              </FormScreenSection>
-            ) : pace === 'scheduled' ? (
-              <FormScreenSection>
+            {groupSelect === GROUP_NONE && pace === 'scheduled' ? (
+              <>
+                <TaskFieldDivider />
                 <TaskRemindFields
                   mode="time-only"
                   enabled={remindEnabled}
@@ -861,15 +997,14 @@ export default function TaskEditScreen() {
                   onEnabledChange={setRemindEnabled}
                   onDaysBeforeChange={setRemindDaysBefore}
                   onTimeChange={setRemindTime}
-                  hint="対象日の当日に通知します"
                 />
-              </FormScreenSection>
+              </>
             ) : null}
 
             {pace === 'scheduled' ? (
               <>
-                <FormScreenSection>
-                  <Text style={[styles.label, contentTextStyle(content)]}>周期単位</Text>
+                <TaskFieldDivider />
+                <FormRow label="周期" labelStyle={styles.fieldLabel} style={styles.rowAlignStart}>
                   <View style={styles.chipRow}>
                     {(
                       [
@@ -889,16 +1024,16 @@ export default function TaskEditScreen() {
                         ]}
                         onPress={() => setUnit(item.key)}
                       >
-                        <Text style={contentTextStyle(content)}>{item.label}</Text>
+                        <Text style={[styles.chipText, contentTextStyle(content)]}>{item.label}</Text>
                       </Pressable>
                     ))}
                   </View>
-                  <Text style={[styles.hint, contentMutedTextStyle(content)]}>プレビュー: {previewLabel}</Text>
-                </FormScreenSection>
+                </FormRow>
 
                 {unit === 'week' ? (
-                  <FormScreenSection>
-                    <Text style={[styles.label, contentTextStyle(content)]}>曜日（必須）</Text>
+                  <>
+                    <TaskFieldDivider />
+                    <FormRow label="曜日" labelStyle={styles.fieldLabel} style={styles.rowAlignStart}>
                     <View style={styles.weekdayChipRow}>
                       <Pressable
                         style={[
@@ -934,9 +1069,11 @@ export default function TaskEditScreen() {
                         </Pressable>
                       ))}
                     </View>
+                    </FormRow>
                     {weekdaysUnspecified ? (
                       <>
-                        <Text style={[styles.label, contentTextStyle(content)]}>週の起点</Text>
+                        <TaskFieldDivider />
+                        <FormRow label="週の起点" labelStyle={styles.fieldLabel} style={styles.rowAlignStart}>
                         <View style={styles.weekdayChipRow}>
                           {WEEKDAY_OPTIONS.map((day) => (
                             <Pressable
@@ -955,13 +1092,16 @@ export default function TaskEditScreen() {
                             </Pressable>
                           ))}
                         </View>
+                        </FormRow>
                       </>
                     ) : null}
-                  </FormScreenSection>
+                  </>
                 ) : null}
 
                 {unit === 'month' ? (
-                  <FormScreenSection>
+                  <>
+                    <TaskFieldDivider />
+                    <FormRow label="毎月" labelStyle={styles.fieldLabel} style={styles.rowAlignStart}>
                     <View style={styles.chipRow}>
                       <Pressable
                         style={[
@@ -975,7 +1115,7 @@ export default function TaskEditScreen() {
                           setShowMonthDayPicker(false);
                         }}
                       >
-                        <Text style={contentTextStyle(content)}>日付指定</Text>
+                        <Text style={[styles.chipText, contentTextStyle(content)]}>日付指定</Text>
                       </Pressable>
                       <Pressable
                         style={[
@@ -989,12 +1129,13 @@ export default function TaskEditScreen() {
                           setShowMonthDayPicker(false);
                         }}
                       >
-                        <Text style={contentTextStyle(content)}>第N曜日</Text>
+                        <Text style={[styles.chipText, contentTextStyle(content)]}>第N曜日</Text>
                       </Pressable>
                     </View>
+                    </FormRow>
                     {monthMode === 'day' ? (
                       <View style={styles.monthModeBody}>
-                        <FormRow label="日">
+                        <FormRow label="日" labelStyle={styles.fieldLabel}>
                           <Pressable
                             style={[styles.pickerButton, contentInputStyle(content)]}
                             onPress={() => {
@@ -1020,7 +1161,8 @@ export default function TaskEditScreen() {
                       </View>
                     ) : (
                       <>
-                        <Text style={[styles.label, contentTextStyle(content)]}>第N（複数可）</Text>
+                        <TaskFieldDivider />
+                        <FormRow label="第N" labelStyle={styles.fieldLabel} style={styles.rowAlignStart}>
                         <View style={styles.chipRow}>
                           {MONTH_NTH_OPTIONS.map((item) => (
                             <Pressable
@@ -1033,11 +1175,13 @@ export default function TaskEditScreen() {
                               ]}
                               onPress={() => toggleMonthNth(item.value)}
                             >
-                              <Text style={contentTextStyle(content)}>{item.label}</Text>
+                              <Text style={[styles.chipText, contentTextStyle(content)]}>{item.label}</Text>
                             </Pressable>
                           ))}
                         </View>
-                        <Text style={[styles.label, contentTextStyle(content)]}>曜日（複数可）</Text>
+                        </FormRow>
+                        <TaskFieldDivider />
+                        <FormRow label="曜日" labelStyle={styles.fieldLabel} style={styles.rowAlignStart}>
                         <View style={styles.chipRow}>
                           {WEEKDAY_OPTIONS.map((day) => (
                             <Pressable
@@ -1050,18 +1194,20 @@ export default function TaskEditScreen() {
                               ]}
                               onPress={() => toggleMonthWeekday(day.value)}
                             >
-                              <Text style={contentTextStyle(content)}>{day.label}</Text>
+                              <Text style={[styles.chipText, contentTextStyle(content)]}>{day.label}</Text>
                             </Pressable>
                           ))}
                         </View>
+                        </FormRow>
                       </>
                     )}
-                  </FormScreenSection>
+                  </>
                 ) : null}
 
                 {unit === 'year' ? (
-                  <FormScreenSection>
-                    <FormRow label="月日">
+                  <>
+                    <TaskFieldDivider />
+                    <FormRow label="月日" labelStyle={styles.fieldLabel}>
                       <Pressable
                         style={[styles.pickerButton, contentInputStyle(content)]}
                         onPress={() => {
@@ -1091,18 +1237,18 @@ export default function TaskEditScreen() {
                         />
                       </View>
                     ) : null}
-                  </FormScreenSection>
+                  </>
                 ) : null}
               </>
             ) : null}
           </>
         ) : (
           <>
-            <FormScreenSection>
-              <FormRow label="期限">
+            <TaskFieldDivider />
+              <FormRow label="期限" labelStyle={styles.fieldLabel}>
                 <View style={styles.dueRow}>
                   <Pressable
-                    style={[styles.pickerButton, contentInputStyle(content)]}
+                    style={[styles.dueDateButton, contentInputStyle(content)]}
                     onPress={() => {
                       dismissKeyboardFocus();
                       if (!dueDate) {
@@ -1112,25 +1258,59 @@ export default function TaskEditScreen() {
                     }}
                   >
                     <Text
+                      numberOfLines={1}
                       style={
                         dueDate
-                          ? [styles.pickerButtonText, contentTextStyle(content)]
-                          : [styles.pickerPlaceholder, contentMutedTextStyle(content)]
+                          ? [styles.dueDateButtonText, contentTextStyle(content)]
+                          : [styles.dueDateButtonText, contentMutedTextStyle(content)]
                       }
                     >
-                      {dueDate ? formatTaskDueDateLabel(dueDate) : 'yyyy-mm-dd'}
+                      {dueDate || 'yyyy-mm-dd'}
                     </Text>
                   </Pressable>
+                  {DUE_QUICK_OPTIONS.map((option) => {
+                    const key = dueDateKeyFromToday(option.days);
+                    const selected = dueDate === key;
+                    return (
+                      <Pressable
+                        key={option.label}
+                        style={[
+                          styles.dueQuickButton,
+                          contentSurfaceStyle(content),
+                          { borderColor: content.contentBorder },
+                          selected ? contentSelectedOptionStyle(content) : null,
+                        ]}
+                        onPress={() => {
+                          dismissKeyboardFocus();
+                          setDueDate(key);
+                          setShowDuePicker(false);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        accessibilityLabel={`期限を${option.label}にする`}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={[styles.dueQuickButtonText, contentTextStyle(content)]}
+                        >
+                          {option.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                   {dueDate ? (
                     <Pressable
-                      style={[styles.clearDueButton, contentTagStyle(content)]}
+                      style={[styles.clearDueButton, { borderColor: content.contentBorder }]}
                       onPress={() => {
                         setDueDate('');
                         setShowDuePicker(false);
                         setRemindEnabled(false);
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel="期限をクリア"
+                      hitSlop={6}
                     >
-                      <Text style={contentTextStyle(content)}>クリア</Text>
+                      <Ionicons name="close" size={18} color={content.contentText} />
                     </Pressable>
                   ) : null}
                 </View>
@@ -1162,9 +1342,9 @@ export default function TaskEditScreen() {
                   />
                 </View>
               ) : null}
-            </FormScreenSection>
             {dueDate ? (
-              <FormScreenSection>
+              <>
+                <TaskFieldDivider />
                 <TaskRemindFields
                   mode="temporary"
                   enabled={remindEnabled}
@@ -1173,14 +1353,13 @@ export default function TaskEditScreen() {
                   onEnabledChange={setRemindEnabled}
                   onDaysBeforeChange={setRemindDaysBefore}
                   onTimeChange={setRemindTime}
-                  hint="期限の何日前の、指定した時刻に通知します。グループに入っている場合は通知にグループ名も出ます。"
                 />
-              </FormScreenSection>
+              </>
             ) : null}
-            <FormScreenSection>
+            <TaskFieldDivider />
               <FormRow
-                label={'対応する\n予定'}
-                labelNumberOfLines={2}
+                label="対象予定"
+                labelStyle={styles.fieldLabel}
                 style={styles.rowAlignStart}
               >
                 <EpisodeEventLinkField
@@ -1190,7 +1369,8 @@ export default function TaskEditScreen() {
                   onModeChange={handleEventLinkModeChange}
                   onSelectEvent={handleSelectLinkedEvent}
                   eventTimeScope="todayOrFuture"
-                  fieldCorner={{ borderRadius: 8 }}
+                  fieldCorner={{ borderRadius: Radius.sm }}
+                  compact
                   hints={{
                     create_new:
                       '保存時に、このタスクの期限・タイトルで予定を新しく作り、紐づけます。',
@@ -1198,55 +1378,52 @@ export default function TaskEditScreen() {
                   }}
                 />
               </FormRow>
-              {lockedToEvent ? (
-                <Text style={[styles.hint, contentMutedTextStyle(content)]}>
-                  予定に紐づく間は臨時タスクで固定されます
-                </Text>
-              ) : null}
-            </FormScreenSection>
           </>
         )}
 
         {isEditing && kind === 'recurring' && trackCompletions ? (
-          <FormScreenSection>
-            <Text style={[styles.label, contentTextStyle(content)]}>
-              実施履歴{completions.length > 0 ? `（${completions.length}回）` : ''}
-            </Text>
-            {completions.length === 0 ? (
-              <Text style={[styles.hint, contentMutedTextStyle(content), styles.historyEmpty]}>
-                まだ記録がありません
-              </Text>
-            ) : (
-              <View style={styles.historyList}>
-                {completions.map((item) => (
-                  <View
-                    key={item.id}
-                    style={[styles.historyRow, contentSurfaceStyle(content), { borderWidth: 1 }]}
-                  >
-                    <Text style={[styles.historyDate, contentTextStyle(content)]}>
-                      {formatCompletionHistoryDate(item.completedOn)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            )}
-          </FormScreenSection>
+          <>
+            <TaskFieldDivider />
+            <FormRow
+              label="実施履歴"
+              labelStyle={styles.fieldLabel}
+              style={styles.rowAlignStart}
+            >
+              {completions.length === 0 ? (
+                <Text style={[styles.hint, contentMutedTextStyle(content), styles.historyEmpty]}>
+                  まだ記録がありません
+                </Text>
+              ) : (
+                <View style={styles.historyList}>
+                  {completions.map((item) => (
+                    <View
+                      key={item.id}
+                      style={[styles.historyRow, contentSurfaceStyle(content), { borderWidth: 1 }]}
+                    >
+                      <Text style={[styles.historyDate, contentTextStyle(content)]}>
+                        {formatCompletionHistoryDate(item.completedOn)}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </FormRow>
+          </>
         ) : null}
 
-        <FormScreenSection>
-          <View style={styles.memoBlock}>
-            <Text style={[styles.label, contentTextStyle(content)]}>メモ</Text>
-            <NoteBlockEditor
-              style={[styles.input, contentInputStyle(content)]}
-              value={memo}
-              onChangeText={setMemo}
-              placeholder="メモ（任意）"
-              placeholderTextColor={content.contentTextSecondary}
-              accessibilityLabel="メモ"
-              minHeight={88}
-              uncapped
-            />
-          </View>
+        <TaskFieldDivider />
+        <FormRow label="メモ" layout="vertical">
+          <NoteBlockEditor
+            style={[styles.memoInput, contentInputStyle(content)]}
+            value={memo}
+            onChangeText={setMemo}
+            placeholder="入力"
+            placeholderTextColor={content.contentTextSecondary}
+            accessibilityLabel="メモ"
+            minHeight={86}
+            uncapped
+          />
+        </FormRow>
         </FormScreenSection>
 
         {isEditing ? (
@@ -1284,10 +1461,25 @@ export default function TaskEditScreen() {
 }
 
 const styles = StyleSheet.create({
+  loadingScreen: {
+    flex: 1,
+  },
+  formSection: {
+    gap: 0,
+  },
+  fieldDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginVertical: Spacing.sm,
+  },
   label: {
-    fontSize: 13,
-    fontWeight: '700',
+    fontSize: 14,
+    fontWeight: '600',
+    lineHeight: 20,
     marginBottom: 8,
+  },
+  fieldLabel: {
+    width: 72,
+    textAlign: 'left',
   },
   hint: {
     fontSize: 12,
@@ -1299,25 +1491,29 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
   },
+  kindField: {
+    alignItems: 'flex-start',
+  },
   kindSegment: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     flexShrink: 0,
     borderWidth: 1,
-    borderRadius: 10,
-    padding: 3,
+    borderRadius: Radius.sm,
+    padding: 2,
     gap: 2,
   },
   kindSegmentItem: {
-    minWidth: 42,
-    paddingVertical: 7,
-    paddingHorizontal: 8,
-    borderRadius: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
   kindSegmentText: {
-    fontSize: 13,
+    fontSize: Typography.sm,
+    fontWeight: '600',
   },
   kindSegmentLocked: {
     opacity: 0.7,
@@ -1354,15 +1550,27 @@ const styles = StyleSheet.create({
   },
   chip: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: Radius.sm,
+  },
+  chipText: {
+    fontSize: Typography.sm,
+    fontWeight: '600',
   },
   input: {
+    minHeight: 38,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     paddingHorizontal: 10,
-    paddingVertical: 8,
-    fontSize: 15,
+    fontSize: 14,
+    width: '100%',
+  },
+  memoInput: {
+    minHeight: 86,
+    textAlignVertical: 'top',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    fontSize: 14,
   },
   titleRow: {
     flexDirection: 'row',
@@ -1372,9 +1580,7 @@ const styles = StyleSheet.create({
   titleInput: {
     flex: 1,
     minWidth: 0,
-  },
-  memoBlock: {
-    gap: 0,
+    width: undefined,
   },
   rowAlignStart: {
     alignItems: 'flex-start',
@@ -1382,40 +1588,71 @@ const styles = StyleSheet.create({
   dueRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
     flex: 1,
+    minWidth: 0,
+  },
+  dueDateButton: {
+    width: 108,
+    flexGrow: 0,
+    flexShrink: 0,
+    minHeight: 38,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  dueDateButtonText: {
+    fontSize: Typography.base,
+    textAlign: 'center',
+  },
+  dueQuickButton: {
+    flexGrow: 0,
+    flexShrink: 1,
+    minHeight: 38,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  dueQuickButtonText: {
+    fontSize: Typography.base * 0.7,
+    fontWeight: '600',
   },
   pickerButton: {
     flex: 1,
-    minHeight: 40,
+    minHeight: 38,
     borderWidth: 1,
-    borderRadius: 8,
+    borderRadius: Radius.sm,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 10,
   },
   pickerButtonText: {
     flex: 1,
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: Typography.base,
   },
   pickerChevron: {
     fontSize: 10,
     marginLeft: 4,
   },
   trackRow: {
-    flex: 1,
-    alignItems: 'flex-end',
+    alignItems: 'flex-start',
     justifyContent: 'center',
-    minHeight: 44,
   },
   pickerPlaceholder: {
-    fontSize: 15,
+    fontSize: Typography.base,
   },
   clearDueButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 8,
+    width: 32,
+    height: 32,
+    flexShrink: 0,
+    borderWidth: 1,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   pickerWrap: {
     marginTop: 8,
@@ -1435,7 +1672,7 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   historyDate: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '600',
   },
   deleteButtonWrap: {
@@ -1458,8 +1695,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 13,
   },
+  saveButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: Radius.sm,
+  },
   saveText: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '700',
   },
   saveTextBusy: {

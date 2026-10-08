@@ -19,7 +19,6 @@ import {
   findFriendByScannedUserId,
   getAllFriends,
   getFriendById,
-  getQrScannedFriends,
   getResolvedMyselfId,
   initializeDatabase,
 } from '../db';
@@ -31,7 +30,6 @@ import {
   type ConnectionRow,
 } from '@/lib/connectionSync';
 import { requireOnline } from '@/lib/networkReachability';
-import { formatScannedAtLabel } from '@/utils/qrScanHelpers';
 import { resolveFriendDisplayPhotoUri } from '@/utils/friendPhoto';
 import { useContentColors } from '@/utils/useContentColors';
 import {
@@ -213,20 +211,17 @@ export default function MyPageScreen() {
   const router = useRouter();
   const { session } = useAuthSession();
   const myUserId = session?.user.id?.trim().toLowerCase() ?? '';
-  const [qrFriends, setQrFriends] = useState<Friend[]>([]);
   const [myself, setMyself] = useState<Friend | null>(null);
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
   const [listError, setListError] = useState<string | null>(null);
   const [busyPeerId, setBusyPeerId] = useState<string | null>(null);
   const [requestsOpen, setRequestsOpen] = useState(false);
   const [friendsOpen, setFriendsOpen] = useState(true);
-  const [qrExpanded, setQrExpanded] = useState(false);
   const [personCount, setPersonCount] = useState(0);
   const [episodeCount, setEpisodeCount] = useState(0);
 
   const loadLocal = useCallback(() => {
     initializeDatabase();
-    setQrFriends(getQrScannedFriends());
     const myselfId = getResolvedMyselfId();
     setMyself(myselfId ? getFriendById(myselfId) : null);
     const friends = getAllFriends();
@@ -599,48 +594,6 @@ export default function MyPageScreen() {
               })
             )}
           </View>
-        ) : null}
-
-        {qrFriends.length > 0 ? (
-          <>
-            <MenuRow
-              icon="qr-code-outline"
-              label="QRで追加した人"
-              count={qrFriends.length}
-              expanded={qrExpanded}
-              onPress={() => setQrExpanded((prev) => !prev)}
-            />
-            {qrExpanded ? (
-              <View style={styles.nested}>
-                {qrFriends.map((friend) => (
-                  <Pressable
-                    key={friend.id}
-                    style={styles.personRow}
-                    onPress={() => router.push({ pathname: '/detail', params: { id: friend.id } })}
-                  >
-                    <CardPhotoThumb
-                      name={friend.name || '-'}
-                      photoUri={resolveFriendDisplayPhotoUri(friend)}
-                      size={AVATAR_SM}
-                    />
-                    <View style={styles.personMain}>
-                      <Text style={[styles.personName, contentTextStyle(content)]} numberOfLines={1}>
-                        {friend.name || '-'}
-                      </Text>
-                      {friend.nickname.trim() ? (
-                        <Text style={[styles.meta, contentMutedTextStyle(content)]} numberOfLines={1}>
-                          {friend.nickname}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <Text style={[styles.meta, contentMutedTextStyle(content)]}>
-                      {formatScannedAtLabel(friend.scannedAt)}
-                    </Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
-          </>
         ) : null}
       </View>
 

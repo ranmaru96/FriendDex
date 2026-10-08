@@ -11,7 +11,7 @@ const RecordWidgetView = (props: RecordWidgetProps) => {
   'widget';
   const label = props.label || '記録';
   return (
-    <VStack alignment="leading" modifiers={[padding({ all: 12 })]}>
+    <VStack alignment="leading" modifiers={[padding({ all: 2 })]}>
       <Text modifiers={[font({ size: 15, weight: 'semibold' })]}>{label}</Text>
     </VStack>
   );
