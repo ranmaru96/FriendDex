@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -17,8 +17,11 @@ import * as MediaLibrary from 'expo-media-library/legacy';
 import { PhotoLibraryThumb, preparePhotoThumbnails } from '@/modules/photo-thumbnails/src';
 import {
   claimEpisodePhotoPrefetch,
+  DEFAULT_EPISODE_PHOTO_SPAN,
+  EXTEND_DAYS,
   peekEpisodePhotoPrefetch,
   type EpisodePhotoPrefetch,
+  type EpisodePhotoSpan,
 } from '@/utils/episodePhotoPrefetch';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
@@ -26,29 +29,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Radius, Spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 
-const NEXT_PAGE_SIZE = 400;
-/** 上へ足す枚数。一度に足しすぎると、見えている日付の描画が追いつかない。 */
-const NEWER_CHUNK_SIZE = 80;
-/** 開いた直後に、対象日より新しい側へ足す最大枚数。続きは先頭付近まで来てから。 */
-const NEWER_INITIAL_MAX = 400;
-/** 先頭から何行以内なら、新しい側の続きを足すか。 */
-const NEWER_NEAR_TOP_ROWS = 6;
-/** ページ境界で重なりうる id だけ見る。全件の照合はしない。 */
-const NEWER_BOUNDARY_IDS = 64;
-/** チャンクを反映したあと、次を足すまでの間隔。操作中はさらに待つ。 */
-const CHUNK_GAP_MS = 250;
-/** ドラッグ終了後、慣性開始が来なければ操作中を解く。 */
-const USER_BUSY_RELEASE_MS = 80;
-/** busy のままイベントが来なければ操作中を解く。 */
-const USER_BUSY_STALE_MS = 3000;
-/** waitForIdle が busy / スクラブ待ちする上限。 */
-const WAIT_FOR_IDLE_BUSY_MAX_MS = 2000;
 const COLUMNS = 4;
 const SCRUBBER_HIT = 16;
 const SCRUBBER_THUMB = 44;
 /** ドラッグ中に写真を描き直す間隔。毎フレーム動かすと読み込みが追いつかず画面が空になる。 */
 const SCRUB_SCROLL_MS = 100;
 const THUMB_PREPARE_MS = 50;
+/** getItemLayout の offset に足すため、先頭のボタンは高さ固定にする。 */
+const EXTEND_BUTTON_HEIGHT = 48;
+
+type ExtendSide = 'newer' | 'older';
 
 function libraryScrollMetrics(
   count: number,
@@ -103,78 +93,6 @@ function formatAssetDate(creationTime: number): string {
   return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
-function appendUnique(current: MediaLibrary.Asset[], incoming: MediaLibrary.Asset[]): MediaLibrary.Asset[] {
-  if (incoming.length === 0) {
-    return current;
-  }
-  const seen = new Set(current.map((asset) => asset.id));
-  const extra = incoming.filter((asset) => !seen.has(asset.id));
-  if (extra.length === 0) {
-    return current;
-  }
-  return [...current, ...extra];
-}
-
-/** 一覧の組み直しとスクロール位置の維持が描画に追いついてから、次のページを取る。 */
-function settleFrame(): Promise<void> {
-  return new Promise((resolve) => {
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => resolve());
-    });
-  });
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/** 描画の合間を空け、スクロールやスクラブのあいだはチャンクを足さない。 */
-async function waitForIdle(
-  generation: number,
-  generationRef: { current: number },
-  userBusyRef: { current: boolean },
-  scrubbingRef: { current: boolean },
-): Promise<void> {
-  await settleFrame();
-  await delay(CHUNK_GAP_MS);
-  const busyStartedAt = Date.now();
-  while (generationRef.current === generation && (userBusyRef.current || scrubbingRef.current)) {
-    if (Date.now() - busyStartedAt >= WAIT_FOR_IDLE_BUSY_MAX_MS) {
-      break;
-    }
-    await delay(150);
-  }
-}
-
-/** 取得ページの先頭と、直前チャンクの境界だけを見る。createdAfter と createdBefore は範囲が重ならない。 */
-function appendNewerPending(
-  pending: MediaLibrary.Asset[],
-  head: MediaLibrary.Asset[],
-  incoming: MediaLibrary.Asset[],
-): void {
-  if (incoming.length === 0) {
-    return;
-  }
-  const seen = new Set<string>();
-  if (pending.length > 0) {
-    const start = Math.max(0, pending.length - NEWER_BOUNDARY_IDS);
-    for (let index = start; index < pending.length; index += 1) {
-      seen.add(pending[index].id);
-    }
-  } else {
-    const count = Math.min(NEWER_BOUNDARY_IDS, head.length);
-    for (let index = 0; index < count; index += 1) {
-      seen.add(head[index].id);
-    }
-  }
-  for (const asset of incoming) {
-    if (seen.has(asset.id)) {
-      continue;
-    }
-    seen.add(asset.id);
-    pending.push(asset);
-  }
-}
 function thumbnailIdsAround(
   assets: MediaLibrary.Asset[],
   topIndex: number,
@@ -207,21 +125,28 @@ export function EpisodePhotoLibraryModal({
   const { width } = useWindowDimensions();
   const { colors } = useAppTheme();
   const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [accessPrivileges, setAccessPrivileges] = useState<'all' | 'limited' | 'none' | undefined>(
     undefined
   );
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [topDateLabel, setTopDateLabel] = useState<string | null>(null);
   const [scrubbing, setScrubbing] = useState(false);
+  const [listKey, setListKey] = useState(0);
+  const [initialRow, setInitialRow] = useState(0);
+  const [hasNewerBeyond, setHasNewerBeyond] = useState(false);
+  const [hasOlderBeyond, setHasOlderBeyond] = useState(false);
+  const [extending, setExtending] = useState<ExtendSide | null>(null);
 
   const cellSize = Math.floor(width / COLUMNS);
   const rowStride = cellSize;
+  const headerHeight = hasNewerBeyond ? EXTEND_BUTTON_HEIGHT : 0;
 
   const listRef = useRef<FlatList<MediaLibrary.Asset>>(null);
   const generationRef = useRef(0);
   const assetsRef = useRef(assets);
   const rowStrideRef = useRef(rowStride);
+  const headerHeightRef = useRef(headerHeight);
   const viewportHeightRef = useRef(0);
   const paddingBottomRef = useRef(0);
   const scrubbingRef = useRef(false);
@@ -229,307 +154,111 @@ export function EpisodePhotoLibraryModal({
   const pendingScrubOffsetRef = useRef<number | null>(null);
   const lastScrubOffsetRef = useRef(0);
   const currentOffsetRef = useRef(0);
-  const pendingScrollAdjustRef = useRef(0);
-  const pinToTopRef = useRef(false);
-  const correctingScrollRef = useRef(false);
   const scrubScrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prepareTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPrepareOffsetRef = useRef<number | null>(null);
   const lastPrepareKeyRef = useRef('');
   const thumbPixelSizeRef = useRef(1);
-  const headRef = useRef<MediaLibrary.Asset[]>([]);
-  const tailRef = useRef<MediaLibrary.Asset[]>([]);
-  const newerCursorRef = useRef<string | undefined>(undefined);
-  const newerHasNextRef = useRef(false);
-  const newerPendingRef = useRef<MediaLibrary.Asset[]>([]);
-  const newerLoadingRef = useRef(false);
-  const newerBeforeMsRef = useRef(0);
-  const newerGenerationRef = useRef(0);
-  const loadMoreNewerRef = useRef<(generation: number) => Promise<void>>(async () => {});
-  const requestNewerIfNearTopRef = useRef<() => void>(() => {});
-  const userBusyRef = useRef(false);
-  const userBusyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const userBusyStaleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const spanRef = useRef<EpisodePhotoSpan>(DEFAULT_EPISODE_PHOTO_SPAN);
+  const extendingRef = useRef(false);
   const ratioSv = useSharedValue(0);
   const scrubbingSv = useSharedValue(0);
   const trackHeightSv = useSharedValue(0);
 
   assetsRef.current = assets;
   rowStrideRef.current = rowStride;
+  headerHeightRef.current = headerHeight;
   paddingBottomRef.current = insets.bottom + 24;
   thumbPixelSizeRef.current = Math.max(1, Math.round(cellSize * PixelRatio.get()));
 
-  const loadLibrary = useCallback(async (generation: number) => {
-    const publish = () => {
-      if (generationRef.current !== generation) {
+  const syncRatio = useCallback(
+    (offset: number) => {
+      const viewport = viewportHeightRef.current;
+      if (viewport <= 0) {
         return;
       }
-      const next = [...headRef.current, ...tailRef.current];
-      assetsRef.current = next;
-      setAssets(next);
-    };
-    const showTopDate = (list: MediaLibrary.Asset[]) => {
-      const top = list[0];
+      const { maxOffset } = libraryScrollMetrics(
+        assetsRef.current.length,
+        rowStrideRef.current,
+        viewport,
+        paddingBottomRef.current,
+      );
+      ratioSv.value = maxOffset <= 0 ? 0 : Math.min(1, Math.max(0, offset / maxOffset));
+    },
+    [ratioSv]
+  );
+
+  const showResult = useCallback(
+    (result: EpisodePhotoPrefetch, anchorId: string | null) => {
+      const list = result.assets;
+      let topIndex = result.dayStartIndex;
+      if (anchorId) {
+        const found = list.findIndex((asset) => asset.id === anchorId);
+        if (found >= 0) {
+          topIndex = found;
+        }
+      }
+      topIndex = list.length === 0 ? 0 : Math.min(list.length - 1, Math.max(0, topIndex));
+      const row = Math.floor(topIndex / COLUMNS);
+      const header = result.hasNewerBeyond ? EXTEND_BUTTON_HEIGHT : 0;
+      const offset = row > 0 ? header + row * rowStrideRef.current : 0;
+      assetsRef.current = list;
+      headerHeightRef.current = header;
+      currentOffsetRef.current = offset;
+      lastScrubOffsetRef.current = offset;
+      lastPrepareKeyRef.current = '';
+      setAssets(list);
+      setInitialRow(row);
+      setHasNewerBeyond(result.hasNewerBeyond);
+      setHasOlderBeyond(result.hasOlderBeyond);
+      setListKey((prev) => prev + 1);
+      const top = list[topIndex];
       setTopDateLabel(top ? formatAssetDate(top.creationTime) : null);
-    };
-
-    headRef.current = [];
-    tailRef.current = [];
-    newerCursorRef.current = undefined;
-    newerHasNextRef.current = false;
-    newerPendingRef.current = [];
-    newerLoadingRef.current = false;
-    newerBeforeMsRef.current = 0;
-    newerGenerationRef.current = generation;
-    pendingScrollAdjustRef.current = 0;
-    pinToTopRef.current = false;
-    correctingScrollRef.current = false;
-    currentOffsetRef.current = 0;
-    lastScrubOffsetRef.current = 0;
-    const peeked = peekEpisodePhotoPrefetch(anchorDate);
-    if (peeked && peeked.assets.length > 0) {
-      tailRef.current = peeked.assets;
-      publish();
+      syncRatio(offset);
       setLoading(false);
-      showTopDate(peeked.assets);
-    } else {
-      setAssets([]);
-      assetsRef.current = [];
-      setTopDateLabel(null);
-      setLoading(true);
-    }
+    },
+    [syncRatio]
+  );
 
-    let seeded: EpisodePhotoPrefetch;
-    try {
-      seeded = await claimEpisodePhotoPrefetch(anchorDate);
-    } catch {
-      if (generationRef.current === generation) {
-        setLoading(false);
-      }
-      return;
-    }
-    if (generationRef.current !== generation) {
-      return;
-    }
-    if (!seeded.granted) {
-      setLoading(false);
-      return;
-    }
-    if (tailRef.current.length === 0) {
-      tailRef.current = seeded.assets;
-      publish();
-      setLoading(false);
-      showTopDate(seeded.assets);
-    }
-    newerBeforeMsRef.current = seeded.beforeMs;
-
-    const flushChunk = (force: boolean) => {
-      if (generationRef.current !== generation) {
-        return false;
-      }
-      const pending = newerPendingRef.current;
-      const leftover = pending.length % COLUMNS;
-      const aligned = pending.length - leftover;
-      const count = force
-        ? pending.length <= COLUMNS
-          ? pending.length
-          : Math.min(NEWER_CHUNK_SIZE, aligned)
-        : pending.length >= NEWER_CHUNK_SIZE
-          ? NEWER_CHUNK_SIZE
-          : 0;
-      if (count === 0) {
-        return false;
-      }
-      const stride = rowStrideRef.current;
-      const isRemainder = count % COLUMNS !== 0;
-      if (isRemainder) {
-        // 端数は先頭付近だけで出す。列ずれ補正はせず、先頭に固定する。
-        if (stride > 0 && currentOffsetRef.current >= stride) {
-          return false;
-        }
-        const chunk = pending.slice(0, count);
-        newerPendingRef.current = pending.slice(count);
-        chunk.reverse();
-        headRef.current = [...chunk, ...headRef.current];
-        pinToTopRef.current = true;
-        pendingScrollAdjustRef.current = 0;
-        publish();
-        return true;
-      }
-      const chunk = pending.slice(0, count);
-      newerPendingRef.current = pending.slice(count);
-      chunk.reverse();
-      headRef.current = [...chunk, ...headRef.current];
-      if (stride > 0) {
-        pendingScrollAdjustRef.current += (count / COLUMNS) * stride;
-      }
-      publish();
-      return true;
-    };
-
-    const fetchNewerPage = async () => {
-      const page = await MediaLibrary.getAssetsAsync({
-        first: NEXT_PAGE_SIZE,
-        after: newerCursorRef.current,
-        mediaType: MediaLibrary.MediaType.photo,
-        sortBy: [[MediaLibrary.SortBy.creationTime, true]],
-        createdAfter: newerBeforeMsRef.current,
-      });
-      if (generationRef.current !== generation) {
-        return false;
-      }
-      appendNewerPending(newerPendingRef.current, headRef.current, page.assets);
-      newerHasNextRef.current = page.hasNextPage && Boolean(page.endCursor);
-      newerCursorRef.current = page.endCursor;
-      return true;
-    };
-
-    const pumpNewer = async (maxHead: number, pauseBeforeFirstChunk: boolean) => {
-      let pause = pauseBeforeFirstChunk;
-      while (generationRef.current === generation && headRef.current.length < maxHead) {
-        const needFetch = newerPendingRef.current.length < NEWER_CHUNK_SIZE && newerHasNextRef.current;
-        if (!needFetch && newerPendingRef.current.length === 0) {
-          break;
-        }
-        if (pause) {
-          await waitForIdle(generation, generationRef, userBusyRef, scrubbingRef);
-          if (generationRef.current !== generation) {
-            return;
-          }
-        }
-        if (newerPendingRef.current.length < NEWER_CHUNK_SIZE && newerHasNextRef.current) {
-          const fetched = await fetchNewerPage();
-          if (!fetched || generationRef.current !== generation) {
-            return;
-          }
-        }
-        if (headRef.current.length >= maxHead) {
-          break;
-        }
-        const exhausted = !newerHasNextRef.current;
-        if (!flushChunk(exhausted)) {
-          break;
-        }
-        pause = true;
-        if (headRef.current.length >= maxHead) {
-          break;
-        }
-      }
-      if (generationRef.current === generation && !newerHasNextRef.current) {
-        while (generationRef.current === generation && newerPendingRef.current.length > 0) {
-          if (pause) {
-            await waitForIdle(generation, generationRef, userBusyRef, scrubbingRef);
-            if (generationRef.current !== generation) {
-              return;
-            }
-          }
-          if (!flushChunk(true)) {
-            break;
-          }
-          pause = true;
-        }
-      }
-    };
-
-    const loadOlder = async () => {
-      let cursor = seeded.endCursor;
-      let hasNext = seeded.hasNextPage;
-      while (generationRef.current === generation && hasNext && cursor) {
-        const page = await MediaLibrary.getAssetsAsync({
-          first: NEXT_PAGE_SIZE,
-          after: cursor,
-          mediaType: MediaLibrary.MediaType.photo,
-          sortBy: [MediaLibrary.SortBy.creationTime],
-          createdBefore: seeded.beforeMs,
-        });
-        if (generationRef.current !== generation) {
+  const loadLibrary = useCallback(
+    async (generation: number, anchorId: string | null) => {
+      const span = spanRef.current;
+      if (anchorId == null) {
+        const peeked = peekEpisodePhotoPrefetch(anchorDate, span);
+        if (peeked) {
+          showResult(peeked, null);
           return;
         }
-        tailRef.current = appendUnique(tailRef.current, page.assets);
-        publish();
-        hasNext = page.hasNextPage;
-        cursor = page.endCursor;
-        if (hasNext) {
-          await waitForIdle(generation, generationRef, userBusyRef, scrubbingRef);
-          if (generationRef.current !== generation) {
-            return;
-          }
-        }
+        assetsRef.current = [];
+        setAssets([]);
+        setTopDateLabel(null);
+        setLoading(true);
       }
-    };
-
-    const loadNewer = async () => {
-      if (seeded.isToday) {
-        return;
-      }
-      // 該当日を描いてから、その直後の写真を上へ足す。新しい順のままだと今日側から入り、
-      // 位置を戻すスクロールが見えていない範囲へ飛んで画面が空になる。
-      newerHasNextRef.current = true;
-      newerLoadingRef.current = true;
+      let result: EpisodePhotoPrefetch;
       try {
-        await pumpNewer(NEWER_INITIAL_MAX, true);
-      } finally {
-        newerLoadingRef.current = false;
-      }
-    };
-
-    const loadMoreNewer = async (requestedGeneration: number) => {
-      if (requestedGeneration === 0 || generationRef.current !== requestedGeneration) {
-        return;
-      }
-      if (newerLoadingRef.current) {
-        return;
-      }
-      if (!newerHasNextRef.current && newerPendingRef.current.length === 0) {
-        return;
-      }
-      newerLoadingRef.current = true;
-      try {
-        const maxHead = headRef.current.length + NEWER_INITIAL_MAX;
-        await pumpNewer(maxHead, false);
+        result = await claimEpisodePhotoPrefetch(anchorDate, span);
       } catch {
-        // 続きは次に先頭付近へ来たときに取り直す。
-      } finally {
-        newerLoadingRef.current = false;
+        if (generationRef.current === generation) {
+          setLoading(false);
+        }
+        return;
       }
-      if (generationRef.current === requestedGeneration) {
-        requestNewerIfNearTopRef.current();
+      if (generationRef.current !== generation) {
+        return;
       }
-    };
-    loadMoreNewerRef.current = loadMoreNewer;
-
-    let failed = false;
-    try {
-      await loadNewer();
-    } catch {
-      failed = true;
-    }
-    if (generationRef.current !== generation) {
-      return;
-    }
-    try {
-      await loadOlder();
-    } catch {
-      failed = true;
-    }
-    if (
-      failed &&
-      generationRef.current === generation &&
-      tailRef.current.length === 0 &&
-      headRef.current.length === 0
-    ) {
-      setAssets([]);
-      assetsRef.current = [];
-      setTopDateLabel(null);
-    }
-    if (generationRef.current === generation) {
-      setLoading(false);
-    }
-  }, [anchorDate]);
+      if (!result.granted) {
+        setLoading(false);
+        return;
+      }
+      showResult(result, anchorId);
+    },
+    [anchorDate, showResult]
+  );
 
   const reload = useCallback(async () => {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
+    spanRef.current = DEFAULT_EPISODE_PHOTO_SPAN;
     const permission = await MediaLibrary.getPermissionsAsync(false, ['photo']);
     if (generationRef.current !== generation) {
       return;
@@ -539,25 +268,29 @@ export function EpisodePhotoLibraryModal({
     lastPrepareKeyRef.current = '';
     lastScrubOffsetRef.current = 0;
     currentOffsetRef.current = 0;
-    pendingScrollAdjustRef.current = 0;
-    pinToTopRef.current = false;
-    correctingScrollRef.current = false;
     if (!permission.granted) {
-      headRef.current = [];
-      tailRef.current = [];
-      newerCursorRef.current = undefined;
-      newerHasNextRef.current = false;
-      newerPendingRef.current = [];
-      newerLoadingRef.current = false;
-      newerGenerationRef.current = 0;
       assetsRef.current = [];
       setAssets([]);
+      setHasNewerBeyond(false);
+      setHasOlderBeyond(false);
       setTopDateLabel(null);
       setLoading(false);
       return;
     }
-    await loadLibrary(generation);
-  }, [loadLibrary]);
+    await loadLibrary(generation, null);
+  }, [loadLibrary, ratioSv]);
+
+  useLayoutEffect(() => {
+    if (!visible) {
+      return;
+    }
+    assetsRef.current = [];
+    setAssets([]);
+    setHasNewerBeyond(false);
+    setHasOlderBeyond(false);
+    setTopDateLabel(null);
+    setLoading(true);
+  }, [visible]);
 
   useEffect(() => {
     if (!visible) {
@@ -571,24 +304,10 @@ export function EpisodePhotoLibraryModal({
         clearTimeout(prepareTimerRef.current);
         prepareTimerRef.current = null;
       }
-      if (userBusyTimerRef.current != null) {
-        clearTimeout(userBusyTimerRef.current);
-        userBusyTimerRef.current = null;
-      }
-      if (userBusyStaleTimerRef.current != null) {
-        clearTimeout(userBusyStaleTimerRef.current);
-        userBusyStaleTimerRef.current = null;
-      }
-      userBusyRef.current = false;
       scrubbingRef.current = false;
-      newerHasNextRef.current = false;
-      newerPendingRef.current = [];
-      newerLoadingRef.current = false;
-      newerGenerationRef.current = 0;
-      pendingScrollAdjustRef.current = 0;
-      pinToTopRef.current = false;
-      correctingScrollRef.current = false;
-      currentOffsetRef.current = 0;
+      spanRef.current = DEFAULT_EPISODE_PHOTO_SPAN;
+      extendingRef.current = false;
+      setExtending(null);
       return;
     }
     void reload();
@@ -641,26 +360,19 @@ export function EpisodePhotoLibraryModal({
   const scrollListTo = useCallback((offset: number) => {
     listRef.current?.scrollToOffset({ offset, animated: false });
     currentOffsetRef.current = offset;
-    lastScrubOffsetRef.current = offset;
   }, []);
 
-  const applyPendingScrollAdjust = useCallback(() => {
-    if (pinToTopRef.current) {
-      pinToTopRef.current = false;
-      pendingScrollAdjustRef.current = 0;
-      correctingScrollRef.current = true;
-      scrollListTo(0);
-      return;
-    }
-    const delta = pendingScrollAdjustRef.current;
-    if (delta <= 0) {
-      return;
-    }
-    pendingScrollAdjustRef.current = 0;
-    const next = currentOffsetRef.current + delta;
-    correctingScrollRef.current = true;
-    scrollListTo(next);
-  }, [scrollListTo]);
+  /** ヘッダーのボタンを除いた、写真の並びの中での位置。 */
+  const topIndexAt = useCallback((offset: number) => {
+    const list = assetsRef.current;
+    return topIndexForOffset(
+      Math.max(0, offset - headerHeightRef.current),
+      list.length,
+      rowStrideRef.current,
+      viewportHeightRef.current,
+      paddingBottomRef.current,
+    );
+  }, []);
 
   const flushPrepare = useCallback(() => {
     const offset = pendingPrepareOffsetRef.current;
@@ -670,15 +382,14 @@ export function EpisodePhotoLibraryModal({
     const list = assetsRef.current;
     const viewport = viewportHeightRef.current;
     const stride = rowStrideRef.current;
-    const topIndex = topIndexForOffset(offset, list.length, stride, viewport, paddingBottomRef.current);
-    const ids = thumbnailIdsAround(list, topIndex, viewport, stride);
+    const ids = thumbnailIdsAround(list, topIndexAt(offset), viewport, stride);
     const key = `${ids[0] ?? ''}:${ids.length}`;
     if (key === lastPrepareKeyRef.current) {
       return;
     }
     lastPrepareKeyRef.current = key;
     preparePhotoThumbnails(ids, thumbPixelSizeRef.current);
-  }, []);
+  }, [topIndexAt]);
 
   const schedulePrepare = useCallback(
     (offset: number) => {
@@ -696,31 +407,47 @@ export function EpisodePhotoLibraryModal({
   );
 
   useEffect(() => {
-    if (!visible || assets.length === 0) {
-      if (assets.length === 0) {
-        lastPrepareKeyRef.current = '';
-      }
+    if (!visible || assetsRef.current.length === 0) {
+      lastPrepareKeyRef.current = '';
       return;
     }
-    schedulePrepare(lastScrubOffsetRef.current);
-  }, [assets.length === 0, schedulePrepare, visible]);
+    schedulePrepare(currentOffsetRef.current);
+  }, [listKey, schedulePrepare, visible]);
 
   const showDateAtOffset = useCallback(
     (offset: number) => {
-      const list = assetsRef.current;
-      const topIndex = topIndexForOffset(
-        offset,
-        list.length,
-        rowStrideRef.current,
-        viewportHeightRef.current,
-        paddingBottomRef.current,
-      );
-      const asset = list[topIndex];
+      const asset = assetsRef.current[topIndexAt(offset)];
       const label = asset ? formatAssetDate(asset.creationTime) : '';
       setTopDateLabel((prev) => (prev === label ? prev : label || null));
       schedulePrepare(offset);
     },
-    [schedulePrepare]
+    [schedulePrepare, topIndexAt]
+  );
+
+  const extendRange = useCallback(
+    async (side: ExtendSide) => {
+      if (extendingRef.current) {
+        return;
+      }
+      const list = assetsRef.current;
+      const anchorId = list[topIndexAt(currentOffsetRef.current)]?.id ?? null;
+      const span = spanRef.current;
+      spanRef.current =
+        side === 'newer'
+          ? { ...span, newerDays: span.newerDays + EXTEND_DAYS }
+          : { ...span, olderDays: span.olderDays + EXTEND_DAYS };
+      const generation = generationRef.current + 1;
+      generationRef.current = generation;
+      extendingRef.current = true;
+      setExtending(side);
+      try {
+        await loadLibrary(generation, anchorId);
+      } finally {
+        extendingRef.current = false;
+        setExtending(null);
+      }
+    },
+    [loadLibrary, topIndexAt]
   );
 
   const applyScrub = useCallback(
@@ -772,70 +499,6 @@ export function EpisodePhotoLibraryModal({
     [scrollListTo, showDateAtOffset]
   );
 
-  const requestNewerIfNearTop = useCallback(() => {
-    if (scrubbingRef.current) {
-      return;
-    }
-    const stride = rowStrideRef.current;
-    if (stride <= 0 || currentOffsetRef.current >= stride * NEWER_NEAR_TOP_ROWS) {
-      return;
-    }
-    const pendingCount = newerPendingRef.current.length;
-    const canFetchMore = newerHasNextRef.current;
-    const canFlushChunk = pendingCount >= NEWER_CHUNK_SIZE;
-    const canFlushRemainder = pendingCount > 0 && !canFetchMore && currentOffsetRef.current < stride;
-    if (!canFetchMore && !canFlushChunk && !canFlushRemainder) {
-      return;
-    }
-    void loadMoreNewerRef.current(newerGenerationRef.current);
-  }, []);
-  requestNewerIfNearTopRef.current = requestNewerIfNearTop;
-
-  const armUserBusyStale = useCallback(() => {
-    if (userBusyStaleTimerRef.current != null) {
-      clearTimeout(userBusyStaleTimerRef.current);
-    }
-    userBusyStaleTimerRef.current = setTimeout(() => {
-      userBusyStaleTimerRef.current = null;
-      userBusyRef.current = false;
-    }, USER_BUSY_STALE_MS);
-  }, []);
-
-  const markUserBusy = useCallback(() => {
-    if (userBusyTimerRef.current != null) {
-      clearTimeout(userBusyTimerRef.current);
-      userBusyTimerRef.current = null;
-    }
-    userBusyRef.current = true;
-    armUserBusyStale();
-  }, [armUserBusyStale]);
-
-  const releaseUserBusySoon = useCallback(() => {
-    if (userBusyTimerRef.current != null) {
-      clearTimeout(userBusyTimerRef.current);
-    }
-    userBusyTimerRef.current = setTimeout(() => {
-      userBusyTimerRef.current = null;
-      if (userBusyStaleTimerRef.current != null) {
-        clearTimeout(userBusyStaleTimerRef.current);
-        userBusyStaleTimerRef.current = null;
-      }
-      userBusyRef.current = false;
-    }, USER_BUSY_RELEASE_MS);
-  }, []);
-
-  const markUserIdle = useCallback(() => {
-    if (userBusyTimerRef.current != null) {
-      clearTimeout(userBusyTimerRef.current);
-      userBusyTimerRef.current = null;
-    }
-    if (userBusyStaleTimerRef.current != null) {
-      clearTimeout(userBusyStaleTimerRef.current);
-      userBusyStaleTimerRef.current = null;
-    }
-    userBusyRef.current = false;
-  }, []);
-
   const endScrub = useCallback(() => {
     if (scrubScrollTimerRef.current != null) {
       clearTimeout(scrubScrollTimerRef.current);
@@ -849,8 +512,7 @@ export function EpisodePhotoLibraryModal({
     }
     scrubbingRef.current = false;
     setScrubbing(false);
-    requestNewerIfNearTop();
-  }, [requestNewerIfNearTop, scrollListTo]);
+  }, [scrollListTo]);
 
   const scrubGesture = useMemo(
     () =>
@@ -881,36 +543,16 @@ export function EpisodePhotoLibraryModal({
   const onScroll = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offset = event.nativeEvent.contentOffset.y;
-      const viewport = event.nativeEvent.layoutMeasurement.height;
-      viewportHeightRef.current = viewport;
+      viewportHeightRef.current = event.nativeEvent.layoutMeasurement.height;
       currentOffsetRef.current = offset;
-      lastScrubOffsetRef.current = offset;
-      if (correctingScrollRef.current) {
-        correctingScrollRef.current = false;
-        const { maxOffset } = libraryScrollMetrics(
-          assetsRef.current.length,
-          rowStrideRef.current,
-          viewport,
-          paddingBottomRef.current,
-        );
-        ratioSv.value = maxOffset <= 0 ? 0 : Math.min(1, Math.max(0, offset / maxOffset));
-        return;
-      }
       if (scrubbingRef.current) {
         return;
       }
+      lastScrubOffsetRef.current = offset;
       showDateAtOffset(offset);
-      const { maxOffset } = libraryScrollMetrics(
-        assetsRef.current.length,
-        rowStrideRef.current,
-        viewport,
-        paddingBottomRef.current,
-      );
-      const ratio = maxOffset <= 0 ? 0 : Math.min(1, Math.max(0, offset / maxOffset));
-      ratioSv.value = ratio;
-      requestNewerIfNearTop();
+      syncRatio(offset);
     },
-    [ratioSv, requestNewerIfNearTop, showDateAtOffset]
+    [showDateAtOffset, syncRatio]
   );
 
   const orderById = useMemo(() => {
@@ -962,10 +604,31 @@ export function EpisodePhotoLibraryModal({
   const getItemLayout = useCallback(
     (_data: ArrayLike<MediaLibrary.Asset> | null | undefined, index: number) => ({
       length: cellSize,
-      offset: cellSize * index,
+      offset: headerHeight + cellSize * index,
       index,
     }),
-    [cellSize]
+    [cellSize, headerHeight]
+  );
+  const renderExtendButton = (side: ExtendSide) => (
+    <Pressable
+      style={styles.extendButton}
+      onPress={() => void extendRange(side)}
+      disabled={extending != null || preparing}
+    >
+      {extending === side ? (
+        <ActivityIndicator color={colors.onScreenTextSecondary} />
+      ) : (
+        <Text
+          style={[
+            styles.extendLabel,
+            { color: colors.onScreenText },
+            extending != null ? styles.headerActionDisabled : null,
+          ]}
+        >
+          {side === 'newer' ? 'さらに新しい写真を表示' : 'さらに古い写真を表示'}
+        </Text>
+      )}
+    </Pressable>
   );
   const thumbStyle = useAnimatedStyle(() => ({
     top: ratioSv.value * Math.max(0, trackHeightSv.value - SCRUBBER_THUMB),
@@ -978,6 +641,8 @@ export function EpisodePhotoLibraryModal({
       : 8;
     return { top };
   });
+
+  const showList = !loading && assets.length > 0;
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -1031,44 +696,41 @@ export function EpisodePhotoLibraryModal({
             </View>
           ) : null}
           <View style={styles.body}>
-            <FlatList
-              ref={listRef}
-              style={styles.list}
-              data={assets}
-              keyExtractor={(item) => item.id}
-              numColumns={COLUMNS}
-              initialNumToRender={COLUMNS * 8}
-              maxToRenderPerBatch={COLUMNS * 8}
-              updateCellsBatchingPeriod={16}
-              windowSize={4}
-              removeClippedSubviews={false}
-              scrollEventThrottle={32}
-              getItemLayout={getItemLayout}
-              onScroll={onScroll}
-              onScrollBeginDrag={markUserBusy}
-              onScrollEndDrag={releaseUserBusySoon}
-              onMomentumScrollBegin={markUserBusy}
-              onMomentumScrollEnd={markUserIdle}
-              onContentSizeChange={() => {
-                applyPendingScrollAdjust();
-              }}
-              onLayout={(event) => {
-                viewportHeightRef.current = event.nativeEvent.layout.height;
-                schedulePrepare(currentOffsetRef.current);
-              }}
-              contentContainerStyle={listContentStyle}
-              renderItem={renderPhoto}
-              ListEmptyComponent={
-                loading ? (
-                  <ActivityIndicator style={styles.empty} color={colors.onScreenTextSecondary} />
-                ) : (
-                  <Text style={[styles.emptyText, { color: colors.onScreenTextSecondary }]}>
-                    {limited ? '表示できる写真がありません' : '写真がありません'}
-                  </Text>
-                )
-              }
-            />
-            {topDateLabel ? (
+            {showList ? (
+              <FlatList
+                key={`library-${listKey}`}
+                ref={listRef}
+                style={styles.list}
+                data={assets}
+                keyExtractor={(item) => item.id}
+                numColumns={COLUMNS}
+                initialNumToRender={COLUMNS * 8}
+                initialScrollIndex={initialRow > 0 ? initialRow : undefined}
+                maxToRenderPerBatch={COLUMNS * 8}
+                updateCellsBatchingPeriod={16}
+                windowSize={4}
+                removeClippedSubviews={false}
+                scrollEventThrottle={32}
+                getItemLayout={getItemLayout}
+                onScroll={onScroll}
+                onLayout={(event) => {
+                  viewportHeightRef.current = event.nativeEvent.layout.height;
+                  syncRatio(currentOffsetRef.current);
+                  schedulePrepare(currentOffsetRef.current);
+                }}
+                contentContainerStyle={listContentStyle}
+                renderItem={renderPhoto}
+                ListHeaderComponent={hasNewerBeyond ? renderExtendButton('newer') : null}
+                ListFooterComponent={hasOlderBeyond ? renderExtendButton('older') : null}
+              />
+            ) : loading ? (
+              <ActivityIndicator style={styles.empty} color={colors.onScreenTextSecondary} />
+            ) : (
+              <Text style={[styles.emptyText, { color: colors.onScreenTextSecondary }]}>
+                {limited ? '表示できる写真がありません' : '写真がありません'}
+              </Text>
+            )}
+            {showList && topDateLabel ? (
               <Animated.View
                 pointerEvents="none"
                 style={[styles.dateChip, scrubbing ? styles.dateChipScrubbing : null, dateChipStyle]}
@@ -1090,7 +752,7 @@ export function EpisodePhotoLibraryModal({
                 }}
               >
                 <View style={[styles.scrubberTrack, { backgroundColor: colors.topBarBorder }]} />
-                {assets.length > 0 ? (
+                {showList ? (
                   <Animated.View
                     style={[styles.scrubberThumb, thumbStyle, { backgroundColor: colors.onScreenText }]}
                   />
@@ -1138,6 +800,15 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+  },
+  extendButton: {
+    height: EXTEND_BUTTON_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  extendLabel: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   dateChip: {
     position: 'absolute',
