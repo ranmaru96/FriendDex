@@ -12,7 +12,10 @@ import android.util.Size
 import java.util.concurrent.Executors
 
 object PhotoThumbCache {
-  private const val MAX_BYTES = 24 * 1024 * 1024
+  /** 低解像度と高解像度の両方を持つため、端末のメモリに合わせて広げる。 */
+  private val MAX_BYTES = (Runtime.getRuntime().maxMemory() / 8)
+    .coerceIn(24L * 1024 * 1024, 64L * 1024 * 1024)
+    .toInt()
 
   private val cache = object : LruCache<String, Bitmap>(MAX_BYTES) {
     override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
@@ -24,7 +27,9 @@ object PhotoThumbCache {
   @Volatile
   private var prepareGeneration = 0
 
-  fun get(assetId: String): Bitmap? = cache.get(assetId)
+  private fun key(assetId: String, pixelSize: Int) = "$assetId@$pixelSize"
+
+  fun get(assetId: String, pixelSize: Int): Bitmap? = cache.get(key(assetId, pixelSize.coerceAtLeast(1)))
 
   fun prepare(context: Context, assetIds: List<String>, pixelSize: Int) {
     val appContext = context.applicationContext
@@ -36,7 +41,7 @@ object PhotoThumbCache {
         if (generation != prepareGeneration) {
           return@execute
         }
-        if (cache.get(assetId) != null) {
+        if (cache.get(key(assetId, size)) != null) {
           continue
         }
         try {
@@ -48,13 +53,13 @@ object PhotoThumbCache {
   }
 
   fun loadAsync(context: Context, assetId: String, pixelSize: Int, onLoaded: (Bitmap?) -> Unit) {
-    val cached = cache.get(assetId)
+    val size = pixelSize.coerceAtLeast(1)
+    val cached = cache.get(key(assetId, size))
     if (cached != null) {
       onLoaded(cached)
       return
     }
     val appContext = context.applicationContext
-    val size = pixelSize.coerceAtLeast(1)
     loadExecutor.execute {
       val bitmap = try {
         load(appContext, assetId, size, allowFullDecode = true)
@@ -66,7 +71,8 @@ object PhotoThumbCache {
   }
 
   private fun load(context: Context, assetId: String, pixelSize: Int, allowFullDecode: Boolean): Bitmap? {
-    cache.get(assetId)?.let { return it }
+    val cacheKey = key(assetId, pixelSize)
+    cache.get(cacheKey)?.let { return it }
     val id = assetId.toLongOrNull() ?: return null
     val resolver = context.contentResolver
     val uri = ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
@@ -82,7 +88,7 @@ object PhotoThumbCache {
       null
     }
     if (bitmap != null) {
-      cache.put(assetId, bitmap)
+      cache.put(cacheKey, bitmap)
     }
     return bitmap
   }

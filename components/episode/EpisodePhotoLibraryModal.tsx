@@ -1,10 +1,18 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Modal,
-  PixelRatio,
   Pressable,
   StyleSheet,
   Text,
@@ -14,12 +22,16 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 import * as MediaLibrary from 'expo-media-library/legacy';
+import { Image } from 'expo-image';
 import { PhotoLibraryThumb, preparePhotoThumbnails } from '@/modules/photo-thumbnails/src';
 import {
   claimEpisodePhotoPrefetch,
   DEFAULT_EPISODE_PHOTO_SPAN,
   EXTEND_DAYS,
+  PHOTO_LIBRARY_COLUMNS,
   peekEpisodePhotoPrefetch,
+  photoLibraryCellSize,
+  photoThumbPixelSize,
   type EpisodePhotoPrefetch,
   type EpisodePhotoSpan,
 } from '@/utils/episodePhotoPrefetch';
@@ -29,7 +41,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Radius, Spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
 
-const COLUMNS = 4;
+const COLUMNS = PHOTO_LIBRARY_COLUMNS;
+/** 慣性が止まってから、止まったとみなすまで。 */
+const SETTLE_AFTER_MOMENTUM_MS = 150;
+/** 指を離したあと、慣性が始まらなければ止まったとみなすまで。 */
+const SETTLE_AFTER_DRAG_MS = 80;
+/** 高解像度にする範囲。表示中の行の前後に足す行数。 */
+const HIGH_RES_MARGIN_ROWS = 2;
 const SCRUBBER_HIT = 16;
 const SCRUBBER_THUMB = 44;
 /** ドラッグ中に写真を描き直す間隔。毎フレーム動かすと読み込みが追いつかず画面が空になる。 */
@@ -39,6 +57,11 @@ const THUMB_PREPARE_MS = 50;
 const EXTEND_BUTTON_HEIGHT = 48;
 
 type ExtendSide = 'newer' | 'older';
+
+type PhotoPreview = {
+  asset: MediaLibrary.Asset;
+  localUri: string | null;
+};
 
 function libraryScrollMetrics(
   count: number,
@@ -110,6 +133,58 @@ function thumbnailIdsAround(
   return ids;
 }
 
+type LibraryPhotoCellProps = {
+  asset: MediaLibrary.Asset;
+  cellSize: number;
+  pixelSize: number;
+  highQuality: boolean;
+  order: number | undefined;
+  selectionFull: boolean;
+  preparing: boolean;
+  onToggle: (assetId: string) => void;
+  onPreview: (asset: MediaLibrary.Asset) => void;
+};
+
+const LibraryPhotoCell = memo(function LibraryPhotoCell({
+  asset,
+  cellSize,
+  pixelSize,
+  highQuality,
+  order,
+  selectionFull,
+  preparing,
+  onToggle,
+  onPreview,
+}: LibraryPhotoCellProps) {
+  const checked = order != null;
+  return (
+    <Pressable
+      style={{ width: cellSize, height: cellSize, backgroundColor: '#d6d6d6' }}
+      onPress={() => {
+        if (!checked && selectionFull) {
+          return;
+        }
+        onToggle(asset.id);
+      }}
+      onLongPress={() => onPreview(asset)}
+      disabled={preparing}
+    >
+      <PhotoLibraryThumb
+        assetId={asset.id}
+        uri={asset.uri}
+        pixelSize={pixelSize}
+        highQuality={highQuality}
+        style={styles.thumb}
+      />
+      {checked ? (
+        <View style={[styles.badge, styles.badgeOn]}>
+          <Text style={styles.badgeText}>{String(order + 1)}</Text>
+        </View>
+      ) : null}
+    </Pressable>
+  );
+});
+
 export function EpisodePhotoLibraryModal({
   visible,
   maxSelection,
@@ -137,8 +212,12 @@ export function EpisodePhotoLibraryModal({
   const [hasNewerBeyond, setHasNewerBeyond] = useState(false);
   const [hasOlderBeyond, setHasOlderBeyond] = useState(false);
   const [extending, setExtending] = useState<ExtendSide | null>(null);
+  const [preview, setPreview] = useState<PhotoPreview | null>(null);
+  const [isMoving, setIsMoving] = useState(false);
 
-  const cellSize = Math.floor(width / COLUMNS);
+  const cellSize = photoLibraryCellSize(width);
+  const lowPixelSize = photoThumbPixelSize(cellSize, false);
+  const highPixelSize = photoThumbPixelSize(cellSize, true);
   const rowStride = cellSize;
   const headerHeight = hasNewerBeyond ? EXTEND_BUTTON_HEIGHT : 0;
 
@@ -158,9 +237,12 @@ export function EpisodePhotoLibraryModal({
   const prepareTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPrepareOffsetRef = useRef<number | null>(null);
   const lastPrepareKeyRef = useRef('');
-  const thumbPixelSizeRef = useRef(1);
+  const lowPixelSizeRef = useRef(lowPixelSize);
+  const highPixelSizeRef = useRef(highPixelSize);
   const spanRef = useRef<EpisodePhotoSpan>(DEFAULT_EPISODE_PHOTO_SPAN);
   const extendingRef = useRef(false);
+  const previewTokenRef = useRef(0);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const ratioSv = useSharedValue(0);
   const scrubbingSv = useSharedValue(0);
   const trackHeightSv = useSharedValue(0);
@@ -169,7 +251,8 @@ export function EpisodePhotoLibraryModal({
   rowStrideRef.current = rowStride;
   headerHeightRef.current = headerHeight;
   paddingBottomRef.current = insets.bottom + 24;
-  thumbPixelSizeRef.current = Math.max(1, Math.round(cellSize * PixelRatio.get()));
+  lowPixelSizeRef.current = lowPixelSize;
+  highPixelSizeRef.current = highPixelSize;
 
   const syncRatio = useCallback(
     (offset: number) => {
@@ -207,11 +290,16 @@ export function EpisodePhotoLibraryModal({
       currentOffsetRef.current = offset;
       lastScrubOffsetRef.current = offset;
       lastPrepareKeyRef.current = '';
+      if (settleTimerRef.current != null) {
+        clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
       setAssets(list);
       setInitialRow(row);
       setHasNewerBeyond(result.hasNewerBeyond);
       setHasOlderBeyond(result.hasOlderBeyond);
       setListKey((prev) => prev + 1);
+      setIsMoving(false);
       const top = list[topIndex];
       setTopDateLabel(top ? formatAssetDate(top.creationTime) : null);
       syncRatio(offset);
@@ -255,10 +343,39 @@ export function EpisodePhotoLibraryModal({
     [anchorDate, showResult]
   );
 
+  const closePreview = useCallback(() => {
+    previewTokenRef.current += 1;
+    setPreview(null);
+  }, []);
+
+  const openPreview = useCallback(async (asset: MediaLibrary.Asset) => {
+    const token = previewTokenRef.current + 1;
+    previewTokenRef.current = token;
+    setPreview({ asset, localUri: null });
+    try {
+      const info = await MediaLibrary.getAssetInfoAsync(asset.id, { shouldDownloadFromNetwork: true });
+      if (previewTokenRef.current !== token) {
+        return;
+      }
+      if (!info.localUri) {
+        throw new Error('localUri missing');
+      }
+      setPreview({ asset, localUri: info.localUri });
+    } catch {
+      if (previewTokenRef.current !== token) {
+        return;
+      }
+      previewTokenRef.current += 1;
+      setPreview(null);
+      Alert.alert('写真を読み込めませんでした');
+    }
+  }, []);
+
   const reload = useCallback(async () => {
     const generation = generationRef.current + 1;
     generationRef.current = generation;
     spanRef.current = DEFAULT_EPISODE_PHOTO_SPAN;
+    closePreview();
     const permission = await MediaLibrary.getPermissionsAsync(false, ['photo']);
     if (generationRef.current !== generation) {
       return;
@@ -278,7 +395,7 @@ export function EpisodePhotoLibraryModal({
       return;
     }
     await loadLibrary(generation, null);
-  }, [loadLibrary, ratioSv]);
+  }, [closePreview, loadLibrary, ratioSv]);
 
   useLayoutEffect(() => {
     if (!visible) {
@@ -304,14 +421,20 @@ export function EpisodePhotoLibraryModal({
         clearTimeout(prepareTimerRef.current);
         prepareTimerRef.current = null;
       }
+      if (settleTimerRef.current != null) {
+        clearTimeout(settleTimerRef.current);
+        settleTimerRef.current = null;
+      }
       scrubbingRef.current = false;
+      setIsMoving(false);
       spanRef.current = DEFAULT_EPISODE_PHOTO_SPAN;
       extendingRef.current = false;
       setExtending(null);
+      closePreview();
       return;
     }
     void reload();
-  }, [reload, visible]);
+  }, [closePreview, reload, visible]);
 
   useEffect(() => {
     if (!visible || dismissedAssetIds.length === 0) {
@@ -388,7 +511,7 @@ export function EpisodePhotoLibraryModal({
       return;
     }
     lastPrepareKeyRef.current = key;
-    preparePhotoThumbnails(ids, thumbPixelSizeRef.current);
+    preparePhotoThumbnails(ids, lowPixelSizeRef.current);
   }, [topIndexAt]);
 
   const schedulePrepare = useCallback(
@@ -406,6 +529,55 @@ export function EpisodePhotoLibraryModal({
     [flushPrepare]
   );
 
+  const prepareHighResAround = useCallback(
+    (offset: number) => {
+      const list = assetsRef.current;
+      if (list.length === 0) {
+        return;
+      }
+      const topIndex = topIndexAt(offset);
+      const viewport = viewportHeightRef.current;
+      const stride = rowStrideRef.current;
+      const visibleRows = stride > 0 && viewport > 0 ? Math.ceil(viewport / stride) : 8;
+      const row = Math.floor(Math.max(0, topIndex) / COLUMNS);
+      const start = Math.max(0, (row - HIGH_RES_MARGIN_ROWS) * COLUMNS);
+      const end = Math.min(list.length, (row + visibleRows + HIGH_RES_MARGIN_ROWS) * COLUMNS);
+      const ids: string[] = [];
+      for (let index = start; index < end; index += 1) {
+        ids.push(list[index].id);
+      }
+      preparePhotoThumbnails(ids, highPixelSizeRef.current, true);
+    },
+    [topIndexAt]
+  );
+
+  const clearSettleTimer = useCallback(() => {
+    if (settleTimerRef.current != null) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
+  }, []);
+
+  const markMoving = useCallback(() => {
+    clearSettleTimer();
+    setIsMoving(true);
+  }, [clearSettleTimer]);
+
+  const scheduleSettled = useCallback(
+    (delayMs: number) => {
+      clearSettleTimer();
+      settleTimerRef.current = setTimeout(() => {
+        settleTimerRef.current = null;
+        if (scrubbingRef.current) {
+          return;
+        }
+        setIsMoving(false);
+        prepareHighResAround(currentOffsetRef.current);
+      }, delayMs);
+    },
+    [clearSettleTimer, prepareHighResAround]
+  );
+
   useEffect(() => {
     if (!visible || assetsRef.current.length === 0) {
       lastPrepareKeyRef.current = '';
@@ -413,6 +585,13 @@ export function EpisodePhotoLibraryModal({
     }
     schedulePrepare(currentOffsetRef.current);
   }, [listKey, schedulePrepare, visible]);
+
+  useEffect(() => {
+    if (!visible || isMoving || assets.length === 0) {
+      return;
+    }
+    prepareHighResAround(currentOffsetRef.current);
+  }, [assets.length, isMoving, listKey, prepareHighResAround, visible]);
 
   const showDateAtOffset = useCallback(
     (offset: number) => {
@@ -469,6 +648,7 @@ export function EpisodePhotoLibraryModal({
       if (!scrubbingRef.current) {
         scrubbingRef.current = true;
         setScrubbing(true);
+        markMoving();
       }
       showDateAtOffset(offset);
       pendingScrubOffsetRef.current = offset;
@@ -496,7 +676,7 @@ export function EpisodePhotoLibraryModal({
         }, SCRUB_SCROLL_MS);
       }
     },
-    [scrollListTo, showDateAtOffset]
+    [markMoving, scrollListTo, showDateAtOffset]
   );
 
   const endScrub = useCallback(() => {
@@ -512,7 +692,8 @@ export function EpisodePhotoLibraryModal({
     }
     scrubbingRef.current = false;
     setScrubbing(false);
-  }, [scrollListTo]);
+    scheduleSettled(SETTLE_AFTER_MOMENTUM_MS);
+  }, [scheduleSettled, scrollListTo]);
 
   const scrubGesture = useMemo(
     () =>
@@ -564,31 +745,43 @@ export function EpisodePhotoLibraryModal({
   const limited = accessPrivileges === 'limited';
   const photoLimit = registeredCount + maxSelection;
   const usedCount = registeredCount + selectedIds.length;
-  const renderPhoto = useCallback(
-    ({ item }: { item: MediaLibrary.Asset }) => {
-      const order = orderById.get(item.id);
-      const checked = order != null;
-      return (
-        <Pressable
-          style={{ width: cellSize, height: cellSize, backgroundColor: '#d6d6d6' }}
-          onPress={() => toggle(item.id)}
-          disabled={preparing || (!checked && selectedIds.length >= maxSelection)}
-        >
-          <PhotoLibraryThumb
-            assetId={item.id}
-            uri={item.uri}
-            pixelSize={thumbPixelSizeRef.current}
-            style={styles.thumb}
-          />
-          {checked ? (
-            <View style={[styles.badge, styles.badgeOn]}>
-              <Text style={styles.badgeText}>{String(order + 1)}</Text>
-            </View>
-          ) : null}
-        </Pressable>
-      );
+  const selectionFull = selectedIds.length >= maxSelection;
+  const useHighThumbs = !isMoving;
+  const thumbPixelSize = useHighThumbs ? highPixelSize : lowPixelSize;
+  const listExtraData = useMemo(
+    () => ({ useHighThumbs, selectedIds, preparing, selectionFull }),
+    [preparing, selectedIds, selectionFull, useHighThumbs]
+  );
+  const handlePreview = useCallback(
+    (asset: MediaLibrary.Asset) => {
+      void openPreview(asset);
     },
-    [cellSize, maxSelection, orderById, preparing, selectedIds.length, toggle]
+    [openPreview]
+  );
+  const renderPhoto = useCallback(
+    ({ item }: { item: MediaLibrary.Asset }) => (
+      <LibraryPhotoCell
+        asset={item}
+        cellSize={cellSize}
+        pixelSize={thumbPixelSize}
+        highQuality={useHighThumbs}
+        order={orderById.get(item.id)}
+        selectionFull={selectionFull}
+        preparing={preparing}
+        onToggle={toggle}
+        onPreview={handlePreview}
+      />
+    ),
+    [
+      cellSize,
+      handlePreview,
+      orderById,
+      preparing,
+      selectionFull,
+      thumbPixelSize,
+      toggle,
+      useHighThumbs,
+    ]
   );
 
   const listContentStyle = useMemo(
@@ -645,7 +838,7 @@ export function EpisodePhotoLibraryModal({
   const showList = !loading && assets.length > 0;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={preview ? closePreview : onClose}>
       <GestureHandlerRootView style={styles.screen}>
         <View style={[styles.screen, { backgroundColor: colors.screenBackground, paddingTop: insets.top }]}>
           <View style={[styles.header, { borderBottomColor: colors.topBarBorder }]}>
@@ -702,6 +895,7 @@ export function EpisodePhotoLibraryModal({
                 ref={listRef}
                 style={styles.list}
                 data={assets}
+                extraData={listExtraData}
                 keyExtractor={(item) => item.id}
                 numColumns={COLUMNS}
                 initialNumToRender={COLUMNS * 8}
@@ -713,6 +907,10 @@ export function EpisodePhotoLibraryModal({
                 scrollEventThrottle={32}
                 getItemLayout={getItemLayout}
                 onScroll={onScroll}
+                onScrollBeginDrag={markMoving}
+                onScrollEndDrag={() => scheduleSettled(SETTLE_AFTER_DRAG_MS)}
+                onMomentumScrollBegin={markMoving}
+                onMomentumScrollEnd={() => scheduleSettled(SETTLE_AFTER_MOMENTUM_MS)}
                 onLayout={(event) => {
                   viewportHeightRef.current = event.nativeEvent.layout.height;
                   syncRatio(currentOffsetRef.current);
@@ -760,6 +958,51 @@ export function EpisodePhotoLibraryModal({
               </View>
             </GestureDetector>
           </View>
+          {preview ? (
+            <View style={[styles.previewOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}>
+              <Pressable style={StyleSheet.absoluteFill} onPress={closePreview} />
+              <View style={styles.previewTopBar} pointerEvents="box-none">
+                <Pressable onPress={closePreview} hitSlop={8}>
+                  <Text style={styles.previewAction}>閉じる</Text>
+                </Pressable>
+              </View>
+              <View style={styles.previewImageArea} pointerEvents="none">
+                {preview.localUri ? (
+                  <Image
+                    source={{ uri: preview.localUri }}
+                    style={styles.previewImage}
+                    contentFit="contain"
+                    placeholder={{ uri: preview.asset.uri }}
+                    placeholderContentFit="contain"
+                    transition={0}
+                  />
+                ) : (
+                  <View style={styles.previewLoading}>
+                    <PhotoLibraryThumb
+                      assetId={preview.asset.id}
+                      uri={preview.asset.uri}
+                      pixelSize={lowPixelSize}
+                      style={{ width: width * 0.6, height: width * 0.6 }}
+                    />
+                    <ActivityIndicator style={styles.previewSpinner} color="#ffffff" />
+                  </View>
+                )}
+              </View>
+              {(() => {
+                const checked = orderById.has(preview.asset.id);
+                const disabled = preparing || (!checked && selectedIds.length >= maxSelection);
+                return (
+                  <Pressable
+                    style={[styles.previewSelectButton, disabled ? styles.headerActionDisabled : null]}
+                    onPress={() => toggle(preview.asset.id)}
+                    disabled={disabled}
+                  >
+                    <Text style={styles.previewSelectLabel}>{checked ? '選択を外す' : '選択する'}</Text>
+                  </Pressable>
+                );
+              })()}
+            </View>
+          ) : null}
           {preparing ? (
             <View style={styles.preparing}>
               <ActivityIndicator color="#ffffff" />
@@ -800,6 +1043,50 @@ const styles = StyleSheet.create({
   },
   list: {
     flex: 1,
+  },
+  previewOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0,0,0,0.92)',
+    zIndex: 10,
+  },
+  previewTopBar: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
+  },
+  previewAction: {
+    color: '#ffffff',
+    fontSize: 16,
+  },
+  previewImageArea: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewImage: {
+    width: '100%',
+    height: '100%',
+  },
+  previewLoading: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  previewSpinner: {
+    position: 'absolute',
+  },
+  previewSelectButton: {
+    alignSelf: 'center',
+    marginTop: 12,
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    borderRadius: Radius.full,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+  previewSelectLabel: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '600',
   },
   extendButton: {
     height: EXTEND_BUTTON_HEIGHT,

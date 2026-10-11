@@ -4,12 +4,13 @@ import { memo, type ComponentType } from 'react';
 import { type ImageStyle, type StyleProp, type ViewStyle } from 'react-native';
 
 type PhotoThumbnailsModule = {
-  prepare(assetIds: string[], pixelSize: number): void;
+  prepare(assetIds: string[], pixelSize: number, high: boolean): void;
 };
 
 type PhotoThumbViewProps = {
   assetId: string;
   pixelSize: number;
+  highQuality: boolean;
   style?: StyleProp<ViewStyle>;
   pointerEvents?: 'none' | 'auto' | 'box-none' | 'box-only';
 };
@@ -20,17 +21,20 @@ const NativePhotoThumbView: ComponentType<PhotoThumbViewProps> | null = nativeMo
   ? requireNativeView('PhotoThumbnails')
   : null;
 
-export function preparePhotoThumbnails(assetIds: string[], pixelSize: number) {
+/** high は止まったあとの差し替え用。iOS では画質の高い取り方で先に用意する。 */
+export function preparePhotoThumbnails(assetIds: string[], pixelSize: number, high = false) {
   if (!nativeModule || assetIds.length === 0 || pixelSize <= 0) {
     return;
   }
-  nativeModule.prepare(assetIds, pixelSize);
+  nativeModule.prepare(assetIds, pixelSize, high);
 }
 
 type PhotoLibraryThumbProps = {
   assetId: string;
   uri: string;
   pixelSize: number;
+  /** 今の画像を出したまま、高画質が届いたら差し替える。 */
+  highQuality?: boolean;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -38,6 +42,7 @@ export const PhotoLibraryThumb = memo(function PhotoLibraryThumb({
   assetId,
   uri,
   pixelSize,
+  highQuality = false,
   style,
 }: PhotoLibraryThumbProps) {
   if (NativePhotoThumbView) {
@@ -45,6 +50,7 @@ export const PhotoLibraryThumb = memo(function PhotoLibraryThumb({
       <NativePhotoThumbView
         assetId={assetId}
         pixelSize={pixelSize}
+        highQuality={highQuality}
         pointerEvents="none"
         style={style}
       />

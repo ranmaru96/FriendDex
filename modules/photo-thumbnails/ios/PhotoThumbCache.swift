@@ -14,11 +14,26 @@ final class PhotoThumbCache {
     options.isSynchronous = false
     return options
   }()
+  /** 止まったあとに差し替える画質。fastFormat は指定サイズより粗いことがある。 */
+  let highOptions: PHImageRequestOptions = {
+    let options = PHImageRequestOptions()
+    options.deliveryMode = .highQualityFormat
+    options.resizeMode = .fast
+    options.version = .current
+    options.isNetworkAccessAllowed = true
+    options.isSynchronous = false
+    return options
+  }()
 
-  private var cachedAssets: [PHAsset] = []
-  private var cachedTarget = CGSize.zero
+  private struct Slot {
+    var assets: [PHAsset] = []
+    var target = CGSize.zero
+  }
 
-  func prepare(ids: [String], pixelSize: CGFloat) {
+  private var fastSlot = Slot()
+  private var highSlot = Slot()
+
+  func prepare(ids: [String], pixelSize: CGFloat, high: Bool) {
     let target = CGSize(width: max(pixelSize, 1), height: max(pixelSize, 1))
     let limited = Array(ids.prefix(120))
     let fetched = PHAsset.fetchAssets(withLocalIdentifiers: limited, options: nil)
@@ -27,12 +42,14 @@ final class PhotoThumbCache {
     fetched.enumerateObjects { asset, _, _ in
       next.append(asset)
     }
-    if !cachedAssets.isEmpty {
+    let requestOptions = high ? highOptions : options
+    let previous = high ? highSlot : fastSlot
+    if !previous.assets.isEmpty {
       manager.stopCachingImages(
-        for: cachedAssets,
-        targetSize: cachedTarget,
+        for: previous.assets,
+        targetSize: previous.target,
         contentMode: .aspectFill,
-        options: options
+        options: requestOptions
       )
     }
     if !next.isEmpty {
@@ -40,10 +57,13 @@ final class PhotoThumbCache {
         for: next,
         targetSize: target,
         contentMode: .aspectFill,
-        options: options
+        options: requestOptions
       )
     }
-    cachedAssets = next
-    cachedTarget = target
+    if high {
+      highSlot = Slot(assets: next, target: target)
+    } else {
+      fastSlot = Slot(assets: next, target: target)
+    }
   }
 }

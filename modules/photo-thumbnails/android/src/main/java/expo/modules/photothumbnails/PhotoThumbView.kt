@@ -12,6 +12,11 @@ class PhotoThumbView(context: Context, appContext: AppContext) : ExpoView(contex
   }
   private var assetId = ""
   private var pixelSize = 1
+  private var highQuality = false
+  private var loadedAssetId = ""
+  private var loadedSize = 0
+  private var hasImage = false
+  private var pendingSize = 0
   private var generation = 0
 
   init {
@@ -20,34 +25,59 @@ class PhotoThumbView(context: Context, appContext: AppContext) : ExpoView(contex
   }
 
   fun setAssetId(next: String) {
-    if (next == assetId) {
-      return
-    }
     assetId = next
-    reload()
   }
 
   fun setPixelSize(next: Double) {
-    val size = next.toInt().coerceAtLeast(1)
-    if (size == pixelSize) {
-      return
-    }
-    pixelSize = size
-    reload()
+    pixelSize = next.toInt().coerceAtLeast(1)
   }
 
-  private fun reload() {
-    val ticket = ++generation
-    imageView.setImageDrawable(null)
-    if (assetId.isEmpty()) {
+  fun setHighQuality(next: Boolean) {
+    highQuality = next
+  }
+
+  /** props がそろってから1回だけ判断する。 */
+  fun applyProps() {
+    if (assetId != loadedAssetId) {
+      loadedAssetId = assetId
+      loadedSize = 0
+      hasImage = false
+      imageView.setImageDrawable(null)
+      request(pixelSize)
       return
     }
-    PhotoThumbCache.loadAsync(context, assetId, pixelSize) { bitmap ->
+    if (!hasImage) {
+      if (pendingSize != pixelSize) {
+        request(pixelSize)
+      }
+      return
+    }
+    // 小さくする方向は今の画像のまま。大きくするときは届くまで今の画像を出しておく。
+    if (pixelSize > loadedSize && pendingSize != pixelSize) {
+      request(pixelSize)
+    }
+  }
+
+  private fun request(size: Int) {
+    val ticket = ++generation
+    pendingSize = size
+    val requestedId = loadedAssetId
+    if (requestedId.isEmpty()) {
+      pendingSize = 0
+      return
+    }
+    PhotoThumbCache.loadAsync(context, requestedId, size) { bitmap ->
       post {
-        if (ticket != generation) {
+        if (ticket != generation || requestedId != loadedAssetId) {
+          return@post
+        }
+        pendingSize = 0
+        if (bitmap == null) {
           return@post
         }
         imageView.setImageBitmap(bitmap)
+        hasImage = true
+        loadedSize = size
       }
     }
   }

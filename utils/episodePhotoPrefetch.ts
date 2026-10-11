@@ -13,7 +13,8 @@ const PAGE_SIZE = 400;
 const MAX_ASSETS = 3000;
 /** 対象日側（当日と古い側）に割り当てる上限。残りを新しい側に回す。 */
 const MAX_OLDER_SIDE_ASSETS = MAX_ASSETS / 2;
-const THUMB_PREPARE_RADIUS = 120;
+/** 開く前に用意するサムネイルの枚数。dayStartIndex の前後に半分ずつ。 */
+const PREPARE_WINDOW = 70;
 
 export type EpisodePhotoSpan = {
   newerDays: number;
@@ -87,9 +88,23 @@ function sameSpan(a: EpisodePhotoSpan, b: EpisodePhotoSpan): boolean {
   return a.newerDays === b.newerDays && a.olderDays === b.olderDays;
 }
 
+/** 写真一覧の列数。セルの大きさとサムネイルの解像度の計算に使う。 */
+export const PHOTO_LIBRARY_COLUMNS = 4;
+/** 止まったあとに差し替える高解像度の倍率。 */
+export const THUMB_SCALE_HIGH = 1.5;
+
+export function photoLibraryCellSize(windowWidth: number): number {
+  return Math.floor(windowWidth / PHOTO_LIBRARY_COLUMNS);
+}
+
+/** 一覧のサムネイルの画素数。モーダルと先読みで同じ値にする。 */
+export function photoThumbPixelSize(cellSize: number, high: boolean): number {
+  const low = Math.max(1, Math.round(cellSize * PixelRatio.get()));
+  return high ? Math.max(1, Math.round(low * THUMB_SCALE_HIGH)) : low;
+}
+
 function thumbPixelSize(): number {
-  const width = Dimensions.get('window').width;
-  return Math.max(1, Math.round(Math.floor(width / 4) * PixelRatio.get()));
+  return photoThumbPixelSize(photoLibraryCellSize(Dimensions.get('window').width), false);
 }
 
 function snapshot(task: Task): EpisodePhotoPrefetch {
@@ -201,8 +216,8 @@ async function run(task: Task): Promise<EpisodePhotoPrefetch> {
     task.dayStartIndex = dayStartIndex;
     task.hasNewerBeyond = newerBeyond;
     task.hasOlderBeyond = olderBeyond;
-    const start = Math.max(0, dayStartIndex - THUMB_PREPARE_RADIUS);
-    const end = Math.min(assets.length, dayStartIndex + THUMB_PREPARE_RADIUS);
+    const start = Math.max(0, dayStartIndex - PREPARE_WINDOW / 2);
+    const end = Math.min(assets.length, start + PREPARE_WINDOW);
     preparePhotoThumbnails(
       assets.slice(start, end).map((asset) => asset.id),
       thumbPixelSize()

@@ -7,7 +7,7 @@ class PhotoThumbnailsModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("PhotoThumbnails")
 
-    Function("prepare") { assetIds: List<String>, pixelSize: Double ->
+    Function("prepare") { assetIds: List<String>, pixelSize: Double, _: Boolean ->
       appContext.reactContext?.let { context ->
         PhotoThumbCache.prepare(context, assetIds, pixelSize.toInt())
       }
@@ -19,6 +19,12 @@ class PhotoThumbnailsModule : Module() {
       }
       Prop("pixelSize") { view: PhotoThumbView, pixelSize: Double ->
         view.setPixelSize(pixelSize)
+      }
+      Prop("highQuality") { view: PhotoThumbView, highQuality: Boolean ->
+        view.setHighQuality(highQuality)
+      }
+      OnViewDidUpdateProps { view: PhotoThumbView ->
+        view.applyProps()
       }
     }
   }
