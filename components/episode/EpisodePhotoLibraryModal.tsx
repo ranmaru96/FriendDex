@@ -13,6 +13,7 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -36,7 +37,7 @@ import {
   type EpisodePhotoSpan,
 } from '@/utils/episodePhotoPrefetch';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Radius, Spacing } from '@/constants/theme';
 import { useAppTheme } from '@/contexts/AppThemeContext';
@@ -55,6 +56,15 @@ const SCRUB_SCROLL_MS = 100;
 const THUMB_PREPARE_MS = 50;
 /** getItemLayout の offset に足すため、先頭のボタンは高さ固定にする。 */
 const EXTEND_BUTTON_HEIGHT = 48;
+/**
+ * true にすると iOS で BlurView を使う。
+ * expo-blur が未導入のため false。導入後に true へ切り替え可能。
+ */
+const PREVIEW_BLUR_ENABLED = false;
+const PREVIEW_SIDE_INSET = 16;
+const PREVIEW_MAX_HEIGHT_RATIO = 0.7;
+const PREVIEW_RADIUS = 16;
+const PREVIEW_ENTER_MS = 120;
 
 type ExtendSide = 'newer' | 'older';
 
@@ -62,6 +72,25 @@ type PhotoPreview = {
   asset: MediaLibrary.Asset;
   localUri: string | null;
 };
+
+/** 取得前の asset.width / height で枠を決め、localUri 到着後も寸法が跳ねないようにする。 */
+function previewCardSize(
+  asset: MediaLibrary.Asset,
+  screenWidth: number,
+  screenHeight: number,
+): { width: number; height: number } {
+  const maxWidth = Math.max(1, screenWidth - PREVIEW_SIDE_INSET * 2);
+  const maxHeight = Math.max(1, screenHeight * PREVIEW_MAX_HEIGHT_RATIO);
+  const aspect =
+    asset.width > 0 && asset.height > 0 ? asset.width / asset.height : 1;
+  let width = maxWidth;
+  let height = width / aspect;
+  if (height > maxHeight) {
+    height = maxHeight;
+    width = height * aspect;
+  }
+  return { width, height };
+}
 
 function libraryScrollMetrics(
   count: number,
@@ -142,7 +171,8 @@ type LibraryPhotoCellProps = {
   selectionFull: boolean;
   preparing: boolean;
   onToggle: (assetId: string) => void;
-  onPreview: (asset: MediaLibrary.Asset) => void;
+  onPreviewStart: (asset: MediaLibrary.Asset) => void;
+  onPreviewEnd: () => void;
 };
 
 const LibraryPhotoCell = memo(function LibraryPhotoCell({
@@ -154,19 +184,32 @@ const LibraryPhotoCell = memo(function LibraryPhotoCell({
   selectionFull,
   preparing,
   onToggle,
-  onPreview,
+  onPreviewStart,
+  onPreviewEnd,
 }: LibraryPhotoCellProps) {
   const checked = order != null;
+  const longPressedRef = useRef(false);
   return (
     <Pressable
       style={{ width: cellSize, height: cellSize, backgroundColor: '#d6d6d6' }}
       onPress={() => {
+        // 長押し成立後に onPress が来ても選択を切り替えない。
+        if (longPressedRef.current) {
+          return;
+        }
         if (!checked && selectionFull) {
           return;
         }
         onToggle(asset.id);
       }}
-      onLongPress={() => onPreview(asset)}
+      onLongPress={() => {
+        longPressedRef.current = true;
+        onPreviewStart(asset);
+      }}
+      onPressOut={() => {
+        onPreviewEnd();
+        longPressedRef.current = false;
+      }}
       disabled={preparing}
     >
       <PhotoLibraryThumb
@@ -197,7 +240,7 @@ export function EpisodePhotoLibraryModal({
   children,
 }: EpisodePhotoLibraryModalProps) {
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height: windowHeight } = useWindowDimensions();
   const { colors } = useAppTheme();
   const [assets, setAssets] = useState<MediaLibrary.Asset[]>([]);
   const [loading, setLoading] = useState(true);
@@ -243,9 +286,11 @@ export function EpisodePhotoLibraryModal({
   const extendingRef = useRef(false);
   const previewTokenRef = useRef(0);
   const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMovingRef = useRef(false);
   const ratioSv = useSharedValue(0);
   const scrubbingSv = useSharedValue(0);
   const trackHeightSv = useSharedValue(0);
+  const previewEnterSv = useSharedValue(0);
 
   assetsRef.current = assets;
   rowStrideRef.current = rowStride;
@@ -253,6 +298,7 @@ export function EpisodePhotoLibraryModal({
   paddingBottomRef.current = insets.bottom + 24;
   lowPixelSizeRef.current = lowPixelSize;
   highPixelSizeRef.current = highPixelSize;
+  isMovingRef.current = isMoving;
 
   const syncRatio = useCallback(
     (offset: number) => {
@@ -345,13 +391,19 @@ export function EpisodePhotoLibraryModal({
 
   const closePreview = useCallback(() => {
     previewTokenRef.current += 1;
+    previewEnterSv.value = 0;
     setPreview(null);
-  }, []);
+  }, [previewEnterSv]);
 
   const openPreview = useCallback(async (asset: MediaLibrary.Asset) => {
+    if (isMovingRef.current) {
+      return;
+    }
     const token = previewTokenRef.current + 1;
     previewTokenRef.current = token;
+    previewEnterSv.value = 0;
     setPreview({ asset, localUri: null });
+    previewEnterSv.value = withTiming(1, { duration: PREVIEW_ENTER_MS });
     try {
       const info = await MediaLibrary.getAssetInfoAsync(asset.id, { shouldDownloadFromNetwork: true });
       if (previewTokenRef.current !== token) {
@@ -366,10 +418,10 @@ export function EpisodePhotoLibraryModal({
         return;
       }
       previewTokenRef.current += 1;
+      previewEnterSv.value = 0;
       setPreview(null);
-      Alert.alert('写真を読み込めませんでした');
     }
-  }, []);
+  }, [previewEnterSv]);
 
   const reload = useCallback(async () => {
     const generation = generationRef.current + 1;
@@ -752,7 +804,7 @@ export function EpisodePhotoLibraryModal({
     () => ({ useHighThumbs, selectedIds, preparing, selectionFull }),
     [preparing, selectedIds, selectionFull, useHighThumbs]
   );
-  const handlePreview = useCallback(
+  const handlePreviewStart = useCallback(
     (asset: MediaLibrary.Asset) => {
       void openPreview(asset);
     },
@@ -769,12 +821,14 @@ export function EpisodePhotoLibraryModal({
         selectionFull={selectionFull}
         preparing={preparing}
         onToggle={toggle}
-        onPreview={handlePreview}
+        onPreviewStart={handlePreviewStart}
+        onPreviewEnd={closePreview}
       />
     ),
     [
       cellSize,
-      handlePreview,
+      closePreview,
+      handlePreviewStart,
       orderById,
       preparing,
       selectionFull,
@@ -836,9 +890,20 @@ export function EpisodePhotoLibraryModal({
   });
 
   const showList = !loading && assets.length > 0;
+  const previewFrame = useMemo(
+    () => (preview ? previewCardSize(preview.asset, width, windowHeight) : null),
+    [preview, width, windowHeight]
+  );
+  const previewCardAnimStyle = useAnimatedStyle(() => ({
+    opacity: previewEnterSv.value,
+    transform: [{ scale: 0.92 + previewEnterSv.value * 0.08 }],
+  }));
+  const previewVeilAnimStyle = useAnimatedStyle(() => ({
+    opacity: previewEnterSv.value,
+  }));
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={preview ? closePreview : onClose}>
+    <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <GestureHandlerRootView style={styles.screen}>
         <View style={[styles.screen, { backgroundColor: colors.screenBackground, paddingTop: insets.top }]}>
           <View style={[styles.header, { borderBottomColor: colors.topBarBorder }]}>
@@ -958,49 +1023,49 @@ export function EpisodePhotoLibraryModal({
               </View>
             </GestureDetector>
           </View>
-          {preview ? (
-            <View style={[styles.previewOverlay, { paddingTop: insets.top, paddingBottom: insets.bottom + 16 }]}>
-              <Pressable style={StyleSheet.absoluteFill} onPress={closePreview} />
-              <View style={styles.previewTopBar} pointerEvents="box-none">
-                <Pressable onPress={closePreview} hitSlop={8}>
-                  <Text style={styles.previewAction}>閉じる</Text>
-                </Pressable>
-              </View>
-              <View style={styles.previewImageArea} pointerEvents="none">
-                {preview.localUri ? (
-                  <Image
-                    source={{ uri: preview.localUri }}
-                    style={styles.previewImage}
-                    contentFit="contain"
-                    placeholder={{ uri: preview.asset.uri }}
-                    placeholderContentFit="contain"
-                    transition={0}
-                  />
-                ) : (
-                  <View style={styles.previewLoading}>
-                    <PhotoLibraryThumb
-                      assetId={preview.asset.id}
-                      uri={preview.asset.uri}
-                      pixelSize={lowPixelSize}
-                      style={{ width: width * 0.6, height: width * 0.6 }}
+          {preview && previewFrame ? (
+            <View pointerEvents="none" style={styles.previewOverlay}>
+              <Animated.View
+                style={[
+                  styles.previewVeil,
+                  PREVIEW_BLUR_ENABLED && Platform.OS === 'ios'
+                    ? styles.previewVeilIos
+                    : styles.previewVeilSolid,
+                  previewVeilAnimStyle,
+                ]}
+              />
+              <View style={styles.previewCenter}>
+                <Animated.View
+                  style={[
+                    styles.previewCard,
+                    {
+                      width: previewFrame.width,
+                      height: previewFrame.height,
+                      borderRadius: PREVIEW_RADIUS,
+                    },
+                    previewCardAnimStyle,
+                  ]}
+                >
+                  {preview.localUri ? (
+                    <Image
+                      source={{ uri: preview.localUri }}
+                      style={styles.previewImage}
+                      contentFit="contain"
+                      transition={0}
                     />
-                    <ActivityIndicator style={styles.previewSpinner} color="#ffffff" />
-                  </View>
-                )}
+                  ) : (
+                    <View style={styles.previewLoading}>
+                      <PhotoLibraryThumb
+                        assetId={preview.asset.id}
+                        uri={preview.asset.uri}
+                        pixelSize={lowPixelSize}
+                        style={styles.previewImage}
+                      />
+                      <ActivityIndicator style={styles.previewSpinner} color="#ffffff" />
+                    </View>
+                  )}
+                </Animated.View>
               </View>
-              {(() => {
-                const checked = orderById.has(preview.asset.id);
-                const disabled = preparing || (!checked && selectedIds.length >= maxSelection);
-                return (
-                  <Pressable
-                    style={[styles.previewSelectButton, disabled ? styles.headerActionDisabled : null]}
-                    onPress={() => toggle(preview.asset.id)}
-                    disabled={disabled}
-                  >
-                    <Text style={styles.previewSelectLabel}>{checked ? '選択を外す' : '選択する'}</Text>
-                  </Pressable>
-                );
-              })()}
             </View>
           ) : null}
           {preparing ? (
@@ -1046,47 +1111,44 @@ const styles = StyleSheet.create({
   },
   previewOverlay: {
     ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.92)',
     zIndex: 10,
   },
-  previewTopBar: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 12,
+  previewVeil: {
+    ...StyleSheet.absoluteFill,
   },
-  previewAction: {
-    color: '#ffffff',
-    fontSize: 16,
+  previewVeilSolid: {
+    backgroundColor: 'rgba(0,0,0,0.55)',
   },
-  previewImageArea: {
-    flex: 1,
+  previewVeilIos: {
+    // expo-blur 導入後は BlurView に差し替える。暫定は薄い暗い膜。
+    backgroundColor: 'rgba(0,0,0,0.25)',
+  },
+  previewCenter: {
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  previewCard: {
+    overflow: 'hidden',
+    backgroundColor: '#1a1a1a',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 12,
   },
   previewImage: {
     width: '100%',
     height: '100%',
   },
   previewLoading: {
+    width: '100%',
+    height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
   },
   previewSpinner: {
     position: 'absolute',
-  },
-  previewSelectButton: {
-    alignSelf: 'center',
-    marginTop: 12,
-    paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: Radius.full,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-  },
-  previewSelectLabel: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   extendButton: {
     height: EXTEND_BUTTON_HEIGHT,

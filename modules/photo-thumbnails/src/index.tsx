@@ -26,7 +26,11 @@ export function preparePhotoThumbnails(assetIds: string[], pixelSize: number, hi
   if (!nativeModule || assetIds.length === 0 || pixelSize <= 0) {
     return;
   }
-  nativeModule.prepare(assetIds, pixelSize, high);
+  try {
+    nativeModule.prepare(assetIds, pixelSize, high);
+  } catch {
+    // 旧 Dev Client など、ネイティブの引数が合わないときは呼び出し元へ伝えない。
+  }
 }
 
 type PhotoLibraryThumbProps = {

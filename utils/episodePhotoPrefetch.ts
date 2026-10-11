@@ -216,18 +216,24 @@ async function run(task: Task): Promise<EpisodePhotoPrefetch> {
     task.dayStartIndex = dayStartIndex;
     task.hasNewerBeyond = newerBeyond;
     task.hasOlderBeyond = olderBeyond;
-    const start = Math.max(0, dayStartIndex - PREPARE_WINDOW / 2);
-    const end = Math.min(assets.length, start + PREPARE_WINDOW);
-    preparePhotoThumbnails(
-      assets.slice(start, end).map((asset) => asset.id),
-      thumbPixelSize()
-    );
   } catch {
     if (current === task) {
       task.assets = [];
       task.dayStartIndex = 0;
       task.hasNewerBeyond = false;
       task.hasOlderBeyond = false;
+    }
+  }
+  if (current === task && task.assets.length > 0) {
+    try {
+      const start = Math.max(0, task.dayStartIndex - PREPARE_WINDOW / 2);
+      const end = Math.min(task.assets.length, start + PREPARE_WINDOW);
+      preparePhotoThumbnails(
+        task.assets.slice(start, end).map((asset) => asset.id),
+        thumbPixelSize()
+      );
+    } catch (error) {
+      console.warn('[episodePhotoPrefetch] preparePhotoThumbnails failed', error);
     }
   }
   if (current === task) {
