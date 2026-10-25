@@ -41,8 +41,6 @@ const HIDE_BOTTOM_NAV_PATHS = [
   'qr-import',
   'mypage',
   'task-edit',
-  'task-detail',
-  'task-group',
   'commonitems',
   'setup-myself',
   'login',
@@ -66,6 +64,10 @@ export function shouldKeepSharedHeaderFrame(pathname: string): boolean {
   if (pathname.includes('mypage')) {
     return true;
   }
+  /** タスク詳細・グループは画面内のヘッダーを使う */
+  if (pathname.includes('task-detail') || pathname.includes('task-group')) {
+    return false;
+  }
   return shouldHideHeader(pathname) && !shouldHideBottomNav(pathname);
 }
 
@@ -73,12 +75,16 @@ export function getBottomNavScrollClearance(pathname: string): number {
   return shouldHideBottomNav(pathname) ? 0 : BOTTOM_NAV_SCROLL_CLEARANCE;
 }
 
-export function getActiveTab(pathname: string): BottomNavTabKey | null {
-  /** 設定などは下部タブを出すが、どのタブ上でもない（タップで各タブへ移れる） */
-  if (pathname.includes('/appsettings')) return null;
-  if (isEpisodeDetailPath(pathname)) {
-    return getEpisodeDetailHostTab() ?? 'episode';
-  }
+const UNTABBED_PATH_PARTS = ['setup-myself', 'login', 'auth-preview', 'launch-preview'];
+
+function isUntabbedPath(pathname: string): boolean {
+  return UNTABBED_PATH_PARTS.some((part) => pathname.includes(part));
+}
+
+/** URL だけから見た所属タブ。今開いているタブとは別。 */
+export function getNaturalTab(pathname: string): BottomNavTabKey | null {
+  if (pathname.includes('/appsettings') || isUntabbedPath(pathname)) return null;
+  if (isEpisodeDetailPath(pathname)) return 'episode';
   if (isCalendarTabRoot(pathname) || pathname.includes('/event')) return 'calendar';
   if (
     pathname.includes('/shuffle') ||
@@ -102,4 +108,12 @@ export function getActiveTab(pathname: string): BottomNavTabKey | null {
   }
   if (isPeopleTabRoot(pathname) || pathname.includes('/detail')) return 'home';
   return 'home';
+}
+
+export function getActiveTab(pathname: string): BottomNavTabKey | null {
+  /** 設定・ログインは、どのタブの上でもない */
+  if (pathname.includes('/appsettings') || isUntabbedPath(pathname)) return null;
+  const host = getEpisodeDetailHostTab();
+  if (host) return host;
+  return getNaturalTab(pathname);
 }

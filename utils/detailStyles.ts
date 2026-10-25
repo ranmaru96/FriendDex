@@ -965,7 +965,7 @@ export function createDetailStyles(c: DetailThemeColors) {
     borderColor: c.border,
     borderWidth: 0.5,
     borderRadius: 12,
-    padding: 12,
+    padding: 8,
     marginBottom: 10,
   },
   sayingTextInput: {
@@ -980,7 +980,8 @@ export function createDetailStyles(c: DetailThemeColors) {
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
     fontSize: Typography.base,
-    minHeight: 72,
+    lineHeight: 18,
+    minHeight: 36,
     marginBottom: 8,
   },
   sayingDateInput: {

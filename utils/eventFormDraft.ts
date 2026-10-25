@@ -2,11 +2,13 @@ import {
   getDefaultProfile,
   getEvent,
   getEventParticipants,
+  getFriendById,
   getMyself,
   initializeDatabase,
 } from '@/db';
-import type { EpisodeParticipant, Event } from '@/types';
+import type { EpisodeParticipant, Event, ProfileMemo } from '@/types';
 import { deleteFormDraft, readFormDraftRecord } from '@/utils/formDraftStore';
+import { cloneProfileMemo, savedProfileMemos } from '@/utils/eventParticipantMemos';
 import { profileIdsToFriendIds } from '@/utils/eventParticipantHelpers';
 import {
   formatDateKey,
@@ -40,6 +42,10 @@ export type EventFormDraft = {
   startTime: string;
   endTime: string;
   participants: EpisodeParticipant[];
+  /** 予定を開いた時点の人物メモ。予定画面で消した行を人物カードから外す判定に使う */
+  participantMemoBaselines: Record<string, ProfileMemo[]> | null;
+  /** 予定画面で編集中の人物メモ。無い下書きは null で、開いたときに人物カードから読む */
+  participantMemos: Record<string, ProfileMemo[]> | null;
   notifyEnabled: boolean;
   notifyTimingPreset: EventNotifyTimingPreset;
   initialDate: string;
@@ -62,6 +68,41 @@ const isParticipants = (value: unknown): value is EpisodeParticipant[] =>
     const entry = item as Partial<EpisodeParticipant>;
     return (entry.kind === 'individual' || entry.kind === 'group') && typeof entry.value === 'string';
   });
+
+const isProfileMemoDraft = (value: unknown): value is ProfileMemo => {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+  const memo = value as Partial<ProfileMemo>;
+  if (typeof memo.id !== 'string' || typeof memo.text !== 'string') {
+    return false;
+  }
+  if (memo.date != null && typeof memo.date !== 'string') {
+    return false;
+  }
+  if (memo.tags != null && !Array.isArray(memo.tags)) {
+    return false;
+  }
+  return true;
+};
+
+/** 古い下書きに欄が無いときは null。壊れた形も null にして、予定自体の下書きは残す */
+const parseParticipantMemoRecord = (value: unknown): Record<string, ProfileMemo[]> | null => {
+  if (value == null) {
+    return null;
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record: Record<string, ProfileMemo[]> = {};
+  for (const [friendId, rows] of Object.entries(value as Record<string, unknown>)) {
+    if (!Array.isArray(rows) || !rows.every(isProfileMemoDraft)) {
+      return null;
+    }
+    record[friendId] = rows.map((row) => cloneProfileMemo(row));
+  }
+  return record;
+};
 
 export function parseEventFormDraft(raw: string): EventFormDraft | null {
   try {
@@ -92,6 +133,8 @@ export function parseEventFormDraft(raw: string): EventFormDraft | null {
       startTime: value.startTime,
       endTime: value.endTime,
       participants: value.participants,
+      participantMemoBaselines: parseParticipantMemoRecord(value.participantMemoBaselines),
+      participantMemos: parseParticipantMemoRecord(value.participantMemos),
       notifyEnabled: value.notifyEnabled,
       notifyTimingPreset: value.notifyTimingPreset as EventNotifyTimingPreset,
       initialDate: value.initialDate,
@@ -118,6 +161,26 @@ export function deleteEventFormDraft(eventId: string | null): void {
   deleteFormDraft(eventDraftKey(eventId));
 }
 
+function profileMemosForParticipants(
+  entries: EpisodeParticipant[],
+  eventId: string
+): Record<string, ProfileMemo[]> {
+  const record: Record<string, ProfileMemo[]> = {};
+  for (const entry of entries) {
+    if (entry.kind !== 'individual') {
+      continue;
+    }
+    const friendId = entry.value.trim();
+    if (!friendId || record[friendId]) {
+      continue;
+    }
+    record[friendId] = savedProfileMemos(getFriendById(friendId)?.notes ?? []).filter(
+      (memo) => memo.eventId === eventId
+    );
+  }
+  return record;
+}
+
 function participantsForEvent(eventId: string, myselfId: string | null): EpisodeParticipant[] {
   const excludeProfileId = myselfId ? getDefaultProfile(myselfId)?.id ?? null : null;
   const participantIds = getEventParticipants(eventId).map((participant) => participant.profileId);
@@ -141,6 +204,8 @@ export function buildNewEventForm(initialDate: string): EventFormDraft {
     startTime: DEFAULT_START_TIME,
     endTime: DEFAULT_END_TIME,
     participants: [],
+    participantMemoBaselines: {},
+    participantMemos: {},
     notifyEnabled: true,
     notifyTimingPreset: DEFAULT_NOTIFY_TIMING_PRESET,
     initialDate,
@@ -166,6 +231,8 @@ export function buildSavedEventForm(event: Event, initialDate: string): EventFor
   const timingInput = event.allDay
     ? { startDateKey, startTime: '00:00', allDay: true as const }
     : { startDateKey, startTime, allDay: false as const };
+  const participants = participantsForEvent(event.id, myselfId);
+  const participantMemos = profileMemosForParticipants(participants, event.id);
   return {
     title: event.title,
     memo: event.memo ?? '',
@@ -175,11 +242,31 @@ export function buildSavedEventForm(event: Event, initialDate: string): EventFor
     endDateKey,
     startTime,
     endTime,
-    participants: participantsForEvent(event.id, myselfId),
+    participants,
+    participantMemoBaselines: participantMemos,
+    participantMemos,
     notifyEnabled: event.notifyEnabled,
     notifyTimingPreset: inferNotifyTimingPreset(event.notifyAt, timingInput),
     initialDate,
   };
+}
+
+/** 人物メモ欄が増える前の下書きでも、予定本体が同じなら下書きを捨てない */
+export function eventDraftBaseMatches(storedBase: string, loadedBody: string): boolean {
+  if (storedBase === loadedBody) {
+    return true;
+  }
+  const stored = parseEventFormDraft(storedBase);
+  const loaded = parseEventFormDraft(loadedBody);
+  if (!stored || !loaded) {
+    return false;
+  }
+  const withoutMemos = (fields: EventFormDraft): EventFormDraft => ({
+    ...fields,
+    participantMemoBaselines: {},
+    participantMemos: {},
+  });
+  return serializeEventForm(withoutMemos(stored)) === serializeEventForm(withoutMemos(loaded));
 }
 
 export function savedEventBaselineBody(eventId: string): string | null {

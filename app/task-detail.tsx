@@ -35,6 +35,8 @@ import {
   contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
+import { taskHrefMatch } from '@/utils/detailRouteMemory';
+import { leaveForgottenDetail, popCurrentTabScreen } from '@/utils/tabNavigation';
 import { syncTaskReminders } from '@/utils/taskNotifications';
 import { Radius } from '@/constants/theme';
 import { StreakFlameIcon } from '@/components/ui/StreakFlameIcon';
@@ -93,6 +95,7 @@ export default function TaskDetailScreen() {
   const [group, setGroup] = useState<TaskGroup | null>(null);
   const [completions, setCompletions] = useState<TaskCompletion[]>([]);
   const [linkedEvent, setLinkedEvent] = useState<Event | null>(null);
+  const missingLeftIdRef = useRef('');
 
   const reload = useCallback(() => {
     initializeDatabase();
@@ -105,9 +108,13 @@ export default function TaskDetailScreen() {
     }
     const loaded = getTask(taskId);
     if (!loaded) {
-      Alert.alert('エラー', 'タスクが見つかりません', [{ text: 'OK', onPress: () => router.back() }]);
+      if (missingLeftIdRef.current !== taskId) {
+        missingLeftIdRef.current = taskId;
+        leaveForgottenDetail(taskHrefMatch(taskId));
+      }
       return;
     }
+    missingLeftIdRef.current = '';
     setTask(loaded);
     setGroup(loaded.groupId ? getTaskGroup(loaded.groupId) : null);
     setCompletions(loaded.kind === 'recurring' ? getTaskCompletions(taskId) : []);
@@ -116,7 +123,7 @@ export default function TaskDetailScreen() {
     } else {
       setLinkedEvent(null);
     }
-  }, [router, taskId]);
+  }, [taskId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -196,7 +203,7 @@ export default function TaskDetailScreen() {
     if (!task) return;
     deleteTask(task.id);
     void syncTaskReminders();
-    router.back();
+    leaveForgottenDetail(taskHrefMatch(task.id));
   };
 
   const handleDelete = () => {
@@ -268,7 +275,7 @@ export default function TaskDetailScreen() {
   return (
     <FormScreenTemplate
       title="タスク詳細"
-      onBack={() => router.back()}
+      onBack={() => popCurrentTabScreen()}
       right={
         <Pressable
           onPress={() => router.push({ pathname: '/task-edit', params: { taskId: task.id } })}

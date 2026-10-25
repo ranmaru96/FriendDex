@@ -1,8 +1,9 @@
 import { router, type Href } from 'expo-router';
+import { AppState, InteractionManager, type AppStateStatus } from 'react-native';
 import { getAppSetting, initializeDatabase, setAppSetting } from '@/db';
 import { getActiveTab, shouldHideBottomNav, type BottomNavTabKey } from '@/utils/bottomNavVisibility';
 import { getEpisodeDetailHostTab, setEpisodeDetailHostTab } from '@/utils/episodeDetailHost';
-import { calendarHref } from '@/utils/tabRoots';
+import { calendarHref, isCalendarTabRoot } from '@/utils/tabRoots';
 import {
   hrefPathname,
   normalizeTabHref,
@@ -29,11 +30,32 @@ let replayNotice = false;
 let replaySettled = false;
 let gateResolved = false;
 let notificationNavigationClaimed = false;
+let notificationTargetPath: string | null = null;
 let trail: string[] = ['/'];
 
 /** 起動時の画面復元より、通知で開いた画面を優先する。 */
-export function claimNotificationNavigation(): void {
+export function claimNotificationNavigation(targetPathname?: string): void {
   notificationNavigationClaimed = true;
+  if (targetPathname) {
+    notificationTargetPath = targetPathname;
+  }
+}
+
+/** 次の path 変化が通知の行き先なら true。通知の行き先でなければ host は変えない。 */
+export function takeNotificationHostReset(pathname: string): boolean {
+  if (!notificationTargetPath) {
+    return false;
+  }
+  const target = notificationTargetPath;
+  notificationTargetPath = null;
+  if (isCalendarTabRoot(target)) {
+    return isCalendarTabRoot(pathname);
+  }
+  return hrefPathname(pathname) === hrefPathname(target);
+}
+
+export function persistNavigationMemory(): void {
+  persist();
 }
 
 const toHref = (href: string): Href => {
@@ -136,6 +158,39 @@ const persist = (): void => {
   }
 };
 
+let persistAfterInteractions: { cancel: () => void } | null = null;
+
+/** 経路変更のディスク書き込みだけ、描画後の1回にまとめる。 */
+const schedulePersist = (): void => {
+  if (persistAfterInteractions != null) {
+    persistAfterInteractions.cancel();
+  }
+  const task = InteractionManager.runAfterInteractions(() => {
+    if (persistAfterInteractions !== task) {
+      return;
+    }
+    persistAfterInteractions = null;
+    persist();
+  });
+  persistAfterInteractions = task;
+};
+
+/** 背面に回るときは、待ち中の書き込みをその場で行う。 */
+const flushScheduledPersist = (): void => {
+  if (persistAfterInteractions == null) {
+    return;
+  }
+  persistAfterInteractions.cancel();
+  persistAfterInteractions = null;
+  persist();
+};
+
+AppState.addEventListener('change', (nextState: AppStateStatus) => {
+  if (nextState === 'inactive' || nextState === 'background') {
+    flushScheduledPersist();
+  }
+});
+
 const stripUnsavedInputs = (hrefs: string[]): { hrefs: string[]; droppedInput: boolean } => {
   const next = [...hrefs];
   let droppedInput = false;
@@ -206,7 +261,11 @@ export function hydrateNavigationMemory(): void {
   }
 }
 
-export function noteNavigation(prevPath: string, nextHref: string): void {
+export function noteNavigation(
+  prevPath: string,
+  nextHref: string,
+  prevTab: BottomNavTabKey | null = getActiveTab(prevPath)
+): void {
   if (restorePending || replayInProgress) {
     return;
   }
@@ -215,7 +274,6 @@ export function noteNavigation(prevPath: string, nextHref: string): void {
   if (isSkippablePath(nextPath)) {
     return;
   }
-  const prevTab = getActiveTab(prevPath);
   const nextTab = getActiveTab(nextPath);
   const switchedTab = nextTab != null && nextTab !== prevTab && !usesRouterBack(nextPath);
   if (switchedTab) {
@@ -228,7 +286,7 @@ export function noteNavigation(prevPath: string, nextHref: string): void {
       trail = [...trail, normalized].slice(-TRAIL_LIMIT);
     }
   }
-  persist();
+  schedulePersist();
 }
 
 export function touchCurrentHref(nextHref: string): void {
@@ -249,7 +307,7 @@ export function touchCurrentHref(nextHref: string): void {
   } else if (trail.length === 0) {
     trail = [normalized];
   }
-  persist();
+  schedulePersist();
 }
 
 const finishReplay = (): void => {

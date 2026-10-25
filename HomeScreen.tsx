@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  InteractionManager,
   useWindowDimensions,
   FlatList,
   StyleSheet,
@@ -110,8 +111,18 @@ export default function HomeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadInitialData();
-      setFriends(loadHomeFriends(filtersRef.current));
+      let cancelled = false;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (cancelled) {
+          return;
+        }
+        loadInitialData();
+        setFriends(loadHomeFriends(filtersRef.current));
+      });
+      return () => {
+        cancelled = true;
+        task.cancel();
+      };
     }, [loadInitialData])
   );
 

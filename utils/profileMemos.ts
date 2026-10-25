@@ -17,11 +17,13 @@ const sanitizeMemo = (value: ProfileMemo): ProfileMemo => {
       break;
     }
   }
+  const eventId = typeof value.eventId === 'string' ? value.eventId.trim() : '';
   return {
     id: value.id,
     text: value.text,
     date: typeof value.date === 'string' ? value.date : '',
     tags,
+    ...(eventId ? { eventId } : {}),
   };
 };
 
@@ -40,12 +42,14 @@ export const createProfileMemo = (input: {
   text: string;
   date?: string;
   tags?: readonly ProfileMemoTag[];
+  eventId?: string;
 }): ProfileMemo =>
   sanitizeMemo({
     id: uuidv4(),
     text: input.text.trim(),
     date: (input.date ?? '').trim(),
     tags: [...(input.tags ?? [])],
+    eventId: input.eventId,
   });
 
 /**

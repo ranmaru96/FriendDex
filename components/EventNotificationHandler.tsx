@@ -49,7 +49,7 @@ export function EventNotificationHandler() {
       }
       const rawData = response.notification.request.content.data;
       if (isTaskNotificationData(rawData)) {
-        claimNotificationNavigation();
+        claimNotificationNavigation('/tasks');
         router.push('/tasks');
         return;
       }
@@ -59,13 +59,13 @@ export function EventNotificationHandler() {
       }
 
       if (rawData.friendId?.trim()) {
-        claimNotificationNavigation();
+        claimNotificationNavigation('/detail');
         router.push({ pathname: '/detail', params: { id: rawData.friendId } });
         return;
       }
 
       const date = rawData.calendarDate.trim();
-      claimNotificationNavigation();
+      claimNotificationNavigation('/');
       if (isCalendarTabRoot(pathnameRef.current) && isCalendarDateKey(date)) {
         router.setParams({ date });
         return;

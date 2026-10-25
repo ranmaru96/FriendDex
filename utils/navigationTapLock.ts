@@ -17,6 +17,14 @@ let locked = false;
 let generation = 0;
 let transitionSeenForGeneration = 0;
 let fallbackTimer: ReturnType<typeof setTimeout> | null = null;
+/** 次の beginTapNavigationLock だけ、タブの transitionEnd で外してよい。 */
+let pendingTabSwitchRelease = false;
+/** タブの transitionEnd で外してよいロックの世代。0 は対象外。 */
+let armedTabGeneration = 0;
+/** その世代のタブ transitionStart を見たら、その世代番号を入れる。 */
+let tabSwitchSeenGeneration = 0;
+/** transitionStart が乗っていたタブの route key。別の遷移の End では外さない。 */
+let tabSwitchTarget: string | undefined;
 
 function emit(): void {
   listeners.forEach((listener) => listener());
@@ -39,7 +47,15 @@ function release(current: number): void {
     fallbackTimer = null;
   }
   transitionSeenForGeneration = 0;
+  tabSwitchSeenGeneration = 0;
+  tabSwitchTarget = undefined;
+  armedTabGeneration = 0;
   setLocked(false);
+}
+
+/** 直後の beginTapNavigationLock 1回だけ、タブの transitionEnd で外す。 */
+export function expectTabSwitchLockRelease(): void {
+  pendingTabSwitchRelease = true;
 }
 
 /** ボタンやタブなど、アプリが始めた画面移動のあいだタップを止める。 */
@@ -47,6 +63,14 @@ export function beginTapNavigationLock(): void {
   generation += 1;
   const current = generation;
   transitionSeenForGeneration = 0;
+  tabSwitchSeenGeneration = 0;
+  tabSwitchTarget = undefined;
+  if (pendingTabSwitchRelease) {
+    armedTabGeneration = current;
+    pendingTabSwitchRelease = false;
+  } else {
+    armedTabGeneration = 0;
+  }
   if (fallbackTimer != null) {
     clearTimeout(fallbackTimer);
   }
@@ -70,6 +94,32 @@ export function noteTapNavigationTransitionEnd(closing: boolean): void {
     return;
   }
   if (transitionSeenForGeneration !== generation) {
+    return;
+  }
+  release(generation);
+}
+
+/** タブの transitionStart。印がある世代だけ覚える。 */
+export function noteTabSwitchTransitionStart(target: string | undefined): void {
+  if (!locked || target == null || armedTabGeneration !== generation) {
+    return;
+  }
+  tabSwitchSeenGeneration = generation;
+  tabSwitchTarget = target;
+}
+
+/**
+ * タブの transitionEnd。
+ * 印がある世代で、その世代の Start と同じ route key のときだけ外す。
+ */
+export function noteTabSwitchTransitionEnd(target: string | undefined): void {
+  if (
+    !locked ||
+    target == null ||
+    tabSwitchSeenGeneration !== generation ||
+    armedTabGeneration !== generation ||
+    target !== tabSwitchTarget
+  ) {
     return;
   }
   release(generation);

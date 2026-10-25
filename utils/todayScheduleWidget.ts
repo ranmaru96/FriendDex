@@ -22,14 +22,11 @@ import {
 } from '@/utils/eventHelpers';
 import { formatRecurrenceLabel, formatTaskDueDateLabel, toYmd } from '@/utils/taskHelpers';
 import {
-  isCompletedOnLocalDay,
   isGroupFreeOnDate,
   isGroupRequiredOnDate,
   isRecurringTaskFree,
   isRecurringTaskRequiredOnDate,
   isTemporaryDueOnOrBefore,
-  isTemporaryOpenIncompleteBucket,
-  mergeTemporaryItemsByDueDate,
   partitionTasksByGroup,
   type TaskGroupBundle,
 } from '@/utils/taskGroupHelpers';
@@ -46,6 +43,8 @@ type WidgetTask = {
   id: string;
   title: string;
   due: string;
+  /** 単発で期限が今日以前のとき true。ウィジェットの赤文字用。 */
+  dueHot: boolean;
   required: boolean;
   done: boolean;
 };
@@ -90,13 +89,19 @@ const dueLabelForTask = (task: Task, day: Date): string => {
   return formatRecurrenceLabel(task.pace, task.recurrenceUnit, task.recurrenceConfig);
 };
 
-const toWidgetTask = (task: Task, day: Date, required: boolean): WidgetTask => ({
-  id: task.id,
-  title: task.title,
-  due: dueLabelForTask(task, day),
-  required,
-  done: task.kind === 'recurring' ? isRecurringDoneOn(task, toYmd(day)) : Boolean(task.completedAt),
-});
+const toWidgetTask = (task: Task, day: Date, required: boolean): WidgetTask => {
+  const ymd = toYmd(day);
+  const dueHot =
+    task.kind === 'temporary' && Boolean(task.dueDate?.trim()) && isTemporaryDueOnOrBefore(task, ymd);
+  return {
+    id: task.id,
+    title: task.title,
+    due: dueLabelForTask(task, day),
+    dueHot,
+    required,
+    done: task.kind === 'recurring' ? isRecurringDoneOn(task, ymd) : Boolean(task.completedAt),
+  };
+};
 
 const pushUnique = (items: WidgetTask[], seen: Set<string>, task: Task, day: Date, required: boolean) => {
   if (seen.has(task.id)) {
@@ -104,6 +109,23 @@ const pushUnique = (items: WidgetTask[], seen: Set<string>, task: Task, day: Dat
   }
   seen.add(task.id);
   items.push(toWidgetTask(task, day, required));
+};
+
+const compareTemporaryByDue = (a: Task, b: Task): number => {
+  const aDue = a.dueDate?.trim() || '';
+  const bDue = b.dueDate?.trim() || '';
+  if (!aDue && !bDue) {
+    if (a.createdAt < b.createdAt) return -1;
+    if (a.createdAt > b.createdAt) return 1;
+    return 0;
+  }
+  if (!aDue) return 1;
+  if (!bDue) return -1;
+  if (aDue < bDue) return -1;
+  if (aDue > bDue) return 1;
+  if (a.createdAt < b.createdAt) return -1;
+  if (a.createdAt > b.createdAt) return 1;
+  return 0;
 };
 
 const recurringMembersInScreenOrder = (bundle: TaskGroupBundle, day: Date): Task[] => {
@@ -116,7 +138,7 @@ const recurringMembersInScreenOrder = (bundle: TaskGroupBundle, day: Date): Task
   );
 };
 
-/** タスク画面「今日」の上から順。グループは折りたたまず、中のタスクをその順で出す。 */
+/** 単発はグループ無視で期限順。そのあと繰り返し（要対応→余裕）。 */
 const tasksInTodayScreenOrder = (
   tasks: Task[],
   groups: TaskGroup[],
@@ -124,24 +146,14 @@ const tasksInTodayScreenOrder = (
   includeRecurringTasks = true
 ): WidgetTask[] => {
   const ymd = toYmd(day);
-  const temporary = tasks.filter((task) => task.kind === 'temporary' && !task.completedAt);
+  const temporary = tasks
+    .filter((task) => task.kind === 'temporary' && !task.completedAt)
+    .slice()
+    .sort(compareTemporaryByDue);
   const recurring = includeRecurringTasks ? tasks.filter((task) => task.kind === 'recurring') : [];
-  const temporaryGroups = groups.filter((group) => group.kind === 'temporary');
   const recurringGroups = includeRecurringTasks
     ? groups.filter((group) => group.kind === 'recurring')
     : [];
-
-  const { bundles: temporaryBundles, ungrouped: temporaryUngrouped } = partitionTasksByGroup(
-    temporary,
-    temporaryGroups
-  );
-  const actionTemporaryBundles = temporaryBundles.filter((bundle) =>
-    bundle.members.some((task) => isTemporaryDueOnOrBefore(task, ymd))
-  );
-  const actionTemporaryItems = mergeTemporaryItemsByDueDate(
-    actionTemporaryBundles,
-    temporaryUngrouped.filter((task) => isTemporaryDueOnOrBefore(task, ymd))
-  );
 
   const { bundles: recurringBundles, ungrouped: recurringUngrouped } = partitionTasksByGroup(
     recurring,
@@ -154,22 +166,12 @@ const tasksInTodayScreenOrder = (
     isGroupFreeOnDate(bundle.group, bundle.members, day)
   );
 
-  const actionGroupIds = new Set(actionTemporaryBundles.map((bundle) => bundle.group.id));
-  const openTemporaryItems = mergeTemporaryItemsByDueDate(
-    temporaryBundles.filter((bundle) => !actionGroupIds.has(bundle.group.id)),
-    temporaryUngrouped.filter((task) => isTemporaryOpenIncompleteBucket(task, ymd))
-  );
-
   const items: WidgetTask[] = [];
   const seen = new Set<string>();
 
-  for (const item of actionTemporaryItems) {
-    const members =
-      item.type === 'task'
-        ? [item.task]
-        : item.bundle.members.filter((task) => isTemporaryDueOnOrBefore(task, ymd));
-    members.forEach((task) => pushUnique(items, seen, task, day, true));
-  }
+  temporary.forEach((task) =>
+    pushUnique(items, seen, task, day, isTemporaryDueOnOrBefore(task, ymd))
+  );
   for (const bundle of actionRecurringBundles) {
     recurringMembersInScreenOrder(bundle, day).forEach((task) => pushUnique(items, seen, task, day, true));
   }
@@ -184,22 +186,6 @@ const tasksInTodayScreenOrder = (
   recurringUngrouped
     .filter((task) => isRecurringTaskFree(task))
     .forEach((task) => pushUnique(items, seen, task, day, false));
-  for (const item of openTemporaryItems) {
-    const members = item.type === 'task' ? [item.task] : item.bundle.members;
-    members.forEach((task) => pushUnique(items, seen, task, day, false));
-  }
-
-  const completedToday = tasks.filter(
-    (task) => task.kind === 'temporary' && isCompletedOnLocalDay(task.completedAt, ymd)
-  );
-  const { bundles: completedBundles, ungrouped: completedUngrouped } = partitionTasksByGroup(
-    completedToday,
-    temporaryGroups
-  );
-  for (const bundle of completedBundles) {
-    bundle.members.forEach((task) => pushUnique(items, seen, task, day, false));
-  }
-  completedUngrouped.forEach((task) => pushUnique(items, seen, task, day, false));
   return items.filter((task) => !task.done);
 };
 
@@ -250,6 +236,8 @@ const encodeTaskRows = (tasks: WidgetTask[]): string =>
         task.title.replace(/[\t\n]/g, ' '),
         task.due.replace(/[\t\n]/g, ' '),
         task.id.replace(/[\t\n]/g, ''),
+        '',
+        task.dueHot ? '1' : '0',
       ].join('\t')
     )
     .join('\n');
@@ -475,7 +463,7 @@ const overlayHolds = (raw: string, holds: WidgetCheckRow[]): string => {
         return line;
       }
       parts[1] = '1';
-      while (parts.length < 6) {
+      while (parts.length < 7) {
         parts.push('');
       }
       parts[5] = String(pendingAt);

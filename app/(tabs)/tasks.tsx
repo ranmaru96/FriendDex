@@ -1,6 +1,7 @@
 import { Children, Fragment, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Alert,
+  InteractionManager,
   Modal,
   Pressable,
   ScrollView,
@@ -12,6 +13,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { taskHrefMatch } from '@/utils/detailRouteMemory';
+import { forgetDetailFromTabs } from '@/utils/tabNavigation';
 import { deleteTaskFormDraft, readTaskFormDraft } from '@/utils/taskFormDraft';
 import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -42,8 +45,8 @@ import {
   reopenTemporaryTask,
   setRecurringDoneOn,
   setTaskGroupId,
-} from '../db';
-import type { Task, TaskGroup } from '../types';
+} from '../../db';
+import type { Task, TaskGroup } from '../../types';
 import {
   formatRecurrenceLabel,
   formatTaskDueDateLabel,
@@ -744,8 +747,18 @@ export default function TasksScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      reload();
-      void syncTaskReminders();
+      let cancelled = false;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (cancelled) {
+          return;
+        }
+        reload();
+        void syncTaskReminders();
+      });
+      return () => {
+        cancelled = true;
+        task.cancel();
+      };
     }, [reload])
   );
 
@@ -1013,6 +1026,7 @@ export default function TasksScreen() {
         style: 'destructive',
         onPress: () => {
           deleteTask(task.id);
+          forgetDetailFromTabs(taskHrefMatch(task.id));
           void syncTaskReminders();
           reload();
         },

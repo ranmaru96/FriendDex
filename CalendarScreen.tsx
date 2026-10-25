@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { InteractionManager, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Calendar, LocaleConfig } from 'react-native-calendars';
 import type { DateData } from 'react-native-calendars';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -13,6 +13,7 @@ import { CalendarDayCell } from '@/components/calendar/CalendarDayCell';
 import {
   BIRTHDAY_ICON_COLOR,
   ScheduleGridMonthCalendar,
+  TODAY_BADGE_BG,
 } from '@/components/calendar/ScheduleGridMonthCalendar';
 import { EpisodeTagsModal } from '@/components/episode/EpisodeTagsModal';
 import { EventParticipantChipList } from '@/components/event/EventParticipantChipList';
@@ -32,10 +33,12 @@ import { listCardBackgroundColor, listCardShadowStyle } from '@/utils/listCardSu
 import { useContentColors } from '@/utils/useContentColors';
 import {
   getAllFriends,
+  getAppSetting,
   getEpisodesByEventIds,
   getEventParticipantsForEvents,
   getEventsByDateRange,
   initializeDatabase,
+  setAppSetting,
 } from './db';
 import type { Episode, Event } from './types';
 import { buildCalendarMarkedDates } from './utils/calendarMarking';
@@ -87,6 +90,71 @@ LocaleConfig.defaultLocale = 'ja';
 const parseMonthFromDateKey = (dateKey: string): { year: number; month: number } => {
   const [year, month] = dateKey.split('-').map(Number);
   return { year, month };
+};
+
+const CALENDAR_VIEW_MODE_KEY = 'calendar.view_mode';
+
+type CalendarViewMode = 'month' | 'agenda';
+
+type AgendaScrollRequest = {
+  id: number;
+  kind: 'today' | 'firstEvent' | 'date';
+  dateKey?: string;
+  /** この読み込み回数の予定が画面に乗ってからスクロールする。0 は初回ロード待ち */
+  afterLoadId: number;
+};
+
+type AgendaDay = {
+  dateKey: string;
+  events: Event[];
+};
+
+const readCalendarViewMode = (): CalendarViewMode => {
+  initializeDatabase();
+  return getAppSetting(CALENDAR_VIEW_MODE_KEY) === 'agenda' ? 'agenda' : 'month';
+};
+
+const dateKeyInMonth = (year: number, month: number, day: number): string =>
+  `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+const buildAgendaDays = (
+  year: number,
+  month: number,
+  events: Event[],
+  birthdayFriendsByMonthDay: Map<string, BirthdayFriendDisplay[]>,
+  todayKey: string,
+  pinnedDateKey?: string,
+): AgendaDay[] => {
+  const lastDay = new Date(year, month, 0).getDate();
+  const days: AgendaDay[] = [];
+  for (let day = 1; day <= lastDay; day += 1) {
+    const dateKey = dateKeyInMonth(year, month, day);
+    const dayEvents = filterEventsByLocalDate(events, dateKey);
+    const birthdays = getBirthdayFriendsForDateKey(birthdayFriendsByMonthDay, dateKey);
+    const pinned = pinnedDateKey === dateKey;
+    if (dayEvents.length === 0 && birthdays.length === 0 && dateKey !== todayKey && !pinned) {
+      continue;
+    }
+    days.push({ dateKey, events: dayEvents });
+  }
+  return days;
+};
+
+const resolveAgendaScrollKey = (
+  request: AgendaScrollRequest,
+  days: AgendaDay[],
+  todayKey: string,
+): string => {
+  if (request.kind === 'date' && request.dateKey) {
+    if (days.some((day) => day.dateKey === request.dateKey)) {
+      return request.dateKey;
+    }
+    return days.find((day) => day.dateKey >= request.dateKey)?.dateKey ?? 'top';
+  }
+  if (request.kind === 'today') {
+    return days.some((day) => day.dateKey === todayKey) ? todayKey : 'top';
+  }
+  return days.find((day) => day.events.length > 0)?.dateKey ?? 'top';
 };
 
 const getCalendarMemoLineLimit = (display: CalendarEventMemoDisplay): number | undefined => {
@@ -207,6 +275,27 @@ export default function CalendarScreen() {
   const params = useLocalSearchParams<{ date?: string }>();
   const routeDate = typeof params.date === 'string' ? params.date.trim() : '';
   const todayKey = useMemo(() => formatDateKey(new Date()), []);
+  const [viewMode, setViewMode] = useState<CalendarViewMode>(readCalendarViewMode);
+  const [agendaScroll, setAgendaScroll] = useState<AgendaScrollRequest | null>(() => {
+    if (readCalendarViewMode() !== 'agenda') {
+      return null;
+    }
+    const validRouteDate = /^\d{4}-\d{2}-\d{2}$/.test(routeDate);
+    return {
+      id: 1,
+      kind: validRouteDate ? 'date' : 'today',
+      dateKey: validRouteDate ? routeDate : undefined,
+      afterLoadId: 0,
+    };
+  });
+  const [eventLoadId, setEventLoadId] = useState(0);
+  const viewModeRef = useRef(viewMode);
+  viewModeRef.current = viewMode;
+  const agendaScrollRef = useRef<ScrollView>(null);
+  const agendaOffsetsRef = useRef<Record<string, number>>({});
+  const agendaPendingKeyRef = useRef<string | null>(null);
+  const eventLoadIdRef = useRef(0);
+  const appliedAgendaScrollIdRef = useRef(0);
   const [selectedDate, setSelectedDate] = useState(() =>
     /^\d{4}-\d{2}-\d{2}$/.test(routeDate) ? routeDate : todayKey
   );
@@ -229,14 +318,12 @@ export default function CalendarScreen() {
     () => new Set(birthdayFriendsByMonthDay.keys()),
     [birthdayFriendsByMonthDay]
   );
-  const birthdayFriendsForSelectedDate = useMemo(
-    () => getBirthdayFriendsForDateKey(birthdayFriendsByMonthDay, selectedDate),
-    [birthdayFriendsByMonthDay, selectedDate]
-  );
   const { holidays, holidayNameFor, refresh: refreshHolidays } = useJapaneseHolidays();
 
   const loadMonthEvents = useCallback(
     (year: number, month: number) => {
+      eventLoadIdRef.current += 1;
+      setEventLoadId(eventLoadIdRef.current);
       initializeDatabase();
       const { rangeStartAt, rangeEndAt } = isScheduleGrid
         ? getScheduleGridMonthRangeIso(year, month)
@@ -264,9 +351,19 @@ export default function CalendarScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadMonthEvents(visibleMonth.year, visibleMonth.month);
-      setBirthdayFriendsByMonthDay(buildBirthdayFriendsByMonthDay(getAllFriends()));
-      refreshHolidays();
+      let cancelled = false;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (cancelled) {
+          return;
+        }
+        loadMonthEvents(visibleMonth.year, visibleMonth.month);
+        setBirthdayFriendsByMonthDay(buildBirthdayFriendsByMonthDay(getAllFriends()));
+        refreshHolidays();
+      });
+      return () => {
+        cancelled = true;
+        task.cancel();
+      };
     }, [loadMonthEvents, refreshHolidays, visibleMonth.month, visibleMonth.year])
   );
 
@@ -309,8 +406,19 @@ export default function CalendarScreen() {
       return;
     }
     setSelectedDate(routeDate);
-    setVisibleMonth(parseMonthFromDateKey(routeDate));
-  }, [routeDate]);
+    const nextMonth = parseMonthFromDateKey(routeDate);
+    setVisibleMonth(nextMonth);
+    if (viewModeRef.current === 'agenda') {
+      loadMonthEvents(nextMonth.year, nextMonth.month);
+      const afterLoadId = eventLoadIdRef.current;
+      setAgendaScroll((prev) => ({
+        id: (prev?.id ?? 0) + 1,
+        kind: 'date',
+        dateKey: routeDate,
+        afterLoadId,
+      }));
+    }
+  }, [loadMonthEvents, routeDate]);
 
   const eventsForSelectedDate = useMemo(
     () => filterEventsByLocalDate(monthEvents, selectedDate),
@@ -340,7 +448,41 @@ export default function CalendarScreen() {
   const handleScheduleGridMonthChange = (year: number, month: number) => {
     setVisibleMonth({ year, month });
     loadMonthEvents(year, month);
+    if (viewModeRef.current === 'agenda') {
+      const afterLoadId = eventLoadIdRef.current;
+      setAgendaScroll((prev) => ({ id: (prev?.id ?? 0) + 1, kind: 'firstEvent', afterLoadId }));
+    }
   };
+
+  const handlePressToday = useCallback(() => {
+    setSelectedDate(todayKey);
+    const nextMonth = parseMonthFromDateKey(todayKey);
+    setVisibleMonth(nextMonth);
+    loadMonthEvents(nextMonth.year, nextMonth.month);
+    if (viewModeRef.current === 'agenda') {
+      const afterLoadId = eventLoadIdRef.current;
+      setAgendaScroll((prev) => ({ id: (prev?.id ?? 0) + 1, kind: 'today', afterLoadId }));
+    }
+  }, [loadMonthEvents, todayKey]);
+
+  const handleCalendarViewChange = useCallback(
+    (next: CalendarViewMode) => {
+      setViewMode(next);
+      initializeDatabase();
+      setAppSetting(CALENDAR_VIEW_MODE_KEY, next);
+      if (next === 'month') {
+        setSelectedDate(todayKey);
+        const nextMonth = parseMonthFromDateKey(todayKey);
+        setVisibleMonth(nextMonth);
+        loadMonthEvents(nextMonth.year, nextMonth.month);
+        agendaScrollRef.current?.scrollTo({ y: 0, animated: false });
+        return;
+      }
+      const afterLoadId = eventLoadIdRef.current;
+      setAgendaScroll((prev) => ({ id: (prev?.id ?? 0) + 1, kind: 'firstEvent', afterLoadId }));
+    },
+    [loadMonthEvents, todayKey],
+  );
 
   const shiftVisibleMonth = useCallback(
     (delta: number) => {
@@ -420,10 +562,6 @@ export default function CalendarScreen() {
     [visibleMonth.month, visibleMonth.year]
   );
 
-  const handleCreateEvent = () => {
-    router.push({ pathname: '/event', params: { date: selectedDate } });
-  };
-
   const handleOpenEvent = (eventId: string) => {
     router.push({ pathname: '/event-detail', params: { eventId } });
   };
@@ -432,46 +570,220 @@ export default function CalendarScreen() {
     router.push({ pathname: '/detail', params: { id: friendId } });
   };
 
-  const selectedDateLabel = useMemo(() => {
-    const holidayName = holidayNameFor(selectedDate);
-    if (isScheduleGrid) {
-      return formatScheduleGridSelectedLabel(selectedDate, holidayName);
+  const dateLabelFor = useCallback(
+    (dateKey: string) => {
+      const holidayName = holidayNameFor(dateKey);
+      if (isScheduleGrid) {
+        return formatScheduleGridSelectedLabel(dateKey, holidayName);
+      }
+      const [year, month, day] = dateKey.split('-').map(Number);
+      const base = `${year}年${month}月${day}日`;
+      return holidayName ? `${base}（${holidayName}）` : base;
+    },
+    [holidayNameFor, isScheduleGrid],
+  );
+
+  const agendaDays = useMemo(
+    () =>
+      buildAgendaDays(
+        visibleMonth.year,
+        visibleMonth.month,
+        monthEvents,
+        birthdayFriendsByMonthDay,
+        todayKey,
+        agendaScroll?.kind === 'date' ? agendaScroll.dateKey : undefined,
+      ),
+    [agendaScroll, birthdayFriendsByMonthDay, monthEvents, todayKey, visibleMonth.month, visibleMonth.year],
+  );
+
+  useEffect(() => {
+    if (viewMode !== 'agenda' || agendaScroll == null) {
+      return;
     }
-    const [year, month, day] = selectedDate.split('-').map(Number);
-    const base = `${year}年${month}月${day}日`;
-    return holidayName ? `${base}（${holidayName}）` : base;
-  }, [holidayNameFor, isScheduleGrid, selectedDate]);
+    if (eventLoadId < Math.max(1, agendaScroll.afterLoadId)) {
+      return;
+    }
+    if (appliedAgendaScrollIdRef.current === agendaScroll.id) {
+      return;
+    }
+    appliedAgendaScrollIdRef.current = agendaScroll.id;
+    const key = resolveAgendaScrollKey(agendaScroll, agendaDays, todayKey);
+    agendaOffsetsRef.current = {};
+    agendaPendingKeyRef.current = key;
+    if (key === 'top') {
+      agendaScrollRef.current?.scrollTo({ y: 0, animated: false });
+      agendaPendingKeyRef.current = null;
+    }
+  }, [agendaDays, agendaScroll, eventLoadId, todayKey, viewMode]);
+
+  const rememberAgendaOffset = (dateKey: string, y: number) => {
+    agendaOffsetsRef.current[dateKey] = y;
+    if (agendaPendingKeyRef.current !== dateKey) {
+      return;
+    }
+    agendaScrollRef.current?.scrollTo({ y, animated: false });
+    agendaPendingKeyRef.current = null;
+  };
+
+  const renderDaySection = (
+    dateKey: string,
+    events: Event[],
+    options: { showAdd: boolean; showEmpty: boolean },
+  ) => {
+    const birthdays = getBirthdayFriendsForDateKey(birthdayFriendsByMonthDay, dateKey);
+    return (
+      <View style={[styles.eventArea, isEdgeToEdge || isCompactEventCard ? styles.eventAreaTight : null]}>
+        <CompactSectionHeader
+          title={dateLabelFor(dateKey)}
+          count={events.length}
+          variant={isScheduleGrid ? 'compact' : 'classic'}
+          edgeToEdge={isEdgeToEdge}
+          middle={
+            birthdays.length > 0 ? (
+              <View style={styles.birthdayRow}>
+                <Ionicons name="gift" size={14} color={BIRTHDAY_ICON_COLOR} />
+                <ParticipantChipList
+                  chips={birthdays.map((friend) => ({
+                    id: `birthday-${friend.friendId}`,
+                    kind: 'individual' as const,
+                    label: friend.name,
+                    friendId: friend.friendId,
+                    photoUri: friend.photoUri,
+                  }))}
+                  compact
+                  layout="scroll"
+                  onPressProfile={handleOpenFriendDetail}
+                />
+              </View>
+            ) : null
+          }
+          right={
+            options.showAdd ? (
+              <AddCircleButton
+                size={28}
+                onPress={() => router.push({ pathname: '/event', params: { date: dateKey } })}
+                accessibilityLabel="予定を追加"
+              />
+            ) : null
+          }
+        />
+        {options.showEmpty ? (
+          <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
+            {isOffsetPattern ? (
+              <OffsetCard contentStyle={{ backgroundColor: eventCardFill }}>
+                <View style={styles.emptyCardCodex}>
+                  <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
+                  <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
+                </View>
+              </OffsetCard>
+            ) : (
+              <View
+                style={[
+                  styles.emptyCard,
+                  contentCardSurface,
+                  styles.roundedEventCard,
+                  { backgroundColor: eventCardFill },
+                  eventCardShadow,
+                ]}
+              >
+                <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
+                <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
+              </View>
+            )}
+          </View>
+        ) : events.length > 0 ? (
+          <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
+            {events.map((event) => {
+              const participants = participantsByEventId.get(event.id) ?? [];
+              const body = (
+                <CalendarEventCardBody
+                  event={event}
+                  participants={participants}
+                  episodeCount={(episodesByEventId.get(event.id) ?? []).length}
+                  selectedDate={dateKey}
+                  metaLayout={eventMetaLayout}
+                  isCompactEventCard={isCompactEventCard}
+                  memoDisplay={kit.calendarEventMemoDisplay}
+                  onOpen={() => handleOpenEvent(event.id)}
+                  style={[
+                    styles.eventCard,
+                    contentCardSurface,
+                    { backgroundColor: eventCardFill },
+                    isCompactEventCard ? styles.eventCardCompact : null,
+                    styles.roundedEventCard,
+                    eventCardShadow,
+                    isOffsetPattern
+                      ? {
+                          borderWidth: 0,
+                          borderRadius: 0,
+                          backgroundColor: 'transparent',
+                          shadowOpacity: 0,
+                          elevation: 0,
+                        }
+                      : null,
+                  ]}
+                />
+              );
+              return isOffsetPattern ? (
+                <OffsetCard key={event.id} contentStyle={{ backgroundColor: eventCardFill }}>
+                  {body}
+                </OffsetCard>
+              ) : (
+                <View key={event.id}>{body}</View>
+              );
+            })}
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
+  const scheduleGridCalendar = (headerOnly: boolean) => (
+    <ScheduleGridMonthCalendar
+      key={headerOnly ? 'schedule-grid-header' : `schedule-grid-${episodeTagStyleEpoch}`}
+      year={visibleMonth.year}
+      month={visibleMonth.month}
+      selectedDate={selectedDate}
+      todayKey={todayKey}
+      events={monthEvents}
+      onDayPress={handleScheduleGridDayPress}
+      onMonthChange={handleScheduleGridMonthChange}
+      edgeToEdge={isEdgeToEdge}
+      birthdayMonthDays={birthdayMonthDays}
+      holidays={holidays}
+      onPressEpisodeTags={() => setEpisodeTagsModalVisible(true)}
+      onPressToday={handlePressToday}
+      calendarView={viewMode}
+      onCalendarViewChange={handleCalendarViewChange}
+      headerOnly={headerOnly}
+    />
+  );
+
+  const showAgenda = isScheduleGrid && viewMode === 'agenda';
 
   return (
     <>
     <SafeAreaView style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>
+      {showAgenda ? (
+        <View style={{ paddingHorizontal: kit.calendarScreenPaddingHorizontal }}>
+          {scheduleGridCalendar(true)}
+        </View>
+      ) : null}
       <ScrollView
+        ref={agendaScrollRef}
         style={styles.scrollView}
         nestedScrollEnabled
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.scrollContent,
           { paddingHorizontal: kit.calendarScreenPaddingHorizontal },
-          flushTop ? styles.scrollContentFlushTop : null,
+          flushTop || showAgenda ? styles.scrollContentFlushTop : null,
           isEdgeToEdge ? styles.scrollContentEdgeToEdge : null,
           isCompactEventCard ? styles.scrollContentCompact : null,
         ]}
       >
         {isScheduleGrid ? (
-          <ScheduleGridMonthCalendar
-            key={`schedule-grid-${episodeTagStyleEpoch}`}
-            year={visibleMonth.year}
-            month={visibleMonth.month}
-            selectedDate={selectedDate}
-            todayKey={todayKey}
-            events={monthEvents}
-            onDayPress={handleScheduleGridDayPress}
-            onMonthChange={handleScheduleGridMonthChange}
-            edgeToEdge={isEdgeToEdge}
-            birthdayMonthDays={birthdayMonthDays}
-            holidays={holidays}
-            onPressEpisodeTags={() => setEpisodeTagsModalVisible(true)}
-          />
+          showAgenda ? null : scheduleGridCalendar(false)
         ) : (
           <GestureDetector gesture={classicCalendarSwipeGesture}>
           <View style={[styles.calendarShadow, isEdgeToEdge ? styles.calendarShadowEdgeToEdge : null]}>
@@ -514,53 +826,21 @@ export default function CalendarScreen() {
           </GestureDetector>
         )}
 
-        <GestureDetector gesture={eventAreaSwipeGesture}>
-          <View
-            style={[
-              styles.eventArea,
-              isEdgeToEdge || isCompactEventCard ? styles.eventAreaTight : null,
-            ]}
-          >
-            <CompactSectionHeader
-              title={selectedDateLabel}
-              count={eventsForSelectedDate.length}
-              variant={isScheduleGrid ? 'compact' : 'classic'}
-              edgeToEdge={isEdgeToEdge}
-              middle={
-                birthdayFriendsForSelectedDate.length > 0 ? (
-                  <View style={styles.birthdayRow}>
-                    <Ionicons name="gift" size={14} color={BIRTHDAY_ICON_COLOR} />
-                    <ParticipantChipList
-                      chips={birthdayFriendsForSelectedDate.map((friend) => ({
-                        id: `birthday-${friend.friendId}`,
-                        kind: 'individual' as const,
-                        label: friend.name,
-                        friendId: friend.friendId,
-                        photoUri: friend.photoUri,
-                      }))}
-                      compact
-                      layout="scroll"
-                      onPressProfile={handleOpenFriendDetail}
-                    />
-                  </View>
-                ) : null
-              }
-              right={
-                <AddCircleButton
-                  size={28}
-                  onPress={handleCreateEvent}
-                  accessibilityLabel="予定を追加"
-                />
-              }
-            />
-
-            {eventsForSelectedDate.length === 0 ? (
+        {showAgenda ? (
+          <View style={styles.agendaList}>
+            <View style={[styles.monthLabel, isEdgeToEdge ? styles.monthLabelEdge : null]}>
+              <View style={[styles.monthLabelMark, { backgroundColor: TODAY_BADGE_BG }]} />
+              <Text style={[styles.monthLabelText, { color: appTheme?.colors.onScreenText ?? content.contentText }]}>
+                {visibleMonth.month}月
+              </Text>
+            </View>
+            {agendaDays.length === 0 ? (
               <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
                 {isOffsetPattern ? (
                   <OffsetCard contentStyle={{ backgroundColor: eventCardFill }}>
                     <View style={styles.emptyCardCodex}>
                       <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
-                      <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
+                      <Text style={[styles.emptyText, contentTextStyles.secondary]}>この月に登録された予定はまだありません。</Text>
                     </View>
                   </OffsetCard>
                 ) : (
@@ -574,55 +854,36 @@ export default function CalendarScreen() {
                     ]}
                   >
                     <Text style={[styles.emptyTitle, contentTextStyles.title]}>予定はありません</Text>
-                    <Text style={[styles.emptyText, contentTextStyles.secondary]}>この日に登録された予定はまだありません。</Text>
+                    <Text style={[styles.emptyText, contentTextStyles.secondary]}>この月に登録された予定はまだありません。</Text>
                   </View>
                 )}
               </View>
             ) : (
-              <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
-                {eventsForSelectedDate.map((event) => {
-                  const participants = participantsByEventId.get(event.id) ?? [];
-                  const body = (
-                    <CalendarEventCardBody
-                      event={event}
-                      participants={participants}
-                      episodeCount={(episodesByEventId.get(event.id) ?? []).length}
-                      selectedDate={selectedDate}
-                      metaLayout={eventMetaLayout}
-                      isCompactEventCard={isCompactEventCard}
-                      memoDisplay={kit.calendarEventMemoDisplay}
-                      onOpen={() => handleOpenEvent(event.id)}
-                      style={[
-                        styles.eventCard,
-                        contentCardSurface,
-                        { backgroundColor: eventCardFill },
-                        isCompactEventCard ? styles.eventCardCompact : null,
-                        styles.roundedEventCard,
-                        eventCardShadow,
-                        isOffsetPattern
-                          ? {
-                              borderWidth: 0,
-                              borderRadius: 0,
-                              backgroundColor: 'transparent',
-                              shadowOpacity: 0,
-                              elevation: 0,
-                            }
-                          : null,
-                      ]}
-                    />
-                  );
-                  return isOffsetPattern ? (
-                    <OffsetCard key={event.id} contentStyle={{ backgroundColor: eventCardFill }}>
-                      {body}
-                    </OffsetCard>
-                  ) : (
-                    <View key={event.id}>{body}</View>
-                  );
-                })}
-              </View>
+              agendaDays.map((day) => {
+                const birthdays = getBirthdayFriendsForDateKey(birthdayFriendsByMonthDay, day.dateKey);
+                return (
+                  <View
+                    key={day.dateKey}
+                    collapsable={false}
+                    onLayout={(event) => rememberAgendaOffset(day.dateKey, event.nativeEvent.layout.y)}
+                  >
+                    {renderDaySection(day.dateKey, day.events, {
+                      showAdd: false,
+                      showEmpty: day.events.length === 0 && birthdays.length === 0,
+                    })}
+                  </View>
+                );
+              })
             )}
           </View>
-        </GestureDetector>
+        ) : (
+          <GestureDetector gesture={eventAreaSwipeGesture}>
+            {renderDaySection(selectedDate, eventsForSelectedDate, {
+              showAdd: true,
+              showEmpty: eventsForSelectedDate.length === 0,
+            })}
+          </GestureDetector>
+        )}
       </ScrollView>
     </SafeAreaView>
     <EpisodeTagsModal
@@ -652,6 +913,28 @@ const styles = StyleSheet.create({
   },
   scrollContentFlushTop: {
     paddingTop: 0,
+  },
+  agendaList: {
+    gap: Spacing.md,
+  },
+  monthLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 4,
+    paddingHorizontal: 2,
+  },
+  monthLabelEdge: {
+    paddingHorizontal: Spacing.sm,
+  },
+  monthLabelMark: {
+    width: 3,
+    height: 18,
+    borderRadius: 2,
+  },
+  monthLabelText: {
+    fontSize: 20,
+    fontWeight: '800',
   },
   scrollContentCompact: {
     gap: Spacing.sm,

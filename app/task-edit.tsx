@@ -20,6 +20,8 @@ import {
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { taskHrefMatch } from '@/utils/detailRouteMemory';
+import { leaveForgottenDetail } from '@/utils/tabNavigation';
 import { Radius, Spacing, Typography } from '@/constants/theme';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -699,7 +701,7 @@ export default function TaskEditScreen() {
     void syncTaskReminders();
     stopTaskDraftRef.current();
     deleteTaskFormDraft(taskId || null);
-    router.back();
+    leaveForgottenDetail(taskHrefMatch(taskId));
   };
 
   const handleDelete = () => {

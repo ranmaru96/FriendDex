@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -28,6 +28,8 @@ import {
   setRecurringDoneOn,
   updateTaskGroup,
 } from '../db';
+import { taskGroupHrefMatch, taskHrefMatch } from '@/utils/detailRouteMemory';
+import { forgetDetailFromTabs, leaveForgottenDetail, popCurrentTabScreen } from '@/utils/tabNavigation';
 import type { Task, TaskGroup, TaskPace, TaskRecurrenceConfig, TaskRecurrenceUnit } from '../types';
 import {
   WEEKDAY_OPTIONS,
@@ -75,6 +77,7 @@ export default function TaskGroupScreen() {
   const checkedColor = taskCompletionFillColor(Boolean(isBlack));
   const params = useLocalSearchParams<{ groupId?: string }>();
   const groupId = typeof params.groupId === 'string' ? params.groupId : '';
+  const missingLeftIdRef = useRef('');
   const [group, setGroup] = useState<TaskGroup | null>(null);
   const [members, setMembers] = useState<Task[]>([]);
   const [titleDraft, setTitleDraft] = useState('');
@@ -148,18 +151,20 @@ export default function TaskGroupScreen() {
     }
     const loaded = getTaskGroup(groupId);
     if (!loaded) {
-      Alert.alert('エラー', 'グループが見つかりません', [
-        { text: 'OK', onPress: () => router.back() },
-      ]);
+      if (missingLeftIdRef.current !== groupId) {
+        missingLeftIdRef.current = groupId;
+        leaveForgottenDetail(taskGroupHrefMatch(groupId));
+      }
       return;
     }
+    missingLeftIdRef.current = '';
     setGroup(loaded);
     setTitleDraft(loaded.title);
     applyGroupSchedule(loaded);
     setEditingSchedule(false);
     setMembers(getTasksByGroupId(groupId, loaded.kind));
     setTick((n) => n + 1);
-  }, [groupId, router]);
+  }, [groupId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -313,7 +318,7 @@ export default function TaskGroupScreen() {
           onPress: () => {
             deleteTaskGroup(group.id);
             void syncTaskReminders();
-            router.back();
+            leaveForgottenDetail(taskGroupHrefMatch(group.id));
           },
         },
       ]
@@ -328,6 +333,7 @@ export default function TaskGroupScreen() {
         style: 'destructive',
         onPress: () => {
           deleteTask(task.id);
+          forgetDetailFromTabs(taskHrefMatch(task.id));
           void syncTaskReminders();
           reload();
         },
@@ -378,7 +384,7 @@ export default function TaskGroupScreen() {
   return (
     <FormScreenTemplate
       title="タスクグループ"
-      onBack={() => router.back()}
+      onBack={() => popCurrentTabScreen()}
       keyboardShouldPersistTaps="always"
     >
       <FormScreenBody>

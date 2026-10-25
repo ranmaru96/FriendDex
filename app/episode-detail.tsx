@@ -11,7 +11,8 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { popCurrentTabScreen } from '@/utils/tabNavigation';
+import { episodeDetailHrefMatch } from '@/utils/detailRouteMemory';
+import { leaveForgottenDetail, popCurrentTabScreen } from '@/utils/tabNavigation';
 import { readUsableEpisodeDraft } from '@/utils/episodeDraft';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Spacing } from '@/constants/theme';
@@ -139,6 +140,7 @@ export default function EpisodeDetailScreen() {
     if (Array.isArray(params.ownerId)) return params.ownerId[0] ?? '';
     return params.ownerId ?? '';
   }, [params.ownerId]);
+  const missingLeftIdRef = useRef('');
 
   const shouldOpenEdit = useMemo(() => {
     const raw = Array.isArray(params.edit) ? params.edit[0] : params.edit;
@@ -171,16 +173,36 @@ export default function EpisodeDetailScreen() {
     const incomingId = parseIncomingSharedEpisodeId(episodeId);
     if (incomingId) {
       const incoming = getIncomingSharedEpisodeRecord(incomingId);
-      if (incoming) {
-        markIncomingSharedEpisodeSeen(incomingId);
+      if (!incoming) {
+        setEpisode(null);
+        setParentEvent(null);
+        setPhotos([]);
+        if (missingLeftIdRef.current !== episodeId) {
+          missingLeftIdRef.current = episodeId;
+          leaveForgottenDetail(episodeDetailHrefMatch(episodeId));
+        }
+        return;
       }
-      setEpisode(incoming ? incomingSharedRecordToEpisode(incoming) : null);
+      missingLeftIdRef.current = '';
+      markIncomingSharedEpisodeSeen(incomingId);
+      setEpisode(incomingSharedRecordToEpisode(incoming));
       setParentEvent(null);
-      setPhotos(incoming ? getIncomingSharedEpisodePhotos(incomingId) : []);
+      setPhotos(getIncomingSharedEpisodePhotos(incomingId));
       return;
     }
 
     const loaded = getEpisodeById(ownerId, episodeId);
+    if (!loaded) {
+      setEpisode(null);
+      setParentEvent(null);
+      setPhotos([]);
+      if (missingLeftIdRef.current !== episodeId) {
+        missingLeftIdRef.current = episodeId;
+        leaveForgottenDetail(episodeDetailHrefMatch(episodeId));
+      }
+      return;
+    }
+    missingLeftIdRef.current = '';
     setEpisode(loaded);
     const linkedEventId = loaded?.eventId?.trim();
     setParentEvent(linkedEventId ? getEvent(linkedEventId) : null);
@@ -499,7 +521,7 @@ export default function EpisodeDetailScreen() {
             return;
           }
           scheduleOwnedEpisodeDelete(episodeId);
-          popCurrentTabScreen();
+          leaveForgottenDetail(episodeDetailHrefMatch(episodeId));
         },
       },
     ]);

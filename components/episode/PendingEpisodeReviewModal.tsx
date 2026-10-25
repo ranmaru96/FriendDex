@@ -13,6 +13,8 @@ import { deleteEpisode, dismissPendingReviewPrompt, getMyself, initializeDatabas
 import type { PendingReviewEpisodeRef } from '@/types';
 import { resolveEpisodeRecordOwnerId } from '@/utils/episodeHelpers';
 import { scheduleOwnedEpisodeDelete, scheduleOwnedEpisodeSync } from '@/lib/ownedEpisodeSync';
+import { episodeDetailHrefMatch } from '@/utils/detailRouteMemory';
+import { forgetDetailFromTabs } from '@/utils/tabNavigation';
 
 type PendingEpisodeReviewModalProps = {
   visible: boolean;
@@ -63,6 +65,7 @@ export function PendingEpisodeReviewModal({
             return;
           }
           scheduleOwnedEpisodeDelete(currentItem.episode.id);
+          forgetDetailFromTabs(episodeDetailHrefMatch(currentItem.episode.id));
           onChanged();
         },
       },

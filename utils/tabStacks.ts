@@ -192,6 +192,17 @@ export function canPopCurrentTab(): boolean {
   return stacks[tab].length > 1;
 }
 
+/** ルートは残し、条件に合う詳細 URL を全部のタブの控えから外す。 */
+export function forgetTabEntries(match: (href: string) => boolean): void {
+  (Object.keys(stacks) as BottomNavTabKey[]).forEach((tab) => {
+    const current = stacks[tab];
+    const next = current.filter((href, index) => index === 0 || !match(href));
+    if (next.length !== current.length) {
+      stacks[tab] = next.length > 0 ? next : [TAB_ROOT_ROUTES[tab]];
+    }
+  });
+}
+
 export function popTabStack(tab: BottomNavTabKey): string {
   const stack = stacks[tab];
   if (stack.length <= 1) {

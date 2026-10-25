@@ -34,7 +34,7 @@ import { JAPANESE_HOLIDAY_TEXT_COLOR } from '@/utils/japaneseHolidays';
 
 const GRID_BORDER = Theme.inputBorder;
 /** 当日日付バッジ（オレンジ） */
-const TODAY_BADGE_BG = '#F5A623';
+export const TODAY_BADGE_BG = '#F5A623';
 /** 選択枠（オレンジ）: 格子線の上に乗せる */
 const SELECTED_RING = '#F5A623';
 const SELECTED_RING_WIDTH = 2;
@@ -70,6 +70,13 @@ type ScheduleGridMonthCalendarProps = {
   holidays?: Record<string, string>;
   /** 予定タグ（共通項目）編集へ */
   onPressEpisodeTags?: () => void;
+  /** 当日の月・日付へ戻す */
+  onPressToday?: () => void;
+  /** 月グリッドと一覧のどちらを見ているか */
+  calendarView?: 'month' | 'agenda';
+  onCalendarViewChange?: (view: 'month' | 'agenda') => void;
+  /** 一覧のとき、ヘッダーだけ固定して格子は出さない */
+  headerOnly?: boolean;
 };
 
 function getChipBarStyles(chip: ScheduleGridEventChip, barWidthPx: number | null): ViewStyle[] {
@@ -331,6 +338,58 @@ function WeekRow({
   );
 }
 
+function CalendarViewToggle({
+  view,
+  onChange,
+}: {
+  view: 'month' | 'agenda';
+  onChange: (view: 'month' | 'agenda') => void;
+}) {
+  const content = useContentColors();
+  const height = 32;
+  const knob = height - 6;
+  const isMonth = view === 'month';
+  return (
+    <Pressable
+      style={[
+        styles.viewToggle,
+        {
+          height,
+          borderRadius: height / 2,
+          backgroundColor: content.contentSwitchTrackOff,
+        },
+      ]}
+      onPress={() => onChange(isMonth ? 'agenda' : 'month')}
+      accessibilityRole="button"
+      accessibilityLabel={isMonth ? '月表示。一覧に切り替え' : '一覧表示。月表示に切り替え'}
+    >
+      {isMonth ? null : (
+        <Text style={[styles.viewToggleLabel, { color: content.contentText }]}>一覧</Text>
+      )}
+      <View
+        style={[
+          styles.viewToggleKnob,
+          {
+            width: knob,
+            height: knob,
+            borderRadius: knob / 2,
+            backgroundColor: content.contentSwitchThumbOff,
+          },
+        ]}
+      >
+        <Ionicons
+          name={isMonth ? 'calendar-outline' : 'list'}
+          size={Math.round(knob * 0.55)}
+          color="#111111"
+        />
+      </View>
+      {isMonth ? (
+        <Text style={[styles.viewToggleLabel, { color: content.contentText }]}>月</Text>
+      ) : null}
+    </Pressable>
+  );
+}
+
 export function ScheduleGridMonthCalendar({
   year,
   month,
@@ -343,6 +402,10 @@ export function ScheduleGridMonthCalendar({
   birthdayMonthDays,
   holidays,
   onPressEpisodeTags,
+  onPressToday,
+  calendarView = 'month',
+  onCalendarViewChange,
+  headerOnly = false,
 }: ScheduleGridMonthCalendarProps) {
   const weeks = useMemo(() => buildScheduleGridWeeks(year, month), [month, year]);
   const weekdayLabels = getScheduleGridWeekdayLabels();
@@ -445,25 +508,6 @@ export function ScheduleGridMonthCalendar({
       >
         {/* 左右対称: 外側スロット（タグボタン幅）＋内側の月送り */}
         <View style={styles.headerSide}>
-          <View style={styles.headerOuterSlot} />
-          <Pressable style={styles.navButton} onPress={() => shiftMonth(-1)} hitSlop={8}>
-            <Text style={[styles.navButtonText, { color: content.contentText }]}>‹</Text>
-          </Pressable>
-        </View>
-        <Pressable
-          style={styles.headerTitleButton}
-          onPress={openYearMonthPicker}
-          accessibilityRole="button"
-          accessibilityLabel={`${year}年${month}月。タップで年月を選択`}
-        >
-          <Text style={[styles.headerTitle, { color: content.contentText }]}>
-            {year}年{month}月
-          </Text>
-        </Pressable>
-        <View style={[styles.headerSide, styles.headerSideRight]}>
-          <Pressable style={styles.navButton} onPress={() => shiftMonth(1)} hitSlop={8}>
-            <Text style={[styles.navButtonText, { color: content.contentText }]}>›</Text>
-          </Pressable>
           {onPressEpisodeTags ? (
             <Pressable
               style={styles.headerOuterSlot}
@@ -474,6 +518,49 @@ export function ScheduleGridMonthCalendar({
             >
               <Ionicons name="pricetags-outline" size={18} color={content.contentText} />
             </Pressable>
+          ) : (
+            <View style={styles.headerOuterSlot} />
+          )}
+          <Pressable style={styles.navButton} onPress={() => shiftMonth(-1)} hitSlop={8}>
+            <Text style={[styles.navButtonText, { color: content.contentText }]}>‹</Text>
+          </Pressable>
+        </View>
+        <Pressable
+          style={styles.headerTitleButton}
+          onPress={openYearMonthPicker}
+          accessibilityRole="button"
+          accessibilityLabel={`${year}年${month}月。タップで年月を選択`}
+        >
+          <Text style={[styles.headerTitle, { color: content.contentText }]} numberOfLines={1}>
+            {year}年{month}月
+          </Text>
+        </Pressable>
+        {onPressToday ? (
+          <Pressable
+            style={[styles.todayButton, { borderColor: content.contentBorder }]}
+            onPress={() => {
+              setYearMonthPickerOpen(false);
+              onPressToday();
+            }}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="当日へ戻る"
+          >
+            <Text style={[styles.todayButtonText, { color: content.contentText }]}>当日</Text>
+          </Pressable>
+        ) : null}
+        <View style={[styles.headerSide, styles.headerSideRight]}>
+          <Pressable style={styles.navButton} onPress={() => shiftMonth(1)} hitSlop={8}>
+            <Text style={[styles.navButtonText, { color: content.contentText }]}>›</Text>
+          </Pressable>
+          {onCalendarViewChange ? (
+            <CalendarViewToggle
+              view={calendarView}
+              onChange={(next) => {
+                setYearMonthPickerOpen(false);
+                onCalendarViewChange(next);
+              }}
+            />
           ) : (
             <View style={styles.headerOuterSlot} />
           )}
@@ -511,6 +598,8 @@ export function ScheduleGridMonthCalendar({
         </View>
       ) : null}
 
+      {headerOnly ? null : (
+      <>
       <View
         style={[
           styles.weekdayRow,
@@ -565,6 +654,8 @@ export function ScheduleGridMonthCalendar({
           />
         ))}
       </View>
+      </>
+      )}
     </View>
     </GestureDetector>
   );
@@ -607,6 +698,7 @@ const styles = StyleSheet.create({
   },
   headerTitleButton: {
     flex: 1,
+    minWidth: 0,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
@@ -614,6 +706,40 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 16,
+    fontWeight: '700',
+  },
+  todayButton: {
+    height: 32,
+    paddingHorizontal: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 2,
+  },
+  todayButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  viewToggle: {
+    width: 76,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 3,
+  },
+  viewToggleKnob: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.16,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  viewToggleLabel: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 10,
     fontWeight: '700',
   },
   navButton: {

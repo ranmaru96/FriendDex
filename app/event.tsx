@@ -15,6 +15,7 @@ import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from '
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import type { Option } from '@/components/episode/types';
+import { EventParticipantMemoList } from '@/components/event/EventParticipantMemoList';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { formatEpisodeDateToYMD } from '@/components/episode/types';
 import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
@@ -49,10 +50,28 @@ import {
   buildNewEventForm,
   buildSavedEventForm,
   deleteEventFormDraft,
+  eventDraftBaseMatches,
   eventDraftKey,
   readEventFormDraft,
   serializeEventForm,
 } from '@/utils/eventFormDraft';
+import {
+  clampEventMemoDate,
+  draftProfileMemos,
+  eventLinkedMemos,
+  eventMemoDateRange,
+  eventMemoRowsEqual,
+  mergeParticipantMemos,
+  memosRecordForEntries,
+  profileMemosEqual,
+  profileMemosFromFriends,
+  savedProfileMemos,
+  takeDraftEventMemos,
+  withTrailingBlank,
+  withTrailingBlankMemos,
+  type EventMemoDateRange,
+} from '@/utils/eventParticipantMemos';
+import { scheduleFriendProfileSync } from '@/lib/identityProfileSync';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
@@ -65,6 +84,7 @@ import {
   getEpisodesByEventId,
   getEvent,
   getEventParticipants,
+  getFriendById,
   getEpisodeParticipantFriendIds,
   getMergedEpisodeTagLabels,
   getDefaultProfile,
@@ -74,13 +94,116 @@ import {
   unlinkTasksFromEvent,
   updateEvent,
   updateEventNotificationId,
+  updateFriend,
 } from '../db';
-import type { Episode, EpisodeParticipant, EventInput, Friend, Task } from '../types';
+import type { Episode, EpisodeParticipant, EventInput, Friend, ProfileMemo, Task } from '../types';
 import { buildParticipantChipDisplays, buildParticipantChips } from '../utils/episodeHelpers';
 import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
 const buildFriendNameById = (friendList: Friend[]): Map<string, string> =>
   new Map(friendList.map((friend) => [friend.id, friend.name]));
+
+const replaceFriendNotes = (friend: Friend, notes: ProfileMemo[]): boolean =>
+  updateFriend(friend.id, {
+    name: friend.name,
+    familyName: friend.familyName,
+    givenName: friend.givenName,
+    nickname: friend.nickname,
+    origin: friend.origin,
+    residence: friend.residence,
+    mbti: friend.mbti,
+    birthday: friend.birthday,
+    height: friend.height,
+    weight: friend.weight,
+    category: friend.category,
+    description: friend.description,
+    photoUri: friend.photoUri,
+    affiliations: friend.affiliations,
+    personalities: friend.personalities,
+    experiences: friend.experiences,
+    traits: friend.traits,
+    notes,
+    likes: friend.likes,
+    dislikes: friend.dislikes,
+    episodes: friend.episodes,
+    sayings: friend.sayings,
+  });
+
+/** 予定の保存と一緒に、参加者欄のメモを人物カードへ書く */
+const persistParticipantProfileMemos = (
+  entries: EpisodeParticipant[],
+  memoState: Record<string, ProfileMemo[]>,
+  baselines: Record<string, ProfileMemo[]>,
+  savedEventId: string,
+  range: EventMemoDateRange
+): boolean => {
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (entry.kind !== 'individual') {
+      continue;
+    }
+    const friendId = entry.value.trim();
+    if (!friendId || seen.has(friendId)) {
+      continue;
+    }
+    seen.add(friendId);
+    const friend = getFriendById(friendId);
+    if (!friend) {
+      return false;
+    }
+    const baseline =
+      friendId in baselines ? baselines[friendId] : eventLinkedMemos(friend.notes ?? [], savedEventId);
+    const edited = savedProfileMemos(memoState[friendId] ?? []).map((memo) => ({
+      ...memo,
+      eventId: savedEventId,
+      date: clampEventMemoDate(memo.date, range),
+    }));
+    const nextNotes = mergeParticipantMemos(friend.notes ?? [], baseline, edited);
+    if (profileMemosEqual(friend.notes ?? [], nextNotes)) {
+      continue;
+    }
+    if (!replaceFriendNotes(friend, nextNotes)) {
+      return false;
+    }
+    scheduleFriendProfileSync(friendId);
+  }
+  return true;
+};
+
+const seedParticipantMemos = (
+  entries: EpisodeParticipant[],
+  edited: Record<string, ProfileMemo[]> | null,
+  friendList: Friend[],
+  savedEventId: string,
+  defaultDate: string
+): { memos: Record<string, ProfileMemo[]>; baselines: Record<string, ProfileMemo[]> } => {
+  const notesById = new Map(friendList.map((friend) => [friend.id, friend.notes ?? []]));
+  const fromFriends = profileMemosFromFriends(entries, friendList, savedEventId);
+  if (!edited) {
+    return {
+      baselines: fromFriends,
+      memos: withTrailingBlankMemos(fromFriends, defaultDate),
+    };
+  }
+  const nextEdited: Record<string, ProfileMemo[]> = {};
+  for (const entry of entries) {
+    if (entry.kind !== 'individual') {
+      continue;
+    }
+    const friendId = entry.value.trim();
+    if (!friendId || nextEdited[friendId]) {
+      continue;
+    }
+    const draftRows = edited[friendId];
+    nextEdited[friendId] = draftRows
+      ? takeDraftEventMemos(draftRows, notesById.get(friendId) ?? [], savedEventId)
+      : (fromFriends[friendId] ?? []);
+  }
+  return {
+    baselines: fromFriends,
+    memos: withTrailingBlankMemos(nextEdited, defaultDate),
+  };
+};
 import {
   buildAllDayEndAt,
   buildAllDayStartAt,
@@ -90,6 +213,8 @@ import {
   getAllDayDateKeysFromEvent,
   parseDateKey,
 } from '../utils/eventHelpers';
+import { eventHrefMatch } from '@/utils/detailRouteMemory';
+import { leaveForgottenDetail } from '@/utils/tabNavigation';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import { formatTaskDueDateLabel } from '@/utils/taskHelpers';
 import { formatNotePreview } from '@/utils/noteBlocks';
@@ -235,6 +360,10 @@ export default function EventScreen() {
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
   const [experienceOptions, setExperienceOptions] = useState<Option[]>([]);
   const [participantEntries, setParticipantEntries] = useState<EpisodeParticipant[]>([]);
+  const [participantMemos, setParticipantMemos] = useState<Record<string, ProfileMemo[]>>({});
+  const [participantMemoBaselines, setParticipantMemoBaselines] = useState<Record<string, ProfileMemo[]>>(
+    {}
+  );
   const [selectorVisible, setSelectorVisible] = useState(false);
   const [selectorTab, setSelectorTab] = useState<'individual' | 'group'>('individual');
   const [selectedIndividualIds, setSelectedIndividualIds] = useState<Set<string>>(new Set());
@@ -295,6 +424,42 @@ export default function EventScreen() {
     [friendNameById, friendPhotoById, myselfId, participantEntries]
   );
 
+  const memoDateRange = useMemo(
+    () => eventMemoDateRange(startDateKey, endDateKey),
+    [endDateKey, startDateKey]
+  );
+
+  const participantMemoPeople = useMemo(() => {
+    const seen = new Set<string>();
+    const people: {
+      friendId: string;
+      name: string;
+      photoUri: string | null;
+      memos: ProfileMemo[];
+    }[] = [];
+    for (const entry of participantEntries) {
+      if (entry.kind !== 'individual') {
+        continue;
+      }
+      const friendId = entry.value.trim();
+      if (!friendId || friendId === myselfId || seen.has(friendId)) {
+        continue;
+      }
+      const memos = participantMemos[friendId];
+      if (!memos) {
+        continue;
+      }
+      seen.add(friendId);
+      people.push({
+        friendId,
+        name: friendNameById.get(friendId) ?? '',
+        photoUri: friendPhotoById.get(friendId) ?? null,
+        memos,
+      });
+    }
+    return people;
+  }, [friendNameById, friendPhotoById, myselfId, participantEntries, participantMemos]);
+
   const handleOpenLinkedEpisode = useCallback(
     (episode: Episode) => {
       if (savingRef.current) {
@@ -330,7 +495,8 @@ export default function EventScreen() {
     initializeDatabase();
     const currentMyselfId = getMyself();
     setMyselfId(currentMyselfId);
-    setFriends(getAllFriendsInDefaultOrder());
+    const loadedFriends = getAllFriendsInDefaultOrder();
+    setFriends(loadedFriends);
     setAffiliationOptions(getDistinctAffiliations().map((value) => ({ label: value, value })));
     setExperienceOptions(getDistinctExperiences().map((value) => ({ label: value, value })));
     setEpisodeTagOptions(getMergedEpisodeTagLabels().map((value) => ({ label: value, value })));
@@ -347,6 +513,8 @@ export default function EventScreen() {
       setEndTime(DEFAULT_END_TIME);
       previousStartRef.current = combineLocalDateTime(baseDate, DEFAULT_START_TIME);
       setParticipantEntries([]);
+      setParticipantMemoBaselines({});
+      setParticipantMemos({});
       setNotifyEnabled(true);
       setNotifyTimingPreset(DEFAULT_NOTIFY_TIMING_PRESET);
       setLinkedEpisodes([]);
@@ -368,6 +536,15 @@ export default function EventScreen() {
           setStartTime(fields.startTime);
           setEndTime(fields.endTime);
           setParticipantEntries(fields.participants);
+          const seeded = seedParticipantMemos(
+            fields.participants,
+            fields.participantMemos,
+            loadedFriends,
+            '',
+            fields.startDateKey
+          );
+          setParticipantMemoBaselines(seeded.baselines);
+          setParticipantMemos(seeded.memos);
           setNotifyEnabled(fields.notifyEnabled);
           setNotifyTimingPreset(fields.notifyTimingPreset);
           previousStartRef.current = fields.allDay
@@ -408,20 +585,23 @@ export default function EventScreen() {
       setEndTime(formatTimeFromDate(end ?? start));
       previousStartRef.current = combineLocalDateTime(loadedStartDateKey, loadedStartTime);
     }
-    setParticipantEntries(
-      (() => {
-        const excludeProfileId = currentMyselfId
-          ? getDefaultProfile(currentMyselfId)?.id ?? null
-          : null;
-        const participantIds = getEventParticipants(eventId).map((participant) => participant.profileId);
-        const profileIds = excludeProfileId
-          ? participantIds.filter((profileId) => profileId !== excludeProfileId)
-          : participantIds;
-        return profileIdsToFriendIds(profileIds)
-          .filter((friendId) => friendId !== currentMyselfId)
-          .map((friendId) => ({ kind: 'individual' as const, value: friendId }));
-      })()
-    );
+    const loadedParticipants = (() => {
+      const excludeProfileId = currentMyselfId ? getDefaultProfile(currentMyselfId)?.id ?? null : null;
+      const participantIds = getEventParticipants(eventId).map((participant) => participant.profileId);
+      const profileIds = excludeProfileId
+        ? participantIds.filter((profileId) => profileId !== excludeProfileId)
+        : participantIds;
+      return profileIdsToFriendIds(profileIds)
+        .filter((friendId) => friendId !== currentMyselfId)
+        .map((friendId) => ({ kind: 'individual' as const, value: friendId }));
+    })();
+    const loadedMemoStart = event.allDay
+      ? getAllDayDateKeysFromEvent(event).startDateKey
+      : formatDateKey(start);
+    const seededMemos = profileMemosFromFriends(loadedParticipants, loadedFriends, event.id);
+    setParticipantEntries(loadedParticipants);
+    setParticipantMemoBaselines(seededMemos);
+    setParticipantMemos(withTrailingBlankMemos(seededMemos, loadedMemoStart));
     setNotifyEnabled(event.notifyEnabled);
     const timingInput = event.allDay
       ? (() => {
@@ -443,11 +623,16 @@ export default function EventScreen() {
     setEpisodePhotoUrisById(getEpisodeListPhotoUrisMap(episodes.map((episode) => episode.id)));
     setLinkedTasks(getTasksByEventId(eventId));
     const loaded = buildSavedEventForm(event, '');
-    const loadedBody = serializeEventForm(loaded);
+    const loadedBody = serializeEventForm({
+      ...loaded,
+      participants: loadedParticipants,
+      participantMemoBaselines: seededMemos,
+      participantMemos: seededMemos,
+    });
     setDraftBaseline(loadedBody);
     if (params.draft === '1') {
       const stored = readEventFormDraft(eventId);
-      if (stored && stored.base !== loadedBody) {
+      if (stored && !eventDraftBaseMatches(stored.base, loadedBody)) {
         deleteEventFormDraft(eventId);
       } else if (stored) {
         const fields = stored.fields;
@@ -460,6 +645,15 @@ export default function EventScreen() {
         setStartTime(fields.startTime);
         setEndTime(fields.endTime);
         setParticipantEntries(fields.participants);
+        const draftedMemos = seedParticipantMemos(
+          fields.participants,
+          fields.participantMemos,
+          loadedFriends,
+          event.id,
+          fields.startDateKey
+        );
+        setParticipantMemoBaselines(draftedMemos.baselines);
+        setParticipantMemos(draftedMemos.memos);
         setNotifyEnabled(fields.notifyEnabled);
         setNotifyTimingPreset(fields.notifyTimingPreset);
         previousStartRef.current = fields.allDay
@@ -483,6 +677,12 @@ export default function EventScreen() {
         startTime,
         endTime,
         participants: participantEntries,
+        participantMemoBaselines: memosRecordForEntries(
+          participantEntries,
+          participantMemoBaselines,
+          draftProfileMemos
+        ),
+        participantMemos: memosRecordForEntries(participantEntries, participantMemos, draftProfileMemos),
         notifyEnabled,
         notifyTimingPreset,
         initialDate: isEditing ? '' : initialDate,
@@ -498,6 +698,8 @@ export default function EventScreen() {
       notifyEnabled,
       notifyTimingPreset,
       participantEntries,
+      participantMemoBaselines,
+      participantMemos,
       startDateKey,
       startTime,
       title,
@@ -512,6 +714,28 @@ export default function EventScreen() {
   claimEventDraftRef.current = eventDraftKeep.claim;
   stopEventDraftRef.current = eventDraftKeep.stopKeeping;
   flushEventDraftRef.current = eventDraftKeep.flush;
+
+  useEffect(() => {
+    if (!isReady) {
+      return;
+    }
+    const range = eventMemoDateRange(startDateKey, endDateKey);
+    setParticipantMemos((prev) => {
+      let changed = false;
+      const next: Record<string, ProfileMemo[]> = {};
+      for (const [friendId, rows] of Object.entries(prev)) {
+        const normalized = withTrailingBlank(
+          rows.map((row) => ({ ...row, date: clampEventMemoDate(row.date, range) })),
+          range.startDateKey
+        );
+        next[friendId] = normalized;
+        if (!eventMemoRowsEqual(rows, normalized)) {
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [endDateKey, isReady, startDateKey]);
 
   const reloadLinkedEpisodes = useCallback(() => {
     if (!isEditing) {
@@ -565,7 +789,7 @@ export default function EventScreen() {
     allowLeaveRef.current = true;
     stopEventDraftRef.current();
     deleteEventFormDraft(eventId);
-    router.back();
+    leaveForgottenDetail(eventHrefMatch(eventId));
   }, [eventId, router]);
 
   const handleDelete = () => {
@@ -795,6 +1019,19 @@ export default function EventScreen() {
         await applySavedEventNotifications(eventId, previousNotificationId);
         scheduleGoogleCalendarPush(eventId);
         scheduleOwnedEventSync(eventId);
+        if (
+          !persistParticipantProfileMemos(
+            participantEntries,
+            participantMemos,
+            participantMemoBaselines,
+            eventId,
+            eventMemoDateRange(startDateKey, endDateKey)
+          )
+        ) {
+          unlockScreen();
+          Alert.alert('エラー', '参加者メモの保存に失敗しました。');
+          return;
+        }
         finishAndLeave();
         return;
       }
@@ -810,6 +1047,19 @@ export default function EventScreen() {
       await applySavedEventNotifications(created.id, null);
       scheduleGoogleCalendarPush(created.id);
       scheduleOwnedEventSync(created.id);
+      if (
+        !persistParticipantProfileMemos(
+          participantEntries,
+          participantMemos,
+          participantMemoBaselines,
+          created.id,
+          eventMemoDateRange(startDateKey, endDateKey)
+        )
+      ) {
+        unlockScreen();
+        Alert.alert('エラー', '参加者メモの保存に失敗しました。');
+        return;
+      }
       finishAndLeave();
     };
 
@@ -876,6 +1126,31 @@ export default function EventScreen() {
       .filter((friendId) => friendId !== myselfId)
       .map((friendId) => ({ kind: 'individual' as const, value: friendId }));
     setParticipantEntries(nextEntries);
+    setParticipantMemos((prev) => {
+      const next = { ...prev };
+      for (const entry of nextEntries) {
+        const friendId = entry.value.trim();
+        if (!friendId || next[friendId]) {
+          continue;
+        }
+        const notes = eventLinkedMemos(getFriendById(friendId)?.notes ?? [], isEditing ? eventId : '');
+        next[friendId] = withTrailingBlank(notes, eventMemoDateRange(startDateKey, endDateKey).startDateKey);
+      }
+      return next;
+    });
+    setParticipantMemoBaselines((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const entry of nextEntries) {
+        const friendId = entry.value.trim();
+        if (!friendId || friendId in next) {
+          continue;
+        }
+        next[friendId] = eventLinkedMemos(getFriendById(friendId)?.notes ?? [], isEditing ? eventId : '');
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
     setSelectorVisible(false);
     setSelectorNameFilter('');
     setSelectorAffiliationFilter('');
@@ -1297,6 +1572,22 @@ export default function EventScreen() {
                   まだエピソードがありません
                 </Text>
               )}
+            </>
+          ) : null}
+
+          {participantMemoPeople.length > 0 ? (
+            <>
+              <EventFieldDivider />
+              <View style={styles.linkedHeader}>
+                <Text style={[styles.linkedHeaderLabel, contentTextStyle(content)]}>参加者のメモ</Text>
+              </View>
+              <EventParticipantMemoList
+                people={participantMemoPeople}
+                dateRange={memoDateRange}
+                onChangeMemos={(friendId, memos) => {
+                  setParticipantMemos((prev) => ({ ...prev, [friendId]: memos }));
+                }}
+              />
             </>
           ) : null}
 

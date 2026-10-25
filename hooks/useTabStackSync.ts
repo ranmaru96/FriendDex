@@ -1,12 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { usePathname, useUnstableGlobalHref } from 'expo-router';
-import { getActiveTab } from '@/utils/bottomNavVisibility';
-import {
-  clearEpisodeDetailTabSwitch,
-  consumeEpisodeDetailTabSwitch,
-  isEpisodeDetailPath,
-  setEpisodeDetailHostTab,
-} from '@/utils/episodeDetailHost';
+import { getActiveTab, getNaturalTab, type BottomNavTabKey } from '@/utils/bottomNavVisibility';
+import { consumeEpisodeDetailTabSwitch, setEpisodeDetailHostTab } from '@/utils/episodeDetailHost';
 import { getTabStackPathname, recordTabLocation, setTabStackPathname, shouldRememberTabRoute } from '@/utils/tabStacks';
 import { clearNextReplaceAsPop } from '@/utils/tabTransition';
 import {
@@ -15,6 +10,7 @@ import {
   isNavigationReplayInProgress,
   isNavigationRestorePending,
   noteNavigation,
+  takeNotificationHostReset,
   touchCurrentHref,
 } from '@/utils/navigationRestore';
 
@@ -24,19 +20,28 @@ export function useTabStackSync() {
   const globalHref = useUnstableGlobalHref();
   const previousPathRef = useRef(getTabStackPathname());
   const trailPrevRef = useRef<string | null>(null);
+  const trailPrevTabRef = useRef<BottomNavTabKey | null>(null);
 
   if (previousPathRef.current !== pathname) {
     if (!isNavigationReplayInProgress()) {
-      if (isEpisodeDetailPath(pathname)) {
-        const switchedTab = consumeEpisodeDetailTabSwitch();
-        if (switchedTab) {
-          setEpisodeDetailHostTab(switchedTab);
-        } else if (!isEpisodeDetailPath(previousPathRef.current)) {
-          setEpisodeDetailHostTab(getActiveTab(previousPathRef.current) ?? 'episode');
-        }
-      } else {
-        clearEpisodeDetailTabSwitch();
+      const previousPath = previousPathRef.current;
+      const prevTab = getActiveTab(previousPath);
+      trailPrevTabRef.current = prevTab;
+      const switchedTab = consumeEpisodeDetailTabSwitch();
+      const notificationReset = takeNotificationHostReset(pathname);
+      const cameFromUntabbed =
+        previousPath.includes('login') ||
+        previousPath.includes('setup-myself') ||
+        previousPath.includes('auth-preview') ||
+        previousPath.includes('launch-preview');
+      if (switchedTab) {
+        setEpisodeDetailHostTab(switchedTab);
+      } else if (notificationReset) {
         setEpisodeDetailHostTab(null);
+      } else if (prevTab) {
+        setEpisodeDetailHostTab(prevTab);
+      } else if (cameFromUntabbed) {
+        setEpisodeDetailHostTab(getNaturalTab(pathname));
       }
     }
     previousPathRef.current = pathname;
@@ -59,7 +64,7 @@ export function useTabStackSync() {
       recordTabLocation(tab, globalHref);
     }
     if (prev != null && prev !== pathname) {
-      noteNavigation(prev, globalHref);
+      noteNavigation(prev, globalHref, trailPrevTabRef.current);
     } else {
       touchCurrentHref(globalHref);
     }

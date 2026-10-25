@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  InteractionManager,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -9,6 +10,8 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { episodeDetailHrefMatch } from '@/utils/detailRouteMemory';
+import { forgetDetailFromTabs } from '@/utils/tabNavigation';
 import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Typography, Spacing } from '@/constants/theme';
 import { SearchArea, SearchAreaDivider, SearchAreaRow, SearchAreaSelectTrigger, SearchAreaTextInputField } from '@/components/ui/SearchArea';
@@ -48,11 +51,11 @@ import {
   initializeDatabase,
   listIncomingSharedEpisodeRecords,
   updateEpisode,
-} from '../db';
+} from '../../db';
 import { scheduleOwnedEpisodeDelete } from '@/lib/ownedEpisodeSync';
 import { afterEpisodeSavedLocally, guardEpisodeShareOnline } from '@/lib/episodeShareSave';
 import { pullIncomingSharedEpisodes } from '@/lib/sharedEpisodeSync';
-import { Episode, EpisodeParticipant, Friend } from '../types';
+import { Episode, EpisodeParticipant, Friend } from '../../types';
 import {
   buildParticipantChips,
   canManageEpisode,
@@ -60,12 +63,12 @@ import {
   friendsExcludingSelf,
   normalizeEpisodeTag,
   resolveEpisodeRecordOwnerId,
-} from '../utils/episodeHelpers';
+} from '../../utils/episodeHelpers';
 import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
-} from '../utils/episodeEventLinking';
-import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
+} from '../../utils/episodeEventLinking';
+import { registerSavedEpisodeTag } from '../../utils/episodeTagMaster';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
@@ -276,13 +279,26 @@ export default function EpisodeScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      loadData();
-      void pullIncomingSharedEpisodes().then(() => {
+      let cancelled = false;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (cancelled) {
+          return;
+        }
         loadData();
+        void pullIncomingSharedEpisodes().then(() => {
+          if (cancelled) {
+            return;
+          }
+          loadData();
+        });
+        if (!pendingEditEpisodeId || !pendingEditOwnerId) {
+          pendingEditKeyRef.current = null;
+        }
       });
-      if (!pendingEditEpisodeId || !pendingEditOwnerId) {
-        pendingEditKeyRef.current = null;
-      }
+      return () => {
+        cancelled = true;
+        task.cancel();
+      };
     }, [loadData, pendingEditEpisodeId, pendingEditOwnerId])
   );
 
@@ -641,6 +657,7 @@ export default function EpisodeScreen() {
             return;
           }
           scheduleOwnedEpisodeDelete(row.episode.id);
+          forgetDetailFromTabs(episodeDetailHrefMatch(row.episode.id));
           if (episodeForm.editingEpisodeId === row.episode.id) {
             episodeForm.discardUncommittedPhotos();
             episodeForm.forgetDraft();

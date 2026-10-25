@@ -39,7 +39,8 @@ import { DetailTabAddButton } from '@/components/detail/DetailTabAddButton';
 import { PickerDoneOverlay } from '@/components/ui/PickerDoneOverlay';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
-import { popCurrentTabScreen } from '@/utils/tabNavigation';
+import { episodeDetailHrefMatch, personHrefMatch } from '@/utils/detailRouteMemory';
+import { forgetDetailFromTabs, leaveForgottenDetail, popCurrentTabScreen } from '@/utils/tabNavigation';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { useDetailDesign } from './contexts/DetailDesignContext';
@@ -979,6 +980,18 @@ export default function DetailScreen() {
     }
     return params.id ?? '';
   }, [params.id]);
+  const missingFriendLeftRef = useRef('');
+
+  useEffect(() => {
+    if (!hasAttemptedFriendLoad || friend || !friendId.trim()) {
+      return;
+    }
+    if (missingFriendLeftRef.current === friendId) {
+      return;
+    }
+    missingFriendLeftRef.current = friendId;
+    leaveForgottenDetail(personHrefMatch(friendId));
+  }, [friend, friendId, hasAttemptedFriendLoad]);
 
   useEffect(() => {
     const raw = Array.isArray(params.tab) ? params.tab[0] : params.tab;
@@ -1834,6 +1847,7 @@ export default function DetailScreen() {
             return;
           }
           scheduleOwnedEpisodeDelete(episodeId);
+          forgetDetailFromTabs(episodeDetailHrefMatch(episodeId));
           if (episodeForm.editingEpisodeId === episodeId) {
             episodeForm.discardUncommittedPhotos();
             episodeForm.forgetDraft();

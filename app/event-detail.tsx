@@ -1,11 +1,17 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { deleteEventFormDraft, readEventFormDraft, savedEventBaselineBody } from '@/utils/eventFormDraft';
+import {
+  deleteEventFormDraft,
+  eventDraftBaseMatches,
+  readEventFormDraft,
+  savedEventBaselineBody,
+} from '@/utils/eventFormDraft';
 import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import { Ionicons } from '@expo/vector-icons';
 import { EpisodeListCard, episodeDetailTopBarButtonStyles } from '@/components/episode/EpisodeListCard';
 import { EpisodeTagChip } from '@/components/episode/EpisodeTagChip';
+import { EventParticipantMemoList } from '@/components/event/EventParticipantMemoList';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { PanelSection, SectionDivider } from '@/components/ui/Panel';
@@ -24,7 +30,7 @@ import {
   getTasksByEventId,
   initializeDatabase,
 } from '../db';
-import type { Episode, EpisodeParticipant, Event, Friend, Task } from '../types';
+import type { Episode, EpisodeParticipant, Event, Friend, ProfileMemo, Task } from '../types';
 import { buildParticipantChipDisplays, buildParticipantChips } from '../utils/episodeHelpers';
 import { buildFriendPhotoById } from '@/utils/friendPhoto';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
@@ -41,7 +47,9 @@ import {
 } from '../utils/eventNotifyTiming';
 import { formatTaskDueDateLabel } from '@/utils/taskHelpers';
 import { formatNotePreview, noteBlocksHaveContent } from '@/utils/noteBlocks';
-import { popCurrentTabScreen } from '@/utils/tabNavigation';
+import { eventHrefMatch } from '@/utils/detailRouteMemory';
+import { leaveForgottenDetail, popCurrentTabScreen } from '@/utils/tabNavigation';
+import { eventLinkedMemos, eventMemoDateRange } from '@/utils/eventParticipantMemos';
 import { contentMutedTextStyle, contentSurfaceStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 
@@ -55,6 +63,19 @@ const parseRouteParam = (value: string | string[] | undefined): string => {
 const buildFriendNameById = (friendList: Friend[]): Map<string, string> =>
   new Map(friendList.map((friend) => [friend.id, friend.name]));
 
+/** 終了時刻を過ぎていれば true。終了が無い予定は開始時刻を過ぎたとき */
+const eventEndHasPassed = (event: Event | null): boolean => {
+  if (!event) {
+    return false;
+  }
+  const endSource = event.endAt ?? event.startAt;
+  const end = new Date(endSource);
+  if (Number.isNaN(end.getTime())) {
+    return false;
+  }
+  return Date.now() > end.getTime();
+};
+
 export default function EventDetailScreen() {
   const router = useRouter();
   const kit = useUiKit();
@@ -64,7 +85,7 @@ export default function EventDetailScreen() {
   const bottomNavClearance = useBottomNavScrollClearance();
   const params = useLocalSearchParams<{ eventId?: string }>();
   const eventId = parseRouteParam(params.eventId);
-  const missingPoppedRef = useRef(false);
+  const missingPoppedRef = useRef('');
 
   const [event, setEvent] = useState<Event | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
@@ -86,13 +107,13 @@ export default function EventDetailScreen() {
     const loaded = getEvent(id);
     if (!loaded) {
       setEvent(null);
-      if (!missingPoppedRef.current) {
-        missingPoppedRef.current = true;
-        popCurrentTabScreen();
+      if (id && missingPoppedRef.current !== id) {
+        missingPoppedRef.current = id;
+        leaveForgottenDetail(eventHrefMatch(id));
       }
       return;
     }
-    missingPoppedRef.current = false;
+    missingPoppedRef.current = '';
     const currentMyselfId = getMyself();
     const nextFriends = getAllFriendsInDefaultOrder();
     setEvent(loaded);
@@ -132,7 +153,7 @@ export default function EventDetailScreen() {
       if (!loadedBody || !stored) {
         return;
       }
-      if (stored.base !== loadedBody) {
+      if (!eventDraftBaseMatches(stored.base, loadedBody)) {
         deleteEventFormDraft(id);
         return;
       }
@@ -164,6 +185,54 @@ export default function EventDetailScreen() {
     [friendNameById, friendPhotoById, myselfId, participantEntries]
   );
 
+  const participantMemoPeople = useMemo(() => {
+    if (!event) {
+      return [];
+    }
+    const seen = new Set<string>();
+    const people: {
+      friendId: string;
+      name: string;
+      photoUri: string | null;
+      memos: ProfileMemo[];
+    }[] = [];
+    for (const entry of participantEntries) {
+      if (entry.kind !== 'individual') {
+        continue;
+      }
+      const friendId = entry.value.trim();
+      if (!friendId || seen.has(friendId)) {
+        continue;
+      }
+      const friend = friends.find((item) => item.id === friendId);
+      const memos = eventLinkedMemos(friend?.notes ?? [], event.id);
+      if (memos.length === 0) {
+        continue;
+      }
+      seen.add(friendId);
+      people.push({
+        friendId,
+        name: friendNameById.get(friendId) ?? friend?.name ?? '',
+        photoUri: friendPhotoById.get(friendId) ?? null,
+        memos,
+      });
+    }
+    return people;
+  }, [event, friendNameById, friendPhotoById, friends, participantEntries]);
+
+  const participantMemoDateRange = useMemo(() => {
+    if (!event) {
+      return eventMemoDateRange('', '');
+    }
+    if (event.allDay) {
+      const keys = getAllDayDateKeysFromEvent(event);
+      return eventMemoDateRange(keys.startDateKey, keys.endDateKey);
+    }
+    const start = formatDateKey(new Date(event.startAt));
+    const end = event.endAt ? formatDateKey(new Date(event.endAt)) : start;
+    return eventMemoDateRange(start, end);
+  }, [event]);
+
   const notifyLabel = useMemo(() => {
     if (!event) {
       return '';
@@ -188,6 +257,7 @@ export default function EventDetailScreen() {
 
   const hasMemo = Boolean(event && noteBlocksHaveContent(event.memo));
   const tagLabel = event?.episodeTag?.trim() ?? '';
+  const showNotification = Boolean(event?.notifyEnabled) && !eventEndHasPassed(event);
 
   const headerRight = (
     <Pressable
@@ -282,7 +352,7 @@ export default function EventDetailScreen() {
             </>
           ) : null}
 
-          {event.notifyEnabled ? (
+          {showNotification ? (
             <>
               <SectionDivider />
               <PanelSection style={styles.section}>
@@ -374,6 +444,26 @@ export default function EventDetailScreen() {
               )}
             </View>
           </PanelSection>
+
+          {participantMemoPeople.length > 0 ? (
+            <>
+              <SectionDivider />
+              <PanelSection style={styles.section}>
+                <View style={styles.iconRow} accessibilityLabel="参加者のメモ">
+                  <View style={[styles.mark, styles.markText]}>
+                    <Ionicons name="chatbox-ellipses-outline" size={18} color={content.contentTextSecondary} />
+                  </View>
+                  <View style={styles.iconBody}>
+                    <EventParticipantMemoList
+                      people={participantMemoPeople}
+                      dateRange={participantMemoDateRange}
+                      readOnly
+                    />
+                  </View>
+                </View>
+              </PanelSection>
+            </>
+          ) : null}
         </>
       )}
     </SubToolScreenTemplate>

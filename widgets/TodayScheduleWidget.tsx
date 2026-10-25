@@ -76,6 +76,7 @@ const TodayScheduleWidgetView = (
         due: parts[3] ?? '',
         id: parts[4] ?? '',
         pendingAt: parts[5] ?? '',
+        dueHot: parts[6] === '1',
       };
     })
     .filter((task) => task.title.length > 0);
@@ -99,6 +100,9 @@ const TodayScheduleWidgetView = (
         if ((parts[4] ?? '') !== taskId) {
           return line;
         }
+        while (parts.length < 7) {
+          parts.push('');
+        }
         if (parts[1] === '1') {
           parts[1] = '0';
           parts[5] = '';
@@ -116,8 +120,6 @@ const TodayScheduleWidgetView = (
     { kind: props.taskKind1, title: props.taskTitle1 },
     { kind: props.taskKind2, title: props.taskTitle2 },
   ].filter((task) => task.title.length > 0);
-  const clock = new Date();
-  const todayMd = String(clock.getMonth() + 1) + '/' + String(clock.getDate());
   const taskFill = isDark ? '#222224' : '#E4E4E8';
   const lineColor = isDark ? '#5C5C60' : '#D1D5DB';
   const fillWidth = frame({ maxWidth: 1000, alignment: 'leading' });
@@ -295,7 +297,7 @@ const TodayScheduleWidgetView = (
                         lineLimit(1),
                         layoutPriority(1),
                         ...(useCustomColor
-                          ? [foregroundStyle(task.due === todayMd ? taskColor : mutedColor)]
+                          ? [foregroundStyle(task.dueHot ? taskColor : mutedColor)]
                           : []),
                       ]}
                     >
@@ -348,7 +350,7 @@ const TodayScheduleWidgetView = (
                         lineLimit(1),
                         layoutPriority(1),
                         ...(useCustomColor
-                          ? [foregroundStyle(task.due === todayMd ? taskColor : mutedColor)]
+                          ? [foregroundStyle(task.dueHot ? taskColor : mutedColor)]
                           : []),
                       ]}
                     >
@@ -520,7 +522,7 @@ const TodayScheduleWidgetView = (
                       lineLimit(1),
                       layoutPriority(1),
                       ...(useCustomColor
-                        ? [foregroundStyle(task.due === todayMd ? taskColor : mutedColor)]
+                        ? [foregroundStyle(task.dueHot ? taskColor : mutedColor)]
                         : []),
                     ]}
                   >

@@ -9,6 +9,8 @@ import {
 import type { Episode } from '../types';
 import { formatDateKey, getLocalDateKeysForEvent, parseDateKey } from './eventHelpers';
 import { scheduleOwnedEpisodeDelete, scheduleOwnedEpisodeSync } from '@/lib/ownedEpisodeSync';
+import { episodeDetailHrefMatch } from '@/utils/detailRouteMemory';
+import { forgetDetailFromTabs } from '@/utils/tabNavigation';
 
 let isSyncingEventEpisode = false;
 
@@ -136,6 +138,7 @@ export const deleteEpisodesLinkedToEvent = (eventId: string): void => {
       return;
     }
     deleteEpisode(ownerId, episode.id);
+    forgetDetailFromTabs(episodeDetailHrefMatch(episode.id));
     scheduleOwnedEpisodeDelete(episode.id);
   });
 };

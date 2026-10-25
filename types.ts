@@ -144,6 +144,8 @@ export type ProfileMemo = {
   text: string;
   date: string;
   tags: ProfileMemoTag[];
+  /** 予定画面で追加したメモだけ。人物カードで書いたメモには無い */
+  eventId?: string;
 };
 
 export type MoneyLoanDirection = 'lent' | 'borrowed';

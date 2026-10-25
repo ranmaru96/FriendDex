@@ -8,7 +8,6 @@ import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import type { BottomNavTabKey } from '@/utils/bottomNavVisibility';
 import { switchBottomTab } from '@/utils/tabNavigation';
 import { isTabRootPath } from '@/utils/tabStacks';
-import { setNextTabAnimation } from '@/utils/tabTransition';
 
 type BottomNavProps = {
   active: BottomNavTabKey | null;
@@ -40,9 +39,6 @@ export default function BottomNav({ active }: BottomNavProps) {
     if (isTabRootPath(pathname, tab.key)) {
       return;
     }
-    const fromIndex = active == null ? -1 : TABS.findIndex((item) => item.key === active);
-    const toIndex = TABS.findIndex((item) => item.key === tab.key);
-    setNextTabAnimation(toIndex > fromIndex ? 'slide_from_right' : 'slide_from_left');
     switchBottomTab(tab.key, pathname);
   };
 
