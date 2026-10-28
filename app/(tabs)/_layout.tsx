@@ -5,13 +5,13 @@ import {
 } from '@/utils/navigationTapLock';
 
 export const unstable_settings = {
-  anchor: 'index',
+  anchor: '(calendar)',
 };
 
 export default function TabLayout() {
   return (
     <Tabs
-      initialRouteName="index"
+      initialRouteName="(calendar)"
       tabBar={() => null}
       screenListeners={{
         transitionStart: (event) => {

@@ -9,7 +9,16 @@ function queryValue(href: string, key: string): string {
 }
 
 function pathIs(href: string, segment: string): boolean {
-  return hrefPathname(href).includes(segment);
+  const path = hrefPathname(href);
+  return path === `/${segment}` || path.endsWith(`/${segment}`);
+}
+
+function isPersonDetailPath(pathname: string): boolean {
+  if (pathname === '/detail') {
+    return true;
+  }
+  const slash = pathname.lastIndexOf('/');
+  return slash >= 0 && pathname.slice(slash + 1) === 'detail';
 }
 
 export function taskHrefMatch(taskId: string): (href: string) => boolean {
@@ -64,7 +73,7 @@ export function taskGroupHrefMatch(groupId: string): (href: string) => boolean {
 export function personHrefMatch(friendId: string): (href: string) => boolean {
   const id = friendId.trim();
   return (href) => {
-    if (!id || hrefPathname(href) !== '/detail') {
+    if (!id || !isPersonDetailPath(hrefPathname(href))) {
       return false;
     }
     return queryValue(href, 'id') === id;

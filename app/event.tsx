@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { detailHrefFromHost } from '@/utils/detailPaths';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import type { Option } from '@/components/episode/types';
@@ -469,10 +470,7 @@ export default function EventScreen() {
       if (!ownerId) {
         return;
       }
-      router.push({
-        pathname: '/episode-detail',
-        params: { episodeId: episode.id, ownerId },
-      });
+      router.push(detailHrefFromHost('episode', { episodeId: episode.id, ownerId }));
     },
     [myselfId, router]
   );
@@ -1182,7 +1180,7 @@ export default function EventScreen() {
     if (savingRef.current) {
       return;
     }
-    router.push({ pathname: '/detail', params: { id: friendId } });
+    router.push(detailHrefFromHost('person', { id: friendId }));
   };
 
   const pickerValue = useMemo(() => {

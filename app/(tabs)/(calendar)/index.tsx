@@ -1,4 +1,4 @@
-import CalendarScreen from '../../CalendarScreen';
+import CalendarScreen from '../../../CalendarScreen';
 
 export default function IndexRoute() {
   return <CalendarScreen />;

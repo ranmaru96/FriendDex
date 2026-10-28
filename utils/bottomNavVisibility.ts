@@ -81,9 +81,21 @@ function isUntabbedPath(pathname: string): boolean {
   return UNTABBED_PATH_PARTS.some((part) => pathname.includes(part));
 }
 
+/** `/people/...` のように、パスの先頭でタブが決まっているとき。 */
+export function tabFromPathPrefix(pathname: string): BottomNavTabKey | null {
+  if (pathname === '/calendar' || pathname.startsWith('/calendar/')) return 'calendar';
+  if (pathname === '/people' || pathname.startsWith('/people/')) return 'home';
+  if (pathname === '/episode' || pathname.startsWith('/episode/')) return 'episode';
+  if (pathname === '/tasks' || pathname.startsWith('/tasks/')) return 'tasks';
+  if (pathname === '/tools' || pathname.startsWith('/tools/')) return 'tools';
+  return null;
+}
+
 /** URL だけから見た所属タブ。今開いているタブとは別。 */
 export function getNaturalTab(pathname: string): BottomNavTabKey | null {
   if (pathname.includes('/appsettings') || isUntabbedPath(pathname)) return null;
+  const prefixed = tabFromPathPrefix(pathname);
+  if (prefixed) return prefixed;
   if (isEpisodeDetailPath(pathname)) return 'episode';
   if (isCalendarTabRoot(pathname) || pathname.includes('/event')) return 'calendar';
   if (

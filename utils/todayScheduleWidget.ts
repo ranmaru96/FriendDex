@@ -1,4 +1,3 @@
-import * as Linking from 'expo-linking';
 import { addUserInteractionListener } from 'expo-widgets';
 import { Platform } from 'react-native';
 import {
@@ -20,6 +19,7 @@ import {
   formatEventScheduleLabelForCard,
   formatMonthDayLabel,
 } from '@/utils/eventHelpers';
+import { widgetRootUrl } from '@/utils/rootLink';
 import { formatRecurrenceLabel, formatTaskDueDateLabel, toYmd } from '@/utils/taskHelpers';
 import {
   isGroupFreeOnDate,
@@ -315,7 +315,7 @@ export const syncTodayScheduleWidget = (): void => {
       const events = getEventsByDateRange(today.toISOString(), rangeEnd.toISOString());
       const tasks = getAllTasks();
       const groups = getAllTaskGroups();
-      const openUrl = Linking.createURL('/');
+      const openUrl = widgetRootUrl();
       const includeRecurringTasks = getWidgetShowRecurringTasks();
       const nowDate = new Date();
       const entries = Array.from({ length: DAY_COUNT }, (_, index) => {

@@ -5,6 +5,7 @@ import type { DateData } from 'react-native-calendars';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { detailHref } from '@/utils/detailPaths';
 import { deleteEventFormDraft, readEventFormDraft } from '@/utils/eventFormDraft';
 import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import { Ionicons } from '@expo/vector-icons';
@@ -563,11 +564,11 @@ export default function CalendarScreen() {
   );
 
   const handleOpenEvent = (eventId: string) => {
-    router.push({ pathname: '/event-detail', params: { eventId } });
+    router.push(detailHref('event', 'calendar', { eventId }));
   };
 
   const handleOpenFriendDetail = (friendId: string) => {
-    router.push({ pathname: '/detail', params: { id: friendId } });
+    router.push(detailHref('person', 'calendar', { id: friendId }));
   };
 
   const dateLabelFor = useCallback(

@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { detailHref } from '@/utils/detailPaths';
 import { episodeDetailHrefMatch } from '@/utils/detailRouteMemory';
 import { forgetDetailFromTabs } from '@/utils/tabNavigation';
 import { Ionicons } from '@expo/vector-icons';
@@ -51,11 +52,11 @@ import {
   initializeDatabase,
   listIncomingSharedEpisodeRecords,
   updateEpisode,
-} from '../../db';
+} from '../../../db';
 import { scheduleOwnedEpisodeDelete } from '@/lib/ownedEpisodeSync';
 import { afterEpisodeSavedLocally, guardEpisodeShareOnline } from '@/lib/episodeShareSave';
 import { pullIncomingSharedEpisodes } from '@/lib/sharedEpisodeSync';
-import { Episode, EpisodeParticipant, Friend } from '../../types';
+import { Episode, EpisodeParticipant, Friend } from '../../../types';
 import {
   buildParticipantChips,
   canManageEpisode,
@@ -63,12 +64,12 @@ import {
   friendsExcludingSelf,
   normalizeEpisodeTag,
   resolveEpisodeRecordOwnerId,
-} from '../../utils/episodeHelpers';
+} from '../../../utils/episodeHelpers';
 import {
   EVENT_CREATE_FAILED_MESSAGE,
   resolveEpisodeSaveEventId,
-} from '../../utils/episodeEventLinking';
-import { registerSavedEpisodeTag } from '../../utils/episodeTagMaster';
+} from '../../../utils/episodeEventLinking';
+import { registerSavedEpisodeTag } from '../../../utils/episodeTagMaster';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
@@ -314,31 +315,39 @@ export default function EpisodeScreen() {
       if (!draft) {
         return;
       }
-      newDraftPromptingRef.current = true;
-      const finishPrompt = () => {
-        newDraftPromptingRef.current = false;
-      };
-      Alert.alert('前回の下書きを復元しますか？', undefined, [
-        {
-          text: '復元しない',
-          style: 'cancel',
-          onPress: () => {
-            finishPrompt();
-            episodeForm.declineDraft(draft);
+      let cancelled = false;
+      const task = InteractionManager.runAfterInteractions(() => {
+        if (cancelled || isFormVisibleRef.current || newDraftPromptingRef.current) {
+          return;
+        }
+        newDraftPromptingRef.current = true;
+        const finishPrompt = () => {
+          newDraftPromptingRef.current = false;
+        };
+        Alert.alert('前回の下書きを復元しますか？', undefined, [
+          {
+            text: '復元しない',
+            style: 'cancel',
+            onPress: () => {
+              finishPrompt();
+              episodeForm.declineDraft(draft);
+            },
           },
-        },
-        {
-          text: '復元する',
-          onPress: () => {
-            finishPrompt();
-            episodeSaveLockRef.current = false;
-            setEpisodeSaving(false);
-            episodeForm.armRestoredNewDraft(draft);
-            setIsFormVisible(true);
+          {
+            text: '復元する',
+            onPress: () => {
+              finishPrompt();
+              episodeSaveLockRef.current = false;
+              setEpisodeSaving(false);
+              episodeForm.armRestoredNewDraft(draft);
+              setIsFormVisible(true);
+            },
           },
-        },
-      ], { cancelable: true, onDismiss: finishPrompt });
+        ], { cancelable: true, onDismiss: finishPrompt });
+      });
       return () => {
+        cancelled = true;
+        task.cancel();
         newDraftPromptingRef.current = false;
       };
     }, [createForEventId, episodeForm.armRestoredNewDraft, episodeForm.declineDraft])
@@ -757,10 +766,9 @@ export default function EpisodeScreen() {
       rememberedEpisodeListSource = episodeListSource;
       rememberedScrollEpisodeId = row.episode.id;
       pendingScrollEpisodeIdRef.current = row.episode.id;
-      router.push({
-        pathname: '/episode-detail',
-        params: { episodeId: row.episode.id, ownerId: authorId },
-      });
+      router.push(
+        detailHref('episode', 'episode', { episodeId: row.episode.id, ownerId: authorId })
+      );
     };
     return (
       <View

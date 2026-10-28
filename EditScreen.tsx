@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { detailHrefFromHost } from '@/utils/detailPaths';
 import { useKeepFormDraft } from '@/hooks/useKeepFormDraft';
 import {
   deletePersonFormDraft,
@@ -707,7 +708,7 @@ export default function EditScreen() {
       deletePersonFormDraft(friendId || null);
       scheduleFriendProfileSync(targetId);
       Alert.alert('保存完了', message, [
-        { text: 'OK', onPress: () => router.replace({ pathname: '/detail', params: { id: targetId } }) },
+        { text: 'OK', onPress: () => router.replace(detailHrefFromHost('person', { id: targetId })) },
       ]);
     };
 

@@ -12,6 +12,7 @@ import { LaunchSplash } from '../components/screen/LaunchSplash';
 import { ScreenTopBar } from '../components/screen/ScreenTopBar';
 import { SharedHeaderFrame } from '../components/screen/SharedHeaderFrame';
 import { PendingEpisodeReviewHost } from '../components/episode/PendingEpisodeReviewHost';
+import { NavDiagHost } from '../components/navDiag/NavDiagHost';
 import { AppThemeProvider, useAppTheme } from '../contexts/AppThemeContext';
 import { NoteFormatAccessoryProvider } from '@/contexts/NoteFormatAccessoryContext';
 import { DetailDesignProvider } from '../contexts/DetailDesignContext';
@@ -394,6 +395,7 @@ function AppShell() {
         enabled={authReady && !loggedOut && !needsSetup && !onLoginRoute && !onSetupRoute}
       />
       <NavigationTapShield />
+      <NavDiagHost />
     </View>
   );
 }

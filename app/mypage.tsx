@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { detailHrefFromHost } from '@/utils/detailPaths';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { usesOffsetChrome } from '@/constants/designPatterns';
 import { Radius, Spacing, Typography } from '@/constants/theme';
@@ -347,7 +348,7 @@ export default function MyPageScreen() {
   const myselfPhoto = myself ? resolveFriendDisplayPhotoUri(myself) : null;
   const openMyself = () => {
     if (myself) {
-      router.push({ pathname: '/detail', params: { id: myself.id } });
+      router.push(detailHrefFromHost('person', { id: myself.id }));
       return;
     }
     router.push('/appsettings');
@@ -553,7 +554,7 @@ export default function MyPageScreen() {
                       style={styles.personRowMain}
                       onPress={
                         linked
-                          ? () => router.push({ pathname: '/detail', params: { id: linked.id } })
+                          ? () => router.push(detailHrefFromHost('person', { id: linked.id }))
                           : undefined
                       }
                       disabled={!linked}

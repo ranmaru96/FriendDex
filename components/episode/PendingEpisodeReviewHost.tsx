@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AppState } from 'react-native';
+import { AppState, InteractionManager } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
+import { detailHref } from '@/utils/detailPaths';
 import { PendingEpisodeReviewModal } from '@/components/episode/PendingEpisodeReviewModal';
 import { getPendingReviewEpisodes, initializeDatabase } from '@/db';
 import type { PendingReviewEpisodeRef } from '@/types';
@@ -14,7 +15,12 @@ export function PendingEpisodeReviewHost({ enabled }: PendingEpisodeReviewHostPr
   const pathname = usePathname();
   const [pendingReviewItems, setPendingReviewItems] = useState<PendingReviewEpisodeRef[]>([]);
   const [reviewModalVisible, setReviewModalVisible] = useState(false);
-  const hideOnEditor = pathname.includes('episode-detail');
+  /** 画面切り替えの途中では出さない。詳細にいるあいだは false のままにする。 */
+  const [canPresentReview, setCanPresentReview] = useState(false);
+  const onEpisodeDetail = pathname.includes('episode-detail');
+  if (onEpisodeDetail && canPresentReview) {
+    setCanPresentReview(false);
+  }
 
   const reloadPendingReviews = useCallback(() => {
     initializeDatabase();
@@ -26,10 +32,27 @@ export function PendingEpisodeReviewHost({ enabled }: PendingEpisodeReviewHostPr
   useEffect(() => {
     if (!enabled) {
       setReviewModalVisible(false);
+      setCanPresentReview(false);
       return;
     }
-    reloadPendingReviews();
-  }, [enabled, pathname, reloadPendingReviews]);
+    if (onEpisodeDetail) {
+      setCanPresentReview(false);
+      reloadPendingReviews();
+      return;
+    }
+    let cancelled = false;
+    const task = InteractionManager.runAfterInteractions(() => {
+      if (cancelled) {
+        return;
+      }
+      reloadPendingReviews();
+      setCanPresentReview(true);
+    });
+    return () => {
+      cancelled = true;
+      task.cancel();
+    };
+  }, [enabled, onEpisodeDetail, pathname, reloadPendingReviews]);
 
   useEffect(() => {
     if (!enabled) {
@@ -51,21 +74,20 @@ export function PendingEpisodeReviewHost({ enabled }: PendingEpisodeReviewHostPr
     (item: PendingReviewEpisodeRef) => {
       setReviewModalVisible(false);
       const ownerId = item.episode.authorFriendId.trim() || item.friendId;
-      router.push({
-        pathname: '/episode-detail',
-        params: {
+      router.push(
+        detailHref('episode', 'episode', {
           episodeId: item.episode.id,
           ownerId,
           edit: '1',
-        },
-      });
+        })
+      );
     },
     [router]
   );
 
   return (
     <PendingEpisodeReviewModal
-      visible={enabled && reviewModalVisible && !hideOnEditor}
+      visible={enabled && reviewModalVisible && canPresentReview && !onEpisodeDetail}
       items={pendingReviewItems}
       onChanged={reloadPendingReviews}
       onWrite={handleWritePendingEpisode}

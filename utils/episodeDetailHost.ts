@@ -10,7 +10,7 @@ let hostTab: HostTab | null = null;
 let pendingSwitchTab: HostTab | null = null;
 
 export function isEpisodeDetailPath(pathname: string): boolean {
-  return pathname.includes('episode-detail');
+  return pathname === '/episode-detail' || pathname.endsWith('/episode-detail');
 }
 
 export function getEpisodeDetailHostTab(): HostTab | null {

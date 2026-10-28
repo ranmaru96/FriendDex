@@ -17,7 +17,8 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import { detailHrefFromPathname } from '@/utils/detailPaths';
 import { deletePersonFormDraft, readPersonFormDraft, serializePersonFriend } from '@/utils/personFormDraft';
 import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
@@ -867,6 +868,7 @@ export default function DetailScreen() {
     ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0, overflow: 'visible' as const }
     : null;
   const router = useRouter();
+  const pathname = usePathname();
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const keyboardBottomInset = useKeyboardBottomInset();
@@ -1949,13 +1951,12 @@ export default function DetailScreen() {
           photoUris={episodePhotoUrisById.get(episode.id) ?? []}
           unfilled={episode.pendingReview === true}
           onPress={() =>
-            router.push({
-              pathname: '/episode-detail',
-              params: {
+            router.push(
+              detailHrefFromPathname('episode', pathname, {
                 episodeId: episode.id,
                 ownerId: episodeOwnerId,
-              },
-            })
+              })
+            )
           }
           onLongPress={
             canManage
@@ -1994,6 +1995,7 @@ export default function DetailScreen() {
       profileCardBorderColor,
       profileChromeSideBorder,
       renderEpisodeInPane,
+      pathname,
       router,
       startEditEpisode,
       handleDeleteEpisode,
@@ -2016,13 +2018,12 @@ export default function DetailScreen() {
         index,
         <Pressable
           onPress={() =>
-            router.push({
-              pathname: '/episode-detail',
-              params: {
+            router.push(
+              detailHrefFromPathname('episode', pathname, {
                 episodeId: episode.id,
                 ownerId: episodeOwnerId,
-              },
-            })
+              })
+            )
           }
           onLongPress={
             canManage
@@ -2095,6 +2096,7 @@ export default function DetailScreen() {
       profileCardBorderColor,
       profileChromeSideBorder,
       renderEpisodeInPane,
+      pathname,
       router,
       styles,
       startEditEpisode,

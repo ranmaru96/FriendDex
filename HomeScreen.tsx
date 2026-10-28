@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { detailHref } from '@/utils/detailPaths';
 import { deletePersonFormDraft, readPersonFormDraft } from '@/utils/personFormDraft';
 import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import { Theme } from '@/constants/theme';
@@ -326,7 +327,7 @@ export default function HomeScreen() {
               birthdayBadgeText={
                 showBirthdayBadges ? formatFriendBirthdayBadge(item.birthday) : null
               }
-              onPress={() => router.push({ pathname: '/detail', params: { id: item.id } })}
+              onPress={() => router.push(detailHref('person', 'home', { id: item.id }))}
               onLongPress={() => handleLongPressDeleteProfile(item)}
               delayLongPress={400}
             />

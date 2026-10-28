@@ -1,4 +1,5 @@
-import DetailScreen from '../DetailScreen';
+import { LegacyDetailRedirect } from '@/components/navigation/LegacyDetailRedirect';
 
-export default DetailScreen;
-
+export default function DetailRedirect() {
+  return <LegacyDetailRedirect kind="person" />;
+}

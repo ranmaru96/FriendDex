@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { detailHrefFromHost } from '@/utils/detailPaths';
 import { Ionicons } from '@expo/vector-icons';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import {
@@ -410,7 +411,7 @@ export default function QrImportScreen() {
               }
               const afterSave = () => {
                 scheduleFriendProfileSync(targetId);
-                router.replace({ pathname: '/detail', params: { id: targetId } });
+                router.replace(detailHrefFromHost('person', { id: targetId }));
               };
               if (fromFollow) {
                 void acceptConnection(payload.userId).then((result) => {

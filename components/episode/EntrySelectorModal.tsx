@@ -814,8 +814,8 @@ export function EntrySelectorModal({
                       content={content}
                     />
                   )}
-                  numColumns={filteredFriends.length === 0 ? 1 : SELECTOR_COLUMNS}
-                  columnWrapperStyle={filteredFriends.length > 0 ? styles.selectorColumnWrapper : undefined}
+                  numColumns={SELECTOR_COLUMNS}
+                  columnWrapperStyle={styles.selectorColumnWrapper}
                   style={styles.selectorListScroll}
                   contentContainerStyle={[
                     styles.selectorListContent,

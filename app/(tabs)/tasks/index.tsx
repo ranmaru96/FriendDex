@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
+import { detailHref } from '@/utils/detailPaths';
 import { taskHrefMatch } from '@/utils/detailRouteMemory';
 import { forgetDetailFromTabs } from '@/utils/tabNavigation';
 import { deleteTaskFormDraft, readTaskFormDraft } from '@/utils/taskFormDraft';
@@ -45,8 +46,8 @@ import {
   reopenTemporaryTask,
   setRecurringDoneOn,
   setTaskGroupId,
-} from '../../db';
-import type { Task, TaskGroup } from '../../types';
+} from '../../../db';
+import type { Task, TaskGroup } from '../../../types';
 import {
   formatRecurrenceLabel,
   formatTaskDueDateLabel,
@@ -1035,7 +1036,7 @@ export default function TasksScreen() {
   };
 
   const openGroupScreen = (group: TaskGroup) => {
-    router.push({ pathname: '/task-group', params: { groupId: group.id } });
+    router.push(detailHref('task-group', 'tasks', { groupId: group.id }));
   };
 
   const setDropZoneHost = useCallback((id: DropTargetId, node: View | null) => {
@@ -1214,7 +1215,7 @@ export default function TasksScreen() {
       content={content}
       dragEnabled={isLibrary && segment === 'recurring'}
       overlay={dragOverlay}
-      onOpen={() => router.push({ pathname: '/task-detail', params: { taskId: task.id } })}
+      onOpen={() => router.push(detailHref('task', 'tasks', { taskId: task.id }))}
       onToggle={() => toggleRecurring(task)}
       onLongPressDelete={() => confirmDelete(task)}
       onDragStart={handleDragStart}
@@ -1625,7 +1626,7 @@ export default function TasksScreen() {
       checkedColor={checkedColor}
       dragEnabled={isLibrary && segment === 'temporary' && !completed}
       overlay={dragOverlay}
-      onOpen={() => router.push({ pathname: '/task-detail', params: { taskId: task.id } })}
+      onOpen={() => router.push(detailHref('task', 'tasks', { taskId: task.id }))}
       onToggle={() => toggleTemporary(task, completed)}
       onLongPressDelete={() => confirmDelete(task)}
       onDragStart={handleDragStart}
