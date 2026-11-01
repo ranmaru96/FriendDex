@@ -1,8 +1,6 @@
 import { useEffect } from 'react';
 import { BackHandler } from 'react-native';
 import { router } from 'expo-router';
-import { getActiveTab } from '@/utils/bottomNavVisibility';
-import { canPopCurrentTab, getTabStackPathname } from '@/utils/tabStacks';
 import { popCurrentTabScreen } from '@/utils/tabNavigation';
 
 export function useTabStackBackHandler(enabled: boolean) {
@@ -11,12 +9,7 @@ export function useTabStackBackHandler(enabled: boolean) {
       return;
     }
     const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      const tab = getActiveTab(getTabStackPathname());
-      if (!tab) {
-        return false;
-      }
-      if (canPopCurrentTab()) {
-        popCurrentTabScreen();
+      if (popCurrentTabScreen()) {
         return true;
       }
       if (router.canGoBack()) {

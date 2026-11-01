@@ -20,6 +20,7 @@ import { SettlementMockProvider } from '../contexts/SettlementMockContext';
 import {
   SharedHeaderChromeProvider,
   useSharedHeaderVisuals,
+  useShellHeaderHidden,
   useSuppressBottomNav,
 } from '../contexts/SharedHeaderChromeContext';
 import { AuthSessionProvider, useAuthSession } from '@/contexts/AuthSessionContext';
@@ -39,8 +40,7 @@ import {
 import { openAfterAuthGate, resetAuthGateNavigation } from '@/utils/navigationRestore';
 import {
   installNavigationTapLock,
-  noteTapNavigationTransitionEnd,
-  noteTapNavigationTransitionStart,
+  navigationTapLockListeners,
   useNavigationTapLock,
 } from '@/utils/navigationTapLock';
 import { useTabStackBackHandler } from '@/hooks/useTabStackBackHandler';
@@ -59,15 +59,6 @@ import '@/widgets/UpcomingPeopleWidget';
 import { SHARED_HEADER_BAR_MIN_HEIGHT } from '../components/screen/SharedHeaderFrame';
 
 installNavigationTapLock();
-
-const navigationTapLockListeners = {
-  transitionStart: () => {
-    noteTapNavigationTransitionStart();
-  },
-  transitionEnd: (event: { data?: { closing?: boolean } }) => {
-    noteTapNavigationTransitionEnd(event.data?.closing === true);
-  },
-};
 
 const BOTTOM_TAB_ROUTE_NAMES = new Set([
   'index',
@@ -229,6 +220,7 @@ function AppShell() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const suppressBottomNav = useSuppressBottomNav();
+  const shellHeaderHidden = useShellHeaderHidden();
   const { colors } = useAppTheme();
   const [headerHeight, setHeaderHeight] = useState(() => estimateShellHeaderHeight(insets.top));
   const [navHeight, setNavHeight] = useState(() => estimateShellNavHeight(insets.bottom));
@@ -315,7 +307,7 @@ function AppShell() {
     }
   }, [authReady, configured, pathname, router, session]);
 
-  const shellHidesHeader = loggedOut || needsSetup;
+  const shellHidesHeader = loggedOut || needsSetup || shellHeaderHidden;
   const shellHidesNav =
     suppressBottomNav || needsSetup || onSetupRoute || onLoginRoute || loggedOut;
   const showShellHeader = !shellHidesHeader && routeShowsShellHeader(pathname);
@@ -328,7 +320,8 @@ function AppShell() {
         <Stack
           screenListeners={navigationTapLockListeners}
           screenLayout={({ route, children }) => {
-            const path = stackRoutePath(route.name);
+            // タブの中は親から route.name が (tabs) のままなので、見えている URL で余白を決める。
+            const path = route.name === '(tabs)' ? pathname : stackRoutePath(route.name);
             const paddingTop =
               shellHidesHeader || !routeShowsShellHeader(path) ? 0 : headerHeight;
             const paddingBottom =

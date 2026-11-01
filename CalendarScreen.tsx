@@ -5,6 +5,7 @@ import type { DateData } from 'react-native-calendars';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { readCalendarStackLog } from '@/utils/calendarStackLog';
 import { detailHref } from '@/utils/detailPaths';
 import { deleteEventFormDraft, readEventFormDraft } from '@/utils/eventFormDraft';
 import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
@@ -564,7 +565,9 @@ export default function CalendarScreen() {
   );
 
   const handleOpenEvent = (eventId: string) => {
+    console.log('[eventPush]', { when: 'before', ...readCalendarStackLog() });
     router.push(detailHref('event', 'calendar', { eventId }));
+    console.log('[eventPush]', { when: 'after', ...readCalendarStackLog() });
   };
 
   const handleOpenFriendDetail = (friendId: string) => {

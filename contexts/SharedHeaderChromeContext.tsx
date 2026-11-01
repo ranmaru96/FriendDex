@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react';
@@ -30,6 +31,9 @@ export type SharedHeaderChromeActions = {
   upsertSubToolHeader: (id: string, config: SharedSubToolHeaderConfig) => void;
   removeSubToolHeader: (id: string) => void;
   setSuppressBottomNav: (hide: boolean) => void;
+  /** フォーム自身のバーを出しているあいだ、シェルヘッダーを隠す。重ねがけ可 */
+  holdShellHeaderHidden: () => void;
+  releaseShellHeaderHidden: () => void;
 };
 
 type SubToolHeaderStackEntry = {
@@ -48,6 +52,7 @@ const SharedHeaderActionsContext = createContext<SharedHeaderChromeActions | nul
 const DetailHeaderStateContext = createContext<SharedDetailHeaderConfig | null>(null);
 const SubToolHeaderStateContext = createContext<SharedSubToolHeaderConfig | null>(null);
 const SuppressBottomNavContext = createContext(false);
+const ShellHeaderHiddenContext = createContext(false);
 
 function sameDetailHeader(
   current: SharedDetailHeaderConfig,
@@ -87,6 +92,8 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
   const [detailHeader, setDetailHeaderState] = useState<SharedDetailHeaderConfig | null>(null);
   const [subToolHeaderStack, setSubToolHeaderStack] = useState<SubToolHeaderStackEntry[]>([]);
   const [suppressBottomNav, setSuppressBottomNavState] = useState(false);
+  const [shellHeaderHidden, setShellHeaderHidden] = useState(false);
+  const shellHeaderHolds = useRef(0);
   const subToolHeader = topSubToolHeader(subToolHeaderStack);
 
   const setDetailHeader = useCallback((config: SharedDetailHeaderConfig | null) => {
@@ -129,24 +136,47 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
     setSuppressBottomNavState((current) => (current === hide ? current : hide));
   }, []);
 
+  const holdShellHeaderHidden = useCallback(() => {
+    shellHeaderHolds.current += 1;
+    setShellHeaderHidden(true);
+  }, []);
+
+  const releaseShellHeaderHidden = useCallback(() => {
+    shellHeaderHolds.current = Math.max(0, shellHeaderHolds.current - 1);
+    if (shellHeaderHolds.current === 0) {
+      setShellHeaderHidden(false);
+    }
+  }, []);
+
   const actions = useMemo(
     () => ({
       setDetailHeader,
       upsertSubToolHeader,
       removeSubToolHeader,
       setSuppressBottomNav,
+      holdShellHeaderHidden,
+      releaseShellHeaderHidden,
     }),
-    [setDetailHeader, upsertSubToolHeader, removeSubToolHeader, setSuppressBottomNav]
+    [
+      setDetailHeader,
+      upsertSubToolHeader,
+      removeSubToolHeader,
+      setSuppressBottomNav,
+      holdShellHeaderHidden,
+      releaseShellHeaderHidden,
+    ]
   );
 
   return (
     <SharedHeaderActionsContext.Provider value={actions}>
       <SuppressBottomNavContext.Provider value={suppressBottomNav}>
-        <DetailHeaderStateContext.Provider value={detailHeader}>
-          <SubToolHeaderStateContext.Provider value={subToolHeader}>
-            {children}
-          </SubToolHeaderStateContext.Provider>
-        </DetailHeaderStateContext.Provider>
+        <ShellHeaderHiddenContext.Provider value={shellHeaderHidden}>
+          <DetailHeaderStateContext.Provider value={detailHeader}>
+            <SubToolHeaderStateContext.Provider value={subToolHeader}>
+              {children}
+            </SubToolHeaderStateContext.Provider>
+          </DetailHeaderStateContext.Provider>
+        </ShellHeaderHiddenContext.Provider>
       </SuppressBottomNavContext.Provider>
     </SharedHeaderActionsContext.Provider>
   );
@@ -185,4 +215,8 @@ export function useSharedHeaderVisuals(): {
 
 export function useSuppressBottomNav(): boolean {
   return useContext(SuppressBottomNavContext);
+}
+
+export function useShellHeaderHidden(): boolean {
+  return useContext(ShellHeaderHiddenContext);
 }

@@ -40,6 +40,7 @@ import {
 } from '@/utils/datePickerBounds';
 import { useDismissPickerOnKeyboardShow } from '@/hooks/useDismissPickerOnKeyboardShow';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
+import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import {
   formatEpisodeDateToYMD,
@@ -197,6 +198,9 @@ export function EpisodeFormOverlay({
   const kit = useUiKit();
   const content = useContentColors();
   const appTheme = useAppThemeOptional();
+  const sharedHeaderApi = useSharedHeaderChromeOptional();
+  const holdShellHeaderHidden = sharedHeaderApi?.holdShellHeaderHidden;
+  const releaseShellHeaderHidden = sharedHeaderApi?.releaseShellHeaderHidden;
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const fieldRadius = Radius.sm;
   const fieldCorner = { borderRadius: fieldRadius };
@@ -334,6 +338,14 @@ export function EpisodeFormOverlay({
     form.setShowDatePicker(false);
     form.setShowTimePicker(false);
   });
+
+  useEffect(() => {
+    if (!visible || !useTopBar || !holdShellHeaderHidden || !releaseShellHeaderHidden) {
+      return;
+    }
+    holdShellHeaderHidden();
+    return () => releaseShellHeaderHidden();
+  }, [holdShellHeaderHidden, releaseShellHeaderHidden, useTopBar, visible]);
 
   if (!visible) {
     return null;

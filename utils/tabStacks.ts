@@ -30,30 +30,6 @@ export function setTabStackPathname(pathname: string): void {
   currentPathname = pathname;
 }
 
-export function snapshotTabStacks(): Record<BottomNavTabKey, string[]> {
-  return {
-    home: [...stacks.home],
-    calendar: [...stacks.calendar],
-    episode: [...stacks.episode],
-    tools: [...stacks.tools],
-    tasks: [...stacks.tasks],
-  };
-}
-
-export function restoreTabStacks(next: Partial<Record<BottomNavTabKey, string[]>>): void {
-  (Object.keys(stacks) as BottomNavTabKey[]).forEach((tab) => {
-    const incoming = next[tab];
-    if (!incoming || incoming.length === 0) {
-      return;
-    }
-    const hrefs = incoming.filter((href) => typeof href === 'string' && href.startsWith('/'));
-    if (hrefs.length === 0) {
-      return;
-    }
-    stacks[tab] = hrefs.slice(0, 8);
-  });
-}
-
 export function getTabStackPathname(): string {
   return currentPathname;
 }

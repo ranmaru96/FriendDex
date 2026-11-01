@@ -140,6 +140,16 @@ export function useNavigationTapLock(): boolean {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+/** 親 Stack と各タブの Stack で、タップロックを遷移の完了に合わせる。 */
+export const navigationTapLockListeners = {
+  transitionStart: () => {
+    noteTapNavigationTransitionStart();
+  },
+  transitionEnd: (event: { data?: { closing?: boolean } }) => {
+    noteTapNavigationTransitionEnd(event.data?.closing === true);
+  },
+};
+
 type LockingMethod = 'push' | 'replace' | 'navigate' | 'dismiss' | 'dismissTo' | 'dismissAll';
 
 function wrapRouterMethod(name: LockingMethod): void {

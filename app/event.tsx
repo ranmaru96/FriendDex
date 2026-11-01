@@ -215,7 +215,7 @@ import {
   parseDateKey,
 } from '../utils/eventHelpers';
 import { eventHrefMatch } from '@/utils/detailRouteMemory';
-import { leaveForgottenDetail } from '@/utils/tabNavigation';
+import { leaveForgottenDetail, openEpisodeComposerForEvent } from '@/utils/tabNavigation';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import { formatTaskDueDateLabel } from '@/utils/taskHelpers';
 import { formatNotePreview } from '@/utils/noteBlocks';
@@ -483,11 +483,8 @@ export default function EventScreen() {
     if (!startDateKey.trim() || todayKey < startDateKey.trim()) {
       return;
     }
-    router.push({
-      pathname: '/episode',
-      params: { createForEventId: eventId },
-    });
-  }, [eventId, isEditing, router, startDateKey]);
+    openEpisodeComposerForEvent(eventId);
+  }, [eventId, isEditing, startDateKey]);
 
   const loadEvent = useCallback(() => {
     initializeDatabase();
