@@ -1,6 +1,4 @@
-import { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -9,7 +7,7 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { OffsetCard } from '@/components/ui/OffsetCard';
 import { usesOffsetChrome } from '@/constants/designPatterns';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
@@ -29,8 +27,6 @@ type ToolEntry = {
   description: string;
   icon: keyof typeof Ionicons.glyphMap;
   route?: string;
-  /** 遷移開始が重いとき、カード上にローディングを出す */
-  showOpenLoading?: boolean;
 };
 
 const TOOL_ENTRIES: ToolEntry[] = [
@@ -41,7 +37,6 @@ const TOOL_ENTRIES: ToolEntry[] = [
       'グループ精算と、グループ不要の個別貸し借り登録。清算タブで会ごと・人ごとの精算を確認できます。',
     icon: 'cash-outline',
     route: '/settlement',
-    showOpenLoading: true,
   },
   {
     id: 'shuffle',
@@ -79,22 +74,9 @@ export default function ToolsScreen() {
   const kit = useUiKit();
   const content = useContentColors();
   const isCodex = usesOffsetChrome(useAppThemeOptional()?.patternId);
-  const [openingId, setOpeningId] = useState<string | null>(null);
-
-  useFocusEffect(
-    useCallback(() => {
-      setOpeningId(null);
-    }, [])
-  );
 
   const openTool = (entry: ToolEntry) => {
-    if (!entry.route || openingId) return;
-    if (entry.showOpenLoading) {
-      setOpeningId(entry.id);
-      // くるくるを先に描画してから push（遷移開始の遅延でも「押した」が分かる）
-      requestAnimationFrame(() => {
-        router.push(entry.route!);
-      });
+    if (!entry.route) {
       return;
     }
     router.push(entry.route);
@@ -115,7 +97,6 @@ export default function ToolsScreen() {
         ) : null}
 
         {TOOL_ENTRIES.map((entry) => {
-          const isOpening = openingId === entry.id;
           const card = (
               <Pressable
                 style={[
@@ -126,9 +107,8 @@ export default function ToolsScreen() {
                         contentSurfaceStyle(content),
                         { borderRadius: kit.toolScreenCardBorderRadius, borderWidth: 1 },
                       ],
-                  isOpening && styles.toolCardOpening,
                 ]}
-                disabled={!entry.route || openingId != null}
+                disabled={!entry.route}
                 onPress={() => openTool(entry)}
               >
                 <View
@@ -146,18 +126,10 @@ export default function ToolsScreen() {
                     {entry.description}
                   </Text>
                 </View>
-                {isOpening ? (
-                  <View style={styles.openingOverlay} pointerEvents="none">
-                    <View
-                      style={[styles.openingOverlayDim, { backgroundColor: kit.screenBackground }]}
-                    />
-                    <ActivityIndicator color={content.contentTextSecondary} />
-                  </View>
-                ) : null}
               </Pressable>
           );
           return isCodex ? (
-            <OffsetCard key={entry.id} brackets contentStyle={isOpening ? styles.toolCardOpening : undefined}>
+            <OffsetCard key={entry.id} brackets>
               {card}
             </OffsetCard>
           ) : (
@@ -188,9 +160,6 @@ const styles = StyleSheet.create({
     gap: Spacing.md,
     padding: Spacing.md,
   },
-  toolCardOpening: {
-    opacity: 0.92,
-  },
   toolIconWrap: {
     width: 40,
     height: 40,
@@ -209,14 +178,5 @@ const styles = StyleSheet.create({
   toolDescription: {
     fontSize: 13,
     lineHeight: 18,
-  },
-  openingOverlay: {
-    ...StyleSheet.absoluteFill,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  openingOverlayDim: {
-    ...StyleSheet.absoluteFill,
-    opacity: 0.55,
   },
 });

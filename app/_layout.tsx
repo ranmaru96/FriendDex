@@ -1,7 +1,7 @@
 import '../sentry';
 import { Stack, usePathname, useRouter } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { InteractionManager, Pressable, StyleSheet, View, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -24,6 +24,8 @@ import {
   useSuppressBottomNav,
 } from '../contexts/SharedHeaderChromeContext';
 import { AuthSessionProvider, useAuthSession } from '@/contexts/AuthSessionContext';
+import { EmailAccountLinkGate } from '@/components/auth/EmailAccountLinkGate';
+import { useEmailAccountMigration } from '@/hooks/useEmailAccountMigration';
 import { NetworkReachabilityProvider } from '@/contexts/NetworkReachabilityContext';
 import { UiPreviewProvider, useUiKit } from '../contexts/UiPreviewContext';
 import { usePastEventConversionSchedule } from '../hooks/usePastEventConversionSchedule';
@@ -46,6 +48,11 @@ import {
 import { useTabStackBackHandler } from '@/hooks/useTabStackBackHandler';
 import { useTabStackSync } from '@/hooks/useTabStackSync';
 import { getMyselfSetupPhase, initializeDatabase, ensureDatabaseOpened } from '../db';
+import {
+  getPasswordRecoveryRevision,
+  isPasswordRecoveryPending,
+  subscribePasswordRecovery,
+} from '@/lib/passwordResetLink';
 import { convertPastEventsToAutoEpisodes } from '../utils/eventEpisodeConversion';
 import {
   absorbWidgetTaskChecks,
@@ -215,6 +222,15 @@ function AppShellHeader() {
   return null;
 }
 
+function usePasswordRecoveryPending(): boolean {
+  useSyncExternalStore(
+    subscribePasswordRecovery,
+    getPasswordRecoveryRevision,
+    getPasswordRecoveryRevision
+  );
+  return isPasswordRecoveryPending();
+}
+
 function AppShell() {
   const pathname = usePathname();
   const router = useRouter();
@@ -243,18 +259,32 @@ function AppShell() {
   const needsSetup = setupPhase !== 'ready';
   const onSetupRoute = pathname.includes('setup-myself');
   const onLoginRoute = pathname.includes('login');
+  const onResetRoute = pathname.includes('reset-password');
+  const recoveryPending = usePasswordRecoveryPending();
   const loggedOut = configured && !session;
+  const emailMigration = useEmailAccountMigration(session, recoveryPending || onResetRoute);
   const hideBottomNav =
     shouldHideBottomNav(pathname) ||
     suppressBottomNav ||
     needsSetup ||
     onSetupRoute ||
     onLoginRoute ||
-    loggedOut;
+    onResetRoute ||
+    loggedOut ||
+    recoveryPending ||
+    emailMigration.visible;
   useTabStackSync();
   const activeTab = getActiveTab(pathname);
   const [gateOpened, setGateOpened] = useState(false);
-  useTabStackBackHandler(!hideBottomNav && !needsSetup && !onSetupRoute && !onLoginRoute);
+  useTabStackBackHandler(
+    !hideBottomNav &&
+    !needsSetup &&
+    !onSetupRoute &&
+    !onLoginRoute &&
+    !onResetRoute &&
+    !recoveryPending &&
+    !emailMigration.visible
+  );
 
   useEffect(() => {
     if (!authReady) {
@@ -267,6 +297,14 @@ function AppShell() {
     const loggedOut = configured && !session;
     const onSetup = pathname.includes('setup-myself');
     const onLogin = pathname.includes('login');
+    const onReset = pathname.includes('reset-password');
+
+    if (isPasswordRecoveryPending()) {
+      if (!onReset) {
+        router.replace('/reset-password');
+      }
+      return;
+    }
 
     if (loggedOut) {
       resetAuthGateNavigation();
@@ -305,11 +343,19 @@ function AppShell() {
     if (!onSetup) {
       router.replace('/setup-myself');
     }
-  }, [authReady, configured, pathname, router, session]);
+  }, [authReady, configured, pathname, recoveryPending, router, session]);
 
-  const shellHidesHeader = loggedOut || needsSetup || shellHeaderHidden;
+  const shellHidesHeader =
+    loggedOut || needsSetup || shellHeaderHidden || onResetRoute || recoveryPending || emailMigration.visible;
   const shellHidesNav =
-    suppressBottomNav || needsSetup || onSetupRoute || onLoginRoute || loggedOut;
+    suppressBottomNav ||
+    needsSetup ||
+    onSetupRoute ||
+    onLoginRoute ||
+    onResetRoute ||
+    loggedOut ||
+    recoveryPending ||
+    emailMigration.visible;
   const showShellHeader = !shellHidesHeader && routeShowsShellHeader(pathname);
   const rememberChromeHeight = (current: number, next: number) =>
     next > 0 && next !== current ? next : current;
@@ -348,13 +394,15 @@ function AppShell() {
             /** replace でも push と同じ方向で入る（pop だと向きが反転する） */
             animationTypeForReplace: peekNextReplaceAsPop() ? 'pop' : 'push',
             /** 下部ナビ付き画面はタブ階層で戻る。スワイプで Stack の戻るとタブが混ざるのを防ぐ */
-            gestureEnabled: shouldHideBottomNav(`/${route.name}`),
+            gestureEnabled:
+              route.name !== 'reset-password' && shouldHideBottomNav(`/${route.name}`),
           })}
         />
         {(!authReady ||
-          (loggedOut && !onLoginRoute) ||
-          (needsSetup && !onLoginRoute && !onSetupRoute) ||
-          (!loggedOut && !needsSetup && !gateOpened)) ? (
+          (recoveryPending && !onResetRoute) ||
+          (!recoveryPending && loggedOut && !onLoginRoute) ||
+          (!recoveryPending && needsSetup && !onLoginRoute && !onSetupRoute) ||
+          (!recoveryPending && !loggedOut && !needsSetup && !gateOpened)) ? (
           <View pointerEvents="auto" style={StyleSheet.absoluteFill}>
             <LaunchSplash />
           </View>
@@ -385,10 +433,24 @@ function AppShell() {
         </View>
       ) : null}
       <PendingEpisodeReviewHost
-        enabled={authReady && !loggedOut && !needsSetup && !onLoginRoute && !onSetupRoute}
+        enabled={
+          authReady &&
+          !loggedOut &&
+          !needsSetup &&
+          !onLoginRoute &&
+          !onSetupRoute &&
+          !onResetRoute &&
+          !recoveryPending &&
+          !emailMigration.visible
+        }
       />
       <NavigationTapShield />
       <NavDiagHost />
+      {emailMigration.visible ? (
+        <View style={StyleSheet.absoluteFill}>
+          <EmailAccountLinkGate checking={emailMigration.checking} onLinked={() => void emailMigration.refresh()} />
+        </View>
+      ) : null}
     </View>
   );
 }

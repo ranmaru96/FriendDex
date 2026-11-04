@@ -7,7 +7,9 @@ import { getMyselfSetupPhase, initializeDatabase } from '@/db';
 import { DEVICE_BIND_MISMATCH_MESSAGE, discardForeignAuthSession, isAuthUserAllowedOnThisDevice } from '@/lib/deviceAuthBind';
 import { runOwnedLoginSideEffects } from '@/lib/ownedLoginSync';
 import { signInWithAppleAccount, signInWithGoogleAccount, type SocialProvider } from '@/lib/socialAuth';
-import { signInWithEmail, signUpWithEmail } from '@/lib/supabase';
+import { isPasswordRecoveryPending } from '@/lib/passwordResetLink';
+import { requestPasswordReset } from '@/lib/passwordReset';
+import { signInWithEmail } from '@/lib/supabase';
 import { requireOnline } from '@/lib/networkReachability';
 import { openAfterAuthGate } from '@/utils/navigationRestore';
 
@@ -56,6 +58,9 @@ export default function LoginScreen() {
     if (!ready || !configured) {
       return;
     }
+    if (isPasswordRecoveryPending()) {
+      return;
+    }
     const sessionId = session?.user.id?.trim() ?? '';
     if (!sessionId) {
       return;
@@ -84,24 +89,28 @@ export default function LoginScreen() {
   }, [busy, configured, finishAfterSession, ready, session]);
 
   const runAuth = async (mode: AuthIntent, email: string, password: string) => {
+    if (mode === 'signup') {
+      Alert.alert(
+        '登録できません',
+        'メールアドレスでの新規登録は終了しました。Google または Apple で作成してください。'
+      );
+      return;
+    }
     if (!requireOnline()) {
       return;
     }
     setBusy(true);
-    setBusyLabel(mode === 'signin' ? 'ログインしています' : '登録しています');
+    setBusyLabel('ログインしています');
     try {
-      const result =
-        mode === 'signup'
-          ? await signUpWithEmail(email, password)
-          : await signInWithEmail(email, password);
+      const result = await signInWithEmail(email, password);
       if (result.errorMessage) {
-        Alert.alert(mode === 'signup' ? '登録できませんでした' : 'ログインできませんでした', result.errorMessage);
+        Alert.alert('ログインできませんでした', result.errorMessage);
         return;
       }
       if (!result.session) {
         Alert.alert(
-          '確認メール',
-          'アカウントは作成されました。メールの確認が有効なときは、確認後にログインしてください。'
+          'ログインできませんでした',
+          'セッションを取得できませんでした。メールの確認が済んでいないときは、確認後にログインしてください。'
         );
         return;
       }
@@ -116,6 +125,27 @@ export default function LoginScreen() {
       if (ok && sessionId) {
         handledSessionId.current = sessionId;
       }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runForgotPassword = async (email: string) => {
+    if (!requireOnline()) {
+      return;
+    }
+    setBusy(true);
+    setBusyLabel('メールを送っています');
+    try {
+      const errorMessage = await requestPasswordReset(email);
+      if (errorMessage) {
+        Alert.alert('送信できませんでした', errorMessage);
+        return;
+      }
+      Alert.alert(
+        'メールを送りました',
+        '再設定用のリンクを送りました。この端末でメールを開き、新しいパスワードを設定してください。'
+      );
     } finally {
       setBusy(false);
     }
@@ -165,14 +195,17 @@ export default function LoginScreen() {
 
   const overlayMessage = !configured
     ? 'サーバー設定が無いため、ログインできません。'
-    : !ready || busy || session
-      ? busyLabel
-      : null;
+    : isPasswordRecoveryPending()
+      ? null
+      : !ready || busy || session
+        ? busyLabel
+        : null;
 
   return (
     <AuthGateView
       overlayMessage={overlayMessage}
       onEmailSubmit={runAuth}
+      onForgotPassword={runForgotPassword}
       onSocialSubmit={runSocial}
     />
   );

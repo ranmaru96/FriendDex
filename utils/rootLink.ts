@@ -1,4 +1,5 @@
 import * as Linking from 'expo-linking';
+import { isPasswordResetLink, markPasswordResetLink, readResetLinkParams } from '@/lib/passwordResetLink';
 
 const WIDGET_PARAM = 'widget';
 const WIDGET_VALUE = '1';
@@ -51,6 +52,13 @@ export function redirectSystemPath({
 }): string | null {
   if (isWidgetRoot(path)) {
     return initial ? '/' : null;
+  }
+  if (isPasswordResetLink(path)) {
+    const params = readResetLinkParams(path);
+    if (params.code || params.accessToken || params.refreshToken || params.errorMessage) {
+      markPasswordResetLink(path);
+    }
+    return '/reset-password';
   }
   if (!initial && isBareRoot(path)) {
     return null;

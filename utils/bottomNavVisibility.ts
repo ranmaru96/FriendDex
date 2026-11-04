@@ -28,6 +28,7 @@ const HIDE_HEADER_PATHS = [
   'commonitems',
   'setup-myself',
   'login',
+  'reset-password',
   'auth-preview',
   'launch-preview',
 ];
@@ -44,6 +45,7 @@ const HIDE_BOTTOM_NAV_PATHS = [
   'commonitems',
   'setup-myself',
   'login',
+  'reset-password',
   'auth-preview',
   'launch-preview',
 ];
@@ -75,7 +77,7 @@ export function getBottomNavScrollClearance(pathname: string): number {
   return shouldHideBottomNav(pathname) ? 0 : BOTTOM_NAV_SCROLL_CLEARANCE;
 }
 
-const UNTABBED_PATH_PARTS = ['setup-myself', 'login', 'auth-preview', 'launch-preview'];
+const UNTABBED_PATH_PARTS = ['setup-myself', 'login', 'reset-password', 'auth-preview', 'launch-preview'];
 
 function isUntabbedPath(pathname: string): boolean {
   return UNTABBED_PATH_PARTS.some((part) => pathname.includes(part));

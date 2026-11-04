@@ -47,11 +47,14 @@ export const getSupabaseClient = (): SupabaseClient | null => {
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
+      // 再設定リンクはクエリの code で戻す。URL のフラグメントは iOS で落ちる。
+      flowType: 'pkce',
     },
   });
   return client;
 };
 
+/** アプリの画面からは呼ばない。新規メール登録は Before User Created フックが拒否する。 */
 export const signUpWithEmail = async (
   email: string,
   password: string

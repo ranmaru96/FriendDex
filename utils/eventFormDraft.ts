@@ -8,7 +8,7 @@ import {
 } from '@/db';
 import type { EpisodeParticipant, Event, ProfileMemo } from '@/types';
 import { deleteFormDraft, readFormDraftRecord } from '@/utils/formDraftStore';
-import { cloneProfileMemo, savedProfileMemos } from '@/utils/eventParticipantMemos';
+import { cloneProfileMemo, memoTargetFriendIds, savedProfileMemos } from '@/utils/eventParticipantMemos';
 import { profileIdsToFriendIds } from '@/utils/eventParticipantHelpers';
 import {
   formatDateKey,
@@ -163,17 +163,11 @@ export function deleteEventFormDraft(eventId: string | null): void {
 
 function profileMemosForParticipants(
   entries: EpisodeParticipant[],
-  eventId: string
+  eventId: string,
+  myselfId: string | null
 ): Record<string, ProfileMemo[]> {
   const record: Record<string, ProfileMemo[]> = {};
-  for (const entry of entries) {
-    if (entry.kind !== 'individual') {
-      continue;
-    }
-    const friendId = entry.value.trim();
-    if (!friendId || record[friendId]) {
-      continue;
-    }
+  for (const friendId of memoTargetFriendIds(entries, myselfId)) {
     record[friendId] = savedProfileMemos(getFriendById(friendId)?.notes ?? []).filter(
       (memo) => memo.eventId === eventId
     );
@@ -194,6 +188,8 @@ function participantsForEvent(eventId: string, myselfId: string | null): Episode
 
 export function buildNewEventForm(initialDate: string): EventFormDraft {
   const baseDate = initialDate || formatDateKey(new Date());
+  const myselfId = getMyself()?.trim() ?? '';
+  const emptySelfMemos = (): Record<string, ProfileMemo[]> => (myselfId ? { [myselfId]: [] } : {});
   return {
     title: '',
     memo: '',
@@ -204,8 +200,8 @@ export function buildNewEventForm(initialDate: string): EventFormDraft {
     startTime: DEFAULT_START_TIME,
     endTime: DEFAULT_END_TIME,
     participants: [],
-    participantMemoBaselines: {},
-    participantMemos: {},
+    participantMemoBaselines: emptySelfMemos(),
+    participantMemos: emptySelfMemos(),
     notifyEnabled: true,
     notifyTimingPreset: DEFAULT_NOTIFY_TIMING_PRESET,
     initialDate,
@@ -232,7 +228,7 @@ export function buildSavedEventForm(event: Event, initialDate: string): EventFor
     ? { startDateKey, startTime: '00:00', allDay: true as const }
     : { startDateKey, startTime, allDay: false as const };
   const participants = participantsForEvent(event.id, myselfId);
-  const participantMemos = profileMemosForParticipants(participants, event.id);
+  const participantMemos = profileMemosForParticipants(participants, event.id, myselfId);
   return {
     title: event.title,
     memo: event.memo ?? '',

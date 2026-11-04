@@ -45,6 +45,7 @@ type AuthGateViewProps = {
   overlayMessage?: string | null;
   onClose?: () => void;
   onEmailSubmit: (mode: AuthIntent, email: string, password: string) => void;
+  onForgotPassword?: (email: string) => void;
   onSocialSubmit?: (mode: AuthIntent, provider: 'google' | 'apple') => void;
 };
 
@@ -53,6 +54,7 @@ export function AuthGateView({
   overlayMessage = null,
   onClose,
   onEmailSubmit,
+  onForgotPassword,
   onSocialSubmit,
 }: AuthGateViewProps) {
   const [email, setEmail] = useState('');
@@ -95,12 +97,15 @@ export function AuthGateView({
       onSocialSubmit(intent, next);
       return;
     }
+    if (intent !== 'signin') {
+      return;
+    }
     animateCardSwap();
     setMethod('email');
   };
 
   const submitEmail = () => {
-    if (!intent) {
+    if (intent !== 'signin') {
       return;
     }
     const trimmedEmail = email.trim();
@@ -109,6 +114,19 @@ export function AuthGateView({
       return;
     }
     onEmailSubmit(intent, trimmedEmail, password);
+  };
+
+  const forgotPassword = () => {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      Alert.alert('入力エラー', 'メールアドレスを入力してください。');
+      return;
+    }
+    if (preview || !onForgotPassword) {
+      Alert.alert('プレビュー', '見た目確認用です。送信・復元はしません。');
+      return;
+    }
+    onForgotPassword(trimmedEmail);
   };
 
   return (
@@ -160,6 +178,9 @@ export function AuthGateView({
               </Text>
               {method === 'email' ? (
                 <>
+                  <Text style={styles.hint}>
+                    ログインしたあと、Google または Apple への切り替えが必要です。
+                  </Text>
                   <View style={styles.field}>
                     <Ionicons name="mail-outline" size={18} color={GATE.muted} />
                     <TextInput
@@ -188,21 +209,15 @@ export function AuthGateView({
                       textContentType="password"
                     />
                   </View>
-                  <Pressable
-                    style={[styles.pill, intent === 'signup' ? styles.createPill : styles.loginPill]}
-                    onPress={submitEmail}
-                  >
-                    <Text style={styles.pillText}>{intent === 'signup' ? '作成する' : 'ログイン'}</Text>
+                  <Pressable style={[styles.pill, styles.loginPill]} onPress={submitEmail}>
+                    <Text style={styles.pillText}>ログイン</Text>
+                  </Pressable>
+                  <Pressable onPress={forgotPassword} hitSlop={8} style={styles.forgotHit}>
+                    <Text style={styles.forgotText}>パスワードを忘れた</Text>
                   </Pressable>
                 </>
               ) : (
                 <>
-                  <MethodButton
-                    icon="mail-outline"
-                    label="メールとパスワード"
-                    selected={false}
-                    onPress={() => pickMethod('email')}
-                  />
                   <MethodButton
                     icon="logo-google"
                     label="Google アカウント"
@@ -216,6 +231,11 @@ export function AuthGateView({
                       selected={false}
                       onPress={() => pickMethod('apple')}
                     />
+                  ) : null}
+                  {intent === 'signin' ? (
+                    <Pressable onPress={() => pickMethod('email')} hitSlop={8} style={styles.forgotHit}>
+                      <Text style={styles.forgotText}>以前のメールアドレスで入る</Text>
+                    </Pressable>
                   ) : null}
                 </>
               )}
@@ -328,6 +348,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.4,
+  },
+  forgotHit: {
+    alignSelf: 'center',
+    paddingVertical: 4,
+  },
+  forgotText: {
+    color: GATE.muted,
+    fontSize: 14,
+    fontWeight: '600',
   },
   method: {
     minHeight: 48,

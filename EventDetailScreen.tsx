@@ -50,7 +50,7 @@ import { formatTaskDueDateLabel } from '@/utils/taskHelpers';
 import { formatNotePreview, noteBlocksHaveContent } from '@/utils/noteBlocks';
 import { eventHrefMatch } from '@/utils/detailRouteMemory';
 import { leaveForgottenDetail, popCurrentTabScreen } from '@/utils/tabNavigation';
-import { eventLinkedMemos, eventMemoDateRange } from '@/utils/eventParticipantMemos';
+import { eventLinkedMemos, eventMemoDateRange, memoTargetFriendIds } from '@/utils/eventParticipantMemos';
 import { contentMutedTextStyle, contentSurfaceStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 
@@ -191,27 +191,18 @@ export default function EventDetailScreen() {
     if (!event) {
       return [];
     }
-    const seen = new Set<string>();
     const people: {
       friendId: string;
       name: string;
       photoUri: string | null;
       memos: ProfileMemo[];
     }[] = [];
-    for (const entry of participantEntries) {
-      if (entry.kind !== 'individual') {
-        continue;
-      }
-      const friendId = entry.value.trim();
-      if (!friendId || seen.has(friendId)) {
-        continue;
-      }
+    for (const friendId of memoTargetFriendIds(participantEntries, myselfId)) {
       const friend = friends.find((item) => item.id === friendId);
       const memos = eventLinkedMemos(friend?.notes ?? [], event.id);
       if (memos.length === 0) {
         continue;
       }
-      seen.add(friendId);
       people.push({
         friendId,
         name: friendNameById.get(friendId) ?? friend?.name ?? '',
@@ -220,7 +211,7 @@ export default function EventDetailScreen() {
       });
     }
     return people;
-  }, [event, friendNameById, friendPhotoById, friends, participantEntries]);
+  }, [event, friendNameById, friendPhotoById, friends, myselfId, participantEntries]);
 
   const participantMemoDateRange = useMemo(() => {
     if (!event) {

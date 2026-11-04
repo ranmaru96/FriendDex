@@ -63,6 +63,7 @@ import {
   eventMemoDateRange,
   eventMemoRowsEqual,
   mergeParticipantMemos,
+  memoTargetFriendIds,
   memosRecordForEntries,
   profileMemosEqual,
   profileMemosFromFriends,
@@ -130,24 +131,16 @@ const replaceFriendNotes = (friend: Friend, notes: ProfileMemo[]): boolean =>
     sayings: friend.sayings,
   });
 
-/** 予定の保存と一緒に、参加者欄のメモを人物カードへ書く */
+/** 予定の保存と一緒に、参加者欄と本人のメモを人物カードへ書く */
 const persistParticipantProfileMemos = (
   entries: EpisodeParticipant[],
   memoState: Record<string, ProfileMemo[]>,
   baselines: Record<string, ProfileMemo[]>,
   savedEventId: string,
-  range: EventMemoDateRange
+  range: EventMemoDateRange,
+  myselfId: string | null
 ): boolean => {
-  const seen = new Set<string>();
-  for (const entry of entries) {
-    if (entry.kind !== 'individual') {
-      continue;
-    }
-    const friendId = entry.value.trim();
-    if (!friendId || seen.has(friendId)) {
-      continue;
-    }
-    seen.add(friendId);
+  for (const friendId of memoTargetFriendIds(entries, myselfId)) {
     const friend = getFriendById(friendId);
     if (!friend) {
       return false;
@@ -176,10 +169,11 @@ const seedParticipantMemos = (
   edited: Record<string, ProfileMemo[]> | null,
   friendList: Friend[],
   savedEventId: string,
-  defaultDate: string
+  defaultDate: string,
+  myselfId: string | null
 ): { memos: Record<string, ProfileMemo[]>; baselines: Record<string, ProfileMemo[]> } => {
   const notesById = new Map(friendList.map((friend) => [friend.id, friend.notes ?? []]));
-  const fromFriends = profileMemosFromFriends(entries, friendList, savedEventId);
+  const fromFriends = profileMemosFromFriends(entries, friendList, savedEventId, myselfId);
   if (!edited) {
     return {
       baselines: fromFriends,
@@ -187,14 +181,7 @@ const seedParticipantMemos = (
     };
   }
   const nextEdited: Record<string, ProfileMemo[]> = {};
-  for (const entry of entries) {
-    if (entry.kind !== 'individual') {
-      continue;
-    }
-    const friendId = entry.value.trim();
-    if (!friendId || nextEdited[friendId]) {
-      continue;
-    }
+  for (const friendId of memoTargetFriendIds(entries, myselfId)) {
     const draftRows = edited[friendId];
     nextEdited[friendId] = draftRows
       ? takeDraftEventMemos(draftRows, notesById.get(friendId) ?? [], savedEventId)
@@ -431,26 +418,17 @@ export default function EventScreen() {
   );
 
   const participantMemoPeople = useMemo(() => {
-    const seen = new Set<string>();
     const people: {
       friendId: string;
       name: string;
       photoUri: string | null;
       memos: ProfileMemo[];
     }[] = [];
-    for (const entry of participantEntries) {
-      if (entry.kind !== 'individual') {
-        continue;
-      }
-      const friendId = entry.value.trim();
-      if (!friendId || friendId === myselfId || seen.has(friendId)) {
-        continue;
-      }
+    for (const friendId of memoTargetFriendIds(participantEntries, myselfId)) {
       const memos = participantMemos[friendId];
       if (!memos) {
         continue;
       }
-      seen.add(friendId);
       people.push({
         friendId,
         name: friendNameById.get(friendId) ?? '',
@@ -508,8 +486,9 @@ export default function EventScreen() {
       setEndTime(DEFAULT_END_TIME);
       previousStartRef.current = combineLocalDateTime(baseDate, DEFAULT_START_TIME);
       setParticipantEntries([]);
-      setParticipantMemoBaselines({});
-      setParticipantMemos({});
+      const openedMemos = seedParticipantMemos([], null, loadedFriends, '', baseDate, currentMyselfId);
+      setParticipantMemoBaselines(openedMemos.baselines);
+      setParticipantMemos(openedMemos.memos);
       setNotifyEnabled(true);
       setNotifyTimingPreset(DEFAULT_NOTIFY_TIMING_PRESET);
       setLinkedEpisodes([]);
@@ -536,7 +515,8 @@ export default function EventScreen() {
             fields.participantMemos,
             loadedFriends,
             '',
-            fields.startDateKey
+            fields.startDateKey,
+            currentMyselfId
           );
           setParticipantMemoBaselines(seeded.baselines);
           setParticipantMemos(seeded.memos);
@@ -593,7 +573,12 @@ export default function EventScreen() {
     const loadedMemoStart = event.allDay
       ? getAllDayDateKeysFromEvent(event).startDateKey
       : formatDateKey(start);
-    const seededMemos = profileMemosFromFriends(loadedParticipants, loadedFriends, event.id);
+    const seededMemos = profileMemosFromFriends(
+      loadedParticipants,
+      loadedFriends,
+      event.id,
+      currentMyselfId
+    );
     setParticipantEntries(loadedParticipants);
     setParticipantMemoBaselines(seededMemos);
     setParticipantMemos(withTrailingBlankMemos(seededMemos, loadedMemoStart));
@@ -645,7 +630,8 @@ export default function EventScreen() {
           fields.participantMemos,
           loadedFriends,
           event.id,
-          fields.startDateKey
+          fields.startDateKey,
+          currentMyselfId
         );
         setParticipantMemoBaselines(draftedMemos.baselines);
         setParticipantMemos(draftedMemos.memos);
@@ -675,9 +661,15 @@ export default function EventScreen() {
         participantMemoBaselines: memosRecordForEntries(
           participantEntries,
           participantMemoBaselines,
-          draftProfileMemos
+          draftProfileMemos,
+          myselfId
         ),
-        participantMemos: memosRecordForEntries(participantEntries, participantMemos, draftProfileMemos),
+        participantMemos: memosRecordForEntries(
+          participantEntries,
+          participantMemos,
+          draftProfileMemos,
+          myselfId
+        ),
         notifyEnabled,
         notifyTimingPreset,
         initialDate: isEditing ? '' : initialDate,
@@ -690,6 +682,7 @@ export default function EventScreen() {
       initialDate,
       isEditing,
       memo,
+      myselfId,
       notifyEnabled,
       notifyTimingPreset,
       participantEntries,
@@ -1020,7 +1013,8 @@ export default function EventScreen() {
             participantMemos,
             participantMemoBaselines,
             eventId,
-            eventMemoDateRange(startDateKey, endDateKey)
+            eventMemoDateRange(startDateKey, endDateKey),
+            myselfId
           )
         ) {
           unlockScreen();
@@ -1048,7 +1042,8 @@ export default function EventScreen() {
           participantMemos,
           participantMemoBaselines,
           created.id,
-          eventMemoDateRange(startDateKey, endDateKey)
+          eventMemoDateRange(startDateKey, endDateKey),
+          myselfId
         )
       ) {
         unlockScreen();

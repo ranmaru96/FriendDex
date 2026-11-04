@@ -139,21 +139,43 @@ export function withTrailingBlankMemos(
   return next;
 }
 
-export function profileMemosFromFriends(
+/**
+ * メモ欄の人物。個人参加者のあと、本人を一番下に足す。
+ * 本人は予定の参加者には入れない。
+ */
+export function memoTargetFriendIds(
   entries: readonly EpisodeParticipant[],
-  friends: readonly Pick<Friend, 'id' | 'notes'>[],
-  eventId: string
-): Record<string, ProfileMemo[]> {
-  const notesById = new Map(friends.map((friend) => [friend.id, friend.notes ?? []]));
-  const record: Record<string, ProfileMemo[]> = {};
+  myselfId?: string | null
+): string[] {
+  const selfId = myselfId?.trim() ?? '';
+  const ids: string[] = [];
+  const seen = new Set<string>();
   for (const entry of entries) {
     if (entry.kind !== 'individual') {
       continue;
     }
     const friendId = entry.value.trim();
-    if (!friendId || record[friendId]) {
+    if (!friendId || friendId === selfId || seen.has(friendId)) {
       continue;
     }
+    seen.add(friendId);
+    ids.push(friendId);
+  }
+  if (selfId) {
+    ids.push(selfId);
+  }
+  return ids;
+}
+
+export function profileMemosFromFriends(
+  entries: readonly EpisodeParticipant[],
+  friends: readonly Pick<Friend, 'id' | 'notes'>[],
+  eventId: string,
+  myselfId?: string | null
+): Record<string, ProfileMemo[]> {
+  const notesById = new Map(friends.map((friend) => [friend.id, friend.notes ?? []]));
+  const record: Record<string, ProfileMemo[]> = {};
+  for (const friendId of memoTargetFriendIds(entries, myselfId)) {
     record[friendId] = eventLinkedMemos(notesById.get(friendId) ?? [], eventId);
   }
   return record;
@@ -162,17 +184,11 @@ export function profileMemosFromFriends(
 export function memosRecordForEntries(
   entries: readonly EpisodeParticipant[],
   source: Record<string, ProfileMemo[]>,
-  pick: (memos: ProfileMemo[]) => ProfileMemo[]
+  pick: (memos: ProfileMemo[]) => ProfileMemo[],
+  myselfId?: string | null
 ): Record<string, ProfileMemo[]> {
   const record: Record<string, ProfileMemo[]> = {};
-  for (const entry of entries) {
-    if (entry.kind !== 'individual') {
-      continue;
-    }
-    const friendId = entry.value.trim();
-    if (!friendId || record[friendId]) {
-      continue;
-    }
+  for (const friendId of memoTargetFriendIds(entries, myselfId)) {
     record[friendId] = pick(source[friendId] ?? []);
   }
   return record;

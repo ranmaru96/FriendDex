@@ -18,6 +18,7 @@ export function useTabStackSync() {
     const notificationReset = takeNotificationHostReset(pathname);
     const cameFromUntabbed =
       previousPath.includes('login') ||
+      previousPath.includes('reset-password') ||
       previousPath.includes('setup-myself') ||
       previousPath.includes('auth-preview') ||
       previousPath.includes('launch-preview');

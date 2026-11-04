@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { router, type ImperativeRouter } from 'expo-router';
+import { store } from 'expo-router/build/global-state/store';
 
 /**
  * iOS の画面スライドは 0.5 秒。終了通知が来ないときも、これでロックを外す。
@@ -152,13 +153,145 @@ export const navigationTapLockListeners = {
 
 type LockingMethod = 'push' | 'replace' | 'navigate' | 'dismiss' | 'dismissTo' | 'dismissAll';
 
+/** スタックに画面を足すメソッド。ロック中、または最上段と同じなら呼ばない。 */
+const STACKING_METHODS = new Set<LockingMethod>(['push', 'navigate']);
+
+type NavState = {
+  index?: number;
+  routes?: NavRoute[];
+};
+
+type NavRoute = {
+  name: string;
+  params?: Record<string, unknown>;
+  state?: NavState;
+};
+
+type RouteIdentity = {
+  pathname: string;
+  params: string;
+};
+
+function normalizePath(path: string): string {
+  const q = path.indexOf('?');
+  let pathname = q >= 0 ? path.slice(0, q) : path;
+  if (pathname.length > 1 && pathname.endsWith('/')) {
+    pathname = pathname.slice(0, -1);
+  }
+  if (pathname === '/index') {
+    return '/';
+  }
+  return pathname || '/';
+}
+
+function paramText(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value.length > 0 ? value : null;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => paramText(item))
+      .filter((item): item is string => item != null);
+    return parts.length > 0 ? parts.join(',') : null;
+  }
+  return null;
+}
+
+function canonicalParams(params: Record<string, unknown> | undefined): string {
+  if (!params) {
+    return '';
+  }
+  const entries: [string, string][] = [];
+  for (const [key, value] of Object.entries(params)) {
+    if (key.startsWith('__') || key === 'screen' || key === 'params') {
+      continue;
+    }
+    const text = paramText(value);
+    if (text == null) {
+      continue;
+    }
+    entries.push([key, text]);
+  }
+  entries.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return entries.map(([key, value]) => `${key}=${value}`).join('&');
+}
+
+function hrefIdentity(href: unknown): RouteIdentity | null {
+  if (typeof href === 'string') {
+    const q = href.indexOf('?');
+    const pathname = normalizePath(href);
+    const params: Record<string, unknown> = {};
+    if (q >= 0) {
+      for (const [key, value] of new URLSearchParams(href.slice(q + 1)).entries()) {
+        params[key] = value;
+      }
+    }
+    return { pathname, params: canonicalParams(params) };
+  }
+  if (!href || typeof href !== 'object' || !('pathname' in href)) {
+    return null;
+  }
+  const pathnameValue = (href as { pathname?: unknown }).pathname;
+  if (typeof pathnameValue !== 'string' || !pathnameValue.startsWith('/')) {
+    return null;
+  }
+  const paramsValue = (href as { params?: unknown }).params;
+  const params =
+    paramsValue && typeof paramsValue === 'object'
+      ? (paramsValue as Record<string, unknown>)
+      : undefined;
+  return { pathname: normalizePath(pathnameValue), params: canonicalParams(params) };
+}
+
+/** 見えている一番深い画面のパラメータ。親ルートのクエリは混ぜない。 */
+function focusedLeafParams(): Record<string, unknown> | null {
+  const root = store.navigationRef.current?.getRootState() as NavState | undefined;
+  if (!root?.routes?.length) {
+    return null;
+  }
+  let state: NavState | undefined = root;
+  let route: NavRoute | undefined;
+  while (state?.routes?.length) {
+    route = state.routes[state.index ?? 0];
+    if (!route?.state?.routes?.length) {
+      break;
+    }
+    state = route.state;
+  }
+  return route?.params ?? {};
+}
+
+/** 最上段が、今開こうとしている pathname とパラメータと同じなら true。 */
+function isAlreadyFocused(href: unknown): boolean {
+  const target = hrefIdentity(href);
+  if (!target) {
+    return false;
+  }
+  const currentPath = normalizePath(store.getRouteInfo().pathname);
+  if (currentPath !== target.pathname) {
+    return false;
+  }
+  const leaf = focusedLeafParams();
+  if (leaf == null) {
+    return false;
+  }
+  return canonicalParams(leaf) === target.params;
+}
+
 function wrapRouterMethod(name: LockingMethod): void {
-  const original = router[name].bind(router) as ImperativeRouter[LockingMethod];
-  const wrapped = ((...args: unknown[]) => {
+  const methods = router as unknown as Record<LockingMethod, (...args: unknown[]) => void>;
+  const original = methods[name].bind(router);
+  const stacks = STACKING_METHODS.has(name);
+  methods[name] = (...args: unknown[]) => {
+    if (stacks && (locked || isAlreadyFocused(args[0]))) {
+      return;
+    }
     beginTapNavigationLock();
-    return (original as (...passed: unknown[]) => void)(...args);
-  }) as ImperativeRouter[LockingMethod];
-  router[name] = wrapped;
+    original(...args);
+  };
 }
 
 /** useRouter() も同じ router を返す。スワイプの pop はここを通らない。 */

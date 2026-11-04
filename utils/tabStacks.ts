@@ -107,6 +107,7 @@ export function shouldRememberTabRoute(
     pathname.includes('setup-myself') ||
     pathname.includes('/appsettings') ||
     pathname.includes('login') ||
+    pathname.includes('reset-password') ||
     pathname.includes('auth-preview') ||
     pathname.includes('launch-preview') ||
     pathname.includes('mypage') ||

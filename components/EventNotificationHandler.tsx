@@ -4,6 +4,7 @@ import * as Notifications from 'expo-notifications';
 import type { EventNotificationData } from '@/utils/eventNotifications';
 import { ensureNotificationInfrastructure } from '@/utils/eventNotifications';
 import { isTaskNotificationData } from '@/utils/taskNotifications';
+import { detailHref, detailPathname } from '@/utils/detailPaths';
 import { claimNotificationNavigation } from '@/utils/navigationRestore';
 import { calendarHref, isCalendarDateKey, isCalendarTabRoot } from '@/utils/tabRoots';
 
@@ -58,9 +59,10 @@ export function EventNotificationHandler() {
         return;
       }
 
-      if (rawData.friendId?.trim()) {
-        claimNotificationNavigation('/detail');
-        router.push({ pathname: '/detail', params: { id: rawData.friendId } });
+      const friendId = rawData.friendId?.trim() ?? '';
+      if (friendId) {
+        claimNotificationNavigation(detailPathname('person', 'home'));
+        router.push(detailHref('person', 'home', { id: friendId }));
         return;
       }
 

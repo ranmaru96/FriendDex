@@ -24,7 +24,7 @@ import {
   contentMutedTextStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
-import { signInWithEmail, signOutSupabase, signUpWithEmail } from '@/lib/supabase';
+import { signInWithEmail, signOutSupabase } from '@/lib/supabase';
 import { requireOnline } from '@/lib/networkReachability';
 import { DEVICE_BIND_MISMATCH_MESSAGE, discardForeignAuthSession, isAuthUserAllowedOnThisDevice } from '@/lib/deviceAuthBind';
 import { runOwnedLoginSideEffects } from '@/lib/ownedLoginSync';
@@ -49,7 +49,7 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
 
-  const runAuth = async (mode: 'signup' | 'signin') => {
+  const runSignIn = async () => {
     if (!requireOnline()) {
       return;
     }
@@ -60,19 +60,16 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
     }
     setBusy(true);
     try {
-      const result =
-        mode === 'signup'
-          ? await signUpWithEmail(trimmedEmail, password)
-          : await signInWithEmail(trimmedEmail, password);
+      const result = await signInWithEmail(trimmedEmail, password);
       if (result.errorMessage) {
-        Alert.alert(mode === 'signup' ? '登録できませんでした' : 'ログインできませんでした', result.errorMessage);
+        Alert.alert('ログインできませんでした', result.errorMessage);
         return;
       }
       setPassword('');
       if (!result.session) {
         Alert.alert(
-          '確認メール',
-          'アカウントは作成されました。メールの確認が有効なときは、確認後にログインしてください。'
+          'ログインできませんでした',
+          'セッションを取得できませんでした。メールの確認が済んでいないときは、確認後にログインしてください。'
         );
         return;
       }
@@ -83,12 +80,12 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
         return;
       }
       let restoreNote = '';
-      const { restore, syncError, rejected } = await runOwnedLoginSideEffects(mode);
+      const { restore, syncError, rejected } = await runOwnedLoginSideEffects('signin');
       if (rejected) {
         Alert.alert('ログインできません', syncError ?? 'この端末では入れません。');
         return;
       }
-      if (mode === 'signin' && restore) {
+      if (restore) {
         if (restore.refusedBecauseLocalData) {
           restoreNote = '端末にデータがあるため、サーバーからの書き戻しはしませんでした。';
         } else if (restore.errorMessage) {
@@ -105,7 +102,7 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
       ]
         .filter(Boolean)
         .join('\n');
-      Alert.alert(mode === 'signup' ? '登録しました' : 'ログインしました', body);
+      Alert.alert('ログインしました', body);
     } finally {
       setBusy(false);
     }
@@ -220,7 +217,7 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
           <View style={styles.actions}>
             <Pressable
               style={[styles.button, contentFilledButtonStyle(content), busy && styles.buttonDisabled]}
-              onPress={() => void runAuth('signin')}
+              onPress={() => void runSignIn()}
               disabled={busy}
             >
               {busy ? (
@@ -228,13 +225,6 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
               ) : (
                 <Text style={[styles.buttonText, contentFilledButtonTextStyle(content)]}>ログイン</Text>
               )}
-            </Pressable>
-            <Pressable
-              style={[styles.secondaryButton, { borderColor: content.contentBorder }]}
-              onPress={() => void runAuth('signup')}
-              disabled={busy}
-            >
-              <Text style={[styles.secondaryButtonText, contentMutedTextStyle(content)]}>新規登録</Text>
             </Pressable>
           </View>
         </>
@@ -279,7 +269,9 @@ export function AccountSettingsSection({ themed }: { themed: ThemedStyles }) {
         </Text>
       </Pressable>
       <Text style={[styles.hint, themed.hint]}>
-        メールとパスワードでサーバーにログインします。端末が空のときは人物・予定・エピソードをサーバーから書き戻してから送ります。端末にデータがあるときは書き戻しません。
+        {session?.user
+          ? '端末が空のときは人物・予定・エピソードをサーバーから書き戻してから送ります。端末にデータがあるときは書き戻しません。'
+          : '以前メールアドレスで登録した人は、ここから入れます。入ったあと、Google または Apple への切り替えが必要です。端末が空のときは人物・予定・エピソードをサーバーから書き戻してから送ります。端末にデータがあるときは書き戻しません。'}
       </Text>
     </>
   );
@@ -359,14 +351,6 @@ const styles = StyleSheet.create({
   compactButtonText: {
     fontSize: 13,
     fontWeight: '700',
-  },
-  secondaryButton: {
-    borderWidth: 1,
-    borderRadius: Radius.md,
-    minHeight: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
   },
   secondaryButtonText: {
     fontSize: 15,
