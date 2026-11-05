@@ -196,29 +196,6 @@ export function popCurrentTabScreen(): boolean {
   return true;
 }
 
-/** 予定編集を閉じて、エピソード一覧で作成欄を開く。 */
-export function openEpisodeComposerForEvent(eventId: string): void {
-  const id = eventId.trim();
-  if (!id) {
-    return;
-  }
-  const root = readRootState();
-  const stack = root ? appStack(root) : null;
-  const tabs = stack ? tabsRoute(stack)?.state : null;
-  if (!stack || !tabs || tabs.type !== 'tab') {
-    return;
-  }
-  markEpisodeDetailTabSwitch('episode');
-  expectTabSwitchLockRelease();
-  beginTapNavigationLock();
-  dismissParentScreens(stack);
-  focusTab(tabs, TAB_SCREEN_NAME.episode, {
-    screen: 'index',
-    params: { createForEventId: id },
-    pop: true,
-  });
-}
-
 /** 開いている画面以外で削除したとき。控えから外すだけで、今の画面は動かさない。 */
 export function forgetDetailFromTabs(match: (href: string) => boolean): void {
   forgetTabEntries(match);

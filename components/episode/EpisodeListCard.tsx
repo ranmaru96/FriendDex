@@ -140,6 +140,8 @@ export type EpisodeListCardProps = {
   byline?: ReactNode;
   /** 詳細の自分の限定公開。アイコンを押しているあいだ公開対象を出す */
   revealLimitedAudience?: boolean;
+  /** 詳細のタイトル行右端 */
+  titleTrailing?: ReactNode;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -168,6 +170,7 @@ export function EpisodeListCard({
   unfilled = false,
   byline,
   revealLimitedAudience = false,
+  titleTrailing,
   style,
 }: EpisodeListCardProps) {
   const kit = useUiKit();
@@ -345,21 +348,30 @@ export function EpisodeListCard({
     const titleMetaStyle = [
       styles.photoRightTopLeft,
       titleMultiline ? styles.photoRightTopLeftMultiline : null,
+      titleTrailing ? styles.photoRightTopLeftWithAction : null,
     ];
+    const titleNode = (
+      <EpisodeCardTitle
+        title={title}
+        multiline={titleMultiline}
+        inset={titleTrailing ? false : titleInset}
+        fillRow={false}
+        unfilled={unfilled}
+      />
+    );
     const titleMetaInner = (
       <>
-        <View style={byline ? styles.titleWithByline : titleMultiline ? undefined : styles.photoRightTitleRow}>
-          <View style={byline ? styles.titleWithBylineTitle : undefined}>
-            <EpisodeCardTitle
-              title={title}
-              multiline={titleMultiline}
-              inset={titleInset}
-              fillRow={false}
-              unfilled={unfilled}
-            />
+        {titleTrailing ? (
+          <View style={[styles.detailTitleActionRow, titleInset ? styles.detailLineInset : null]}>
+            <View style={styles.detailTitleActionTitle}>{titleNode}</View>
+            {titleTrailing}
           </View>
-          {byline ? <View style={styles.titleBylineAlign}>{byline}</View> : null}
-        </View>
+        ) : (
+          <View style={byline ? styles.titleWithByline : titleMultiline ? undefined : styles.photoRightTitleRow}>
+            <View style={byline ? styles.titleWithBylineTitle : undefined}>{titleNode}</View>
+            {byline ? <View style={styles.titleBylineAlign}>{byline}</View> : null}
+          </View>
+        )}
         {photoRightMetaRow}
       </>
     );
@@ -742,6 +754,20 @@ const styles = StyleSheet.create({
     flex: undefined,
     alignSelf: 'flex-start',
     maxWidth: '100%',
+  },
+  photoRightTopLeftWithAction: {
+    alignSelf: 'stretch',
+    width: '100%',
+    maxWidth: '100%',
+  },
+  detailTitleActionRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  detailTitleActionTitle: {
+    flex: 1,
+    minWidth: 0,
   },
   photoRightTitleRow: {
     height: TITLE_ROW_HEIGHT,

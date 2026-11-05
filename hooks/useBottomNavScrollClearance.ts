@@ -1,7 +1,7 @@
-import { usePathname } from 'expo-router';
 import { getBottomNavScrollClearance } from '@/utils/bottomNavVisibility';
+import { useChromePath } from '@/hooks/useChromePath';
 
 export function useBottomNavScrollClearance(): number {
-  const pathname = usePathname();
-  return getBottomNavScrollClearance(pathname);
+  const { chromePath } = useChromePath();
+  return getBottomNavScrollClearance(chromePath);
 }

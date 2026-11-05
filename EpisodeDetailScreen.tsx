@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import { DetailMenuSheet } from '@/components/screen/DetailMenuSheet';
 import { detailHrefFromPathname } from '@/utils/detailPaths';
 import { episodeDetailHrefMatch } from '@/utils/detailRouteMemory';
 import { leaveForgottenDetail, popCurrentTabScreen } from '@/utils/tabNavigation';
@@ -25,8 +26,6 @@ import type { Option } from '@/components/episode/types';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { PanelSection, SectionDivider } from '@/components/ui/Panel';
 import { NoteBlockView } from '@/components/ui/NoteBlockView';
-import { useUiKit } from '@/contexts/UiPreviewContext';
-import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import {
   contentMutedTextStyle,
   contentTextStyle,
@@ -117,12 +116,9 @@ function episodeToInput(episode: Episode, description: string, privateMemo?: str
 export default function EpisodeDetailScreen() {
   const router = useRouter();
   const pathname = usePathname();
-  const kit = useUiKit();
-  const appTheme = useAppThemeOptional();
   const content = useContentColors();
   const bottomNavClearance = useBottomNavScrollClearance();
-  const editButtonBorderColor =
-    appTheme?.colors.topBarBorder ?? Theme.topBarBorder;
+  const [menuOpen, setMenuOpen] = useState(false);
   const params = useLocalSearchParams<{ episodeId?: string; ownerId?: string; edit?: string }>();
   const episodeId = routeParam(params.episodeId);
   const ownerId = routeParam(params.ownerId);
@@ -444,46 +440,28 @@ export default function EpisodeDetailScreen() {
     });
   }, [episodeForm, loadData, myselfId, releaseEpisodeSaveLock]);
 
-  const handleSaveEditRef = useRef(handleSaveEdit);
-  handleSaveEditRef.current = handleSaveEdit;
-  const handleEditRef = useRef(handleEdit);
-  handleEditRef.current = handleEdit;
-
   const headerRight = useMemo(() => {
-    if (isEditVisible) {
-      return (
-        <Pressable
-          onPress={() => handleSaveEditRef.current()}
-          disabled={episodeSaving}
-          accessibilityLabel={episodeForm.editingEpisodeId ? '更新' : '保存'}
-          hitSlop={8}
-        >
-          <Text style={[styles.headerSaveText, { color: kit.topBarText }, episodeSaving ? { opacity: 0.55 } : null]}>
-            {episodeForm.editingEpisodeId ? '更新' : '保存'}
-          </Text>
-        </Pressable>
-      );
+    if (!canManage || !episode) {
+      return null;
     }
-    return canManage ? (
+    return (
       <Pressable
-        style={[
-          episodeDetailTopBarButtonStyles.button,
-          { borderColor: editButtonBorderColor },
-        ]}
-        onPress={() => handleEditRef.current()}
-        accessibilityLabel="編集"
+        onPress={() => setMenuOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel="メニュー"
         hitSlop={8}
+        style={styles.menuButton}
       >
-        <Ionicons name="pencil-outline" size={18} color={kit.topBarText} />
+        <View style={styles.menuMark}>
+          <View style={[styles.menuLine, styles.menuLineLong, { backgroundColor: content.contentText }]} />
+          <View style={[styles.menuLine, styles.menuLineShort, { backgroundColor: content.contentText }]} />
+        </View>
       </Pressable>
-    ) : null;
+    );
   }, [
     canManage,
-    editButtonBorderColor,
-    episodeForm.editingEpisodeId,
-    episodeSaving,
-    isEditVisible,
-    kit.topBarText,
+    content.contentText,
+    episode,
   ]);
 
   const handleDescriptionChange = useCallback(
@@ -545,17 +523,8 @@ export default function EpisodeDetailScreen() {
   return (
     <>
       <SubToolScreenTemplate
-        title={isEditVisible ? 'エピソードを編集' : 'エピソード'}
-        onBack={
-          isEditVisible
-            ? () => {
-                if (episodeSaving) {
-                  return;
-                }
-                episodeForm.requestDismiss(handleCloseEdit);
-              }
-            : handleBack
-        }
+        title="エピソード"
+        onBack={handleBack}
         right={headerRight}
         titleFramed={false}
         useScreenPadding={false}
@@ -606,6 +575,22 @@ export default function EpisodeDetailScreen() {
                 unfilled={episode.pendingReview === true}
                 eventTitle={parentEvent?.title.trim() || null}
                 eventEpisodeTag={parentEvent?.episodeTag}
+                titleTrailing={
+                  canManage && !isEditVisible ? (
+                    <Pressable
+                      style={[
+                        episodeDetailTopBarButtonStyles.button,
+                        styles.titleEditButton,
+                        { borderColor: content.contentBorder },
+                      ]}
+                      onPress={handleEdit}
+                      accessibilityLabel="編集"
+                      hitSlop={8}
+                    >
+                      <Ionicons name="pencil-outline" size={14} color={content.contentText} />
+                    </Pressable>
+                  ) : null
+                }
                 onEventPress={
                   parentEvent
                     ? () =>
@@ -672,21 +657,18 @@ export default function EpisodeDetailScreen() {
               </>
               ) : null}
 
-            {canManage ? (
-              <Pressable
-                style={styles.deleteLinkWrap}
-                onPress={handleDelete}
-                accessibilityLabel="エピソードを削除"
-                hitSlop={8}
-              >
-                <Text style={styles.deleteLinkText}>エピソードを削除</Text>
-              </Pressable>
-            ) : null}
             </View>
           </View>
           </View>
         )}
       </SubToolScreenTemplate>
+
+      <DetailMenuSheet
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onEdit={handleEdit}
+        onDelete={handleDelete}
+      />
 
       <Modal
         transparent
@@ -715,7 +697,7 @@ export default function EpisodeDetailScreen() {
         onClose={handleCloseEdit}
         onSave={handleSaveEdit}
         saving={episodeSaving}
-        useTopBar={false}
+        presentation="modal"
       />
     </>
   );
@@ -737,10 +719,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Theme.textSecondary,
     textAlign: 'center',
-  },
-  headerSaveText: {
-    fontSize: 15,
-    fontWeight: '700',
   },
   episodeHeaderPreview: {
     paddingTop: 14,
@@ -822,22 +800,33 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
   },
-  deleteLinkWrap: {
-    alignSelf: 'center',
+  titleEditButton: {
+    marginLeft: 'auto',
+    width: 22,
+    height: 22,
+    backgroundColor: 'transparent',
+  },
+  menuButton: {
+    width: 44,
+    height: 44,
+    marginRight: -8,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.55)',
-    backgroundColor: 'rgba(248, 113, 113, 0.12)',
   },
-  deleteLinkText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#f87171',
+  menuMark: {
+    width: 20,
+    alignItems: 'flex-start',
+  },
+  menuLine: {
+    height: 2,
+    borderRadius: 1,
+  },
+  menuLineLong: {
+    width: 20,
+  },
+  menuLineShort: {
+    width: 14,
+    marginTop: 8,
   },
   lightboxBackdrop: {
     flex: 1,

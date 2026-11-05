@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import { DetailMenuSheet } from '@/components/screen/DetailMenuSheet';
 import { detailHrefFromPathname } from '@/utils/detailPaths';
 import { FormScreenBody, FormScreenSection, FormScreenTemplate } from '@/components/screen-templates';
 import { NoteBlockView } from '@/components/ui/NoteBlockView';
@@ -89,6 +90,7 @@ export default function TaskDetailScreen() {
   const router = useRouter();
   const pathname = usePathname();
   const content = useContentColors();
+  const [menuOpen, setMenuOpen] = useState(false);
   const isBlack = useAppThemeOptional()?.variant === 'black';
   const checkedColor = taskCompletionFillColor(Boolean(isBlack));
   const params = useLocalSearchParams<{ taskId?: string }>();
@@ -204,6 +206,7 @@ export default function TaskDetailScreen() {
   const confirmDeleteFinally = () => {
     if (!task) return;
     deleteTask(task.id);
+    deleteTaskFormDraft(task.id);
     void syncTaskReminders();
     leaveForgottenDetail(taskHrefMatch(task.id));
   };
@@ -275,16 +278,22 @@ export default function TaskDetailScreen() {
   const dueUrgency = task.dueDate ? getTaskDueUrgency(task.dueDate) : null;
 
   return (
+    <>
     <FormScreenTemplate
       title="タスク詳細"
       onBack={() => popCurrentTabScreen()}
       right={
         <Pressable
-          onPress={() => router.push({ pathname: '/task-edit', params: { taskId: task.id } })}
+          onPress={() => setMenuOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel="メニュー"
           hitSlop={8}
-          accessibilityLabel="編集"
+          style={styles.menuButton}
         >
-          <Text style={[styles.editText, contentTextStyle(content)]}>編集</Text>
+          <View style={styles.menuMark}>
+            <View style={[styles.menuLine, styles.menuLineLong, { backgroundColor: content.contentText }]} />
+            <View style={[styles.menuLine, styles.menuLineShort, { backgroundColor: content.contentText }]} />
+          </View>
         </Pressable>
       }
     >
@@ -500,25 +509,42 @@ export default function TaskDetailScreen() {
           />
         </FormScreenSection>
 
-        <View style={styles.deleteButtonWrap}>
-          <Pressable
-            style={[styles.deleteButton, { borderColor: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.1)' }]}
-            onPress={handleDelete}
-            accessibilityRole="button"
-            accessibilityLabel="タスクを削除"
-          >
-            <Text style={styles.deleteText}>タスクを削除</Text>
-          </Pressable>
-        </View>
       </FormScreenBody>
     </FormScreenTemplate>
+    <DetailMenuSheet
+      visible={menuOpen}
+      onClose={() => setMenuOpen(false)}
+      onEdit={() => {
+        router.push({ pathname: '/task-edit', params: { taskId: task.id } });
+      }}
+      onDelete={handleDelete}
+    />
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  editText: {
-    fontSize: 16,
-    fontWeight: '700',
+  menuButton: {
+    width: 44,
+    height: 44,
+    marginRight: -8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuMark: {
+    width: 20,
+    alignItems: 'flex-start',
+  },
+  menuLine: {
+    height: 2,
+    borderRadius: 1,
+  },
+  menuLineLong: {
+    width: 20,
+  },
+  menuLineShort: {
+    width: 14,
+    marginTop: 8,
   },
   titleRow: {
     flexDirection: 'row',
@@ -723,25 +749,5 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 14,
     lineHeight: 22,
-  },
-  deleteButtonWrap: {
-    marginTop: 28,
-    marginBottom: 32,
-    alignItems: 'center',
-  },
-  deleteButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    minWidth: 120,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-  },
-  deleteText: {
-    color: '#dc2626',
-    fontWeight: '700',
-    fontSize: 13,
   },
 });

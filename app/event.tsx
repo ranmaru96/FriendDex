@@ -13,7 +13,7 @@ import {
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import { BackdropBlur } from '@/components/screen/BackdropBlur';
-import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { detailHrefFromHost } from '@/utils/detailPaths';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { Option } from '@/components/episode/types';
@@ -79,8 +79,6 @@ import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
   createEvent,
-  deleteEvent,
-  deleteTasksByIds,
   getDistinctAffiliations,
   getDistinctExperiences,
   getEpisodesByEventId,
@@ -91,14 +89,12 @@ import {
   getMergedEpisodeTagLabels,
   getDefaultProfile,
   getMyself,
-  getTasksByEventId,
   initializeDatabase,
-  unlinkTasksFromEvent,
   updateEvent,
   updateEventNotificationId,
   updateFriend,
 } from '../db';
-import type { EpisodeParticipant, EventInput, Friend, ProfileMemo, Task } from '../types';
+import type { EpisodeParticipant, EventInput, Friend, ProfileMemo } from '../types';
 import { buildParticipantChipDisplays } from '../utils/episodeHelpers';
 import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
@@ -201,8 +197,6 @@ import {
   getAllDayDateKeysFromEvent,
   parseDateKey,
 } from '../utils/eventHelpers';
-import { eventHrefMatch } from '@/utils/detailRouteMemory';
-import { leaveForgottenDetail } from '@/utils/tabNavigation';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
 import {
   friendIdsToProfileIds,
@@ -228,13 +222,8 @@ import {
   unlinkEpisodesFromEvent,
 } from '../utils/eventEpisodeBidirectionalSync';
 import { registerSavedEpisodeTag } from '../utils/episodeTagMaster';
-import {
-  holdGoogleCalendarDelete,
-  releaseGoogleCalendarDelete,
-  scheduleGoogleCalendarDelete,
-  scheduleGoogleCalendarPush,
-} from '@/utils/googleCalendarSync';
-import { markOwnedEventDeleted, scheduleOwnedEventSync } from '@/lib/ownedEventSync';
+import { scheduleGoogleCalendarPush } from '@/utils/googleCalendarSync';
+import { scheduleOwnedEventSync } from '@/lib/ownedEventSync';
 
 type PickerTarget = 'startDate' | 'startTime' | 'endDate' | 'endTime' | null;
 
@@ -357,9 +346,6 @@ export default function EventScreen() {
   const [selectorAffiliationFilter, setSelectorAffiliationFilter] = useState('');
   const [selectorExperienceFilter, setSelectorExperienceFilter] = useState('');
   const [notifyEnabled, setNotifyEnabled] = useState(true);
-  const [linkedTasks, setLinkedTasks] = useState<Task[]>([]);
-  const [taskMigrateModalVisible, setTaskMigrateModalVisible] = useState(false);
-  const [taskMigrateIds, setTaskMigrateIds] = useState<Set<string>>(new Set());
   const [notifyTimingPreset, setNotifyTimingPreset] = useState<EventNotifyTimingPreset>(
     DEFAULT_NOTIFY_TIMING_PRESET
   );
@@ -459,7 +445,6 @@ export default function EventScreen() {
       setParticipantMemos(openedMemos.memos);
       setNotifyEnabled(true);
       setNotifyTimingPreset(DEFAULT_NOTIFY_TIMING_PRESET);
-      setLinkedTasks([]);
       const loaded = buildNewEventForm(initialDate);
       const loadedBody = serializeEventForm(loaded);
       setDraftBaseline(loadedBody);
@@ -564,7 +549,6 @@ export default function EventScreen() {
           allDay: false as const,
         };
     setNotifyTimingPreset(inferNotifyTimingPreset(event.notifyAt, timingInput));
-    setLinkedTasks(getTasksByEventId(eventId));
     const loaded = buildSavedEventForm(event, '');
     const loadedBody = serializeEventForm({
       ...loaded,
@@ -687,103 +671,6 @@ export default function EventScreen() {
       return changed ? next : prev;
     });
   }, [endDateKey, isReady, startDateKey]);
-
-  const reloadLinkedTasks = useCallback(() => {
-    if (!isEditing) {
-      setLinkedTasks([]);
-      return;
-    }
-    initializeDatabase();
-    setLinkedTasks(getTasksByEventId(eventId));
-  }, [eventId, isEditing]);
-
-  const performEventDelete = useCallback(async () => {
-    if (savingRef.current) {
-      return;
-    }
-    savingRef.current = true;
-    setIsSaving(true);
-    initializeDatabase();
-    const existing = getEvent(eventId);
-    await cancelEventNotification(existing?.notificationId);
-    const googleEventId = existing?.googleEventId ?? null;
-    holdGoogleCalendarDelete(googleEventId);
-    const ok = deleteEvent(eventId);
-    if (!ok) {
-      releaseGoogleCalendarDelete(googleEventId);
-      unlockScreen();
-      Alert.alert('エラー', '予定の削除に失敗しました。');
-      return;
-    }
-    scheduleGoogleCalendarDelete(googleEventId);
-    void markOwnedEventDeleted(eventId);
-    allowLeaveRef.current = true;
-    stopEventDraftRef.current();
-    deleteEventFormDraft(eventId);
-    leaveForgottenDetail(eventHrefMatch(eventId));
-  }, [eventId, router]);
-
-  const handleDelete = () => {
-    if (savingRef.current) {
-      return;
-    }
-    Alert.alert('予定を削除', 'この予定を削除しますか？', [
-      { text: 'キャンセル', style: 'cancel' },
-      {
-        text: '削除',
-        style: 'destructive',
-        onPress: () => {
-          initializeDatabase();
-          const tasks = getTasksByEventId(eventId);
-          if (tasks.length === 0) {
-            void performEventDelete();
-            return;
-          }
-          Alert.alert(
-            '紐づきタスク',
-            `この予定に紐づくタスクが${tasks.length}件あります。タスクも削除しますか？`,
-            [
-              { text: 'キャンセル', style: 'cancel' },
-              {
-                text: 'タスクも削除',
-                style: 'destructive',
-                onPress: () => {
-                  deleteTasksByIds(tasks.map((task) => task.id));
-                  void performEventDelete();
-                },
-              },
-              {
-                text: '選んで残す',
-                onPress: () => {
-                  setTaskMigrateIds(new Set(tasks.map((task) => task.id)));
-                  setLinkedTasks(tasks);
-                  setTaskMigrateModalVisible(true);
-                },
-              },
-            ]
-          );
-        },
-      },
-    ]);
-  };
-
-  const confirmTaskMigrateAndDeleteEvent = () => {
-    const allIds = linkedTasks.map((task) => task.id);
-    const keepIds = [...taskMigrateIds];
-    const deleteIds = allIds.filter((id) => !taskMigrateIds.has(id));
-    unlinkTasksFromEvent(keepIds);
-    if (deleteIds.length > 0) {
-      deleteTasksByIds(deleteIds);
-    }
-    setTaskMigrateModalVisible(false);
-    void performEventDelete();
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      reloadLinkedTasks();
-    }, [reloadLinkedTasks])
-  );
 
   useEffect(() => {
     if (allDay && notifyTimingPreset === 'one_hour_before') {
@@ -1255,9 +1142,6 @@ export default function EventScreen() {
         <FormScreenSection style={styles.formSection}>
           {memoOnly ? (
             <>
-              <View style={styles.linkedHeader}>
-                <Text style={[styles.linkedHeaderLabel, contentTextStyle(content)]}>参加者のメモ</Text>
-              </View>
               {participantMemoPeople.length > 0 ? (
                 <EventParticipantMemoList
                   people={participantMemoPeople}
@@ -1434,7 +1318,7 @@ export default function EventScreen() {
           </>
           )}
 
-          <View style={styles.formActions}>
+          <View style={[styles.formActions, memoOnly ? styles.memoFormActions : null]}>
             <Pressable
               style={[styles.formCancelButton, fieldCorner, isSaving ? styles.saveButtonBusy : null]}
               onPress={leaveScreen}
@@ -1459,29 +1343,26 @@ export default function EventScreen() {
           </View>
         </FormScreenSection>
         </FormScreenBody>
-
-        {isEditing && !memoOnly ? (
-          <Pressable
-            style={[styles.deleteLinkWrap, isSaving ? styles.saveButtonBusy : null]}
-            onPress={handleDelete}
-            disabled={isSaving}
-            accessibilityLabel="予定を削除"
-            hitSlop={8}
-          >
-            <Text style={styles.deleteLinkText}>予定を削除</Text>
-          </Pressable>
-        ) : null}
       </FormScreenTemplate>
-            <Pressable
-              style={[styles.closeButton, isSaving ? styles.saveButtonBusy : null]}
-              onPress={leaveScreen}
-              disabled={isSaving}
-              accessibilityRole="button"
-              accessibilityLabel="閉じる"
-              hitSlop={8}
-            >
-              <Ionicons name="close" size={22} color={closeIconColor} />
-            </Pressable>
+            <View pointerEvents="box-none" style={styles.modalHeader}>
+              <BackdropBlur tint={blurTint} />
+              <Text
+                pointerEvents="none"
+                style={[styles.modalTitle, contentTextStyle(content)]}
+              >
+                {memoOnly ? '参加者のメモ' : isEditing ? '予定編集' : '予定追加'}
+              </Text>
+              <Pressable
+                style={[styles.closeButton, isSaving ? styles.saveButtonBusy : null]}
+                onPress={leaveScreen}
+                disabled={isSaving}
+                accessibilityRole="button"
+                accessibilityLabel="閉じる"
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={22} color={closeIconColor} />
+              </Pressable>
+            </View>
           </View>
         </View>
       </View>
@@ -1584,68 +1465,6 @@ export default function EventScreen() {
         columns={2}
       />
 
-      <Modal
-        visible={taskMigrateModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTaskMigrateModalVisible(false)}
-      >
-        <Pressable
-          style={styles.timingModalBackdrop}
-          onPress={() => setTaskMigrateModalVisible(false)}
-        >
-          <Pressable
-            style={[styles.timingModalCard, contentSurfaceStyle(content)]}
-            onPress={(event) => event.stopPropagation()}
-          >
-            <Text style={[styles.timingModalTitle, contentTextStyle(content)]}>
-              残すタスクを選択
-            </Text>
-            <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>
-              選択したタスクは予定なしの臨時へ移します。未選択は削除されます。
-            </Text>
-            <ScrollView style={styles.timingModalOptions}>
-              {linkedTasks.map((task) => {
-                const selected = taskMigrateIds.has(task.id);
-                return (
-                  <Pressable
-                    key={task.id}
-                    style={[
-                      styles.timingModalOption,
-                      selected ? contentSelectedOptionStyle(content) : null,
-                    ]}
-                    onPress={() => {
-                      setTaskMigrateIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(task.id)) {
-                          next.delete(task.id);
-                        } else {
-                          next.add(task.id);
-                        }
-                        return next;
-                      });
-                    }}
-                  >
-                    <Text style={contentTextStyle(content)}>
-                      {selected ? '✓ ' : ''}
-                      {task.title}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-            <Pressable
-              style={[styles.timingModalCloseButton, contentTagStyle(content)]}
-              onPress={confirmTaskMigrateAndDeleteEvent}
-            >
-              <Text style={[styles.timingModalCloseButtonText, contentTextStyle(content)]}>
-                実行して予定を削除
-              </Text>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
       <EntrySelectorModal
         visible={selectorVisible}
         selectorTab={selectorTab}
@@ -1718,6 +1537,9 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
+  memoFormActions: {
+    marginTop: 16,
+  },
   formCancelButton: {
     backgroundColor: 'transparent',
     borderColor: Theme.btnGhostBorder,
@@ -1742,18 +1564,32 @@ const styles = StyleSheet.create({
     fontSize: Typography.base,
   },
   scrollContent: {
-    paddingTop: 44,
+    paddingTop: 48,
     paddingBottom: Spacing.lg,
+  },
+  modalHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 48,
+    zIndex: 2,
+    justifyContent: 'center',
   },
   closeButton: {
     position: 'absolute',
     top: 8,
     right: 8,
-    zIndex: 2,
     width: 32,
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalTitle: {
+    marginHorizontal: 44,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '700',
   },
   formSection: {
     gap: 0,
@@ -1883,23 +1719,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
   },
-  deleteLinkWrap: {
-    alignSelf: 'center',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: Radius.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(248, 113, 113, 0.55)',
-    backgroundColor: 'rgba(248, 113, 113, 0.12)',
-  },
-  deleteLinkText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#f87171',
-  },
   linkedTaskRow: {
     borderWidth: 1,
     paddingHorizontal: 12,
@@ -1912,20 +1731,6 @@ const styles = StyleSheet.create({
   },
   linkedTaskMeta: {
     fontSize: 12,
-  },
-  linkedHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  linkedHeaderNearLabel: {
-    justifyContent: 'flex-start',
-    gap: 8,
-  },
-  linkedHeaderLabel: {
-    fontSize: 14,
-    fontWeight: '600',
   },
   linkedList: {
     gap: 8,

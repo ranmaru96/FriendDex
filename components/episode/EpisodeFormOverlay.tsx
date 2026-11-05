@@ -15,7 +15,9 @@ import {
   type ViewStyle,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
 import { Theme, Radius, Spacing, Typography } from '@/constants/theme';
+import { BackdropBlur } from '@/components/screen/BackdropBlur';
 import { PHOTO_LIMITS } from '@/constants';
 import { FormRow } from '@/components/ui/FormRow';
 import { OptionPickerModal } from '@/components/ui/OptionPickerModal';
@@ -78,6 +80,12 @@ type EpisodeFormOverlayProps = {
   onPersonCreated?: (friend: Friend) => void;
   /** false のとき画面内トップバーを出さず、親ヘッダーを使う */
   useTopBar?: boolean;
+  /** true のときシェルヘッダーを隠さない。タブの上に載せる入力で、下のヘッダーを残す */
+  retainShellHeader?: boolean;
+  /** シェルが余白を取っているとき、画面内の SafeArea を足さない */
+  safeAreaEdges?: readonly ('top' | 'left' | 'right' | 'bottom')[];
+  /** modal は予定追加と同じカード。screen は一覧の上の全画面 */
+  presentation?: 'screen' | 'modal';
 };
 
 function SelectInput({
@@ -194,6 +202,9 @@ export function EpisodeFormOverlay({
   saving = false,
   onPersonCreated,
   useTopBar = true,
+  retainShellHeader = false,
+  safeAreaEdges,
+  presentation = 'screen',
 }: EpisodeFormOverlayProps) {
   const kit = useUiKit();
   const content = useContentColors();
@@ -201,10 +212,14 @@ export function EpisodeFormOverlay({
   const sharedHeaderApi = useSharedHeaderChromeOptional();
   const holdShellHeaderHidden = sharedHeaderApi?.holdShellHeaderHidden;
   const releaseShellHeaderHidden = sharedHeaderApi?.releaseShellHeaderHidden;
+  const holdShellChromeBlur = sharedHeaderApi?.holdShellChromeBlur;
+  const releaseShellChromeBlur = sharedHeaderApi?.releaseShellChromeBlur;
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const fieldRadius = Radius.sm;
   const fieldCorner = { borderRadius: fieldRadius };
   const [photoRowWidth, setPhotoRowWidth] = useState(0);
+  const [modalViewportHeight, setModalViewportHeight] = useState(0);
+  const [modalContentHeight, setModalContentHeight] = useState(0);
   const photoSlotSize =
     photoRowWidth > 0
       ? (photoRowWidth - 8 * PHOTO_LIMITS.free) / (PHOTO_LIMITS.free + 1)
@@ -340,27 +355,57 @@ export function EpisodeFormOverlay({
   });
 
   useEffect(() => {
-    if (!visible || !useTopBar || !holdShellHeaderHidden || !releaseShellHeaderHidden) {
+    if (
+      !visible ||
+      presentation === 'modal' ||
+      !useTopBar ||
+      retainShellHeader ||
+      !holdShellHeaderHidden ||
+      !releaseShellHeaderHidden
+    ) {
       return;
     }
     holdShellHeaderHidden();
     return () => releaseShellHeaderHidden();
-  }, [holdShellHeaderHidden, releaseShellHeaderHidden, useTopBar, visible]);
+  }, [holdShellHeaderHidden, presentation, releaseShellHeaderHidden, retainShellHeader, useTopBar, visible]);
+
+  useEffect(() => {
+    if (!visible || presentation !== 'modal' || !holdShellChromeBlur || !releaseShellChromeBlur) {
+      return;
+    }
+    holdShellChromeBlur();
+    return () => releaseShellChromeBlur();
+  }, [holdShellChromeBlur, presentation, releaseShellChromeBlur, visible]);
+
+  const modal = presentation === 'modal';
+  const modalOverflows =
+    modal && modalViewportHeight > 0 && modalContentHeight > modalViewportHeight;
+  const showTopBar = modal ? false : useTopBar;
+  const blurTint = appTheme?.variant === 'black' ? 'dark' : 'light';
+  const closeIconColor = appTheme?.colors.onScreenText ?? Theme.textPrimary;
 
   if (!visible) {
     return null;
   }
 
-  return (
-    <>
-      <View style={[styles.overlay, { backgroundColor: kit.screenBackground }]}>
+  const formBody = (
         <FormScreenTemplate
           title={form.editingEpisodeId ? 'エピソードを編集' : 'エピソードを追加'}
           onBack={requestClose}
           backDisabled={saving}
-          useTopBar={useTopBar}
+          useTopBar={showTopBar}
+          safeAreaEdges={safeAreaEdges}
+          fitContent={modal ? !modalOverflows : false}
+          onContentSizeChange={
+            modal
+              ? (_width, height) => {
+                  const next = Math.round(height);
+                  setModalContentHeight((current) => (current === next ? current : next));
+                }
+              : undefined
+          }
           right={
-            useTopBar ? (
+            showTopBar ? (
               <Pressable
                 style={[styles.saveButton, contentFilledButtonStyle(content), saving ? styles.saveButtonBusy : null]}
                 onPress={onSave}
@@ -373,7 +418,7 @@ export function EpisodeFormOverlay({
             ) : undefined
           }
           extraScrollHeight={140}
-          scrollContentStyle={styles.scrollContent}
+          scrollContentStyle={modal ? styles.modalScrollContent : styles.scrollContent}
         >
           <FormScreenBody style={{ borderRadius: kit.formPanelBorderRadius }}>
             <FormScreenSection style={styles.episodeFormSection}>
@@ -640,6 +685,7 @@ export function EpisodeFormOverlay({
 
               <FormRow label="説明" layout="vertical">
                 <NoteBlockEditor
+                  formatToolbar={!modal}
                   style={[styles.episodeDescriptionInput, fieldCorner, contentInputStyle(content)]}
                   placeholder="入力"
                   placeholderTextColor={content.contentTextSecondary}
@@ -651,6 +697,7 @@ export function EpisodeFormOverlay({
               </FormRow>
               <FormRow label="非公開メモ" layout="vertical">
                 <NoteBlockEditor
+                  formatToolbar={!modal}
                   style={[styles.episodeDescriptionInput, fieldCorner, contentInputStyle(content)]}
                   placeholder="公開時に送らない文章"
                   placeholderTextColor={content.contentTextSecondary}
@@ -686,7 +733,57 @@ export function EpisodeFormOverlay({
             </FormScreenSection>
           </FormScreenBody>
         </FormScreenTemplate>
-      </View>
+  );
+
+  return (
+    <>
+      {modal ? (
+        <View
+          style={styles.modalRoot}
+          onLayout={(event) => {
+            const next = Math.round(event.nativeEvent.layout.height);
+            setModalViewportHeight((current) => (current === next ? current : next));
+          }}
+        >
+          <BackdropBlur tint={blurTint} />
+          <Pressable
+            style={StyleSheet.absoluteFill}
+            onPress={requestClose}
+            disabled={saving}
+            accessibilityRole="button"
+            accessibilityLabel="閉じる"
+          />
+          <View style={[styles.modalCard, modalOverflows ? { height: modalViewportHeight } : null]}>
+            <View
+              style={[
+                styles.modalCardInner,
+                { backgroundColor: kit.screenBackground },
+                modalOverflows ? styles.modalCardFill : null,
+              ]}
+            >
+              {formBody}
+              <View pointerEvents="box-none" style={styles.modalHeader}>
+                <BackdropBlur tint={blurTint} />
+                <Text pointerEvents="none" style={[styles.modalTitle, contentTextStyle(content)]}>
+                  {form.editingEpisodeId ? 'エピソード編集' : 'エピソード追加'}
+                </Text>
+                <Pressable
+                  style={[styles.closeButton, saving ? styles.saveButtonBusy : null]}
+                  onPress={requestClose}
+                  disabled={saving}
+                  accessibilityRole="button"
+                  accessibilityLabel="閉じる"
+                  hitSlop={8}
+                >
+                  <Ionicons name="close" size={22} color={closeIconColor} />
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : (
+        <View style={[styles.overlay, { backgroundColor: kit.screenBackground }]}>{formBody}</View>
+      )}
 
       <Modal
         transparent
@@ -816,6 +913,63 @@ const styles = StyleSheet.create({
     bottom: 0,
     zIndex: 100,
     elevation: 100,
+  },
+  modalRoot: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 100,
+    elevation: 100,
+  },
+  modalCard: {
+    maxHeight: '100%',
+    alignSelf: 'stretch',
+    marginHorizontal: 36,
+    borderRadius: Radius.lg,
+    shadowColor: '#000000',
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  modalCardInner: {
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  modalCardFill: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    paddingTop: 48,
+    paddingBottom: Spacing.lg,
+  },
+  modalHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 48,
+    zIndex: 2,
+    justifyContent: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    marginHorizontal: 44,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '700',
   },
   saveButton: {
     alignItems: 'center',

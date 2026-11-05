@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect, useLocalSearchParams, usePathname, useRouter } from 'expo-router';
+import { DetailMenuSheet } from '@/components/screen/DetailMenuSheet';
 import { detailHrefFromPathname } from '@/utils/detailPaths';
 import {
   deleteEventFormDraft,
@@ -20,6 +21,8 @@ import { NoteBlockView } from '@/components/ui/NoteBlockView';
 import { Radius } from '@/constants/theme';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 import {
+  deleteEvent,
+  deleteTasksByIds,
   getDefaultProfile,
   getEpisodeListPhotoUrisMap,
   getEpisodesByEventId,
@@ -28,6 +31,7 @@ import {
   getMyself,
   getTasksByEventId,
   initializeDatabase,
+  unlinkTasksFromEvent,
 } from './db';
 import type { Episode, EpisodeParticipant, Event, Friend, ProfileMemo, Task } from './types';
 import { buildParticipantChipDisplays, buildParticipantChips } from './utils/episodeHelpers';
@@ -48,9 +52,22 @@ import {
 import { formatTaskDueDateLabel } from '@/utils/taskHelpers';
 import { formatNotePreview, noteBlocksHaveContent } from '@/utils/noteBlocks';
 import { eventHrefMatch } from '@/utils/detailRouteMemory';
-import { leaveForgottenDetail, openEpisodeComposerForEvent, popCurrentTabScreen } from '@/utils/tabNavigation';
+import { leaveForgottenDetail, popCurrentTabScreen } from '@/utils/tabNavigation';
+import { cancelEventNotification } from '@/utils/eventNotifications';
+import {
+  holdGoogleCalendarDelete,
+  releaseGoogleCalendarDelete,
+  scheduleGoogleCalendarDelete,
+} from '@/utils/googleCalendarSync';
+import { markOwnedEventDeleted } from '@/lib/ownedEventSync';
 import { eventLinkedMemos, eventMemoDateRange, memoTargetFriendIds } from '@/utils/eventParticipantMemos';
-import { contentMutedTextStyle, contentSurfaceStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
+import {
+  contentMutedTextStyle,
+  contentSelectedOptionStyle,
+  contentSurfaceStyle,
+  contentTagStyle,
+  contentTextStyle,
+} from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 
 const parseRouteParam = (value: string | string[] | undefined): string => {
@@ -257,6 +274,91 @@ export default function EventDetailScreen() {
 
   const todayKey = formatDateKey(new Date());
   const canAddEpisode = event != null && !isEventStartInFuture(event, todayKey);
+  const deleteLockRef = useRef(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [taskMigrateVisible, setTaskMigrateVisible] = useState(false);
+  const [taskMigrateTasks, setTaskMigrateTasks] = useState<Task[]>([]);
+  const [taskMigrateIds, setTaskMigrateIds] = useState<Set<string>>(new Set());
+
+  const performEventDelete = useCallback(async () => {
+    const id = eventId.trim();
+    if (!id || deleteLockRef.current) {
+      return;
+    }
+    deleteLockRef.current = true;
+    initializeDatabase();
+    const existing = getEvent(id);
+    await cancelEventNotification(existing?.notificationId);
+    const googleEventId = existing?.googleEventId ?? null;
+    holdGoogleCalendarDelete(googleEventId);
+    const ok = deleteEvent(id);
+    if (!ok) {
+      releaseGoogleCalendarDelete(googleEventId);
+      deleteLockRef.current = false;
+      Alert.alert('エラー', '予定の削除に失敗しました。');
+      return;
+    }
+    scheduleGoogleCalendarDelete(googleEventId);
+    void markOwnedEventDeleted(id);
+    deleteEventFormDraft(id);
+    leaveForgottenDetail(eventHrefMatch(id));
+  }, [eventId]);
+
+  const confirmTaskMigrateAndDeleteEvent = () => {
+    const allIds = taskMigrateTasks.map((task) => task.id);
+    const deleteIds = allIds.filter((id) => !taskMigrateIds.has(id));
+    unlinkTasksFromEvent([...taskMigrateIds]);
+    if (deleteIds.length > 0) {
+      deleteTasksByIds(deleteIds);
+    }
+    setTaskMigrateVisible(false);
+    void performEventDelete();
+  };
+
+  const handleDelete = () => {
+    const id = eventId.trim();
+    if (!id || deleteLockRef.current) {
+      return;
+    }
+    Alert.alert('予定を削除', 'この予定を削除しますか？', [
+      { text: 'キャンセル', style: 'cancel' },
+      {
+        text: '削除',
+        style: 'destructive',
+        onPress: () => {
+          initializeDatabase();
+          const tasks = getTasksByEventId(id);
+          if (tasks.length === 0) {
+            void performEventDelete();
+            return;
+          }
+          Alert.alert(
+            '紐づきタスク',
+            `この予定に紐づくタスクが${tasks.length}件あります。タスクも削除しますか？`,
+            [
+              { text: 'キャンセル', style: 'cancel' },
+              {
+                text: 'タスクも削除',
+                style: 'destructive',
+                onPress: () => {
+                  deleteTasksByIds(tasks.map((task) => task.id));
+                  void performEventDelete();
+                },
+              },
+              {
+                text: '選んで残す',
+                onPress: () => {
+                  setTaskMigrateIds(new Set(tasks.map((task) => task.id)));
+                  setTaskMigrateTasks(tasks);
+                  setTaskMigrateVisible(true);
+                },
+              },
+            ]
+          );
+        },
+      },
+    ]);
+  };
   const canAddTask = event != null && eventLastDateKey(event) >= todayKey;
 
   return (
@@ -265,6 +367,22 @@ export default function EventDetailScreen() {
       onBack={() => popCurrentTabScreen()}
       titleFramed={false}
       useScreenPadding={false}
+      right={
+        event ? (
+          <Pressable
+            onPress={() => setMenuOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="メニュー"
+            hitSlop={8}
+            style={styles.menuButton}
+          >
+            <View style={styles.menuMark}>
+              <View style={[styles.menuLine, styles.menuLineLong, { backgroundColor: content.contentText }]} />
+              <View style={[styles.menuLine, styles.menuLineShort, { backgroundColor: content.contentText }]} />
+            </View>
+          </Pressable>
+        ) : null
+      }
       scrollContentStyle={[
         styles.scrollContent,
         bottomNavClearance > 0 ? { paddingBottom: bottomNavClearance } : null,
@@ -298,7 +416,7 @@ export default function EventDetailScreen() {
                   accessibilityLabel="編集"
                   hitSlop={8}
                 >
-                  <Ionicons name="pencil-outline" size={18} color={content.contentText} />
+                  <Ionicons name="pencil-outline" size={14} color={content.contentText} />
                 </Pressable>
               </View>
             </View>
@@ -455,7 +573,9 @@ export default function EventDetailScreen() {
                   hitSlop={12}
                   accessibilityRole="button"
                   accessibilityLabel="エピソードを追加"
-                  onPress={() => openEpisodeComposerForEvent(event.id)}
+                  onPress={() =>
+                    router.push({ pathname: '/event-episode', params: { eventId: event.id } })
+                  }
                 >
                   <Ionicons name="add" size={18} color={content.contentTextSecondary} />
                 </Pressable>
@@ -497,6 +617,76 @@ export default function EventDetailScreen() {
           </PanelSection>
         </>
       )}
+      <DetailMenuSheet
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        onEdit={() => {
+          if (!event) {
+            return;
+          }
+          router.push({ pathname: '/event', params: { eventId: event.id } });
+        }}
+        onDelete={handleDelete}
+      />
+      <Modal
+        visible={taskMigrateVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTaskMigrateVisible(false)}
+      >
+        <Pressable
+          style={styles.migrateBackdrop}
+          onPress={() => setTaskMigrateVisible(false)}
+        >
+          <Pressable
+            style={[styles.migrateCard, contentSurfaceStyle(content)]}
+            onPress={(pressEvent) => pressEvent.stopPropagation()}
+          >
+            <Text style={[styles.migrateTitle, contentTextStyle(content)]}>残すタスクを選択</Text>
+            <Text style={[styles.migrateHint, contentMutedTextStyle(content)]}>
+              選択したタスクは予定なしの臨時へ移します。未選択は削除されます。
+            </Text>
+            <ScrollView style={styles.migrateOptions}>
+              {taskMigrateTasks.map((task) => {
+                const selected = taskMigrateIds.has(task.id);
+                return (
+                  <Pressable
+                    key={task.id}
+                    style={[
+                      styles.migrateOption,
+                      selected ? contentSelectedOptionStyle(content) : null,
+                    ]}
+                    onPress={() => {
+                      setTaskMigrateIds((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(task.id)) {
+                          next.delete(task.id);
+                        } else {
+                          next.add(task.id);
+                        }
+                        return next;
+                      });
+                    }}
+                  >
+                    <Text style={contentTextStyle(content)}>
+                      {selected ? '✓ ' : ''}
+                      {task.title}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+            <Pressable
+              style={[styles.migrateConfirm, contentTagStyle(content)]}
+              onPress={confirmTaskMigrateAndDeleteEvent}
+            >
+              <Text style={[styles.migrateConfirmText, contentTextStyle(content)]}>
+                実行して予定を削除
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SubToolScreenTemplate>
   );
 }
@@ -544,6 +734,8 @@ const styles = StyleSheet.create({
   },
   titleEditButton: {
     marginLeft: 'auto',
+    width: 22,
+    height: 22,
     backgroundColor: 'transparent',
   },
   sectionAdd: {
@@ -551,6 +743,67 @@ const styles = StyleSheet.create({
     height: 22,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  menuButton: {
+    width: 44,
+    height: 44,
+    marginRight: -8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuMark: {
+    width: 20,
+    alignItems: 'flex-start',
+  },
+  menuLine: {
+    height: 2,
+    borderRadius: 1,
+  },
+  menuLineLong: {
+    width: 20,
+  },
+  menuLineShort: {
+    width: 14,
+    marginTop: 8,
+  },
+  migrateBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  migrateCard: {
+    borderRadius: Radius.md,
+    padding: 14,
+    maxHeight: '70%',
+    borderWidth: 1,
+  },
+  migrateTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  migrateHint: {
+    fontSize: 14,
+    marginBottom: 10,
+  },
+  migrateOptions: {
+    marginBottom: 10,
+  },
+  migrateOption: {
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: Radius.sm,
+  },
+  migrateConfirm: {
+    alignSelf: 'flex-end',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: Radius.sm,
+  },
+  migrateConfirmText: {
+    fontSize: 14,
+    fontWeight: '700',
   },
   dateLine: {
     flex: 1,

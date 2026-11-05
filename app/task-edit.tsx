@@ -18,11 +18,11 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { taskHrefMatch } from '@/utils/detailRouteMemory';
-import { leaveForgottenDetail } from '@/utils/tabNavigation';
-import { Radius, Spacing, Typography } from '@/constants/theme';
+import { Radius, Spacing, Theme, Typography } from '@/constants/theme';
+import { BackdropBlur } from '@/components/screen/BackdropBlur';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
 import {
@@ -41,7 +41,6 @@ import {
   createTask,
   createTaskGroup,
   deleteAllTaskCompletions,
-  deleteTask,
   getAllTaskGroups,
   getEvent,
   getTaskGroupsByKind,
@@ -139,6 +138,7 @@ function formatCompletionHistoryDate(ymd: string): string {
 export default function TaskEditScreen() {
   const router = useRouter();
   const content = useContentColors();
+  const insets = useSafeAreaInsets();
   const kit = useUiKit();
   const appTheme = useAppThemeOptional();
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
@@ -204,6 +204,10 @@ export default function TaskEditScreen() {
   const [remindDaysBefore, setRemindDaysBefore] = useState(0);
   const [remindTime, setRemindTime] = useState(DEFAULT_REMIND_TIME);
   const [ready, setReady] = useState(false);
+  const [modalViewportHeight, setModalViewportHeight] = useState(0);
+  const [modalContentHeight, setModalContentHeight] = useState(0);
+  const blurTint = appTheme?.variant === 'black' ? 'dark' : 'light';
+  const closeIconColor = appTheme?.colors.onScreenText ?? Theme.textPrimary;
   const [draftBaseline, setDraftBaseline] = useState<string | null>(null);
   const claimTaskDraftRef = useRef<() => void>(() => {});
   const stopTaskDraftRef = useRef<() => void>(() => {});
@@ -692,50 +696,6 @@ export default function TaskEditScreen() {
     persistTask(trackCompletions);
   };
 
-  const confirmDeleteFinally = () => {
-    if (savingRef.current) {
-      return;
-    }
-    savingRef.current = true;
-    deleteTask(taskId);
-    void syncTaskReminders();
-    stopTaskDraftRef.current();
-    deleteTaskFormDraft(taskId || null);
-    leaveForgottenDetail(taskHrefMatch(taskId));
-  };
-
-  const handleDelete = () => {
-    if (savingRef.current || !isEditing) return;
-    if (kind === 'recurring') {
-      Alert.alert(
-        '定期タスクを削除',
-        'この定期タスクを削除すると、これまでの実施履歴もすべて消えます。\nこの操作は取り消せません。',
-        [
-          { text: 'キャンセル', style: 'cancel' },
-          {
-            text: 'それでも削除する',
-            style: 'destructive',
-            onPress: () => {
-              Alert.alert(
-                '本当に削除しますか？',
-                '実施履歴を含めて完全に削除されます。よろしいですか？',
-                [
-                  { text: 'キャンセル', style: 'cancel' },
-                  { text: '完全に削除', style: 'destructive', onPress: confirmDeleteFinally },
-                ]
-              );
-            },
-          },
-        ]
-      );
-      return;
-    }
-    Alert.alert('タスクを削除', 'このタスクを削除しますか？', [
-      { text: 'キャンセル', style: 'cancel' },
-      { text: '削除', style: 'destructive', onPress: confirmDeleteFinally },
-    ]);
-  };
-
   const effectiveKindForGroup: TaskKind = lockedToEvent ? 'temporary' : kind;
   const kindScopedGroups = useMemo(
     () => taskGroups.filter((group) => group.kind === effectiveKindForGroup),
@@ -811,24 +771,49 @@ export default function TaskEditScreen() {
   };
 
   if (!ready) {
-    return <View style={[styles.loadingScreen, { backgroundColor: kit.screenBackground }]} />;
+    return null;
   }
 
+  const modalOverflows = modalViewportHeight > 0 && modalContentHeight > modalViewportHeight;
+  /** 一覧の追加と同じく、シェルヘッダーの下からカードを始める */
+  const modalTopInset = insets.top + 44 + 1.5;
+
   return (
-    <FormScreenTemplate
-      title={isEditing ? 'タスク編集' : 'タスク追加'}
-      onBack={leaveScreen}
-      backDisabled={isSaving}
-      scrollEnabled={formScrollEnabled}
-      right={
-        <Pressable
-          style={[styles.saveButton, contentFilledButtonStyle(content), isSaving ? styles.saveTextBusy : null]}
-          onPress={handleSave}
-          disabled={isSaving}
+    <>
+    <View style={styles.modalRoot}>
+      <BackdropBlur tint={blurTint} />
+      <Pressable
+        style={StyleSheet.absoluteFill}
+        onPress={leaveScreen}
+        disabled={isSaving}
+        accessibilityRole="button"
+        accessibilityLabel="閉じる"
+      />
+      <View
+        style={[styles.modalStage, { paddingTop: modalTopInset }]}
+        onLayout={(event) => {
+          const next = Math.round(event.nativeEvent.layout.height - modalTopInset);
+          setModalViewportHeight((current) => (current === next ? current : next));
+        }}
+      >
+      <View style={[styles.modalCard, modalOverflows ? { height: modalViewportHeight } : null]}>
+        <View
+          style={[
+            styles.modalCardInner,
+            { backgroundColor: kit.screenBackground },
+            modalOverflows ? styles.modalCardFill : null,
+          ]}
         >
-          <Text style={[styles.saveText, contentFilledButtonTextStyle(content)]}>保存</Text>
-        </Pressable>
-      }
+    <FormScreenTemplate
+      useTopBar={false}
+      fitContent={!modalOverflows}
+      onContentSizeChange={(_width, height) => {
+        const next = Math.round(height);
+        setModalContentHeight((current) => (current === next ? current : next));
+      }}
+      extraScrollHeight={140}
+      scrollContentStyle={styles.modalScrollContent}
+      scrollEnabled={formScrollEnabled}
     >
       <RollScrollLockProvider setRollScrolling={setRollScrolling}>
       <FormScreenBody style={{ borderRadius: kit.formPanelBorderRadius }}>
@@ -1416,6 +1401,7 @@ export default function TaskEditScreen() {
         <TaskFieldDivider />
         <FormRow label="メモ" layout="vertical">
           <NoteBlockEditor
+            formatToolbar={false}
             style={[styles.memoInput, contentInputStyle(content)]}
             value={memo}
             onChangeText={setMemo}
@@ -1426,23 +1412,52 @@ export default function TaskEditScreen() {
             uncapped
           />
         </FormRow>
-        </FormScreenSection>
-
-        {isEditing ? (
-          <View style={styles.deleteButtonWrap}>
+          <View style={styles.formActions}>
             <Pressable
-              style={[styles.deleteButton, { borderColor: '#dc2626', backgroundColor: 'rgba(220, 38, 38, 0.1)' }]}
-              onPress={handleDelete}
+              style={[styles.formCancelButton, isSaving ? styles.saveTextBusy : null]}
+              onPress={leaveScreen}
               disabled={isSaving}
-              accessibilityRole="button"
-              accessibilityLabel="タスクを削除"
             >
-              <Text style={styles.deleteText}>タスクを削除</Text>
+              <Text style={styles.formCancelButtonText}>キャンセル</Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.formSaveButton,
+                contentFilledButtonStyle(content),
+                isSaving ? styles.saveTextBusy : null,
+              ]}
+              onPress={handleSave}
+              disabled={isSaving}
+            >
+              <Text style={[styles.formSaveButtonText, contentFilledButtonTextStyle(content)]}>
+                {isEditing ? '更新' : '保存'}
+              </Text>
             </Pressable>
           </View>
-        ) : null}
+        </FormScreenSection>
       </FormScreenBody>
       </RollScrollLockProvider>
+    </FormScreenTemplate>
+          <View pointerEvents="box-none" style={styles.modalHeader}>
+            <BackdropBlur tint={blurTint} />
+            <Text pointerEvents="none" style={[styles.modalTitle, contentTextStyle(content)]}>
+              {isEditing ? 'タスク編集' : 'タスク追加'}
+            </Text>
+            <Pressable
+              style={[styles.closeButton, isSaving ? styles.saveTextBusy : null]}
+              onPress={leaveScreen}
+              disabled={isSaving}
+              accessibilityRole="button"
+              accessibilityLabel="閉じる"
+              hitSlop={8}
+            >
+              <Ionicons name="close" size={22} color={closeIconColor} />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+      </View>
+    </View>
 
       <OptionPickerModal
         visible={groupPickerVisible}
@@ -1458,13 +1473,93 @@ export default function TaskEditScreen() {
         }}
         onClose={() => setGroupPickerVisible(false)}
       />
-    </FormScreenTemplate>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
-  loadingScreen: {
+  modalRoot: {
     flex: 1,
+  },
+  modalStage: {
+    flex: 1,
+  },
+  modalCard: {
+    maxHeight: '100%',
+    alignSelf: 'stretch',
+    marginHorizontal: 36,
+    borderRadius: Radius.lg,
+    shadowColor: '#000000',
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  modalCardInner: {
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  modalCardFill: {
+    flex: 1,
+  },
+  modalScrollContent: {
+    paddingTop: 48,
+    paddingBottom: Spacing.lg,
+  },
+  modalHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 48,
+    zIndex: 2,
+    justifyContent: 'center',
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalTitle: {
+    marginHorizontal: 44,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  formActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+    marginTop: 4,
+  },
+  formCancelButton: {
+    backgroundColor: 'transparent',
+    borderColor: Theme.btnGhostBorder,
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  formCancelButtonText: {
+    color: Theme.btnGhostText,
+    fontWeight: '700',
+    fontSize: Typography.base,
+  },
+  formSaveButton: {
+    borderWidth: 1,
+    borderRadius: Radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  formSaveButtonText: {
+    fontWeight: '700',
+    fontSize: Typography.base,
   },
   formSection: {
     gap: 0,
@@ -1676,37 +1771,6 @@ const styles = StyleSheet.create({
   historyDate: {
     fontSize: 14,
     fontWeight: '600',
-  },
-  deleteButtonWrap: {
-    marginTop: 28,
-    marginBottom: 32,
-    alignItems: 'center',
-  },
-  deleteButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    alignSelf: 'center',
-    minWidth: 120,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  deleteText: {
-    color: '#dc2626',
-    fontWeight: '700',
-    fontSize: 13,
-  },
-  saveButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: Radius.sm,
-  },
-  saveText: {
-    fontSize: 13,
-    fontWeight: '700',
   },
   saveTextBusy: {
     opacity: 0.55,

@@ -3119,6 +3119,7 @@ export default function DetailScreen() {
         onSave={handleSaveEpisode}
         saving={episodeSaving}
         onPersonCreated={() => setAllFriends(getAllFriendsInDefaultOrder())}
+        presentation="modal"
       />
       <EntrySelectorModal
         visible={filterSelectorVisible}

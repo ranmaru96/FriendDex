@@ -34,6 +34,9 @@ export type SharedHeaderChromeActions = {
   /** フォーム自身のバーを出しているあいだ、シェルヘッダーを隠す。重ねがけ可 */
   holdShellHeaderHidden: () => void;
   releaseShellHeaderHidden: () => void;
+  /** 画面内のカードモーダル中、シェルのヘッダーと下部ナビをぼかして押せなくする。重ねがけ可 */
+  holdShellChromeBlur: () => void;
+  releaseShellChromeBlur: () => void;
 };
 
 type SubToolHeaderStackEntry = {
@@ -53,6 +56,7 @@ const DetailHeaderStateContext = createContext<SharedDetailHeaderConfig | null>(
 const SubToolHeaderStateContext = createContext<SharedSubToolHeaderConfig | null>(null);
 const SuppressBottomNavContext = createContext(false);
 const ShellHeaderHiddenContext = createContext(false);
+const ShellChromeBlurContext = createContext(false);
 
 function sameDetailHeader(
   current: SharedDetailHeaderConfig,
@@ -93,7 +97,9 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
   const [subToolHeaderStack, setSubToolHeaderStack] = useState<SubToolHeaderStackEntry[]>([]);
   const [suppressBottomNav, setSuppressBottomNavState] = useState(false);
   const [shellHeaderHidden, setShellHeaderHidden] = useState(false);
+  const [shellChromeBlur, setShellChromeBlur] = useState(false);
   const shellHeaderHolds = useRef(0);
+  const shellChromeBlurHolds = useRef(0);
   const subToolHeader = topSubToolHeader(subToolHeaderStack);
 
   const setDetailHeader = useCallback((config: SharedDetailHeaderConfig | null) => {
@@ -148,6 +154,18 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
     }
   }, []);
 
+  const holdShellChromeBlur = useCallback(() => {
+    shellChromeBlurHolds.current += 1;
+    setShellChromeBlur(true);
+  }, []);
+
+  const releaseShellChromeBlur = useCallback(() => {
+    shellChromeBlurHolds.current = Math.max(0, shellChromeBlurHolds.current - 1);
+    if (shellChromeBlurHolds.current === 0) {
+      setShellChromeBlur(false);
+    }
+  }, []);
+
   const actions = useMemo(
     () => ({
       setDetailHeader,
@@ -156,6 +174,8 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
       setSuppressBottomNav,
       holdShellHeaderHidden,
       releaseShellHeaderHidden,
+      holdShellChromeBlur,
+      releaseShellChromeBlur,
     }),
     [
       setDetailHeader,
@@ -164,6 +184,8 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
       setSuppressBottomNav,
       holdShellHeaderHidden,
       releaseShellHeaderHidden,
+      holdShellChromeBlur,
+      releaseShellChromeBlur,
     ]
   );
 
@@ -171,11 +193,13 @@ export function SharedHeaderChromeProvider({ children }: { children: ReactNode }
     <SharedHeaderActionsContext.Provider value={actions}>
       <SuppressBottomNavContext.Provider value={suppressBottomNav}>
         <ShellHeaderHiddenContext.Provider value={shellHeaderHidden}>
-          <DetailHeaderStateContext.Provider value={detailHeader}>
-            <SubToolHeaderStateContext.Provider value={subToolHeader}>
-              {children}
-            </SubToolHeaderStateContext.Provider>
-          </DetailHeaderStateContext.Provider>
+          <ShellChromeBlurContext.Provider value={shellChromeBlur}>
+            <DetailHeaderStateContext.Provider value={detailHeader}>
+              <SubToolHeaderStateContext.Provider value={subToolHeader}>
+                {children}
+              </SubToolHeaderStateContext.Provider>
+            </DetailHeaderStateContext.Provider>
+          </ShellChromeBlurContext.Provider>
         </ShellHeaderHiddenContext.Provider>
       </SuppressBottomNavContext.Provider>
     </SharedHeaderActionsContext.Provider>
@@ -219,4 +243,8 @@ export function useSuppressBottomNav(): boolean {
 
 export function useShellHeaderHidden(): boolean {
   return useContext(ShellHeaderHiddenContext);
+}
+
+export function useShellChromeBlur(): boolean {
+  return useContext(ShellChromeBlurContext);
 }

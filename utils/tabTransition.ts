@@ -44,7 +44,7 @@ export function clearNextReplaceAsPop(): void {
  * - bottom tabs (incl. index): BottomNav の左右スライド
  * - detail / otherwise: slide_from_right
  * - mypage: slide_from_left
- * - event: 予定の追加・編集。左右に下の画面が残るモーダル
+ * - event / event-episode / task-edit: タブの上に載せる入力。左右に下の画面が残る
  */
 export function resolveStackAnimation(
   routeName: string,
@@ -61,7 +61,7 @@ export function resolveStackAnimation(
   if (routeName === 'mypage') {
     return 'slide_from_left';
   }
-  if (routeName === 'event') {
+  if (routeName === 'event' || routeName === 'event-episode' || routeName === 'task-edit') {
     return 'fade';
   }
   return 'slide_from_right';

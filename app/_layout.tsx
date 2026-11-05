@@ -1,7 +1,7 @@
 import '../sentry';
-import { Stack, usePathname, useRootNavigationState, useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import * as Sentry from '@sentry/react-native';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { InteractionManager, Pressable, StyleSheet, View, AppState } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -21,6 +21,7 @@ import { SettlementMockProvider } from '../contexts/SettlementMockContext';
 import {
   SharedHeaderChromeProvider,
   useSharedHeaderVisuals,
+  useShellChromeBlur,
   useShellHeaderHidden,
   useSuppressBottomNav,
 } from '../contexts/SharedHeaderChromeContext';
@@ -46,6 +47,7 @@ import {
   navigationTapLockListeners,
   useNavigationTapLock,
 } from '@/utils/navigationTapLock';
+import { isOverlayFormRoute, useChromePath } from '@/hooks/useChromePath';
 import { useTabStackBackHandler } from '@/hooks/useTabStackBackHandler';
 import { useTabStackSync } from '@/hooks/useTabStackSync';
 import { getMyselfSetupPhase, initializeDatabase, ensureDatabaseOpened } from '../db';
@@ -79,32 +81,6 @@ const BOTTOM_TAB_ROUTE_NAMES = new Set([
 
 function stackRoutePath(routeName: string): string {
   return routeName.startsWith('/') ? routeName : `/${routeName}`;
-}
-
-/** 予定の追加・編集。予定詳細（event-detail）は含めない */
-function isEventFormPath(pathname: string): boolean {
-  const path = pathname.split('?')[0].replace(/\/$/, '') || '/';
-  return path === '/event';
-}
-
-/**
- * 予定フォームを開いているあいだは、その下に残っている画面のパスを返す。
- * 左右のすき間から見える画面のヘッダーと下部ナビを動かさないため。
- */
-function useShellChromePath(): { pathname: string; chromePath: string; eventFormOpen: boolean } {
-  const pathname = usePathname();
-  const rootState = useRootNavigationState();
-  const eventFormOpen = isEventFormPath(pathname);
-  const eventInStack = Boolean(rootState?.routes?.some((route) => route.name === 'event'));
-  const hostPathRef = useRef(pathname);
-  if (!eventInStack && !eventFormOpen) {
-    hostPathRef.current = pathname;
-  }
-  return {
-    pathname,
-    chromePath: eventFormOpen ? hostPathRef.current : pathname,
-    eventFormOpen,
-  };
 }
 
 /** シェルのヘッダーをこの画面の上に重ねて出すか。AppShellHeader と同じ条件。 */
@@ -258,11 +234,13 @@ function usePasswordRecoveryPending(): boolean {
 }
 
 function AppShell() {
-  const { pathname, chromePath, eventFormOpen } = useShellChromePath();
+  const { pathname, chromePath, overlayFormOpen } = useChromePath();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const suppressBottomNav = useSuppressBottomNav();
   const shellHeaderHidden = useShellHeaderHidden();
+  const shellChromeBlur = useShellChromeBlur();
+  const chromeBlurred = overlayFormOpen || shellChromeBlur;
   const { colors, variant } = useAppTheme();
   const backdropTint = variant === 'black' ? 'dark' : 'light';
   const [headerHeight, setHeaderHeight] = useState(() => estimateShellHeaderHeight(insets.top));
@@ -305,7 +283,7 @@ function AppShell() {
   const [gateOpened, setGateOpened] = useState(false);
   useTabStackBackHandler(
     !hideBottomNav &&
-    !eventFormOpen &&
+    !chromeBlurred &&
     !needsSetup &&
     !onSetupRoute &&
     !onLoginRoute &&
@@ -395,20 +373,24 @@ function AppShell() {
           screenListeners={navigationTapLockListeners}
           screenLayout={({ route, children }) => {
             // タブの中は親から route.name が (tabs) のままなので、見えている URL で余白を決める。
-            // 予定フォーム中は、下に残っている画面の余白を使う。
+            // タブ上の入力中は、下に残っている画面の余白を使う。
+            const overlayRoute = isOverlayFormRoute(route.name);
             const path =
               route.name === '(tabs)'
-                ? eventFormOpen
+                ? overlayFormOpen
                   ? chromePath
                   : pathname
-                : route.name === 'event' && eventFormOpen
+                : overlayRoute && overlayFormOpen
                   ? chromePath
                   : stackRoutePath(route.name);
             const paddingTop =
-              shellHidesHeader || !routeShowsShellHeader(path) ? 0 : headerHeight;
+              overlayRoute && route.name === 'task-edit'
+                ? 0
+                : shellHidesHeader || !routeShowsShellHeader(path)
+                  ? 0
+                  : headerHeight;
             const paddingBottom =
               shellHidesNav || shouldHideBottomNav(path) ? 0 : navHeight;
-            const eventModal = route.name === 'event';
             return (
               <View
                 style={[
@@ -416,7 +398,7 @@ function AppShell() {
                   {
                     paddingTop,
                     paddingBottom,
-                    backgroundColor: eventModal ? 'transparent' : colors.screenBackground,
+                    backgroundColor: overlayRoute ? 'transparent' : colors.screenBackground,
                   },
                 ]}
               >
@@ -427,17 +409,17 @@ function AppShell() {
           screenOptions={({ route }) => ({
             headerShown: false,
             contentStyle: {
-              backgroundColor: route.name === 'event' ? 'transparent' : colors.screenBackground,
+              backgroundColor: isOverlayFormRoute(route.name) ? 'transparent' : colors.screenBackground,
             },
             animation: resolveStackAnimation(route.name, BOTTOM_TAB_ROUTE_NAMES),
             /** replace でも push と同じ方向で入る（pop だと向きが反転する） */
             animationTypeForReplace: peekNextReplaceAsPop() ? 'pop' : 'push',
             /** 下部ナビ付き画面はタブ階層で戻る。スワイプで Stack の戻るとタブが混ざるのを防ぐ */
             gestureEnabled:
-              route.name !== 'event' &&
+              !isOverlayFormRoute(route.name) &&
               route.name !== 'reset-password' &&
               shouldHideBottomNav(`/${route.name}`),
-            ...(route.name === 'event' ? { presentation: 'transparentModal' as const } : {}),
+            ...(isOverlayFormRoute(route.name) ? { presentation: 'transparentModal' as const } : {}),
           })}
         />
         {(!authReady ||
@@ -452,7 +434,7 @@ function AppShell() {
       </View>
       {showShellHeader ? (
         <View
-          pointerEvents={eventFormOpen ? 'none' : 'box-none'}
+          pointerEvents={chromeBlurred ? 'none' : 'box-none'}
           style={styles.headerOverlay}
           onLayout={(event) => {
             const next = Math.round(event.nativeEvent.layout.height);
@@ -460,12 +442,12 @@ function AppShell() {
           }}
         >
           <AppShellHeader chromePath={chromePath} />
-          {eventFormOpen ? <BackdropBlur tint={backdropTint} /> : null}
+          {chromeBlurred ? <BackdropBlur tint={backdropTint} /> : null}
         </View>
       ) : null}
       {!hideBottomNav ? (
         <View
-          pointerEvents={eventFormOpen ? 'none' : 'box-none'}
+          pointerEvents={chromeBlurred ? 'none' : 'box-none'}
           style={styles.navOverlay}
           onLayout={(event) => {
             const next = Math.round(event.nativeEvent.layout.height);
@@ -473,7 +455,7 @@ function AppShell() {
           }}
         >
           <BottomNav active={activeTab} />
-          {eventFormOpen ? <BackdropBlur tint={backdropTint} /> : null}
+          {chromeBlurred ? <BackdropBlur tint={backdropTint} /> : null}
         </View>
       ) : null}
       <PendingEpisodeReviewHost

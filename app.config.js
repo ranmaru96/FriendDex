@@ -205,6 +205,7 @@ export default {
       googleWebClientId,
       supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL || '',
       supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '',
+      navDiag: IS_DEV || IS_PREVIEW,
     },
     owner: "ranmaru96"
   }

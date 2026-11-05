@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { AppState, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import Constants from 'expo-constants';
 import * as Linking from 'expo-linking';
 import { useNavigationContainerRef } from 'expo-router';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 
-const ENABLED = process.env.EXPO_PUBLIC_NAV_DIAG === '1';
+const extra = (Constants.expoConfig?.extra ?? {}) as { navDiag?: boolean };
+const ENABLED = extra.navDiag === true;
 const ACTIVE_WINDOW_MS = 2000;
 const MAX_LINES = 300;
 const LOG_FILE_NAME = 'nav-diag.txt';

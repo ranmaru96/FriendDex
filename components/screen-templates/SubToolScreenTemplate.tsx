@@ -3,8 +3,8 @@ import type { StyleProp, ViewStyle } from 'react-native';
 import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-aware-scroll-view';
-import { usePathname } from 'expo-router';
 import { Spacing } from '@/constants/theme';
+import { useChromePath } from '@/hooks/useChromePath';
 import { ScreenTopBar } from '@/components/screen/ScreenTopBar';
 import { useSharedHeaderChromeOptional } from '@/contexts/SharedHeaderChromeContext';
 import { useUiKit } from '@/contexts/UiPreviewContext';
@@ -50,7 +50,7 @@ export function SubToolScreenTemplate({
   extraScrollHeight = 20,
 }: SubToolScreenTemplateProps) {
   const kit = useUiKit();
-  const pathname = usePathname();
+  const { chromePath } = useChromePath();
   const sharedHeaderApi = useSharedHeaderChromeOptional();
   const upsertSubToolHeader = sharedHeaderApi?.upsertSubToolHeader;
   const removeSubToolHeader = sharedHeaderApi?.removeSubToolHeader;
@@ -58,7 +58,7 @@ export function SubToolScreenTemplate({
   const bottomNavClearance = useBottomNavScrollClearance();
   const horizontalPadding = useScreenPadding ? kit.subToolScreenPaddingHorizontal : 0;
   const navInShell = bottomNavClearance > 0;
-  const keepSharedHeader = shouldKeepSharedHeaderFrame(pathname);
+  const keepSharedHeader = shouldKeepSharedHeaderFrame(chromePath);
   /** シェル側がヘッダー枠を維持する画面は、ここでトップバーを重ねず枠へ載せる */
   const useSharedTopBar = Boolean(
     kit.sharedHeaderChrome &&

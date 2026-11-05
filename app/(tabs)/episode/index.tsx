@@ -1019,6 +1019,7 @@ export default function EpisodeScreen() {
         onSave={handleSaveEpisode}
         saving={episodeSaving}
         onPersonCreated={() => setFriends(getAllFriendsInDefaultOrder())}
+        presentation="modal"
       />
 
       <EntrySelectorModal

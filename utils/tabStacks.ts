@@ -114,7 +114,8 @@ export function shouldRememberTabRoute(
     pathname.includes('/scan') ||
     pathname.includes('qr-import') ||
     pathname.includes('myprofile') ||
-    pathname.includes('commonitems')
+    pathname.includes('commonitems') ||
+    pathname.includes('task-edit')
   ) {
     return false;
   }
