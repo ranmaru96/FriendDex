@@ -46,7 +46,6 @@ export const previewUiKit: UiKit = {
   episodeListPhotoLayout: 'tallOne',
   episodeListPhotoSpanRows: 3,
   calendarEventMemoDisplay: 'oneLine',
-  calendarMonthLayout: 'scheduleGrid',
   calendarEventTimeDisplay: 'column',
   calendarScreenPaddingHorizontal: 0,
   calendarEventListPaddingHorizontal: Spacing.sm,

@@ -17,9 +17,7 @@ import { ParticipantChipList } from '@/components/participant/ParticipantChipLis
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { PanelSection, SectionDivider } from '@/components/ui/Panel';
 import { NoteBlockView } from '@/components/ui/NoteBlockView';
-import { Radius, Theme } from '@/constants/theme';
-import { useAppThemeOptional } from '@/contexts/AppThemeContext';
-import { useUiKit } from '@/contexts/UiPreviewContext';
+import { Radius } from '@/constants/theme';
 import { useBottomNavScrollClearance } from '@/hooks/useBottomNavScrollClearance';
 import {
   getDefaultProfile,
@@ -40,6 +38,7 @@ import {
   formatEventScheduleLabel,
   formatTimeFromDate,
   getAllDayDateKeysFromEvent,
+  isEventStartInFuture,
 } from './utils/eventHelpers';
 import { profileIdsToFriendIds } from './utils/eventParticipantHelpers';
 import {
@@ -49,7 +48,7 @@ import {
 import { formatTaskDueDateLabel } from '@/utils/taskHelpers';
 import { formatNotePreview, noteBlocksHaveContent } from '@/utils/noteBlocks';
 import { eventHrefMatch } from '@/utils/detailRouteMemory';
-import { leaveForgottenDetail, popCurrentTabScreen } from '@/utils/tabNavigation';
+import { leaveForgottenDetail, openEpisodeComposerForEvent, popCurrentTabScreen } from '@/utils/tabNavigation';
 import { eventLinkedMemos, eventMemoDateRange, memoTargetFriendIds } from '@/utils/eventParticipantMemos';
 import { contentMutedTextStyle, contentSurfaceStyle, contentTextStyle } from '@/utils/contentStyleHelpers';
 import { useContentColors } from '@/utils/useContentColors';
@@ -63,6 +62,13 @@ const parseRouteParam = (value: string | string[] | undefined): string => {
 
 const buildFriendNameById = (friendList: Friend[]): Map<string, string> =>
   new Map(friendList.map((friend) => [friend.id, friend.name]));
+
+const eventLastDateKey = (event: Event): string => {
+  if (event.allDay) {
+    return getAllDayDateKeysFromEvent(event).endDateKey;
+  }
+  return formatDateKey(new Date(event.endAt ?? event.startAt));
+};
 
 /** 終了時刻を過ぎていれば true。終了が無い予定は開始時刻を過ぎたとき */
 const eventEndHasPassed = (event: Event | null): boolean => {
@@ -80,10 +86,7 @@ const eventEndHasPassed = (event: Event | null): boolean => {
 export default function EventDetailScreen() {
   const router = useRouter();
   const pathname = usePathname();
-  const kit = useUiKit();
-  const appTheme = useAppThemeOptional();
   const content = useContentColors();
-  const editButtonBorderColor = appTheme?.colors.topBarBorder ?? Theme.topBarBorder;
   const bottomNavClearance = useBottomNavScrollClearance();
   const params = useLocalSearchParams<{ eventId?: string }>();
   const eventId = parseRouteParam(params.eventId);
@@ -252,27 +255,14 @@ export default function EventDetailScreen() {
   const tagLabel = event?.episodeTag?.trim() ?? '';
   const showNotification = Boolean(event?.notifyEnabled) && !eventEndHasPassed(event);
 
-  const headerRight = (
-    <Pressable
-      style={[episodeDetailTopBarButtonStyles.button, { borderColor: editButtonBorderColor }]}
-      onPress={() => {
-        if (!event) {
-          return;
-        }
-        router.push({ pathname: '/event', params: { eventId: event.id } });
-      }}
-      accessibilityLabel="編集"
-      hitSlop={8}
-    >
-      <Ionicons name="pencil-outline" size={18} color={kit.topBarText} />
-    </Pressable>
-  );
+  const todayKey = formatDateKey(new Date());
+  const canAddEpisode = event != null && !isEventStartInFuture(event, todayKey);
+  const canAddTask = event != null && eventLastDateKey(event) >= todayKey;
 
   return (
     <SubToolScreenTemplate
       title="予定"
       onBack={() => popCurrentTabScreen()}
-      right={event ? headerRight : undefined}
       titleFramed={false}
       useScreenPadding={false}
       scrollContentStyle={[
@@ -298,6 +288,18 @@ export default function EventDetailScreen() {
                   <Text style={[styles.title, contentTextStyle(content)]}>{event.title.trim() || '無題'}</Text>
                 </View>
                 {tagLabel ? <EpisodeTagChip label={tagLabel} style={styles.titleTag} /> : null}
+                <Pressable
+                  style={[
+                    episodeDetailTopBarButtonStyles.button,
+                    styles.titleEditButton,
+                    { borderColor: content.contentBorder },
+                  ]}
+                  onPress={() => router.push({ pathname: '/event', params: { eventId: event.id } })}
+                  accessibilityLabel="編集"
+                  hitSlop={8}
+                >
+                  <Ionicons name="pencil-outline" size={18} color={content.contentText} />
+                </Pressable>
               </View>
             </View>
             <View style={[styles.iconRow, styles.iconRowCenter]} accessibilityLabel="日時">
@@ -359,48 +361,56 @@ export default function EventDetailScreen() {
             </>
           ) : null}
 
-          {linkedTasks.length > 0 ? (
-            <>
-              <SectionDivider />
-              <PanelSection style={styles.section}>
-                <View style={styles.iconRow} accessibilityLabel="タスク">
-                  <View style={[styles.mark, styles.markText]}>
-                    <Ionicons name="checkbox-outline" size={18} color={content.contentTextSecondary} />
-                  </View>
-                  <View style={styles.iconBody}>
-                    {linkedTasks.map((task) => (
-                      <Pressable
-                        key={task.id}
-                        style={[styles.taskRow, contentSurfaceStyle(content), { borderColor: content.contentBorder }]}
-                        onPress={() =>
-                          router.push(detailHrefFromPathname('task', pathname, { taskId: task.id }))
-                        }
-                        accessibilityRole="button"
-                        accessibilityLabel={task.title || 'タスク'}
-                      >
-                        <Text style={[styles.taskTitle, contentTextStyle(content)]}>{task.title || '無題'}</Text>
-                        <Text style={[styles.taskMeta, contentMutedTextStyle(content)]}>
-                          {task.completedAt
-                            ? '完了'
-                            : task.dueDate
-                              ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
-                              : '期限なし'}
-                          {task.memo?.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-              </PanelSection>
-            </>
-          ) : null}
+          <SectionDivider />
+          <PanelSection style={styles.section}>
+            <View style={styles.iconRow} accessibilityLabel="タスク">
+              <View style={[styles.mark, styles.markText]}>
+                <Ionicons name="checkbox-outline" size={18} color={content.contentTextSecondary} />
+              </View>
+              <View style={styles.iconBody}>
+                {linkedTasks.length > 0 ? (
+                  linkedTasks.map((task) => (
+                    <Pressable
+                      key={task.id}
+                      style={[styles.taskRow, contentSurfaceStyle(content), { borderColor: content.contentBorder }]}
+                      onPress={() =>
+                        router.push(detailHrefFromPathname('task', pathname, { taskId: task.id }))
+                      }
+                      accessibilityRole="button"
+                      accessibilityLabel={task.title || 'タスク'}
+                    >
+                      <Text style={[styles.taskTitle, contentTextStyle(content)]}>{task.title || '無題'}</Text>
+                      <Text style={[styles.taskMeta, contentMutedTextStyle(content)]}>
+                        {task.completedAt
+                          ? '完了'
+                          : task.dueDate
+                            ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
+                            : '期限なし'}
+                        {task.memo?.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
+                      </Text>
+                    </Pressable>
+                  ))
+                ) : (
+                  <Text style={[styles.iconText, contentMutedTextStyle(content)]}>タスクはありません</Text>
+                )}
+              </View>
+              {canAddTask ? (
+                <Pressable
+                  style={styles.sectionAdd}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="タスクを追加"
+                  onPress={() => router.push({ pathname: '/task-edit', params: { eventId: event.id } })}
+                >
+                  <Ionicons name="add" size={18} color={content.contentTextSecondary} />
+                </Pressable>
+              ) : null}
+            </View>
+          </PanelSection>
 
           <SectionDivider />
           <PanelSection style={styles.section}>
-            <View
-              style={[styles.iconRow, linkedEpisodes.length === 0 ? styles.iconRowCenter : null]}
-              accessibilityLabel="登録済みエピソード"
-            >
+            <View style={styles.iconRow} accessibilityLabel="登録済みエピソード">
               <View style={[styles.mark, linkedEpisodes.length > 0 ? styles.markText : null]}>
                 <Ionicons name="book-outline" size={18} color={content.contentTextSecondary} />
               </View>
@@ -439,28 +449,52 @@ export default function EventDetailScreen() {
                   登録済みのエピソードはありません
                 </Text>
               )}
+              {canAddEpisode ? (
+                <Pressable
+                  style={styles.sectionAdd}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="エピソードを追加"
+                  onPress={() => openEpisodeComposerForEvent(event.id)}
+                >
+                  <Ionicons name="add" size={18} color={content.contentTextSecondary} />
+                </Pressable>
+              ) : null}
             </View>
           </PanelSection>
 
-          {participantMemoPeople.length > 0 ? (
-            <>
-              <SectionDivider />
-              <PanelSection style={styles.section}>
-                <View style={styles.iconRow} accessibilityLabel="参加者のメモ">
-                  <View style={[styles.mark, styles.markText]}>
-                    <Ionicons name="chatbox-ellipses-outline" size={18} color={content.contentTextSecondary} />
-                  </View>
-                  <View style={styles.iconBody}>
-                    <EventParticipantMemoList
-                      people={participantMemoPeople}
-                      dateRange={participantMemoDateRange}
-                      readOnly
-                    />
-                  </View>
-                </View>
-              </PanelSection>
-            </>
-          ) : null}
+          <SectionDivider />
+          <PanelSection style={styles.section}>
+            <View style={styles.iconRow} accessibilityLabel="参加者のメモ">
+              <View style={[styles.mark, styles.markText]}>
+                <Ionicons name="chatbox-ellipses-outline" size={18} color={content.contentTextSecondary} />
+              </View>
+              <View style={styles.iconBody}>
+                {participantMemoPeople.length > 0 ? (
+                  <EventParticipantMemoList
+                    people={participantMemoPeople}
+                    dateRange={participantMemoDateRange}
+                    readOnly
+                  />
+                ) : (
+                  <Text style={[styles.iconText, contentMutedTextStyle(content)]}>
+                    人物メモはありません
+                  </Text>
+                )}
+              </View>
+              <Pressable
+                style={styles.sectionAdd}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="参加者のメモを追加"
+                onPress={() =>
+                  router.push({ pathname: '/event', params: { eventId: event.id, section: 'memos' } })
+                }
+              >
+                <Ionicons name="add" size={18} color={content.contentTextSecondary} />
+              </Pressable>
+            </View>
+          </PanelSection>
         </>
       )}
     </SubToolScreenTemplate>
@@ -507,6 +541,16 @@ const styles = StyleSheet.create({
   titleTag: {
     flexShrink: 0,
     marginTop: 1,
+  },
+  titleEditButton: {
+    marginLeft: 'auto',
+    backgroundColor: 'transparent',
+  },
+  sectionAdd: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   dateLine: {
     flex: 1,

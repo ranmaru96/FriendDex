@@ -50,6 +50,8 @@ type NoteBlockEditorProps = {
   bottomGap?: number;
   style?: StyleProp<ViewStyle | TextStyle>;
   accessibilityLabel?: string;
+  /** false のとき箇条書きバーを出さない */
+  formatToolbar?: boolean;
 };
 
 function numberedLabel(blocks: NoteBlock[], index: number): number {
@@ -130,6 +132,7 @@ export function NoteBlockEditor({
   bottomGap = DEFAULT_BOTTOM_GAP,
   style,
   accessibilityLabel,
+  formatToolbar = true,
 }: NoteBlockEditorProps) {
   const content = useContentColors();
   const shape = useAppThemeOptional()?.shape;
@@ -416,7 +419,7 @@ export function NoteBlockEditor({
   const presentAccessory = accessory?.present;
 
   useEffect(() => {
-    if (focusedIndex == null) {
+    if (!formatToolbar || focusedIndex == null) {
       return;
     }
     presentAccessory?.({
@@ -424,7 +427,7 @@ export function NoteBlockEditor({
       activeKind,
       applyKind: stableApplyKind,
     });
-  }, [presentAccessory, accessoryId, activeKind, stableApplyKind, focusedIndex]);
+  }, [formatToolbar, presentAccessory, accessoryId, activeKind, stableApplyKind, focusedIndex]);
 
   useEffect(() => {
     return () => {
@@ -437,7 +440,7 @@ export function NoteBlockEditor({
   const showPlaceholder =
     blocks.length === 1 && blocks[0].kind === 'paragraph' && blocks[0].text === '';
   const innerRadius = shape?.innerRadius ?? 8;
-  const showInlineToolbar = Platform.OS === 'web';
+  const showInlineToolbar = formatToolbar && Platform.OS === 'web';
 
   const rows = (
     <View style={styles.rows}>

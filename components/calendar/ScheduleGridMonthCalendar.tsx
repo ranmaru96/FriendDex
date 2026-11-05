@@ -62,6 +62,7 @@ type ScheduleGridMonthCalendarProps = {
   todayKey: string;
   events: Event[];
   onDayPress: (dateKey: string) => void;
+  onDayLongPress?: (dateKey: string) => void;
   onMonthChange: (year: number, month: number) => void;
   edgeToEdge?: boolean;
   /** 誕生日がある月日（MM-DD）。年は問わない */
@@ -150,6 +151,7 @@ function DayCell({
   todayKey,
   events,
   onDayPress,
+  onDayLongPress,
   isLastColumn,
   gridLineColor,
   gridLineWidth,
@@ -164,6 +166,7 @@ function DayCell({
   todayKey: string;
   events: Event[];
   onDayPress: (dateKey: string) => void;
+  onDayLongPress?: (dateKey: string) => void;
   isLastColumn: boolean;
   gridLineColor: string;
   gridLineWidth: number;
@@ -208,6 +211,7 @@ function DayCell({
         },
       ]}
       onPress={() => onDayPress(day.dateKey)}
+      onLongPress={onDayLongPress ? () => onDayLongPress(day.dateKey) : undefined}
     >
       {isSelected ? (
         <View
@@ -283,6 +287,7 @@ function WeekRow({
   todayKey,
   events,
   onDayPress,
+  onDayLongPress,
   gridLineColor,
   gridLineWidth,
   birthdayMonthDays,
@@ -296,6 +301,7 @@ function WeekRow({
   todayKey: string;
   events: Event[];
   onDayPress: (dateKey: string) => void;
+  onDayLongPress?: (dateKey: string) => void;
   gridLineColor: string;
   gridLineWidth: number;
   birthdayMonthDays?: Set<string>;
@@ -327,6 +333,7 @@ function WeekRow({
           todayKey={todayKey}
           events={events}
           onDayPress={onDayPress}
+          onDayLongPress={onDayLongPress}
           isLastColumn={dayIndex === 6}
           gridLineColor={gridLineColor}
           gridLineWidth={gridLineWidth}
@@ -397,6 +404,7 @@ export function ScheduleGridMonthCalendar({
   todayKey,
   events,
   onDayPress,
+  onDayLongPress,
   onMonthChange,
   edgeToEdge = false,
   birthdayMonthDays,
@@ -647,6 +655,7 @@ export function ScheduleGridMonthCalendar({
             todayKey={todayKey}
             events={events}
             onDayPress={onDayPress}
+            onDayLongPress={onDayLongPress}
             gridLineColor={gridLineColor}
             gridLineWidth={gridLineWidth}
             birthdayMonthDays={birthdayMonthDays}

@@ -13,7 +13,6 @@ export type {
   CalendarEventCardStyle,
   CalendarEventMemoDisplay,
   CalendarEventTimeDisplay,
-  CalendarMonthLayout,
   DetailProfileCardStyle,
   EpisodeListCardLayout,
   EpisodeListPhotoLayout,

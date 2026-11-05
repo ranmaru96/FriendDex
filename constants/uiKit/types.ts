@@ -12,7 +12,6 @@ export type ParticipantChipStyle = 'default' | 'fitted';
 export type EpisodeListCardLayout = 'classic' | 'photoRight';
 export type EpisodeListPhotoLayout = 'compactTwoSideBySide' | 'tallOne';
 export type CalendarEventMemoDisplay = 'full' | 'twoLines' | 'oneLine';
-export type CalendarMonthLayout = 'classic' | 'scheduleGrid';
 export type CalendarEventTimeDisplay = 'column';
 export type CalendarEventCardStyle = 'roundedCards';
 /** Detail プロフィール枠: flat=フルブリード風（カード廃止・固定） */
@@ -82,7 +81,6 @@ export type UiKit = {
   /** @deprecated episodeListPhotoLayout から導出。互換のため残す */
   episodeListPhotoSpanRows: number;
   calendarEventMemoDisplay: CalendarEventMemoDisplay;
-  calendarMonthLayout: CalendarMonthLayout;
   /** カレンダー予定カードの時刻表示 */
   calendarEventTimeDisplay: CalendarEventTimeDisplay;
   /** カレンダー画面 ScrollView の左右余白（0 でフルブリード） */

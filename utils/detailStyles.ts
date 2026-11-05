@@ -1108,10 +1108,16 @@ export function createDetailStyles(c: DetailThemeColors) {
   },
   memoMetaRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
     gap: 6,
-    marginTop: 6,
+    marginTop: 4,
+  },
+  memoMetaDate: {
+    marginTop: 0,
+  },
+  memoMetaEvent: {
+    marginTop: 0,
+    flexShrink: 1,
   },
   memoComposerRow: {
     flexDirection: 'row',

@@ -28,12 +28,6 @@ export const getEventStartDateKey = (event: Event): string => {
 export const isEventStartInFuture = (event: Event, todayKey = formatDateKey(new Date())): boolean =>
   getEventStartDateKey(event) > todayKey;
 
-export const getMonthRangeIso = (year: number, month: number): { rangeStartAt: string; rangeEndAt: string } => {
-  const rangeStartAt = new Date(year, month - 1, 1, 0, 0, 0, 0).toISOString();
-  const rangeEndAt = new Date(year, month, 1, 0, 0, 0, 0).toISOString();
-  return { rangeStartAt, rangeEndAt };
-};
-
 const WEEKDAY_SHORT = ['日', '月', '火', '水', '木', '金', '土'] as const;
 
 const formatHm = (date: Date): string => {

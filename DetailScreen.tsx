@@ -79,6 +79,7 @@ import {
   getMergedEpisodeTagLabels,
   getEpisodeListPhotoUrisMap,
   getEpisodeParticipantFriendIds,
+  getEvent,
   getFriendById,
   getIncomingSharedEpisodePhotoUrisMap,
   getMyself,
@@ -1346,6 +1347,21 @@ export default function DetailScreen() {
       if (!b.date) return 1;
       return b.date.localeCompare(a.date);
     });
+  }, [profileMemos]);
+
+  const memoEventTitleById = useMemo(() => {
+    const titles = new Map<string, string>();
+    for (const memo of profileMemos) {
+      const eventId = memo.eventId?.trim() ?? '';
+      if (!eventId || titles.has(eventId)) {
+        continue;
+      }
+      const title = getEvent(eventId)?.title.trim() ?? '';
+      if (title) {
+        titles.set(eventId, title);
+      }
+    }
+    return titles;
   }, [profileMemos]);
 
   const heroBirthdayLabel = useMemo(() => {
@@ -3022,7 +3038,11 @@ export default function DetailScreen() {
               </Text>
             ) : (
               <View style={isCodex ? { gap: kit.episodeListCardGap } : undefined}>
-              {visibleMemos.map((memo) => (
+              {visibleMemos.map((memo) => {
+                const eventTitle = memo.eventId
+                  ? memoEventTitleById.get(memo.eventId.trim())
+                  : undefined;
+                return (
                 <OptionalOffsetCard key={memo.id} enabled={isCodex}>
                 <Pressable
                   style={[
@@ -3052,11 +3072,23 @@ export default function DetailScreen() {
                   </View>
                   <View style={styles.sayingQuoteBody}>
                     <Text style={styles.memoBodyText}>{memo.text}</Text>
-                    {memo.date ? <Text style={styles.sayingQuoteDate}>{memo.date}</Text> : null}
+                    {eventTitle ? (
+                      <View style={styles.memoMetaRow}>
+                        {memo.date ? (
+                          <Text style={[styles.sayingQuoteDate, styles.memoMetaDate]}>{memo.date}</Text>
+                        ) : null}
+                        <Text style={[styles.sayingQuoteDate, styles.memoMetaEvent]} numberOfLines={1}>
+                          {eventTitle}
+                        </Text>
+                      </View>
+                    ) : memo.date ? (
+                      <Text style={styles.sayingQuoteDate}>{memo.date}</Text>
+                    ) : null}
                   </View>
                 </Pressable>
                 </OptionalOffsetCard>
-              ))}
+                );
+              })}
               </View>
             )}
             </View>

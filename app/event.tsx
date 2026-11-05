@@ -11,10 +11,11 @@ import {
   View,
 } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
+import { BackdropBlur } from '@/components/screen/BackdropBlur';
 import { useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { detailHrefFromHost } from '@/utils/detailPaths';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
-import { EpisodeListCard } from '@/components/episode/EpisodeListCard';
 import type { Option } from '@/components/episode/types';
 import { EventParticipantMemoList } from '@/components/event/EventParticipantMemoList';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
@@ -82,7 +83,6 @@ import {
   deleteTasksByIds,
   getDistinctAffiliations,
   getDistinctExperiences,
-  getEpisodeListPhotoUrisMap,
   getEpisodesByEventId,
   getEvent,
   getEventParticipants,
@@ -98,8 +98,8 @@ import {
   updateEventNotificationId,
   updateFriend,
 } from '../db';
-import type { Episode, EpisodeParticipant, EventInput, Friend, ProfileMemo, Task } from '../types';
-import { buildParticipantChipDisplays, buildParticipantChips } from '../utils/episodeHelpers';
+import type { EpisodeParticipant, EventInput, Friend, ProfileMemo, Task } from '../types';
+import { buildParticipantChipDisplays } from '../utils/episodeHelpers';
 import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
 const buildFriendNameById = (friendList: Friend[]): Map<string, string> =>
@@ -202,10 +202,8 @@ import {
   parseDateKey,
 } from '../utils/eventHelpers';
 import { eventHrefMatch } from '@/utils/detailRouteMemory';
-import { leaveForgottenDetail, openEpisodeComposerForEvent } from '@/utils/tabNavigation';
+import { leaveForgottenDetail } from '@/utils/tabNavigation';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
-import { formatTaskDueDateLabel } from '@/utils/taskHelpers';
-import { formatNotePreview } from '@/utils/noteBlocks';
 import {
   friendIdsToProfileIds,
   profileIdsToFriendIds,
@@ -281,10 +279,11 @@ export default function EventScreen() {
   const appTheme = useAppThemeOptional();
   const dateTimePickerProps = contentDateTimePickerProps(appTheme?.variant);
   const fieldCorner = { borderRadius: Radius.sm };
-  const params = useLocalSearchParams<{ eventId?: string; date?: string; draft?: string }>();
+  const params = useLocalSearchParams<{ eventId?: string; date?: string; draft?: string; section?: string }>();
   const eventId = parseRouteParam(params.eventId);
   const initialDate = parseRouteParam(params.date);
   const isEditing = eventId.length > 0;
+  const memoOnly = parseRouteParam(params.section) === 'memos';
 
   const [title, setTitle] = useState('');
   const [memo, setMemo] = useState('');
@@ -323,10 +322,6 @@ export default function EventScreen() {
   };
 
   useEffect(() => {
-    navigation.setOptions({ gestureEnabled: !isSaving });
-  }, [isSaving, navigation]);
-
-  useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', (event) => {
       if (allowLeaveRef.current) {
         return;
@@ -343,6 +338,8 @@ export default function EventScreen() {
   const [activePicker, setActivePicker] = useState<PickerTarget>(null);
   useDismissPickerOnKeyboardShow(activePicker != null, () => setActivePicker(null));
   const [isReady, setIsReady] = useState(false);
+  const [modalViewportHeight, setModalViewportHeight] = useState(0);
+  const [modalContentHeight, setModalContentHeight] = useState(0);
   const [draftBaseline, setDraftBaseline] = useState<string | null>(null);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [affiliationOptions, setAffiliationOptions] = useState<Option[]>([]);
@@ -360,13 +357,9 @@ export default function EventScreen() {
   const [selectorAffiliationFilter, setSelectorAffiliationFilter] = useState('');
   const [selectorExperienceFilter, setSelectorExperienceFilter] = useState('');
   const [notifyEnabled, setNotifyEnabled] = useState(true);
-  const [linkedEpisodes, setLinkedEpisodes] = useState<Episode[]>([]);
   const [linkedTasks, setLinkedTasks] = useState<Task[]>([]);
   const [taskMigrateModalVisible, setTaskMigrateModalVisible] = useState(false);
   const [taskMigrateIds, setTaskMigrateIds] = useState<Set<string>>(new Set());
-  const [episodePhotoUrisById, setEpisodePhotoUrisById] = useState<Map<string, string[]>>(
-    () => new Map()
-  );
   const [notifyTimingPreset, setNotifyTimingPreset] = useState<EventNotifyTimingPreset>(
     DEFAULT_NOTIFY_TIMING_PRESET
   );
@@ -439,31 +432,6 @@ export default function EventScreen() {
     return people;
   }, [friendNameById, friendPhotoById, myselfId, participantEntries, participantMemos]);
 
-  const handleOpenLinkedEpisode = useCallback(
-    (episode: Episode) => {
-      if (savingRef.current) {
-        return;
-      }
-      const ownerId = episode.authorFriendId.trim() || myselfId || '';
-      if (!ownerId) {
-        return;
-      }
-      router.push(detailHrefFromHost('episode', { episodeId: episode.id, ownerId }));
-    },
-    [myselfId, router]
-  );
-
-  const handleAddLinkedEpisode = useCallback(() => {
-    if (savingRef.current || !isEditing) {
-      return;
-    }
-    const todayKey = formatDateKey(new Date());
-    if (!startDateKey.trim() || todayKey < startDateKey.trim()) {
-      return;
-    }
-    openEpisodeComposerForEvent(eventId);
-  }, [eventId, isEditing, startDateKey]);
-
   const loadEvent = useCallback(() => {
     initializeDatabase();
     const currentMyselfId = getMyself();
@@ -491,9 +459,7 @@ export default function EventScreen() {
       setParticipantMemos(openedMemos.memos);
       setNotifyEnabled(true);
       setNotifyTimingPreset(DEFAULT_NOTIFY_TIMING_PRESET);
-      setLinkedEpisodes([]);
       setLinkedTasks([]);
-      setEpisodePhotoUrisById(new Map());
       const loaded = buildNewEventForm(initialDate);
       const loadedBody = serializeEventForm(loaded);
       setDraftBaseline(loadedBody);
@@ -598,9 +564,6 @@ export default function EventScreen() {
           allDay: false as const,
         };
     setNotifyTimingPreset(inferNotifyTimingPreset(event.notifyAt, timingInput));
-    const episodes = getEpisodesByEventId(eventId);
-    setLinkedEpisodes(episodes);
-    setEpisodePhotoUrisById(getEpisodeListPhotoUrisMap(episodes.map((episode) => episode.id)));
     setLinkedTasks(getTasksByEventId(eventId));
     const loaded = buildSavedEventForm(event, '');
     const loadedBody = serializeEventForm({
@@ -725,34 +688,14 @@ export default function EventScreen() {
     });
   }, [endDateKey, isReady, startDateKey]);
 
-  const reloadLinkedEpisodes = useCallback(() => {
+  const reloadLinkedTasks = useCallback(() => {
     if (!isEditing) {
-      setLinkedEpisodes([]);
-      setEpisodePhotoUrisById(new Map());
       setLinkedTasks([]);
       return;
     }
     initializeDatabase();
-    const episodes = getEpisodesByEventId(eventId);
-    setLinkedEpisodes(episodes);
-    setEpisodePhotoUrisById(getEpisodeListPhotoUrisMap(episodes.map((episode) => episode.id)));
     setLinkedTasks(getTasksByEventId(eventId));
   }, [eventId, isEditing]);
-
-  const handleAddLinkedTask = useCallback(() => {
-    if (savingRef.current || !isEditing) {
-      return;
-    }
-    const todayKey = formatDateKey(new Date());
-    const eventLastDateKey = (endDateKey.trim() || startDateKey).trim();
-    if (eventLastDateKey && eventLastDateKey < todayKey) {
-      return;
-    }
-    router.push({
-      pathname: '/task-edit',
-      params: { eventId },
-    });
-  }, [endDateKey, eventId, isEditing, router, startDateKey]);
 
   const performEventDelete = useCallback(async () => {
     if (savingRef.current) {
@@ -838,8 +781,8 @@ export default function EventScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      reloadLinkedEpisodes();
-    }, [reloadLinkedEpisodes])
+      reloadLinkedTasks();
+    }, [reloadLinkedTasks])
   );
 
   useEffect(() => {
@@ -864,26 +807,8 @@ export default function EventScreen() {
     };
   }, [loadEvent]);
 
-  const screenTitle = isEditing ? '予定を編集' : '予定を追加';
-
-  /** 終了日（なければ開始日）が昨日以前なら過去予定 */
-  const isPastEvent = useMemo(() => {
-    const todayKey = formatDateKey(new Date());
-    const lastDateKey = (endDateKey.trim() || startDateKey).trim();
-    return Boolean(lastDateKey) && lastDateKey < todayKey;
-  }, [endDateKey, startDateKey]);
-  const showLinkedTasksSection = isEditing && (!isPastEvent || linkedTasks.length > 0);
-  const canAddLinkedTask = isEditing && !isPastEvent;
-
-  /** 開始日の前日まではエピソード追加不可。当日以降に追加欄を出す */
-  const canAddLinkedEpisode = useMemo(() => {
-    if (!isEditing || !startDateKey.trim()) {
-      return false;
-    }
-    const todayKey = formatDateKey(new Date());
-    return todayKey >= startDateKey.trim();
-  }, [isEditing, startDateKey]);
-  const showLinkedEpisodesSection = isEditing && (canAddLinkedEpisode || linkedEpisodes.length > 0);
+  const blurTint = appTheme?.variant === 'black' ? 'dark' : 'light';
+  const closeIconColor = appTheme?.colors.onScreenText ?? Theme.textPrimary;
 
   const buildEventInput = (): EventInput | null => {
     const normalizedTitle = title.trim();
@@ -1289,28 +1214,66 @@ export default function EventScreen() {
     return null;
   }
 
+  const modalOverflows = modalViewportHeight > 0 && modalContentHeight > modalViewportHeight;
+
   return (
     <>
-      <FormScreenTemplate
-        title={screenTitle}
-        onBack={leaveScreen}
-        backDisabled={isSaving}
-        right={
-          <Pressable
-            style={[styles.saveButton, contentFilledButtonStyle(content), isSaving ? styles.saveButtonBusy : null]}
-            onPress={handleSave}
-            disabled={isSaving}
+      <View
+        style={styles.modalRoot}
+        onLayout={(event) => {
+          const next = Math.round(event.nativeEvent.layout.height);
+          setModalViewportHeight((current) => (current === next ? current : next));
+        }}
+      >
+        <BackdropBlur tint={blurTint} />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={leaveScreen}
+          disabled={isSaving}
+          accessibilityRole="button"
+          accessibilityLabel="閉じる"
+        />
+        <View style={[styles.modalCard, modalOverflows ? { height: modalViewportHeight } : null]}>
+          <View
+            style={[
+              styles.modalCardInner,
+              { backgroundColor: kit.screenBackground },
+              modalOverflows ? styles.modalCardFill : null,
+            ]}
           >
-            <Text style={[styles.saveButtonText, contentFilledButtonTextStyle(content)]}>
-              {isEditing ? '更新' : '保存'}
-            </Text>
-          </Pressable>
-        }
+      <FormScreenTemplate
+        useTopBar={false}
+        fitContent={!modalOverflows}
+        onContentSizeChange={(_width, height) => {
+          const next = Math.round(height);
+          setModalContentHeight((current) => (current === next ? current : next));
+        }}
         extraScrollHeight={140}
         scrollContentStyle={styles.scrollContent}
       >
         <FormScreenBody style={{ borderRadius: kit.formPanelBorderRadius }}>
         <FormScreenSection style={styles.formSection}>
+          {memoOnly ? (
+            <>
+              <View style={styles.linkedHeader}>
+                <Text style={[styles.linkedHeaderLabel, contentTextStyle(content)]}>参加者のメモ</Text>
+              </View>
+              {participantMemoPeople.length > 0 ? (
+                <EventParticipantMemoList
+                  people={participantMemoPeople}
+                  dateRange={memoDateRange}
+                  onChangeMemos={(friendId, memos) => {
+                    setParticipantMemos((prev) => ({ ...prev, [friendId]: memos }));
+                  }}
+                />
+              ) : (
+                <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>
+                  人物メモを書ける相手がいません
+                </Text>
+              )}
+            </>
+          ) : (
+          <>
           <FormRow label="タイトル" labelStyle={styles.fieldLabel}>
             <TextInput
               style={[styles.textInput, fieldCorner, contentInputStyle(content)]}
@@ -1458,6 +1421,7 @@ export default function EventScreen() {
 
           <FormRow label="メモ" layout="vertical">
             <NoteBlockEditor
+              formatToolbar={false}
               style={[styles.memoInput, fieldCorner, contentInputStyle(content)]}
               placeholder="入力"
               placeholderTextColor={content.contentTextSecondary}
@@ -1467,119 +1431,8 @@ export default function EventScreen() {
               uncapped
             />
           </FormRow>
-
-          {showLinkedTasksSection ? (
-            <>
-              <EventFieldDivider />
-              <View style={[styles.linkedHeader, styles.linkedHeaderNearLabel]}>
-                <Text style={[styles.linkedHeaderLabel, contentTextStyle(content)]}>タスク</Text>
-                {canAddLinkedTask ? (
-                  <Pressable
-                    accessibilityLabel="タスクを追加"
-                    style={[styles.participantAddChip, contentPersonTagStyle(content)]}
-                    onPress={handleAddLinkedTask}
-                  >
-                    <Text style={[styles.participantAddChipText, contentTagTextStyle(content)]}>＋</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-              {linkedTasks.length > 0 ? (
-                <View style={styles.linkedList}>
-                  {linkedTasks.map((task) => (
-                    <Pressable
-                      key={task.id}
-                      style={[
-                        styles.linkedTaskRow,
-                        fieldCorner,
-                        contentSurfaceStyle(content),
-                        { borderColor: content.contentBorder },
-                      ]}
-                      onPress={() => {
-                        if (savingRef.current) {
-                          return;
-                        }
-                        router.push({ pathname: '/task-edit', params: { taskId: task.id } });
-                      }}
-                    >
-                      <Text style={[styles.linkedTaskTitle, contentTextStyle(content)]}>{task.title}</Text>
-                      <Text style={[styles.linkedTaskMeta, contentMutedTextStyle(content)]}>
-                        {task.completedAt
-                          ? '完了'
-                          : task.dueDate
-                            ? `期限 ${formatTaskDueDateLabel(task.dueDate)}`
-                            : '期限なし'}
-                        {task.memo?.trim() ? ` · ${formatNotePreview(task.memo)}` : ''}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              ) : (
-                <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>まだタスクがありません</Text>
-              )}
-            </>
-          ) : null}
-
-          {showLinkedEpisodesSection ? (
-            <>
-              <EventFieldDivider />
-              <View style={styles.linkedHeader}>
-                <Text style={[styles.linkedHeaderLabel, contentTextStyle(content)]}>エピソード</Text>
-                {canAddLinkedEpisode ? (
-                  <Pressable
-                    accessibilityLabel="エピソードを追加"
-                    style={[styles.participantAddChip, contentPersonTagStyle(content)]}
-                    onPress={handleAddLinkedEpisode}
-                  >
-                    <Text style={[styles.participantAddChipText, contentTagTextStyle(content)]}>＋</Text>
-                  </Pressable>
-                ) : null}
-              </View>
-              {linkedEpisodes.length > 0 ? (
-                <View style={styles.linkedList}>
-                  {linkedEpisodes.map((episode) => {
-                    const chips = buildParticipantChips(episode, friendNameById, {
-                      friendPhotoById,
-                      excludeFriendIds: myselfId ? [myselfId] : [],
-                    });
-                    return (
-                      <EpisodeListCard
-                        key={episode.id}
-                        title={episode.title}
-                        date={episode.date}
-                        episodeTag={episode.tag}
-                        chips={chips}
-                        visibilityMode={episode.visibilityMode}
-                        photoUris={episodePhotoUrisById.get(episode.id)}
-                        unfilled={episode.pendingReview === true}
-                        onPress={() => handleOpenLinkedEpisode(episode)}
-                        style={styles.linkedEpisodeCard}
-                      />
-                    );
-                  })}
-                </View>
-              ) : (
-                <Text style={[styles.emptyText, contentMutedTextStyle(content)]}>
-                  まだエピソードがありません
-                </Text>
-              )}
-            </>
-          ) : null}
-
-          {participantMemoPeople.length > 0 ? (
-            <>
-              <EventFieldDivider />
-              <View style={styles.linkedHeader}>
-                <Text style={[styles.linkedHeaderLabel, contentTextStyle(content)]}>参加者のメモ</Text>
-              </View>
-              <EventParticipantMemoList
-                people={participantMemoPeople}
-                dateRange={memoDateRange}
-                onChangeMemos={(friendId, memos) => {
-                  setParticipantMemos((prev) => ({ ...prev, [friendId]: memos }));
-                }}
-              />
-            </>
-          ) : null}
+          </>
+          )}
 
           <View style={styles.formActions}>
             <Pressable
@@ -1607,7 +1460,7 @@ export default function EventScreen() {
         </FormScreenSection>
         </FormScreenBody>
 
-        {isEditing ? (
+        {isEditing && !memoOnly ? (
           <Pressable
             style={[styles.deleteLinkWrap, isSaving ? styles.saveButtonBusy : null]}
             onPress={handleDelete}
@@ -1619,6 +1472,19 @@ export default function EventScreen() {
           </Pressable>
         ) : null}
       </FormScreenTemplate>
+            <Pressable
+              style={[styles.closeButton, isSaving ? styles.saveButtonBusy : null]}
+              onPress={leaveScreen}
+              disabled={isSaving}
+              accessibilityRole="button"
+              accessibilityLabel="閉じる"
+              hitSlop={8}
+            >
+              <Ionicons name="close" size={22} color={closeIconColor} />
+            </Pressable>
+          </View>
+        </View>
+      </View>
 
       <Modal
         transparent
@@ -1817,20 +1683,34 @@ export default function EventScreen() {
   );
 }
 
+const EVENT_MODAL_SIDE_GUTTER = 36;
+
 const styles = StyleSheet.create({
-  saveButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderRadius: Radius.sm,
+  modalRoot: {
+    flex: 1,
+  },
+  modalCard: {
+    maxHeight: '100%',
+    alignSelf: 'stretch',
+    marginHorizontal: EVENT_MODAL_SIDE_GUTTER,
+    borderRadius: Radius.lg,
+    shadowColor: '#000000',
+    shadowOpacity: 0.16,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 8,
+  },
+  modalCardInner: {
+    borderRadius: Radius.lg,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#FFFFFF',
+  },
+  modalCardFill: {
+    flex: 1,
   },
   saveButtonBusy: {
     opacity: 0.55,
-  },
-  saveButtonText: {
-    fontWeight: '700',
-    fontSize: 13,
   },
   formActions: {
     flexDirection: 'row',
@@ -1862,8 +1742,18 @@ const styles = StyleSheet.create({
     fontSize: Typography.base,
   },
   scrollContent: {
-    paddingTop: Spacing.sm,
+    paddingTop: 44,
     paddingBottom: Spacing.lg,
+  },
+  closeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 2,
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   formSection: {
     gap: 0,

@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { InteractionManager, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
-import { Calendar, LocaleConfig } from 'react-native-calendars';
-import type { DateData } from 'react-native-calendars';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -11,7 +9,6 @@ import { deleteEventFormDraft, readEventFormDraft } from '@/utils/eventFormDraft
 import { promptFormDraftRestore } from '@/utils/promptFormDraftRestore';
 import { Ionicons } from '@expo/vector-icons';
 import { AddCircleButton } from '@/components/AddCircleButton';
-import { CalendarDayCell } from '@/components/calendar/CalendarDayCell';
 import {
   BIRTHDAY_ICON_COLOR,
   ScheduleGridMonthCalendar,
@@ -23,8 +20,8 @@ import { ParticipantChipList } from '@/components/participant/ParticipantChipLis
 import { OffsetCard } from '@/components/ui/OffsetCard';
 import { usesOffsetChrome } from '@/constants/designPatterns';
 import { CompactSectionHeader } from '@/components/ui/CompactSectionHeader';
-import { MetaTitleRow, type MetaTitleRowLayout } from '@/components/ui/MetaTitleRow';
-import { HomeCardElevation, Radius, Spacing, Theme } from '@/constants/theme';
+import { MetaTitleRow } from '@/components/ui/MetaTitleRow';
+import { Radius, Spacing, Theme } from '@/constants/theme';
 import type { CalendarEventMemoDisplay } from '@/constants/uiKit/types';
 import { isMonochromeAppTheme } from '@/constants/appThemes';
 import { useAppThemeOptional } from '@/contexts/AppThemeContext';
@@ -43,7 +40,6 @@ import {
   setAppSetting,
 } from './db';
 import type { Episode, Event } from './types';
-import { buildCalendarMarkedDates } from './utils/calendarMarking';
 import {
   buildBirthdayFriendsByMonthDay,
   getBirthdayFriendsForDateKey,
@@ -54,7 +50,6 @@ import {
   filterEventsByLocalDate,
   formatDateKey,
   formatEventScheduleLabelForCard,
-  getMonthRangeIso,
   parseDateKey,
 } from './utils/eventHelpers';
 import { toEventParticipantDisplays } from './utils/eventParticipantHelpers';
@@ -66,28 +61,6 @@ import {
   formatScheduleGridSelectedLabel,
   getScheduleGridMonthRangeIso,
 } from './utils/scheduleGridCalendar';
-
-LocaleConfig.locales.ja = {
-  monthNames: [
-    '1月',
-    '2月',
-    '3月',
-    '4月',
-    '5月',
-    '6月',
-    '7月',
-    '8月',
-    '9月',
-    '10月',
-    '11月',
-    '12月',
-  ],
-  monthNamesShort: ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'],
-  dayNames: ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日'],
-  dayNamesShort: ['日', '月', '火', '水', '木', '金', '土'],
-  today: '今日',
-};
-LocaleConfig.defaultLocale = 'ja';
 
 const parseMonthFromDateKey = (dateKey: string): { year: number; month: number } => {
   const [year, month] = dateKey.split('-').map(Number);
@@ -174,7 +147,6 @@ type CalendarEventCardBodyProps = {
   participants: ReturnType<typeof toEventParticipantDisplays>;
   episodeCount: number;
   selectedDate: string;
-  metaLayout: MetaTitleRowLayout;
   isCompactEventCard: boolean;
   memoDisplay: CalendarEventMemoDisplay;
   onOpen: () => void;
@@ -186,7 +158,6 @@ function CalendarEventCardBody({
   participants,
   episodeCount,
   selectedDate,
-  metaLayout,
   isCompactEventCard,
   memoDisplay,
   onOpen,
@@ -212,7 +183,7 @@ function CalendarEventCardBody({
         <MetaTitleRow
           meta={formatEventScheduleLabelForCard(event, selectedDate)}
           title={event.title}
-          layout={metaLayout}
+          layout="column"
           titleTrailing={episodeCountTag}
         />
       </Pressable>
@@ -258,11 +229,8 @@ export default function CalendarScreen() {
   const isMonochrome = isMonochromeAppTheme(appTheme?.variant);
   const content = useContentColors();
   const flushTop = isMonochrome;
-  const whiteCalendarSeparator = appTheme?.colors.tabBarBorder ?? Theme.border;
   const isCompactEventCard = kit.calendarEventMemoDisplay === 'oneLine';
-  const isScheduleGrid = kit.calendarMonthLayout === 'scheduleGrid';
   const isEdgeToEdge = kit.calendarScreenPaddingHorizontal === 0;
-  const eventMetaLayout: MetaTitleRowLayout = isScheduleGrid ? 'column' : 'stacked';
   const eventCardFill = listCardBackgroundColor(appTheme?.variant, content.contentCard);
   const eventCardShadow = isOffsetPattern ? null : listCardShadowStyle(appTheme?.variant);
   const contentCardSurface = {
@@ -327,9 +295,7 @@ export default function CalendarScreen() {
       eventLoadIdRef.current += 1;
       setEventLoadId(eventLoadIdRef.current);
       initializeDatabase();
-      const { rangeStartAt, rangeEndAt } = isScheduleGrid
-        ? getScheduleGridMonthRangeIso(year, month)
-        : getMonthRangeIso(year, month);
+      const { rangeStartAt, rangeEndAt } = getScheduleGridMonthRangeIso(year, month);
       const events = getEventsByDateRange(rangeStartAt, rangeEndAt);
       const participantMap = getEventParticipantsForEvents(events.map((event) => event.id));
       const displayMap = new Map<string, ReturnType<typeof toEventParticipantDisplays>>();
@@ -343,7 +309,7 @@ export default function CalendarScreen() {
       setParticipantsByEventId(displayMap);
       setEpisodesByEventId(getEpisodesByEventIds(events.map((event) => event.id)));
     },
-    [isScheduleGrid]
+    []
   );
 
   const refreshCalendarAfterEpisodeTagChange = useCallback(() => {
@@ -427,25 +393,17 @@ export default function CalendarScreen() {
     [monthEvents, selectedDate]
   );
 
-  const markedDates = useMemo(
-    () => buildCalendarMarkedDates(monthEvents, selectedDate, holidays, visibleMonth),
-    // episodeTagStyleEpoch: 色だけ変えたときも帯色を取り直す
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [monthEvents, selectedDate, episodeTagStyleEpoch, holidays, visibleMonth]
-  );
-
-  const handleDayPress = (day: DateData) => {
-    setSelectedDate(day.dateString);
-  };
-
   const handleScheduleGridDayPress = (dateKey: string) => {
     setSelectedDate(dateKey);
   };
 
-  const handleMonthChange = (month: DateData) => {
-    setVisibleMonth({ year: month.year, month: month.month });
-    loadMonthEvents(month.year, month.month);
-  };
+  const openAddEventForDate = useCallback(
+    (dateKey: string) => {
+      setSelectedDate(dateKey);
+      router.push({ pathname: '/event', params: { date: dateKey } });
+    },
+    [router]
+  );
 
   const handleScheduleGridMonthChange = (year: number, month: number) => {
     setVisibleMonth({ year, month });
@@ -486,40 +444,6 @@ export default function CalendarScreen() {
     [loadMonthEvents, todayKey],
   );
 
-  const shiftVisibleMonth = useCallback(
-    (delta: number) => {
-      const next = new Date(visibleMonth.year, visibleMonth.month - 1 + delta, 1);
-      const year = next.getFullYear();
-      const month = next.getMonth() + 1;
-      setVisibleMonth({ year, month });
-      loadMonthEvents(year, month);
-    },
-    [loadMonthEvents, visibleMonth.month, visibleMonth.year]
-  );
-
-  const handleClassicCalendarSwipe = useCallback(
-    (direction: 'prev' | 'next') => {
-      shiftVisibleMonth(direction === 'next' ? 1 : -1);
-    },
-    [shiftVisibleMonth]
-  );
-
-  const classicCalendarSwipeGesture = useMemo(
-    () =>
-      Gesture.Pan()
-        .activeOffsetX([-24, 24])
-        .failOffsetY([-20, 20])
-        .onEnd((event) => {
-          'worklet';
-          if (event.translationX <= -48) {
-            runOnJS(handleClassicCalendarSwipe)('next');
-          } else if (event.translationX >= 48) {
-            runOnJS(handleClassicCalendarSwipe)('prev');
-          }
-        }),
-    [handleClassicCalendarSwipe]
-  );
-
   const shiftSelectedDate = useCallback(
     (delta: number) => {
       const next = parseDateKey(selectedDate);
@@ -558,12 +482,6 @@ export default function CalendarScreen() {
     [handleEventAreaSwipe]
   );
 
-  const classicCalendarCurrent = useMemo(
-    () =>
-      `${visibleMonth.year}-${String(visibleMonth.month).padStart(2, '0')}-01`,
-    [visibleMonth.month, visibleMonth.year]
-  );
-
   const handleOpenEvent = (eventId: string) => {
     console.log('[eventPush]', { when: 'before', ...readCalendarStackLog() });
     router.push(detailHref('event', 'calendar', { eventId }));
@@ -576,15 +494,9 @@ export default function CalendarScreen() {
 
   const dateLabelFor = useCallback(
     (dateKey: string) => {
-      const holidayName = holidayNameFor(dateKey);
-      if (isScheduleGrid) {
-        return formatScheduleGridSelectedLabel(dateKey, holidayName);
-      }
-      const [year, month, day] = dateKey.split('-').map(Number);
-      const base = `${year}年${month}月${day}日`;
-      return holidayName ? `${base}（${holidayName}）` : base;
+      return formatScheduleGridSelectedLabel(dateKey, holidayNameFor(dateKey));
     },
-    [holidayNameFor, isScheduleGrid],
+    [holidayNameFor],
   );
 
   const agendaDays = useMemo(
@@ -640,7 +552,7 @@ export default function CalendarScreen() {
         <CompactSectionHeader
           title={dateLabelFor(dateKey)}
           count={events.length}
-          variant={isScheduleGrid ? 'compact' : 'classic'}
+          variant="compact"
           edgeToEdge={isEdgeToEdge}
           middle={
             birthdays.length > 0 ? (
@@ -665,7 +577,7 @@ export default function CalendarScreen() {
             options.showAdd ? (
               <AddCircleButton
                 size={28}
-                onPress={() => router.push({ pathname: '/event', params: { date: dateKey } })}
+                onPress={() => openAddEventForDate(dateKey)}
                 accessibilityLabel="予定を追加"
               />
             ) : null
@@ -705,7 +617,6 @@ export default function CalendarScreen() {
                   participants={participants}
                   episodeCount={(episodesByEventId.get(event.id) ?? []).length}
                   selectedDate={dateKey}
-                  metaLayout={eventMetaLayout}
                   isCompactEventCard={isCompactEventCard}
                   memoDisplay={kit.calendarEventMemoDisplay}
                   onOpen={() => handleOpenEvent(event.id)}
@@ -751,6 +662,7 @@ export default function CalendarScreen() {
       todayKey={todayKey}
       events={monthEvents}
       onDayPress={handleScheduleGridDayPress}
+      onDayLongPress={openAddEventForDate}
       onMonthChange={handleScheduleGridMonthChange}
       edgeToEdge={isEdgeToEdge}
       birthdayMonthDays={birthdayMonthDays}
@@ -763,7 +675,7 @@ export default function CalendarScreen() {
     />
   );
 
-  const showAgenda = isScheduleGrid && viewMode === 'agenda';
+  const showAgenda = viewMode === 'agenda';
 
   return (
     <>
@@ -786,49 +698,7 @@ export default function CalendarScreen() {
           isCompactEventCard ? styles.scrollContentCompact : null,
         ]}
       >
-        {isScheduleGrid ? (
-          showAgenda ? null : scheduleGridCalendar(false)
-        ) : (
-          <GestureDetector gesture={classicCalendarSwipeGesture}>
-          <View style={[styles.calendarShadow, isEdgeToEdge ? styles.calendarShadowEdgeToEdge : null]}>
-            <View
-              style={[
-                styles.calendarCard,
-                contentCardSurface,
-                flushTop ? { borderBottomWidth: 1.5, borderBottomColor: whiteCalendarSeparator } : null,
-                isEdgeToEdge ? styles.calendarCardEdgeToEdge : null,
-                flushTop ? styles.calendarCardFlushTop : null,
-              ]}
-            >
-              <Calendar
-                key={classicCalendarCurrent}
-                current={classicCalendarCurrent}
-                onDayPress={handleDayPress}
-                onMonthChange={handleMonthChange}
-                markedDates={markedDates}
-                dayComponent={CalendarDayCell}
-                theme={{
-                  backgroundColor: content.contentCard,
-                  calendarBackground: content.contentCard,
-                  textSectionTitleColor: content.contentText,
-                  selectedDayBackgroundColor: content.contentText,
-                  selectedDayTextColor: content.contentCard,
-                  todayTextColor: content.contentText,
-                  dayTextColor: content.contentText,
-                  textDisabledColor: content.contentTextSecondary,
-                  arrowColor: content.contentText,
-                  monthTextColor: content.contentText,
-                  textDayFontWeight: '500',
-                  textMonthFontWeight: '700',
-                  textDayHeaderFontWeight: '600',
-                  weekVerticalMargin: 2,
-                }}
-                style={styles.calendar}
-              />
-            </View>
-          </View>
-          </GestureDetector>
-        )}
+        {showAgenda ? null : scheduleGridCalendar(false)}
 
         {showAgenda ? (
           <View style={styles.agendaList}>
@@ -957,35 +827,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-  },
-  calendarShadow: {
-    borderRadius: Radius.md,
-    backgroundColor: 'transparent',
-    ...HomeCardElevation,
-  },
-  calendarShadowEdgeToEdge: {
-    borderRadius: 0,
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  calendarCard: {
-    borderRadius: Radius.md,
-    overflow: 'hidden',
-    backgroundColor: Theme.card,
-    borderWidth: 1,
-    borderColor: Theme.border,
-  },
-  calendarCardEdgeToEdge: {
-    borderRadius: 0,
-    borderLeftWidth: 0,
-    borderRightWidth: 0,
-  },
-  calendarCardFlushTop: {
-    borderTopWidth: 0,
-    borderBottomWidth: 0,
-  },
-  calendar: {
-    borderRadius: Radius.md,
   },
   eventListEdgeToEdge: {
     gap: 0,

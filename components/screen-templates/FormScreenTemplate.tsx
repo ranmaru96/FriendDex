@@ -17,6 +17,7 @@ type FormScreenTemplateProps = {
   titleAlign?: 'center' | 'left';
   onBack?: () => void;
   backDisabled?: boolean;
+  backLabel?: string;
   left?: ReactNode;
   right?: ReactNode;
   /** 中央タイトルの左側 */
@@ -26,11 +27,16 @@ type FormScreenTemplateProps = {
   footer?: ReactNode;
   /** false のとき ScreenTopBar を出さず、親ヘッダーに乗せる */
   useTopBar?: boolean;
+  /** 指定したとき、シェルの余白と重ならないよう SafeArea の辺を固定する */
+  safeAreaEdges?: readonly ('top' | 'left' | 'right' | 'bottom')[];
   extraScrollHeight?: number;
   scrollContentStyle?: StyleProp<ViewStyle>;
   scrollEnabled?: boolean;
   /** KeyboardAwareScrollView の taps 透過。デフォルト handled */
   keyboardShouldPersistTaps?: 'always' | 'handled' | 'never';
+  /** true のとき画面いっぱいに伸ばさず、中身の高さに合わせる */
+  fitContent?: boolean;
+  onContentSizeChange?: (width: number, height: number) => void;
 };
 
 export function FormScreenTemplate({
@@ -39,23 +45,28 @@ export function FormScreenTemplate({
   titleAlign = 'center',
   onBack,
   backDisabled = false,
+  backLabel,
   left,
   right,
   titleLeading,
   titleTrailing,
   footer,
   useTopBar = true,
+  safeAreaEdges: safeAreaEdgesProp,
   extraScrollHeight = 20,
   scrollContentStyle,
   scrollEnabled = true,
   keyboardShouldPersistTaps = 'handled',
+  fitContent = false,
+  onContentSizeChange,
 }: FormScreenTemplateProps) {
   const kit = useUiKit();
   const bottomNavClearance = useBottomNavScrollClearance();
   const safeAreaEdges =
-    bottomNavClearance > 0
+    safeAreaEdgesProp ??
+    (bottomNavClearance > 0
       ? (['top', 'left', 'right'] as const)
-      : (['top', 'left', 'right', 'bottom'] as const);
+      : (['top', 'left', 'right', 'bottom'] as const));
   const headerStyles = useSubScreenHeaderStyles();
   const accessoryPad = useNoteFormatAccessoryBottomPad();
   const keyboard = useKeyboardFrame();
@@ -78,22 +89,26 @@ export function FormScreenTemplate({
       title={title}
       onBack={onBack}
       backDisabled={backDisabled}
+      backLabel={backLabel}
       left={left}
       right={right}
       titleLeading={titleLeading}
       titleTrailing={titleTrailing}
     />
   );
+  const frameStyle = fitContent ? styles.fitFrame : styles.body;
+  const scrollStyle = fitContent ? styles.fitScroll : styles.scroll;
   const body = (
     <View
       ref={frameRef}
-      style={[styles.body, { backgroundColor: kit.screenBackground }]}
+      style={[frameStyle, { backgroundColor: kit.screenBackground }]}
       collapsable={false}
       onLayout={syncOverlap}
     >
-      <View style={[styles.body, { paddingBottom: bodyKeyboardPad, backgroundColor: kit.screenBackground }]}>
+      <View style={[frameStyle, { paddingBottom: bodyKeyboardPad, backgroundColor: kit.screenBackground }]}>
         <KeyboardAwareScrollView
-          style={[styles.scroll, { backgroundColor: kit.screenBackground }]}
+          style={[scrollStyle, { backgroundColor: kit.screenBackground }]}
+          onContentSizeChange={onContentSizeChange}
           contentContainerStyle={[
             styles.scrollContent,
             { paddingHorizontal: kit.screenPaddingHorizontal, paddingBottom: Spacing.lg },
@@ -117,7 +132,11 @@ export function FormScreenTemplate({
   );
 
   if (!useTopBar) {
-    return <View style={[styles.safeArea, { backgroundColor: kit.screenBackground }]}>{body}</View>;
+    return (
+      <View style={[fitContent ? styles.fitFrame : styles.safeArea, { backgroundColor: kit.screenBackground }]}>
+        {body}
+      </View>
+    );
   }
 
   return (
@@ -140,6 +159,16 @@ const styles = StyleSheet.create({
   },
   scroll: {
     flex: 1,
+  },
+  fitFrame: {
+    flexGrow: 0,
+    flexShrink: 1,
+    maxHeight: '100%',
+  },
+  fitScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+    flexBasis: 'auto',
   },
   titleSideRight: {
     flexDirection: 'row',
