@@ -6,6 +6,7 @@ import { useAppTheme } from '@/contexts/AppThemeContext';
 import { SubToolScreenTemplate } from '@/components/screen-templates';
 import { popCurrentTabScreen } from '@/utils/tabNavigation';
 import { PillTabBar, type PillTabItem } from '@/components/screen/PillTabBar';
+import { SlidingSegmentedControl } from '@/components/ui/SlidingSegmentedControl';
 import { EntrySelectorModal } from '@/components/episode/EntrySelectorModal';
 import type { EpisodeParticipantDraft } from '@/components/episode/types';
 import { ParticipantChipList } from '@/components/participant/ParticipantChipList';
@@ -23,6 +24,7 @@ import { useMoneyLoanFormStyles } from '@/components/money-loan/moneyLoanFormSty
 import { useSettlementMock } from '@/contexts/SettlementMockContext';
 import { getEpisodeParticipantFriendIds } from '@/db';
 import {
+  moneyLoanRepaidNeedsServer,
   pullSharedMoneyLoans,
   setCanonicalSharedMoneyLoanRepaid,
 } from '@/lib/sharedMoneyLoanSync';
@@ -48,12 +50,18 @@ import {
   isMoneyLoanBalanceSectionId,
   parseMoneyLoanBalanceKey,
 } from '@/utils/settlementMoneyLoanBridge';
-import { buildSettlementPersonAggregates } from '@/utils/settlementPersonAggregates';
-import { withResolvedSettlementRoomNames } from '@/utils/settlementMockHelpers';
-import { canToggleGroupTransfer } from '@/utils/settlementToggleAccess';
 import {
-  parseSettlementFromMemberIdFromTransferKey,
-  parseSettlementRoomIdFromTransferKey,
+  buildSettlementPersonAggregates,
+  retainTransfersInvolvingMe,
+} from '@/utils/settlementPersonAggregates';
+import { withResolvedSettlementRoomNames } from '@/utils/settlementMockHelpers';
+import {
+  canToggleGroupTransfer,
+  settlementRoomHasLinkablePeer,
+  transferIsBetweenUnlinkedMembers,
+} from '@/utils/settlementToggleAccess';
+import {
+  parseSettlementTransferKey,
 } from '@/utils/settlementTransferHelpers';
 import { useContentColors } from '@/utils/useContentColors';
 import {
@@ -64,6 +72,7 @@ import { buildFriendPhotoById } from '@/utils/friendPhoto';
 
 type SettlementTab = 'groups' | 'balances' | 'individual';
 type BalanceViewMode = 'room' | 'person';
+type BalanceScope = 'all' | 'mine';
 
 const SETTLEMENT_TAB_DEFS: { key: SettlementTab; caption: string; icon: PillTabItem<SettlementTab>['icon'] }[] = [
   { key: 'individual', caption: '個別', icon: 'cash-outline' },
@@ -88,6 +97,7 @@ export default function SettlementScreen() {
     useSettlementMock();
   const [activeTab, setActiveTab] = useState<SettlementTab>('individual');
   const [balanceViewMode, setBalanceViewMode] = useState<BalanceViewMode>('room');
+  const [balanceScope, setBalanceScope] = useState<BalanceScope>('all');
   const [loanUi, setLoanUi] = useState(readLocalMoneyLoanUiState);
   const friends = loanUi.friends;
   const myselfId = loanUi.myselfId;
@@ -300,18 +310,27 @@ export default function SettlementScreen() {
     return [...fromRooms, ...fromLoans];
   }, [roomsWithNames, completedTransferKeys, moneyLoanSessions, moneyLoans, friendNameById]);
 
+  const scopedTransferSections = useMemo(() => {
+    if (balanceScope === 'all') {
+      return transferSections;
+    }
+    return retainTransfersInvolvingMe(transferSections, myselfId, isMoneyLoanBalanceSectionId);
+  }, [balanceScope, myselfId, transferSections]);
+
   const personAggregates = useMemo(() => {
-    const roomOnlySections = transferSections.filter(
+    const roomOnlySections = scopedTransferSections.filter(
       (section) => !isMoneyLoanBalanceSectionId(section.room.id)
     );
-    const base = buildSettlementPersonAggregates(roomOnlySections, myselfId, friendNameById);
+    const base = buildSettlementPersonAggregates(roomOnlySections, myselfId, friendNameById, {
+      includeOthers: balanceScope === 'all',
+    });
     return mergeMoneyLoansIntoPersonAggregates(
       base,
       moneyLoans,
       buildSessionTitleById(moneyLoanSessions),
       friendNameById
     );
-  }, [transferSections, myselfId, friendNameById, moneyLoans, moneyLoanSessions]);
+  }, [scopedTransferSections, balanceScope, myselfId, friendNameById, moneyLoans, moneyLoanSessions]);
 
   const moneyLoanById = useMemo(() => new Map(moneyLoans.map((loan) => [loan.id, loan])), [moneyLoans]);
 
@@ -328,13 +347,16 @@ export default function SettlementScreen() {
 
   const toggleBalanceItem = useCallback(
     (key: string) => {
-      if (!requireOnline() || writing) {
+      if (writing) {
         return;
       }
       const loanId = parseMoneyLoanBalanceKey(key);
       if (loanId) {
         const loan = moneyLoanById.get(loanId);
         if (!loan) {
+          return;
+        }
+        if (moneyLoanRepaidNeedsServer(loan) && !requireOnline()) {
           return;
         }
         setWriting(true);
@@ -351,10 +373,15 @@ export default function SettlementScreen() {
           });
         return;
       }
-      const roomId = parseSettlementRoomIdFromTransferKey(key);
-      const fromMemberId = parseSettlementFromMemberIdFromTransferKey(key);
-      const room = roomId ? rooms.find((item) => item.id === roomId) : undefined;
-      if (room && fromMemberId && !canToggleGroupTransfer(room, fromMemberId, myselfId)) {
+      const parsed = parseSettlementTransferKey(key);
+      const room = parsed ? rooms.find((item) => item.id === parsed.roomId) : undefined;
+      if (room && parsed && !canToggleGroupTransfer(room, parsed, myselfId)) {
+        return;
+      }
+      const localOnly = Boolean(
+        room && parsed && transferIsBetweenUnlinkedMembers(room, parsed, myselfId)
+      );
+      if (!localOnly && (!room || settlementRoomHasLinkablePeer(room, myselfId)) && !requireOnline()) {
         return;
       }
       setWriting(true);
@@ -371,15 +398,17 @@ export default function SettlementScreen() {
     [loadFriends, moneyLoanById, myselfId, rooms, toggleTransferCompleted, writing]
   );
 
-  const canToggleBalanceItem = useCallback(
-    (item: { key: string; signedAmount: number }) => {
-      if (parseMoneyLoanBalanceKey(item.key)) {
-        return true;
-      }
-      return item.signedAmount < 0;
-    },
-    []
-  );
+  const canToggleBalanceItem = useCallback((item: { key: string }) => {
+    if (parseMoneyLoanBalanceKey(item.key)) {
+      return true;
+    }
+    const parsed = parseSettlementTransferKey(item.key);
+    const room = parsed ? rooms.find((entry) => entry.id === parsed.roomId) : undefined;
+    if (!room || !parsed) {
+      return false;
+    }
+    return canToggleGroupTransfer(room, parsed, myselfId);
+  }, [myselfId, rooms]);
 
   const roomPartitions = useMemo(
     () => partitionSettlementRooms(roomsWithNames, isBalanceItemCompleted),
@@ -387,8 +416,8 @@ export default function SettlementScreen() {
   );
 
   const transferPartitions = useMemo(
-    () => partitionTransferSections(transferSections, isBalanceItemCompleted),
-    [transferSections, isBalanceItemCompleted]
+    () => partitionTransferSections(scopedTransferSections, isBalanceItemCompleted),
+    [scopedTransferSections, isBalanceItemCompleted]
   );
 
   const personPartitions = useMemo(
@@ -523,30 +552,41 @@ export default function SettlementScreen() {
         {activeTab === 'balances' ? (
           <>
             <MoneyLoanFormCard>
-              <Text style={formStyles.sectionTitleOnCard}>表示</Text>
-              <View style={formStyles.modeRow}>
-                {(['room', 'person'] as const).map((mode) => {
-                  const selected = balanceViewMode === mode;
-                  return (
-                    <Pressable
-                      key={mode}
-                      style={[formStyles.modeButton, selected && formStyles.modeButtonSelected]}
-                      onPress={() => setBalanceViewMode(mode)}
-                    >
-                      <Text
-                        style={[formStyles.modeButtonText, selected && formStyles.modeButtonTextSelected]}
-                      >
-                        {mode === 'room' ? '会ごと' : '人ごと'}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
+              <View style={styles.scopeRow}>
+                <View style={styles.scopeColumn}>
+                  <Text style={[formStyles.fieldSectionLabel, styles.scopeLabel]}>まとめ</Text>
+                  <SlidingSegmentedControl
+                    options={[
+                      { value: 'room', label: '会ごと' },
+                      { value: 'person', label: '人ごと' },
+                    ]}
+                    value={balanceViewMode}
+                    onChange={setBalanceViewMode}
+                    raised
+                    compact
+                  />
+                </View>
+                <View style={styles.scopeColumn}>
+                  <Text style={[formStyles.fieldSectionLabel, styles.scopeLabel]}>範囲</Text>
+                  <SlidingSegmentedControl
+                    options={[
+                      { value: 'all', label: '全件' },
+                      { value: 'mine', label: '自分のみ' },
+                    ]}
+                    value={balanceScope}
+                    onChange={setBalanceScope}
+                    raised
+                    compact
+                  />
+                </View>
               </View>
             </MoneyLoanFormCard>
 
             {balanceViewMode === 'room' ? (
-              transferSections.length === 0 ? (
-                <Text style={styles.emptyTextOnBase}>清算案はまだありません。</Text>
+              scopedTransferSections.length === 0 ? (
+                <Text style={styles.emptyTextOnBase}>
+                  {balanceScope === 'mine' ? '自分に関係する清算はありません。' : '清算案はまだありません。'}
+                </Text>
               ) : (
                 <>
                   {transferPartitions.active.length > 0 ? (
@@ -565,7 +605,7 @@ export default function SettlementScreen() {
                               canToggle={
                                 parseMoneyLoanBalanceKey(transfer.key)
                                   ? true
-                                  : canToggleGroupTransfer(room, transfer.fromMemberId, myselfId)
+                                  : canToggleGroupTransfer(room, transfer, myselfId)
                               }
                               onToggle={() => toggleBalanceItem(transfer.key)}
                             />
@@ -599,7 +639,7 @@ export default function SettlementScreen() {
                               canToggle={
                                 parseMoneyLoanBalanceKey(transfer.key)
                                   ? true
-                                  : canToggleGroupTransfer(room, transfer.fromMemberId, myselfId)
+                                  : canToggleGroupTransfer(room, transfer, myselfId)
                               }
                               onToggle={() => toggleBalanceItem(transfer.key)}
                             />
@@ -611,7 +651,9 @@ export default function SettlementScreen() {
                 </>
               )
             ) : personAggregates.length === 0 ? (
-              <Text style={styles.emptyTextOnBase}>清算案はまだありません。</Text>
+              <Text style={styles.emptyTextOnBase}>
+                {balanceScope === 'mine' ? '自分に関係する清算はありません。' : '清算案はまだありません。'}
+              </Text>
             ) : (
               <>
                 {personPartitions.active.length > 0 ? (
@@ -685,6 +727,20 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.md,
     paddingBottom: 40,
     gap: Spacing.md,
+  },
+  scopeRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  scopeColumn: {
+    flex: 1,
+    minWidth: 0,
+    gap: 6,
+  },
+  scopeLabel: {
+    alignSelf: 'stretch',
+    textAlign: 'center',
   },
   emptyTextOnBase: {
     fontSize: 13,

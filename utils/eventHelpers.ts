@@ -24,7 +24,7 @@ export const getEventStartDateKey = (event: Event): string => {
   return formatDateKey(new Date(event.startAt));
 };
 
-/** True when the event has not started yet (episode add / link not allowed). */
+/** True when the event's start day is after today. */
 export const isEventStartInFuture = (event: Event, todayKey = formatDateKey(new Date())): boolean =>
   getEventStartDateKey(event) > todayKey;
 
@@ -153,7 +153,10 @@ export const formatEventScheduleLabelForCard = (event: Event, viewDateKey: strin
   return `${dayLabel} 終日`;
 };
 
-export const getLocalDateKeysForEvent = (event: Event): string[] => {
+export const getLocalDateKeysForEvent = (event: {
+  startAt: string;
+  endAt: string | null;
+}): string[] => {
   const start = new Date(event.startAt);
   const end = event.endAt ? new Date(event.endAt) : start;
   const keys: string[] = [];

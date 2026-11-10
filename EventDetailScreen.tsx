@@ -42,7 +42,6 @@ import {
   formatEventScheduleLabel,
   formatTimeFromDate,
   getAllDayDateKeysFromEvent,
-  isEventStartInFuture,
 } from './utils/eventHelpers';
 import { profileIdsToFriendIds } from './utils/eventParticipantHelpers';
 import {
@@ -79,13 +78,6 @@ const parseRouteParam = (value: string | string[] | undefined): string => {
 
 const buildFriendNameById = (friendList: Friend[]): Map<string, string> =>
   new Map(friendList.map((friend) => [friend.id, friend.name]));
-
-const eventLastDateKey = (event: Event): string => {
-  if (event.allDay) {
-    return getAllDayDateKeysFromEvent(event).endDateKey;
-  }
-  return formatDateKey(new Date(event.endAt ?? event.startAt));
-};
 
 /** 終了時刻を過ぎていれば true。終了が無い予定は開始時刻を過ぎたとき */
 const eventEndHasPassed = (event: Event | null): boolean => {
@@ -272,8 +264,6 @@ export default function EventDetailScreen() {
   const tagLabel = event?.episodeTag?.trim() ?? '';
   const showNotification = Boolean(event?.notifyEnabled) && !eventEndHasPassed(event);
 
-  const todayKey = formatDateKey(new Date());
-  const canAddEpisode = event != null && !isEventStartInFuture(event, todayKey);
   const deleteLockRef = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [taskMigrateVisible, setTaskMigrateVisible] = useState(false);
@@ -359,7 +349,6 @@ export default function EventDetailScreen() {
       },
     ]);
   };
-  const canAddTask = event != null && eventLastDateKey(event) >= todayKey;
 
   return (
     <SubToolScreenTemplate
@@ -512,17 +501,15 @@ export default function EventDetailScreen() {
                   <Text style={[styles.iconText, contentMutedTextStyle(content)]}>タスクはありません</Text>
                 )}
               </View>
-              {canAddTask ? (
-                <Pressable
-                  style={styles.sectionAdd}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="タスクを追加"
-                  onPress={() => router.push({ pathname: '/task-edit', params: { eventId: event.id } })}
-                >
-                  <Ionicons name="add" size={18} color={content.contentTextSecondary} />
-                </Pressable>
-              ) : null}
+              <Pressable
+                style={styles.sectionAdd}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="タスクを追加"
+                onPress={() => router.push({ pathname: '/task-edit', params: { eventId: event.id } })}
+              >
+                <Ionicons name="add" size={18} color={content.contentTextSecondary} />
+              </Pressable>
             </View>
           </PanelSection>
 
@@ -567,19 +554,17 @@ export default function EventDetailScreen() {
                   登録済みのエピソードはありません
                 </Text>
               )}
-              {canAddEpisode ? (
-                <Pressable
-                  style={styles.sectionAdd}
-                  hitSlop={12}
-                  accessibilityRole="button"
-                  accessibilityLabel="エピソードを追加"
-                  onPress={() =>
-                    router.push({ pathname: '/event-episode', params: { eventId: event.id } })
-                  }
-                >
-                  <Ionicons name="add" size={18} color={content.contentTextSecondary} />
-                </Pressable>
-              ) : null}
+              <Pressable
+                style={styles.sectionAdd}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="エピソードを追加"
+                onPress={() =>
+                  router.push({ pathname: '/event-episode', params: { eventId: event.id } })
+                }
+              >
+                <Ionicons name="add" size={18} color={content.contentTextSecondary} />
+              </Pressable>
             </View>
           </PanelSection>
 
@@ -620,12 +605,40 @@ export default function EventDetailScreen() {
       <DetailMenuSheet
         visible={menuOpen}
         onClose={() => setMenuOpen(false)}
+        editLabel="予定編集"
         onEdit={() => {
           if (!event) {
             return;
           }
           router.push({ pathname: '/event', params: { eventId: event.id } });
         }}
+        extraActions={
+          event
+            ? [
+                {
+                  label: 'タスク追加',
+                  icon: 'checkbox-outline',
+                  onPress: () =>
+                    router.push({ pathname: '/task-edit', params: { eventId: event.id } }),
+                },
+                {
+                  label: 'エピソード追加',
+                  icon: 'book-outline',
+                  onPress: () =>
+                    router.push({ pathname: '/event-episode', params: { eventId: event.id } }),
+                },
+                {
+                  label: '参加者メモ追加・編集',
+                  icon: 'chatbox-ellipses-outline',
+                  onPress: () =>
+                    router.push({
+                      pathname: '/event',
+                      params: { eventId: event.id, section: 'memos' },
+                    }),
+                },
+              ]
+            : []
+        }
         onDelete={handleDelete}
       />
       <Modal

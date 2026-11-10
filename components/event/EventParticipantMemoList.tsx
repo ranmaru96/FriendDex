@@ -127,7 +127,7 @@ export function EventParticipantMemoList({
   };
 
   return (
-    <View style={styles.list}>
+    <View style={[styles.list, readOnly ? styles.listReadOnly : null]}>
       {people.map((person) => {
         const initial = Array.from(person.name.trim())[0] ?? '?';
         return (
@@ -332,6 +332,9 @@ export function EventParticipantMemoList({
 const styles = StyleSheet.create({
   list: {
     gap: 18,
+  },
+  listReadOnly: {
+    gap: 8,
   },
   personBlock: {
     flexDirection: 'row',

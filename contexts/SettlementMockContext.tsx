@@ -27,7 +27,11 @@ import type {
   MockSettlementRoom,
 } from '@/types/settlementMock';
 import { buildFriendNameById } from '@/utils/moneyLoanHelpers';
-import { parseSettlementRoomIdFromTransferKey } from '@/utils/settlementTransferHelpers';
+import {
+  parseSettlementRoomIdFromTransferKey,
+  parseSettlementTransferKey,
+} from '@/utils/settlementTransferHelpers';
+import { transferIsBetweenUnlinkedMembers } from '@/utils/settlementToggleAccess';
 import {
   SETTLED_MONEY_LOCK_MESSAGE,
   expenseMoneyFieldsChanged,
@@ -479,8 +483,13 @@ export function SettlementMockProvider({ children }: { children: ReactNode }) {
     if (!roomId) {
       return { errorMessage: '清算項目が見つかりません。' };
     }
+    const parsed = parseSettlementTransferKey(key);
+    const room = getMockSettlementRoomById(roomId);
+    const localOnly = Boolean(
+      room && parsed && transferIsBetweenUnlinkedMembers(room, parsed, getMyself())
+    );
     const published = await pushSharedSettlementCompletion(roomId, key, willComplete);
-    if (published.errorMessage) {
+    if (published.errorMessage && !localOnly) {
       return { errorMessage: published.errorMessage };
     }
     settlementStore.setTransferCompleted(key, willComplete, { skipSharedPush: true });

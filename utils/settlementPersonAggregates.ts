@@ -26,6 +26,30 @@ export type SettlementTransferSection = {
   displayTransfers: SettlementTransferDisplay[];
 };
 
+/** 会ごと一覧を、自分が払う・受け取る行だけに絞る。常に自分側のセクションはそのまま残す。 */
+export function retainTransfersInvolvingMe(
+  sections: SettlementTransferSection[],
+  myselfId: string | null,
+  isSectionAlwaysMine: (sectionId: string) => boolean = () => false
+): SettlementTransferSection[] {
+  return sections.flatMap((section) => {
+    if (isSectionAlwaysMine(section.room.id)) {
+      return [section];
+    }
+    const myMemberId = findMyMemberId(section.room, myselfId);
+    if (!myMemberId) {
+      return [];
+    }
+    const displayTransfers = section.displayTransfers.filter(
+      (transfer) => transfer.fromMemberId === myMemberId || transfer.toMemberId === myMemberId
+    );
+    if (displayTransfers.length === 0) {
+      return [];
+    }
+    return [{ ...section, displayTransfers }];
+  });
+}
+
 const findMyMemberId = (room: MockSettlementRoom, myselfId: string | null): string | null => {
   const member = room.members.find(
     (item) => item.friendId === 'myself' || (myselfId !== null && item.friendId === myselfId)
@@ -63,54 +87,78 @@ export function formatSettlementNetSignedAmount(netSignedAmount: number): string
   return formatYen(0);
 }
 
-/** 全会の精算案から、自分視点で相手ごとに集約する */
+function pushAggregateItem(
+  aggregateMap: Map<string, SettlementPersonAggregate>,
+  counterpartyFriendId: string,
+  displayName: string,
+  signedAmount: number,
+  item: SettlementPersonTransferItem
+): void {
+  const current = aggregateMap.get(counterpartyFriendId) ?? {
+    counterpartyFriendId,
+    displayName,
+    netSignedAmount: 0,
+    items: [],
+  };
+  if (current.items.some((existing) => existing.key === item.key)) {
+    return;
+  }
+  current.netSignedAmount += signedAmount;
+  current.items.push(item);
+  aggregateMap.set(counterpartyFriendId, current);
+}
+
+/**
+ * 全会の精算案から相手ごとに集約する。
+ * includeOthers が false のときは、自分が払う・受け取る行だけ。
+ */
 export function buildSettlementPersonAggregates(
   sections: SettlementTransferSection[],
   myselfId: string | null,
-  friendNameById: Map<string, string>
+  friendNameById: Map<string, string>,
+  options?: { includeOthers?: boolean }
 ): SettlementPersonAggregate[] {
+  const includeOthers = options?.includeOthers === true;
   const aggregateMap = new Map<string, SettlementPersonAggregate>();
 
   sections.forEach(({ room, displayTransfers }) => {
     const myMemberId = findMyMemberId(room, myselfId);
-    if (!myMemberId) {
-      return;
-    }
 
     displayTransfers.forEach((transfer) => {
-      const iPay = transfer.fromMemberId === myMemberId;
-      const iReceive = transfer.toMemberId === myMemberId;
-      if (!iPay && !iReceive) {
-        return;
-      }
-
-      const counterpartyMemberId = iPay ? transfer.toMemberId : transfer.fromMemberId;
-      const counterpartyFriendId = friendIdForMember(room, counterpartyMemberId);
-      const signedAmount = iReceive ? transfer.amount : -transfer.amount;
-      const displayName = displayNameForFriend(
-        counterpartyFriendId,
-        room,
-        counterpartyMemberId,
-        friendNameById
-      );
-
-      const current = aggregateMap.get(counterpartyFriendId) ?? {
-        counterpartyFriendId,
-        displayName,
-        netSignedAmount: 0,
-        items: [],
-      };
-
-      current.netSignedAmount += signedAmount;
-      current.items.push({
+      const iPay = Boolean(myMemberId) && transfer.fromMemberId === myMemberId;
+      const iReceive = Boolean(myMemberId) && transfer.toMemberId === myMemberId;
+      const itemBase = {
         key: transfer.key,
         roomId: room.id,
         roomTitle: room.title,
         amount: transfer.amount,
-        signedAmount,
         lineLabel: `${transfer.fromName} → ${transfer.toName} : ${formatYen(transfer.amount)}`,
+      };
+      if (iPay || iReceive) {
+        const counterpartyMemberId = iPay ? transfer.toMemberId : transfer.fromMemberId;
+        const counterpartyFriendId = friendIdForMember(room, counterpartyMemberId);
+        pushAggregateItem(
+          aggregateMap,
+          counterpartyFriendId,
+          displayNameForFriend(counterpartyFriendId, room, counterpartyMemberId, friendNameById),
+          iReceive ? transfer.amount : -transfer.amount,
+          { ...itemBase, signedAmount: iReceive ? transfer.amount : -transfer.amount }
+        );
+        return;
+      }
+      if (!includeOthers) {
+        return;
+      }
+      [transfer.fromMemberId, transfer.toMemberId].forEach((memberId) => {
+        const friendId = friendIdForMember(room, memberId);
+        pushAggregateItem(
+          aggregateMap,
+          friendId,
+          displayNameForFriend(friendId, room, memberId, friendNameById),
+          0,
+          { ...itemBase, signedAmount: 0 }
+        );
       });
-      aggregateMap.set(counterpartyFriendId, current);
     });
   });
 

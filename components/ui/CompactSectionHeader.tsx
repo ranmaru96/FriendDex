@@ -16,6 +16,8 @@ type CompactSectionHeaderProps = {
   right?: ReactNode;
   /** タイトルと右端の間（例: 誕生日タグ） */
   middle?: ReactNode;
+  /** チップ枠線。指定時はテーマ既定の枠色を上書きする */
+  chipBorderColor?: string;
   style?: StyleProp<ViewStyle>;
 };
 
@@ -27,6 +29,7 @@ export function CompactSectionHeader({
   edgeToEdge = false,
   right,
   middle,
+  chipBorderColor,
   style,
 }: CompactSectionHeaderProps) {
   const appTheme = useAppThemeOptional();
@@ -58,6 +61,7 @@ export function CompactSectionHeader({
             styles.monoChip,
             isBlack ? styles.monoChipBlack : styles.monoChipWhite,
             isWhite ? whiteChipSurface : null,
+            chipBorderColor ? { borderColor: chipBorderColor } : null,
           ]}
         >
           <Text

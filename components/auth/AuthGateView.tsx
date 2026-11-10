@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -47,6 +47,7 @@ type AuthGateViewProps = {
   onEmailSubmit: (mode: AuthIntent, email: string, password: string) => void;
   onForgotPassword?: (email: string) => void;
   onSocialSubmit?: (mode: AuthIntent, provider: 'google' | 'apple') => void;
+  footer?: ReactNode;
 };
 
 export function AuthGateView({
@@ -56,6 +57,7 @@ export function AuthGateView({
   onEmailSubmit,
   onForgotPassword,
   onSocialSubmit,
+  footer = null,
 }: AuthGateViewProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -242,6 +244,7 @@ export function AuthGateView({
             </View>
           )}
         </View>
+        {footer}
       </KeyboardAwareScrollView>
     </SafeAreaView>
   );

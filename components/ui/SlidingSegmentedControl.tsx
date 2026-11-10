@@ -21,6 +21,8 @@ type SlidingSegmentedControlProps<T extends string> = {
   compact?: boolean;
   /** エピソード画面右上の切り替えと同じ、浮いたつまみ */
   raised?: boolean;
+  /** 指定するとカード幅まで伸ばさず、この幅で置く */
+  width?: number;
 };
 
 export function SlidingSegmentedControl<T extends string>({
@@ -29,6 +31,7 @@ export function SlidingSegmentedControl<T extends string>({
   onChange,
   compact = false,
   raised = false,
+  width,
 }: SlidingSegmentedControlProps<T>) {
   const content = useContentColors();
   const { variant } = useAppTheme();
@@ -53,6 +56,7 @@ export function SlidingSegmentedControl<T extends string>({
         styles.track,
         compact ? styles.trackCompact : null,
         raised ? styles.trackRaised : null,
+        width != null ? { width, alignSelf: 'flex-start' } : null,
         raised
           ? { backgroundColor: content.contentSwitchTrackOff }
           : contentInputStyle(content),

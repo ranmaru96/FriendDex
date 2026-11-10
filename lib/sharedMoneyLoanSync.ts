@@ -17,7 +17,7 @@ import {
   updateMoneyLoanSessionTitle,
 } from '@/db';
 import { getSupabaseClient } from '@/lib/supabase';
-import { getAcceptedPeerUserIds } from '@/lib/connectionSync';
+import { getAcceptedPeerUserIds, isPersonCardLockedByAcceptedConnection } from '@/lib/connectionSync';
 import { asAuthUserId, getFriendLinkedAuthUserId } from '@/utils/linkedAuthUser';
 import type { MoneyLoan, MoneyLoanDirection } from '@/types';
 import {
@@ -68,6 +68,19 @@ type SharePeerResolution =
   | { status: 'shared'; peerUserId: string; myUserId: string }
   | { status: 'local' }
   | { status: 'error'; errorMessage: string };
+
+/** 共有行の更新か、コネクト済みの相手への公開が要るときだけサーバーを使う */
+export function moneyLoanRepaidNeedsServer(
+  loan: Pick<MoneyLoan, 'sharedId' | 'incomingFromPeer' | 'counterpartyKind' | 'counterpartyValue'>
+): boolean {
+  if (loan.incomingFromPeer || loan.sharedId.trim()) {
+    return true;
+  }
+  if (loan.counterpartyKind !== 'friend') {
+    return false;
+  }
+  return isPersonCardLockedByAcceptedConnection(loan.counterpartyValue);
+}
 
 /** コネクト済みなら共有、それ以外は自分用。未ログインや未コネクトはエラーにしない。 */
 async function resolveSharePeer(friendId: string): Promise<SharePeerResolution> {
@@ -319,7 +332,7 @@ export async function setCanonicalSharedMoneyLoanRepaid(
     if (error) {
       return { errorMessage: error.message };
     }
-  } else if (!loan.incomingFromPeer) {
+  } else if (!loan.incomingFromPeer && moneyLoanRepaidNeedsServer(loan)) {
     const peer = await resolveSharePeer(
       loan.counterpartyKind === 'friend' ? loan.counterpartyValue : ''
     );

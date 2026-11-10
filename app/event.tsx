@@ -195,6 +195,7 @@ import {
   formatDateKey,
   formatTimeFromDate,
   getAllDayDateKeysFromEvent,
+  getLocalDateKeysForEvent,
   parseDateKey,
 } from '../utils/eventHelpers';
 import { getAllFriendsInDefaultOrder } from '@/utils/friendDefaultSort';
@@ -868,8 +869,15 @@ export default function EventScreen() {
     if (isEditing) {
       const todayKey = formatDateKey(new Date());
       const movingToFuture = startDateKey.trim() > todayKey;
+      const nextDateKeys = new Set(
+        getLocalDateKeysForEvent({
+          startAt: input.startAt,
+          endAt: input.endAt,
+        })
+      );
       const linked = getEpisodesByEventId(eventId);
-      if (movingToFuture && linked.length > 0) {
+      const stranded = linked.some((episode) => !nextDateKeys.has(episode.date));
+      if (movingToFuture && stranded) {
         Alert.alert(
           'エピソードとの矛盾',
           '開始日を未来に変更すると、紐づいているエピソードを予定に残せません。どうしますか？',

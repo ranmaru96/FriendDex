@@ -1,5 +1,6 @@
 import {
   BOUND_AUTH_USER_ID_KEY,
+  deleteAppSetting,
   getAppSetting,
   initializeDatabase,
   setAppSetting,
@@ -17,6 +18,12 @@ export const getBoundAuthUserId = (): string => {
 const persistBoundAuthUserId = (authUserId: string): void => {
   initializeDatabase();
   setAppSetting(BOUND_AUTH_USER_ID_KEY, authUserId);
+};
+
+/** この端末の紐付けだけ消す。次に通ったログインが新しい紐付けになる。 */
+export const clearBoundAuthUserId = (): void => {
+  initializeDatabase();
+  deleteAppSetting(BOUND_AUTH_USER_ID_KEY);
 };
 
 export const discardForeignAuthSession = async (): Promise<void> => {

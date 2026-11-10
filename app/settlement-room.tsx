@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, TextInput, View, Alert } from 'react-native';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams } from 'expo-router';
 import { Theme, Radius, Spacing } from '@/constants/theme';
@@ -18,7 +29,11 @@ import { buildFriendPhotoById } from '@/utils/friendPhoto';
 import { pullSharedSettlementRooms } from '@/lib/sharedSettlementSync';
 import { getSupabaseClient } from '@/lib/supabase';
 import { requireOnline } from '@/lib/networkReachability';
-import { canToggleGroupTransfer } from '@/utils/settlementToggleAccess';
+import {
+  canToggleGroupTransfer,
+  settlementRoomHasLinkablePeer,
+  transferIsBetweenUnlinkedMembers,
+} from '@/utils/settlementToggleAccess';
 import { readLocalMoneyLoanUiState } from '@/utils/settlementLocalSnapshot';
 import {
   SETTLED_MONEY_LOCK_MESSAGE,
@@ -118,6 +133,8 @@ export default function SettlementRoomDetailScreen() {
   const [editPayerMemberId, setEditPayerMemberId] = useState<string | null>(null);
   const [editSplitMemberIds, setEditSplitMemberIds] = useState<Set<string>>(new Set());
   const [editError, setEditError] = useState('');
+  const [editModalSlotHeight, setEditModalSlotHeight] = useState(0);
+  const [editModalFooterHeight, setEditModalFooterHeight] = useState(0);
   const appTheme = useAppThemeOptional();
   const topBarText = appTheme?.colors.topBarText ?? Theme.topBarText;
   const formStyles = useMoneyLoanFormStyles();
@@ -441,6 +458,8 @@ export default function SettlementRoomDetailScreen() {
   const closeExpenseEditor = useCallback(() => {
     setEditingExpenseId(null);
     setEditError('');
+    setEditModalSlotHeight(0);
+    setEditModalFooterHeight(0);
   }, []);
 
   const handleSaveExpense = useCallback(async () => {
@@ -516,6 +535,13 @@ export default function SettlementRoomDetailScreen() {
       },
     ]);
   }, [closeExpenseEditor, deleteExpense, editingExpenseId, moneyLocked, room, writing]);
+
+  const editModalCardMaxHeight =
+    editModalSlotHeight > 0 ? Math.floor(editModalSlotHeight * 0.86) : undefined;
+  const editModalScrollMaxHeight =
+    editModalCardMaxHeight != null
+      ? Math.max(96, editModalCardMaxHeight - editModalFooterHeight - Spacing.md * 2 - 16)
+      : undefined;
 
   const editSplitPreview = useMemo(() => {
     if (!engine) {
@@ -715,12 +741,16 @@ export default function SettlementRoomDetailScreen() {
               key={transfer.key}
               transfer={transfer}
               isCompleted={isTransferCompleted(transfer.key)}
-              canToggle={canToggleGroupTransfer(room, transfer.fromMemberId, myselfId)}
+              canToggle={canToggleGroupTransfer(room, transfer, myselfId)}
               onToggle={() => {
-                if (!canToggleGroupTransfer(room, transfer.fromMemberId, myselfId) || writing) {
+                if (!canToggleGroupTransfer(room, transfer, myselfId) || writing) {
                   return;
                 }
-                if (!requireOnline()) {
+                if (
+                  !transferIsBetweenUnlinkedMembers(room, transfer, myselfId) &&
+                  settlementRoomHasLinkablePeer(room, myselfId) &&
+                  !requireOnline()
+                ) {
                   return;
                 }
                 setWriting(true);
@@ -792,104 +822,149 @@ export default function SettlementRoomDetailScreen() {
         visible={editingExpenseId != null}
         transparent
         animationType="fade"
-        onRequestClose={closeExpenseEditor}
+        onRequestClose={() => {
+          if (!writing) {
+            closeExpenseEditor();
+          }
+        }}
       >
-        <View style={styles.titleModalOverlay}>
-          <View style={[styles.titleModalCard, styles.editModalCard, contentSurfaceStyle(content)]}>
-            <Text style={[styles.titleModalHeading, contentTextStyle(content)]}>支出を編集</Text>
-            <Text style={formStyles.formLabel}>タイトル</Text>
-            <TextInput
-              style={[styles.titleModalInput, contentInputStyle(content)]}
-              value={editTitle}
-              onChangeText={setEditTitle}
-              placeholder="例: 昼食"
-              placeholderTextColor={content.contentTextSecondary}
-            />
-            {moneyLocked ? (
-              <>
-                <Text style={[styles.memberHint, contentMutedTextStyle(content)]}>
-                  {SETTLED_MONEY_LOCK_MESSAGE}
-                </Text>
-                <Text style={[styles.expenseMeta, contentMutedTextStyle(content)]}>
-                  立替: {payerNameByMemberId.get(
-                    room.expenses.find((expense) => expense.id === editingExpenseId)?.payerMemberId ?? ''
-                  ) ?? '不明'}{' '}
-                  ·{' '}
-                  {formatYen(
-                    room.expenses.find((expense) => expense.id === editingExpenseId)?.amount ?? 0
-                  )}
-                </Text>
-              </>
-            ) : (
-              <>
-                <Text style={formStyles.formLabel}>金額</Text>
-                <TextInput
-                  style={[styles.titleModalInput, contentInputStyle(content)]}
-                  value={editAmountText}
-                  onChangeText={setEditAmountText}
-                  keyboardType="number-pad"
-                  placeholderTextColor={content.contentTextSecondary}
-                />
-                <Text style={formStyles.fieldSectionLabel}>立替者</Text>
-                <View style={styles.chipRow}>
+        <KeyboardAvoidingView
+          style={styles.editModalOverlay}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View
+            style={styles.editModalSlot}
+            onLayout={(event) => {
+              const next = Math.round(event.nativeEvent.layout.height);
+              setEditModalSlotHeight((prev) => (prev === next ? prev : next));
+            }}
+          >
+          <Pressable
+            style={styles.editModalBackdrop}
+            onPress={closeExpenseEditor}
+            disabled={writing}
+            accessibilityLabel="閉じる"
+            accessibilityRole="button"
+          />
+          <View
+            style={[
+              styles.titleModalCard,
+              styles.editModalCard,
+              contentSurfaceStyle(content),
+              editModalCardMaxHeight != null ? { maxHeight: editModalCardMaxHeight } : null,
+            ]}
+          >
+            <ScrollView
+              style={[
+                styles.editModalScroll,
+                editModalScrollMaxHeight != null ? { maxHeight: editModalScrollMaxHeight } : null,
+              ]}
+              contentContainerStyle={styles.editModalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              bounces={false}
+            >
+              <Text style={[styles.titleModalHeading, contentTextStyle(content)]}>支出を編集</Text>
+              <Text style={formStyles.formLabel}>タイトル</Text>
+              <TextInput
+                style={[styles.titleModalInput, contentInputStyle(content)]}
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="例: 昼食"
+                placeholderTextColor={content.contentTextSecondary}
+              />
+              {moneyLocked ? (
+                <>
+                  <Text style={[styles.memberHint, contentMutedTextStyle(content)]}>
+                    {SETTLED_MONEY_LOCK_MESSAGE}
+                  </Text>
+                  <Text style={[styles.expenseMeta, contentMutedTextStyle(content)]}>
+                    立替: {payerNameByMemberId.get(
+                      room.expenses.find((expense) => expense.id === editingExpenseId)?.payerMemberId ?? ''
+                    ) ?? '不明'}{' '}
+                    ·{' '}
+                    {formatYen(
+                      room.expenses.find((expense) => expense.id === editingExpenseId)?.amount ?? 0
+                    )}
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text style={formStyles.formLabel}>金額</Text>
+                  <TextInput
+                    style={[styles.titleModalInput, contentInputStyle(content)]}
+                    value={editAmountText}
+                    onChangeText={setEditAmountText}
+                    keyboardType="number-pad"
+                    placeholderTextColor={content.contentTextSecondary}
+                  />
+                  <Text style={formStyles.fieldSectionLabel}>立替者</Text>
+                  <View style={styles.chipRow}>
+                    {engine.allMembers.map((member) => {
+                      const selected = editPayerMemberId === member.id;
+                      return (
+                        <Pressable
+                          key={member.id}
+                          style={[
+                            styles.chip,
+                            contentTagStyle(content),
+                            selected ? contentSelectedOptionStyle(content) : null,
+                          ]}
+                          onPress={() => setEditPayerMemberId(member.id)}
+                        >
+                          <Text style={[styles.chipText, contentTextStyle(content)]}>{member.displayName}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  <Text style={formStyles.fieldSectionLabel}>割り勘対象</Text>
                   {engine.allMembers.map((member) => {
-                    const selected = editPayerMemberId === member.id;
+                    const selected = editSplitMemberIds.has(member.id);
                     return (
                       <Pressable
                         key={member.id}
-                        style={[
-                          styles.chip,
-                          contentTagStyle(content),
-                          selected ? contentSelectedOptionStyle(content) : null,
-                        ]}
-                        onPress={() => setEditPayerMemberId(member.id)}
+                        style={styles.splitMemberRow}
+                        onPress={() => {
+                          setEditSplitMemberIds((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(member.id)) {
+                              next.delete(member.id);
+                            } else {
+                              next.add(member.id);
+                            }
+                            return next;
+                          });
+                        }}
                       >
-                        <Text style={[styles.chipText, contentTextStyle(content)]}>{member.displayName}</Text>
+                        <View
+                          style={[
+                            styles.checkbox,
+                            { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
+                            selected
+                              ? { borderColor: content.contentText, backgroundColor: content.contentPersonTagBg }
+                              : null,
+                          ]}
+                        >
+                          {selected ? (
+                            <Text style={[styles.checkmark, { color: content.contentText }]}>✓</Text>
+                          ) : null}
+                        </View>
+                        <Text style={[styles.splitMemberName, contentTextStyle(content)]}>{member.displayName}</Text>
                       </Pressable>
                     );
                   })}
-                </View>
-                <Text style={formStyles.fieldSectionLabel}>割り勘対象</Text>
-                {engine.allMembers.map((member) => {
-                  const selected = editSplitMemberIds.has(member.id);
-                  return (
-                    <Pressable
-                      key={member.id}
-                      style={styles.splitMemberRow}
-                      onPress={() => {
-                        setEditSplitMemberIds((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(member.id)) {
-                            next.delete(member.id);
-                          } else {
-                            next.add(member.id);
-                          }
-                          return next;
-                        });
-                      }}
-                    >
-                      <View
-                        style={[
-                          styles.checkbox,
-                          { borderColor: content.contentSearchFieldBorder, backgroundColor: content.contentInputBg },
-                          selected
-                            ? { borderColor: content.contentText, backgroundColor: content.contentPersonTagBg }
-                            : null,
-                        ]}
-                      >
-                        {selected ? (
-                          <Text style={[styles.checkmark, { color: content.contentText }]}>✓</Text>
-                        ) : null}
-                      </View>
-                      <Text style={[styles.splitMemberName, contentTextStyle(content)]}>{member.displayName}</Text>
-                    </Pressable>
-                  );
-                })}
-                {editSplitPreview ? (
-                  <Text style={[styles.splitPreview, contentMutedTextStyle(content)]}>{editSplitPreview}</Text>
-                ) : null}
-              </>
-            )}
+                  {editSplitPreview ? (
+                    <Text style={[styles.splitPreview, contentMutedTextStyle(content)]}>{editSplitPreview}</Text>
+                  ) : null}
+                </>
+              )}
+            </ScrollView>
+            <View
+              style={styles.editModalFooter}
+              onLayout={(event) => {
+                const next = Math.round(event.nativeEvent.layout.height);
+                setEditModalFooterHeight((prev) => (prev === next ? prev : next));
+              }}
+            >
             {editError ? <Text style={styles.titleModalError}>{editError}</Text> : null}
             <View style={styles.titleModalActions}>
               {moneyLocked ? null : (
@@ -912,8 +987,10 @@ export default function SettlementRoomDetailScreen() {
                 <Text style={[styles.titleModalSaveText, contentFilledButtonTextStyle(content)]}>保存</Text>
               </Pressable>
             </View>
+            </View>
           </View>
-        </View>
+          </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <EntrySelectorModal
@@ -978,8 +1055,37 @@ const styles = StyleSheet.create({
     gap: 10,
     maxHeight: '86%',
   },
+  editModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+  },
+  editModalSlot: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 18,
+  },
+  editModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 0,
+  },
   editModalCard: {
+    zIndex: 1,
+    width: '100%',
     overflow: 'hidden',
+    flexShrink: 1,
+    minHeight: 0,
+  },
+  editModalScroll: {
+    flexGrow: 0,
+    flexShrink: 1,
+    minHeight: 0,
+  },
+  editModalScrollContent: {
+    gap: 10,
+  },
+  editModalFooter: {
+    flexShrink: 0,
+    gap: 8,
   },
   memberHint: {
     fontSize: 12,
@@ -1006,6 +1112,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'center',
+    flexShrink: 0,
     flexWrap: 'nowrap',
     gap: 8,
     marginTop: 4,

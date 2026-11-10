@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { InteractionManager, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { AppState, InteractionManager, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -30,16 +30,19 @@ import { useJapaneseHolidays } from '@/hooks/useJapaneseHolidays';
 import { useTapUnlessHorizontalScroll } from '@/hooks/useTapUnlessHorizontalScroll';
 import { listCardBackgroundColor, listCardShadowStyle } from '@/utils/listCardSurface';
 import { useContentColors } from '@/utils/useContentColors';
+import { taskCompletionFillColor } from '@/components/task/TaskRecentSevenDayDots';
 import {
+  completeTemporaryTask,
   getAllFriends,
   getAppSetting,
   getEpisodesByEventIds,
   getEventParticipantsForEvents,
   getEventsByDateRange,
+  getOpenTemporaryTasks,
   initializeDatabase,
   setAppSetting,
 } from './db';
-import type { Episode, Event } from './types';
+import type { Episode, Event, Task } from './types';
 import {
   buildBirthdayFriendsByMonthDay,
   getBirthdayFriendsForDateKey,
@@ -54,9 +57,14 @@ import {
 } from './utils/eventHelpers';
 import { toEventParticipantDisplays } from './utils/eventParticipantHelpers';
 import {
+  contentMutedTextStyle,
   contentPersonTagStyle,
+  contentTagStyle,
   contentTextStyle,
 } from '@/utils/contentStyleHelpers';
+import { isTemporaryDueOnOrBefore } from '@/utils/taskGroupHelpers';
+import { formatTaskDueDateLabel, getTaskDueUrgency } from '@/utils/taskHelpers';
+import { syncTaskReminders } from '@/utils/taskNotifications';
 import {
   formatScheduleGridSelectedLabel,
   getScheduleGridMonthRangeIso,
@@ -222,6 +230,78 @@ function CalendarEventCardBody({
   );
 }
 
+type CalendarDueTaskBodyProps = {
+  task: Task;
+  checkedColor: string;
+  onOpen: () => void;
+  onComplete: () => void;
+  style?: StyleProp<ViewStyle>;
+};
+
+function CalendarDueTaskBody({
+  task,
+  checkedColor,
+  onOpen,
+  onComplete,
+  style,
+}: CalendarDueTaskBodyProps) {
+  const content = useContentColors();
+  const due = task.dueDate?.trim() ?? '';
+  const dueUrgency = due ? getTaskDueUrgency(due) : null;
+  const memoPreview = formatNotePreview(task.memo);
+  const overdue = dueUrgency === 'overdue';
+  const dueToday = dueUrgency === 'today';
+
+  return (
+    <View style={[style, memoPreview ? styles.taskCardWithMemo : null]}>
+      <Pressable
+        style={styles.taskCheckHit}
+        onPress={onComplete}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: false }}
+        accessibilityLabel="完了にする"
+      >
+        <Ionicons name="square-outline" size={26} color={content.contentTextSecondary} />
+      </Pressable>
+      <Pressable style={styles.taskCardMain} onPress={onOpen} accessibilityRole="button">
+        <View style={styles.taskTitleRow}>
+          <Text style={[styles.taskTitle, contentTextStyle(content)]} numberOfLines={1}>
+            {task.title}
+          </Text>
+          {due ? (
+            <View
+              style={[
+                styles.taskDueChip,
+                contentTagStyle(content),
+                { borderWidth: 1 },
+                overdue ? styles.taskDueChipOverdue : null,
+                dueToday ? { borderColor: checkedColor, backgroundColor: `${checkedColor}22` } : null,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.taskDueChipText,
+                  contentMutedTextStyle(content),
+                  overdue ? styles.taskDueChipTextOverdue : null,
+                  dueToday ? { color: checkedColor } : null,
+                ]}
+                numberOfLines={1}
+              >
+                {formatTaskDueDateLabel(due)}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+        {memoPreview ? (
+          <Text style={[styles.eventMemo, { color: content.contentTextSecondary }]} numberOfLines={1}>
+            {memoPreview}
+          </Text>
+        ) : null}
+      </Pressable>
+    </View>
+  );
+}
+
 export default function CalendarScreen() {
   const kit = useUiKit();
   const appTheme = useAppThemeOptional();
@@ -241,10 +321,11 @@ export default function CalendarScreen() {
     title: { color: content.contentText },
     secondary: { color: content.contentTextSecondary },
   };
+  const checkedColor = taskCompletionFillColor(appTheme?.variant === 'black');
   const router = useRouter();
   const params = useLocalSearchParams<{ date?: string }>();
   const routeDate = typeof params.date === 'string' ? params.date.trim() : '';
-  const todayKey = useMemo(() => formatDateKey(new Date()), []);
+  const [todayKey, setTodayKey] = useState(() => formatDateKey(new Date()));
   const [viewMode, setViewMode] = useState<CalendarViewMode>(readCalendarViewMode);
   const [agendaScroll, setAgendaScroll] = useState<AgendaScrollRequest | null>(() => {
     if (readCalendarViewMode() !== 'agenda') {
@@ -273,6 +354,7 @@ export default function CalendarScreen() {
     parseMonthFromDateKey(/^\d{4}-\d{2}-\d{2}$/.test(routeDate) ? routeDate : todayKey)
   );
   const [monthEvents, setMonthEvents] = useState<Event[]>([]);
+  const [dueTemporaryTasks, setDueTemporaryTasks] = useState<Task[]>([]);
   const [participantsByEventId, setParticipantsByEventId] = useState<
     Map<string, ReturnType<typeof toEventParticipantDisplays>>
   >(new Map());
@@ -283,6 +365,39 @@ export default function CalendarScreen() {
   const [episodeTagsModalVisible, setEpisodeTagsModalVisible] = useState(false);
   /** 予定タグの色・名称変更をカレンダー表示へ即時反映するためのカウンタ */
   const [episodeTagStyleEpoch, setEpisodeTagStyleEpoch] = useState(0);
+
+  // 当日マークだけ日付を追う。選択中の日と表示月は、開きっぱなしのあいだ動かさない。
+  useEffect(() => {
+    const refreshTodayKey = () => {
+      const next = formatDateKey(new Date());
+      setTodayKey((prev) => (prev === next ? prev : next));
+    };
+
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        refreshTodayKey();
+      }
+    });
+
+    let midnightTimer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleNextMidnight = () => {
+      const now = new Date();
+      const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 1);
+      const delay = Math.max(1000, nextMidnight.getTime() - now.getTime());
+      midnightTimer = setTimeout(() => {
+        refreshTodayKey();
+        scheduleNextMidnight();
+      }, delay);
+    };
+    scheduleNextMidnight();
+
+    return () => {
+      subscription.remove();
+      if (midnightTimer != null) {
+        clearTimeout(midnightTimer);
+      }
+    };
+  }, []);
 
   const birthdayMonthDays = useMemo(
     () => new Set(birthdayFriendsByMonthDay.keys()),
@@ -319,12 +434,17 @@ export default function CalendarScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      const nextToday = formatDateKey(new Date());
+      setTodayKey((prev) => (prev === nextToday ? prev : nextToday));
       let cancelled = false;
       const task = InteractionManager.runAfterInteractions(() => {
         if (cancelled) {
           return;
         }
         loadMonthEvents(visibleMonth.year, visibleMonth.month);
+        setDueTemporaryTasks(
+          getOpenTemporaryTasks().filter((item) => isTemporaryDueOnOrBefore(item, nextToday))
+        );
         setBirthdayFriendsByMonthDay(buildBirthdayFriendsByMonthDay(getAllFriends()));
         refreshHolidays();
       });
@@ -332,7 +452,7 @@ export default function CalendarScreen() {
         cancelled = true;
         task.cancel();
       };
-    }, [loadMonthEvents, refreshHolidays, visibleMonth.month, visibleMonth.year])
+    }, [loadMonthEvents, refreshHolidays, todayKey, visibleMonth.month, visibleMonth.year])
   );
 
   const eventDraftPromptLock = useRef(false);
@@ -405,14 +525,38 @@ export default function CalendarScreen() {
     [router]
   );
 
-  const handleScheduleGridMonthChange = (year: number, month: number) => {
+  const handleScheduleGridMonthChange = useCallback((year: number, month: number) => {
     setVisibleMonth({ year, month });
     loadMonthEvents(year, month);
     if (viewModeRef.current === 'agenda') {
       const afterLoadId = eventLoadIdRef.current;
       setAgendaScroll((prev) => ({ id: (prev?.id ?? 0) + 1, kind: 'firstEvent', afterLoadId }));
     }
-  };
+  }, [loadMonthEvents]);
+
+  const shiftVisibleMonth = useCallback(
+    (delta: number) => {
+      const next = new Date(visibleMonth.year, visibleMonth.month - 1 + delta, 1);
+      handleScheduleGridMonthChange(next.getFullYear(), next.getMonth() + 1);
+    },
+    [handleScheduleGridMonthChange, visibleMonth.month, visibleMonth.year],
+  );
+
+  const agendaMonthSwipeGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-24, 24])
+        .failOffsetY([-20, 20])
+        .onEnd((event) => {
+          'worklet';
+          if (event.translationX <= -48) {
+            runOnJS(shiftVisibleMonth)(1);
+          } else if (event.translationX >= 48) {
+            runOnJS(shiftVisibleMonth)(-1);
+          }
+        }),
+    [shiftVisibleMonth],
+  );
 
   const handlePressToday = useCallback(() => {
     setSelectedDate(todayKey);
@@ -541,6 +685,14 @@ export default function CalendarScreen() {
     agendaPendingKeyRef.current = null;
   };
 
+  const handleCompleteDueTask = (taskId: string) => {
+    if (!completeTemporaryTask(taskId)) {
+      return;
+    }
+    setDueTemporaryTasks((current) => current.filter((item) => item.id !== taskId));
+    void syncTaskReminders();
+  };
+
   const renderDaySection = (
     dateKey: string,
     events: Event[],
@@ -554,6 +706,7 @@ export default function CalendarScreen() {
           count={events.length}
           variant="compact"
           edgeToEdge={isEdgeToEdge}
+          chipBorderColor={dateKey === todayKey ? TODAY_BADGE_BG : undefined}
           middle={
             birthdays.length > 0 ? (
               <View style={styles.birthdayRow}>
@@ -649,6 +802,52 @@ export default function CalendarScreen() {
             })}
           </View>
         ) : null}
+        {dateKey === todayKey && dueTemporaryTasks.length > 0 ? (
+          <>
+            <CompactSectionHeader
+              title="タスク"
+              count={dueTemporaryTasks.length}
+              variant="compact"
+              edgeToEdge={isEdgeToEdge}
+            />
+            <View style={[styles.eventListEdgeToEdge, styles.roundedEventList]}>
+              {dueTemporaryTasks.map((task) => {
+                const body = (
+                  <CalendarDueTaskBody
+                    task={task}
+                    checkedColor={checkedColor}
+                    onOpen={() => router.push(detailHref('task', 'calendar', { taskId: task.id }))}
+                    onComplete={() => handleCompleteDueTask(task.id)}
+                    style={[
+                      styles.taskCard,
+                      contentCardSurface,
+                      { backgroundColor: eventCardFill },
+                      isCompactEventCard ? styles.eventCardCompact : null,
+                      styles.roundedEventCard,
+                      eventCardShadow,
+                      isOffsetPattern
+                        ? {
+                            borderWidth: 0,
+                            borderRadius: 0,
+                            backgroundColor: 'transparent',
+                            shadowOpacity: 0,
+                            elevation: 0,
+                          }
+                        : null,
+                    ]}
+                  />
+                );
+                return isOffsetPattern ? (
+                  <OffsetCard key={task.id} contentStyle={{ backgroundColor: eventCardFill }}>
+                    {body}
+                  </OffsetCard>
+                ) : (
+                  <View key={task.id}>{body}</View>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
       </View>
     );
   };
@@ -701,6 +900,7 @@ export default function CalendarScreen() {
         {showAgenda ? null : scheduleGridCalendar(false)}
 
         {showAgenda ? (
+          <GestureDetector gesture={agendaMonthSwipeGesture}>
           <View style={styles.agendaList}>
             <View style={[styles.monthLabel, isEdgeToEdge ? styles.monthLabelEdge : null]}>
               <View style={[styles.monthLabelMark, { backgroundColor: TODAY_BADGE_BG }]} />
@@ -750,6 +950,7 @@ export default function CalendarScreen() {
               })
             )}
           </View>
+          </GestureDetector>
         ) : (
           <GestureDetector gesture={eventAreaSwipeGesture}>
             {renderDaySection(selectedDate, eventsForSelectedDate, {
@@ -789,6 +990,7 @@ const styles = StyleSheet.create({
     paddingTop: 0,
   },
   agendaList: {
+    flexGrow: 1,
     gap: Spacing.md,
   },
   monthLabel: {
@@ -868,6 +1070,58 @@ const styles = StyleSheet.create({
   eventCardParticipantRow: {
     alignSelf: 'stretch',
     minWidth: 0,
+  },
+  taskCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.card,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Theme.border,
+    padding: Spacing.md,
+    gap: Spacing.sm,
+  },
+  taskCardWithMemo: {
+    alignItems: 'flex-start',
+  },
+  taskCheckHit: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  taskCardMain: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  taskTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  taskTitle: {
+    flex: 1,
+    minWidth: 0,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  taskDueChip: {
+    flexShrink: 0,
+    borderRadius: Radius.full,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  taskDueChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  taskDueChipOverdue: {
+    borderColor: '#dc2626',
+    backgroundColor: 'rgba(220, 38, 38, 0.12)',
+  },
+  taskDueChipTextOverdue: {
+    color: '#dc2626',
   },
   episodeCountTag: {
     flexShrink: 0,

@@ -18,6 +18,7 @@ import type {
   EpisodePhoto,
   EpisodeVisibilityEntry,
   EpisodeVisibilityMode,
+  Event,
   Friend,
 } from '@/types';
 import {
@@ -33,7 +34,6 @@ import {
   formatDateKey,
   formatTimeFromDate,
   getLocalDateKeysForEvent,
-  isEventStartInFuture,
   parseDateKey,
 } from '@/utils/eventHelpers';
 import { profileIdsToFriendIds } from '@/utils/eventParticipantHelpers';
@@ -87,6 +87,20 @@ type UseEpisodeFormOptions = {
 
 const hiddenIdSet = (ids?: string[]) =>
   new Set((ids ?? []).map((id) => id.trim()).filter((id) => id.length > 0));
+
+/** Prefer a day on or before today. A wholly future event uses its start day. */
+const pickEpisodeDateForEvent = (event: Event, currentDate?: string): string => {
+  const keys = getLocalDateKeysForEvent(event);
+  const today = formatDateKey(new Date());
+  if (currentDate && keys.includes(currentDate)) {
+    return currentDate;
+  }
+  const onOrBeforeToday = keys.filter((key) => key <= today);
+  if (onOrBeforeToday.length > 0) {
+    return onOrBeforeToday[0];
+  }
+  return keys[0] ?? today;
+};
 
 type EpisodeFormSnapshot = {
   title: string;
@@ -295,7 +309,7 @@ export function useEpisodeForm({
     [eventLinkMode, linkedEventId]
   );
 
-  /** Episode dates cannot be in the future; linked events further restrict the range. */
+  /** Unlinked episodes stop at today. A linked event can include its future days. */
   const episodeDateMaximumDate = allowedEventDateRange?.maximumDate ?? todayDate;
   const episodeDateMinimumDate = allowedEventDateRange?.minimumDate;
 
@@ -311,8 +325,8 @@ export function useEpisodeForm({
     if (!event) {
       return null;
     }
-    return getLocalDateKeysForEvent(event).filter((key) => key <= todayKey);
-  }, [eventLinkMode, linkedEventId, todayKey]);
+    return getLocalDateKeysForEvent(event);
+  }, [eventLinkMode, linkedEventId]);
 
   const isLinkedEventSingleDay = (linkedEventDateKeys?.length ?? 0) === 1;
 
@@ -661,7 +675,7 @@ export function useEpisodeForm({
     (eventId: string) => {
       const normalized = eventId.trim();
       const event = getEvent(normalized);
-      if (!event || isEventStartInFuture(event)) {
+      if (!event) {
         return false;
       }
       reset();
@@ -669,9 +683,7 @@ export function useEpisodeForm({
       setLinkedEventId(normalized);
       setEventLinkModeState('existing');
       setTitle(event.title);
-      const today = formatDateKey(new Date());
-      const keys = getLocalDateKeysForEvent(event).filter((key) => key <= today);
-      const nextDate = keys[0] ?? today;
+      const nextDate = pickEpisodeDateForEvent(event);
       const nextTime = event.allDay ? '' : formatTimeFromDate(new Date(event.startAt));
       const nextTag = event.episodeTag ?? '';
       setDate(nextDate);
@@ -722,8 +734,16 @@ export function useEpisodeForm({
       return null;
     }
     if (normalizedDate > formatDateKey(new Date())) {
-      showFormError('未来の日付は選択できません。', null);
-      return null;
+      const linkedId =
+        eventLinkMode === 'existing' ? linkedEventId?.trim() ?? '' : '';
+      const linkedEvent = linkedId ? getEvent(linkedId) : null;
+      const onLinkedEvent = linkedEvent
+        ? getLocalDateKeysForEvent(linkedEvent).includes(normalizedDate)
+        : false;
+      if (!onLinkedEvent) {
+        showFormError('未来の日付は選択できません。', null);
+        return null;
+      }
     }
 
     const myselfId = getMyself();
@@ -801,20 +821,10 @@ export function useEpisodeForm({
     if (!event) {
       return;
     }
-    if (isEventStartInFuture(event)) {
-      showFormError('未来の予定にはエピソードを紐づけられません。', 'event');
-      return;
-    }
     setFormError('');
     setEventLinkModeState('existing');
     setLinkedEventId(normalized);
-    const today = formatDateKey(new Date());
-    const keys = getLocalDateKeysForEvent(event).filter((key) => key <= today);
-    if (keys.length === 1) {
-      setDate(keys[0]);
-    } else if (keys.length > 1) {
-      setDate((prev) => (keys.includes(prev) ? prev : keys[0]));
-    }
+    setDate((prev) => pickEpisodeDateForEvent(event, prev));
     setTag((prev) => {
       if (prev.trim()) {
         return prev;

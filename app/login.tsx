@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { usePathname, useRouter } from 'expo-router';
 import { AuthGateView, type AuthIntent } from '@/components/auth/AuthGateView';
+import { DevBindFooter, isDevAppInstall } from '@/components/auth/DevBindFooter';
 import { useAuthSession } from '@/contexts/AuthSessionContext';
 import { getMyselfSetupPhase, initializeDatabase } from '@/db';
 import { DEVICE_BIND_MISMATCH_MESSAGE, discardForeignAuthSession, isAuthUserAllowedOnThisDevice } from '@/lib/deviceAuthBind';
@@ -207,6 +208,7 @@ export default function LoginScreen() {
       onEmailSubmit={runAuth}
       onForgotPassword={runForgotPassword}
       onSocialSubmit={runSocial}
+      footer={isDevAppInstall() ? <DevBindFooter /> : null}
     />
   );
 }

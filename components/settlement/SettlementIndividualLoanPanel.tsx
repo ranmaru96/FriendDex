@@ -24,6 +24,7 @@ import { getMoneyLoanSession } from '@/db';
 import {
   createCanonicalSharedMoneyLoan,
   deleteCanonicalSharedMoneyLoan,
+  moneyLoanRepaidNeedsServer,
   pullSharedMoneyLoans,
   setCanonicalSharedMoneyLoanRepaid,
   updateCanonicalSharedMoneyLoan,
@@ -325,7 +326,7 @@ export function SettlementIndividualLoanPanel() {
   };
 
   const handleToggleItem = (key: string) => {
-    if (!requireOnline() || writing) {
+    if (writing) {
       return;
     }
     const loanId = parseMoneyLoanBalanceKey(key);
@@ -334,6 +335,9 @@ export function SettlementIndividualLoanPanel() {
     }
     const loan = loanById.get(loanId);
     if (!loan) {
+      return;
+    }
+    if (moneyLoanRepaidNeedsServer(loan) && !requireOnline()) {
       return;
     }
     setWriting(true);

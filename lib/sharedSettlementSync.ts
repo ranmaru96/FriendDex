@@ -12,6 +12,11 @@ import { getAcceptedPeerUserIds } from '@/lib/connectionSync';
 import { getSupabaseClient } from '@/lib/supabase';
 import type { MockSettlementMember, MockSettlementRoom } from '@/types/settlementMock';
 import { asAuthUserId, getFriendLinkedAuthUserId } from '@/utils/linkedAuthUser';
+import {
+  settlementRoomHasLinkablePeer,
+  transferIsBetweenUnlinkedMembers,
+} from '@/utils/settlementToggleAccess';
+import { parseSettlementTransferKey } from '@/utils/settlementTransferHelpers';
 
 export type SharedSettlementSyncResult = {
   skipped: boolean;
@@ -96,16 +101,7 @@ async function prepareRoomShare(room: MockSettlementRoom): Promise<RoomSharePrep
 
   initializeDatabase();
   const myselfId = getMyself();
-  const hasLinkableMember = room.members.some((member) => {
-    if (member.friendId === 'myself' || (myselfId && member.friendId === myselfId)) {
-      return false;
-    }
-    if (member.friendId.startsWith('user:')) {
-      return Boolean(asAuthUserId(member.friendId.slice('user:'.length)));
-    }
-    return Boolean(getFriendLinkedAuthUserId(member.friendId));
-  });
-  if (!hasLinkableMember) {
+  if (!settlementRoomHasLinkablePeer(room, myselfId)) {
     return { status: 'skip' };
   }
 
@@ -472,6 +468,8 @@ export async function pullSharedSettlementRooms(): Promise<SharedSettlementSyncR
         .map((row) => row.transfer_key)
     );
     const prefix = `${roomRow.id}|`;
+    const storedRoom = getMockSettlementRoomById(roomRow.id);
+    const myselfIdForCompletion = getMyself();
     getSettlementCompletedTransferKeys()
       .filter((key) => key.startsWith(prefix))
       .forEach((key) => {
@@ -479,6 +477,14 @@ export async function pullSharedSettlementRooms(): Promise<SharedSettlementSyncR
           return;
         }
         if (!serverKeys.has(key)) {
+          const parsed = parseSettlementTransferKey(key);
+          if (
+            storedRoom &&
+            parsed &&
+            transferIsBetweenUnlinkedMembers(storedRoom, parsed, myselfIdForCompletion)
+          ) {
+            return;
+          }
           setSettlementTransferCompleted(key, false);
         }
       });

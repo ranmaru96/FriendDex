@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { type ComponentProps } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { contentSurfaceStyle } from '@/utils/contentStyleHelpers';
@@ -6,16 +7,38 @@ import { useContentColors } from '@/utils/useContentColors';
 
 const DELETE_COLOR = '#f87171';
 
+type DetailMenuIconName = ComponentProps<typeof Ionicons>['name'];
+
+export type DetailMenuAction = {
+  label: string;
+  icon: DetailMenuIconName;
+  onPress: () => void;
+};
+
 type DetailMenuSheetProps = {
   visible: boolean;
   onClose: () => void;
   onEdit: () => void;
   onDelete: () => void;
+  editLabel?: string;
+  extraActions?: DetailMenuAction[];
 };
 
-export function DetailMenuSheet({ visible, onClose, onEdit, onDelete }: DetailMenuSheetProps) {
+export function DetailMenuSheet({
+  visible,
+  onClose,
+  onEdit,
+  onDelete,
+  editLabel = '編集',
+  extraActions = [],
+}: DetailMenuSheetProps) {
   const content = useContentColors();
   const insets = useSafeAreaInsets();
+  const items: Array<DetailMenuAction & { danger?: boolean }> = [
+    { label: editLabel, icon: 'pencil-outline', onPress: onEdit },
+    ...extraActions,
+    { label: '削除', icon: 'trash-outline', onPress: onDelete, danger: true },
+  ];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -30,31 +53,36 @@ export function DetailMenuSheet({ visible, onClose, onEdit, onDelete }: DetailMe
         >
           <View style={[styles.sheetHandle, { backgroundColor: content.contentBorder }]} />
           <View style={[styles.menuGroup, { borderColor: content.contentBorder }]}>
-            <Pressable
-              style={styles.sheetAction}
-              onPress={() => {
-                onClose();
-                onEdit();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="編集"
-            >
-              <Ionicons name="pencil-outline" size={20} color={content.contentText} />
-              <Text style={[styles.sheetActionText, { color: content.contentText }]}>編集</Text>
-            </Pressable>
-            <View style={[styles.menuDivider, { backgroundColor: content.contentBorder }]} />
-            <Pressable
-              style={styles.sheetAction}
-              onPress={() => {
-                onClose();
-                onDelete();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="削除"
-            >
-              <Ionicons name="trash-outline" size={20} color={DELETE_COLOR} />
-              <Text style={[styles.sheetActionText, styles.sheetActionDanger]}>削除</Text>
-            </Pressable>
+            {items.map((item, index) => (
+              <View key={item.label}>
+                {index > 0 ? (
+                  <View style={[styles.menuDivider, { backgroundColor: content.contentBorder }]} />
+                ) : null}
+                <Pressable
+                  style={styles.sheetAction}
+                  onPress={() => {
+                    onClose();
+                    item.onPress();
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel={item.label}
+                >
+                  <Ionicons
+                    name={item.icon}
+                    size={20}
+                    color={item.danger ? DELETE_COLOR : content.contentText}
+                  />
+                  <Text
+                    style={[
+                      styles.sheetActionText,
+                      item.danger ? styles.sheetActionDanger : { color: content.contentText },
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              </View>
+            ))}
           </View>
         </Pressable>
       </Pressable>

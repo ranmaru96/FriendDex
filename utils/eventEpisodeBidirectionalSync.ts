@@ -37,8 +37,8 @@ const buildEpisodeInputFromEpisode = (
 });
 
 /**
- * 予定の期間が変わったとき、範囲外になったエピソード日付だけ開始日へクランプする。
- * 開始日が未来になる場合は日付を未来にせず、紐づけを解除する。
+ * 予定の期間が変わったとき、範囲外になったエピソード日付だけ残せる日へクランプする。
+ * 予定日に含まれない過去の日付を、未来の開始日へは動かさず、紐づけを解除する。
  * タイトル・タグ・本文・参加者は同期しない（フォルダモデル）。
  */
 export const clampLinkedEpisodeDatesToEvent = (eventId: string): void => {
@@ -57,9 +57,9 @@ export const clampLinkedEpisodeDatesToEvent = (eventId: string): void => {
   }
 
   const todayKey = formatDateKey(new Date());
-  const allowedDateKeys = getLocalDateKeysForEvent(event).filter((key) => key <= todayKey);
+  const eventDateKeys = getLocalDateKeysForEvent(event);
+  const fallbackDate = eventDateKeys.find((key) => key <= todayKey) ?? null;
   const episodes = getEpisodesByEventId(normalizedEventId);
-  const fallbackDate = allowedDateKeys[0] ?? null;
 
   isSyncingEventEpisode = true;
   try {
@@ -68,7 +68,7 @@ export const clampLinkedEpisodeDatesToEvent = (eventId: string): void => {
       if (!ownerId) {
         return;
       }
-      if (allowedDateKeys.includes(episode.date)) {
+      if (eventDateKeys.includes(episode.date)) {
         return;
       }
       if (!fallbackDate) {
@@ -145,7 +145,7 @@ export const deleteEpisodesLinkedToEvent = (eventId: string): void => {
 
 /**
  * Episode date picker bounds for a linked event.
- * Future dates are excluded (episode dates cannot be after today).
+ * Includes the event's future days so an episode can be registered before it happens.
  */
 export const getLinkedEventDateBounds = (
   eventId: string | null | undefined
@@ -158,8 +158,7 @@ export const getLinkedEventDateBounds = (
   if (!event) {
     return null;
   }
-  const todayKey = formatDateKey(new Date());
-  const dateKeys = getLocalDateKeysForEvent(event).filter((key) => key <= todayKey);
+  const dateKeys = getLocalDateKeysForEvent(event);
   if (dateKeys.length === 0) {
     return null;
   }
